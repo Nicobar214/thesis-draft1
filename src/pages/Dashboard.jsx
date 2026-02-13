@@ -175,6 +175,23 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchProjects();
+
+    // Real-time subscription for projects - syncs with user dashboard
+    const channel = supabase
+      .channel('admin-projects-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        (payload) => {
+          console.log('Real-time sync:', payload);
+          fetchProjects();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchProjects]);
 
   // Filter and search projects
@@ -358,7 +375,7 @@ export default function Dashboard() {
   // Handle sign out
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    navigate('/');
+    navigate('/admin');
   };
 
   return (
