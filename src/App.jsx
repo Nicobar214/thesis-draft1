@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import UserDashboard from "./pages/UserDashboard";
 import UserProjects from "./pages/UserProjects";
 import UserReports from "./pages/UserReports";
+import UserFeedback from "./pages/UserFeedback";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -29,6 +30,11 @@ function App() {
         <Route path="/user/reports" element={
           <ProtectedRoute requiredRole="user">
             <UserReports />
+          </ProtectedRoute>
+        } />
+        <Route path="/user/feedback" element={
+          <ProtectedRoute requiredRole="user">
+            <UserFeedback />
           </ProtectedRoute>
         } />
 

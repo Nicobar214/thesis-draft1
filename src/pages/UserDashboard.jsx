@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import UserLayout from '../components/UserLayout';
 
 /* ─────────────────────────────────────────────────────────────
    Icon Components - Clean, consistent 24x24 icons
@@ -157,19 +158,9 @@ function ProjectSkeleton() {
 ───────────────────────────────────────────────────────────── */
 export default function UserDashboard() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, inProgress: 0, completed: 0, reports: 0 });
   const [projects, setProjects] = useState([]);
-
-  // Auth check
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) navigate('/signin');
-      else setUser(user);
-    });
-  }, [navigate]);
 
   // Data fetching with realtime
   useEffect(() => {
@@ -200,90 +191,9 @@ export default function UserDashboard() {
     }
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    navigate('/');
-  }
-
-  const navLinks = [
-    { to: '/user', label: 'Dashboard', active: true },
-    { to: '/user/projects', label: 'Projects', active: false },
-    { to: '/user/reports', label: 'Reports', active: false },
-  ];
-
   return (
-    <div className="min-h-screen bg-zinc-50">
-      {/* ─── Header ─── */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-zinc-200">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between gap-4">
-            {/* Logo */}
-            <Link to="/" className="flex items-center gap-2.5 shrink-0">
-              <div className="size-9 bg-emerald-600 rounded-lg grid place-items-center">
-                <span className="text-white font-bold text-sm">K</span>
-              </div>
-              <span className="font-semibold text-zinc-900 tracking-tight hidden sm:block">KalsaTrack</span>
-            </Link>
-
-            {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center gap-1">
-              {navLinks.map(link => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    link.active ? 'bg-emerald-50 text-emerald-600' : 'text-zinc-600 hover:bg-zinc-100'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-
-            {/* Right side */}
-            <div className="flex items-center gap-2">
-              <span className="hidden lg:block text-sm text-zinc-500 truncate max-w-48">{user?.email}</span>
-              <button
-                onClick={handleLogout}
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-sm text-zinc-500 hover:text-zinc-700 transition-colors"
-              >
-                <Icons.Logout />
-                <span className="hidden lg:inline">Logout</span>
-              </button>
-              <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden p-2 -mr-2 text-zinc-600">
-                {menuOpen ? <Icons.X /> : <Icons.Menu />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        {menuOpen && (
-          <nav className="md:hidden border-t border-zinc-100 bg-white px-4 py-3 space-y-1">
-            {navLinks.map(link => (
-              <Link
-                key={link.to}
-                to={link.to}
-                onClick={() => setMenuOpen(false)}
-                className={`block px-4 py-2.5 text-sm font-medium rounded-lg ${
-                  link.active ? 'bg-emerald-50 text-emerald-600' : 'text-zinc-600 hover:bg-zinc-50'
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg"
-            >
-              <Icons.Logout /> Sign out
-            </button>
-          </nav>
-        )}
-      </header>
-
-      {/* ─── Main ─── */}
-      <main className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <UserLayout>
+      <div className="space-y-8">
         {/* Page Title */}
         <section>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Dashboard</h1>
@@ -335,19 +245,33 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          {/* Sidebar */}
+          {/* Dashboard Sidebar Cards */}
           <aside className="space-y-4">
-            {/* Submit Report CTA */}
+            {/* Submit Feedback CTA */}
             <Link
-              to="/user/reports"
+              to="/user/feedback"
               className="flex items-center gap-4 p-5 bg-emerald-600 hover:bg-emerald-700 rounded-2xl transition-colors text-white"
             >
               <div className="size-11 bg-white/15 rounded-xl grid place-items-center">
                 <Icons.Plus />
               </div>
               <div>
-                <p className="font-semibold">Submit Report</p>
-                <p className="text-sm text-emerald-100">Report issues or updates</p>
+                <p className="font-semibold">Give Feedback</p>
+                <p className="text-sm text-emerald-100">Share photos & concerns</p>
+              </div>
+            </Link>
+
+            {/* Submit Report CTA */}
+            <Link
+              to="/user/reports"
+              className="flex items-center gap-4 p-5 bg-white hover:bg-zinc-50 rounded-2xl border border-zinc-200/60 transition-colors"
+            >
+              <div className="size-11 bg-zinc-100 rounded-xl grid place-items-center text-zinc-500">
+                <Icons.Document />
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900">Submit Report</p>
+                <p className="text-sm text-zinc-500">Report issues or updates</p>
               </div>
             </Link>
 
@@ -374,7 +298,7 @@ export default function UserDashboard() {
             </div>
           </aside>
         </section>
-      </main>
-    </div>
+      </div>
+    </UserLayout>
   );
 }
