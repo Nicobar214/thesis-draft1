@@ -3,108 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
-// Initial mock data (will be replaced by Supabase data when available)
-const initialProjects = [
-  {
-    id: 1,
-    projectName: 'Northern Regional Road',
-    projectCode: 'FMR-2024-001',
-    region: 'Region I - Ilocos',
-    province: 'Pangasinan',
-    municipality: 'San Carlos City',
-    barangay: 'Poblacion',
-    latitude: 14.5234,
-    longitude: 121.0543,
-    roadLength: 3.5,
-    roadWidth: 6.0,
-    roadType: 'Concrete',
-    totalBudget: 12500000,
-    budgetSource: 'National',
-    disbursedAmount: 8125000,
-    contractor: 'ABC Construction Inc.',
-    startDate: '2024-03-15',
-    expectedEndDate: '2026-06-30',
-    status: 'In Progress',
-    progress: 65,
-    description: 'Farm-to-market road connecting agricultural areas to the main highway.'
-  },
-  {
-    id: 2,
-    projectName: 'Eastern Farm Route',
-    projectCode: 'FMR-2024-002',
-    region: 'Region IV-A - CALABARZON',
-    province: 'Laguna',
-    municipality: 'Los Baños',
-    barangay: 'Anos',
-    latitude: 14.6789,
-    longitude: 121.1234,
-    roadLength: 2.8,
-    roadWidth: 5.5,
-    roadType: 'Asphalt',
-    totalBudget: 8300000,
-    budgetSource: 'Provincial',
-    disbursedAmount: 6640000,
-    contractor: 'XYZ Infrastructure Corp.',
-    startDate: '2024-01-10',
-    expectedEndDate: '2026-04-15',
-    status: 'In Progress',
-    progress: 80,
-    description: 'Road improvement project for better farm produce transport.'
-  },
-  {
-    id: 3,
-    projectName: 'Southern Market Link',
-    projectCode: 'FMR-2023-015',
-    region: 'Region VII - Central Visayas',
-    province: 'Cebu',
-    municipality: 'Argao',
-    barangay: 'Bulasa',
-    latitude: 14.3456,
-    longitude: 120.9876,
-    roadLength: 4.2,
-    roadWidth: 6.5,
-    roadType: 'Concrete',
-    totalBudget: 15200000,
-    budgetSource: 'National',
-    disbursedAmount: 15200000,
-    contractor: 'DEF Builders Group',
-    startDate: '2023-06-01',
-    expectedEndDate: '2025-12-31',
-    status: 'Completed',
-    progress: 100,
-    description: 'Completed farm-to-market road linking farming barangays to the municipal market.'
-  },
-  {
-    id: 4,
-    projectName: 'Western Agricultural Path',
-    projectCode: 'FMR-2024-003',
-    region: 'Region III - Central Luzon',
-    province: 'Nueva Ecija',
-    municipality: 'Cabanatuan City',
-    barangay: 'Sumacab Este',
-    latitude: 15.4867,
-    longitude: 120.9672,
-    roadLength: 5.1,
-    roadWidth: 7.0,
-    roadType: 'Concrete',
-    totalBudget: 18500000,
-    budgetSource: 'Mixed',
-    disbursedAmount: 5550000,
-    contractor: 'GHI Roads & Bridges Inc.',
-    startDate: '2024-08-01',
-    expectedEndDate: '2027-01-31',
-    status: 'In Progress',
-    progress: 30,
-    description: 'Major farm-to-market road serving the rice-producing areas of Nueva Ecija.'
-  }
-];
-
 export default function Dashboard() {
   const navigate = useNavigate();
   
   // State management
-  const [projects, setProjects] = useState(initialProjects);
-  const [loading, setLoading] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showSidebar, setShowSidebar] = useState(true);
@@ -119,6 +23,14 @@ export default function Dashboard() {
   const [notification, setNotification] = useState(null);
   const projectsPerPage = 5;
   
+  // Feedback state (admin view)
+  const [feedbacks, setFeedbacks] = useState([]);
+  const [feedbacksLoading, setFeedbacksLoading] = useState(false);
+  const [feedbackFilter, setFeedbackFilter] = useState('all');
+  const [feedbackTypeFilter, setFeedbackTypeFilter] = useState('all');
+  const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [selectedFeedback, setSelectedFeedback] = useState(null);
+
   // Form state
   const emptyForm = {
     projectName: '',
@@ -153,46 +65,78 @@ export default function Dashboard() {
   // Fetch projects from Supabase
   const fetchProjects = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from('projects')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
       
-      if (data && data.length > 0) {
-        setProjects(data);
-      }
-      // If no data, keep the mock data
+      setProjects(data || []);
     } catch (err) {
-      console.log('Using mock data - Supabase table may not exist:', err.message);
-      // Keep using mock data
+      console.error('Error fetching projects:', err.message);
+      setError(`Failed to load projects: ${err.message}`);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Fetch feedbacks from Supabase
+  const fetchFeedbacks = useCallback(async () => {
+    setFeedbacksLoading(true);
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('feedbacks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (fetchErr) throw fetchErr;
+      setFeedbacks(data || []);
+    } catch (err) {
+      console.error('Error fetching feedbacks:', err.message);
+    } finally {
+      setFeedbacksLoading(false);
+    }
+  }, []);
+
+  // Update feedback status (admin action)
+  const updateFeedbackStatus = async (feedbackId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('feedbacks')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', feedbackId);
+      if (error) throw error;
+      await fetchFeedbacks();
+      showNotification(`Feedback marked as ${newStatus}`);
+    } catch (err) {
+      console.error('Failed to update feedback:', err.message);
+      showNotification(`Failed to update: ${err.message}`, 'error');
+    }
+  };
+
   useEffect(() => {
     fetchProjects();
+    fetchFeedbacks();
 
-    // Real-time subscription for projects - syncs with user dashboard
-    const channel = supabase
+    // Real-time subscription for projects
+    const projectChannel = supabase
       .channel('admin-projects-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'projects' },
-        (payload) => {
-          console.log('Real-time sync:', payload);
-          fetchProjects();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => fetchProjects())
+      .subscribe();
+
+    // Real-time subscription for feedbacks
+    const feedbackChannel = supabase
+      .channel('admin-feedbacks-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, () => fetchFeedbacks())
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(projectChannel);
+      supabase.removeChannel(feedbackChannel);
     };
-  }, [fetchProjects]);
+  }, [fetchProjects, fetchFeedbacks]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
@@ -247,48 +191,69 @@ export default function Dashboard() {
   const handleAddProject = async (e) => {
     e.preventDefault();
     
+    // Build insert payload — do NOT include `id` or `created_at`
+    // Supabase auto-generates both via IDENTITY and DEFAULT now()
     const newProject = {
-      ...formData,
-      id: Date.now(),
+      projectName: formData.projectName,
       projectCode: formData.projectCode || generateProjectCode(),
-      totalBudget: parseFloat(formData.totalBudget) || 0,
-      disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
-      roadLength: parseFloat(formData.roadLength) || 0,
-      roadWidth: parseFloat(formData.roadWidth) || 0,
+      region: formData.region,
+      province: formData.province,
+      municipality: formData.municipality,
+      barangay: formData.barangay,
       latitude: parseFloat(formData.latitude) || 0,
       longitude: parseFloat(formData.longitude) || 0,
+      roadLength: parseFloat(formData.roadLength) || 0,
+      roadWidth: parseFloat(formData.roadWidth) || 0,
+      roadType: formData.roadType,
+      totalBudget: parseFloat(formData.totalBudget) || 0,
+      budgetSource: formData.budgetSource,
+      disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
+      contractor: formData.contractor,
+      startDate: formData.startDate,
+      expectedEndDate: formData.expectedEndDate,
+      status: formData.status || 'Planning',
       progress: parseInt(formData.progress) || 0,
-      created_at: new Date().toISOString()
+      description: formData.description
     };
 
     try {
-      // Try to add to Supabase
       const { error } = await supabase.from('projects').insert([newProject]);
       if (error) throw error;
       await fetchProjects();
+      setShowAddModal(false);
+      setFormData(emptyForm);
+      showNotification('Project created successfully!');
     } catch (err) {
-      // If Supabase fails, add locally
-      console.log('Adding locally:', err.message);
-      setProjects(prev => [newProject, ...prev]);
+      console.error('Failed to create project:', err.message);
+      showNotification(`Failed to save project: ${err.message}`, 'error');
     }
-
-    setShowAddModal(false);
-    setFormData(emptyForm);
-    showNotification('Project created successfully!');
   };
 
   const handleEditProject = async (e) => {
     e.preventDefault();
     
+    // Build update payload — exclude `id` and `created_at` (identity/system columns)
     const updatedProject = {
-      ...formData,
-      totalBudget: parseFloat(formData.totalBudget) || 0,
-      disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
-      roadLength: parseFloat(formData.roadLength) || 0,
-      roadWidth: parseFloat(formData.roadWidth) || 0,
+      projectName: formData.projectName,
+      projectCode: formData.projectCode,
+      region: formData.region,
+      province: formData.province,
+      municipality: formData.municipality,
+      barangay: formData.barangay,
       latitude: parseFloat(formData.latitude) || 0,
       longitude: parseFloat(formData.longitude) || 0,
+      roadLength: parseFloat(formData.roadLength) || 0,
+      roadWidth: parseFloat(formData.roadWidth) || 0,
+      roadType: formData.roadType,
+      totalBudget: parseFloat(formData.totalBudget) || 0,
+      budgetSource: formData.budgetSource,
+      disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
+      contractor: formData.contractor,
+      startDate: formData.startDate,
+      expectedEndDate: formData.expectedEndDate,
+      status: formData.status,
       progress: parseInt(formData.progress) || 0,
+      description: formData.description,
       updated_at: new Date().toISOString()
     };
 
@@ -299,17 +264,14 @@ export default function Dashboard() {
         .eq('id', selectedProject.id);
       if (error) throw error;
       await fetchProjects();
+      setShowEditModal(false);
+      setSelectedProject(null);
+      setFormData(emptyForm);
+      showNotification('Project updated successfully!');
     } catch (err) {
-      console.log('Updating locally:', err.message);
-      setProjects(prev => prev.map(p => 
-        p.id === selectedProject.id ? { ...p, ...updatedProject } : p
-      ));
+      console.error('Failed to update project:', err.message);
+      showNotification(`Failed to update project: ${err.message}`, 'error');
     }
-
-    setShowEditModal(false);
-    setSelectedProject(null);
-    setFormData(emptyForm);
-    showNotification('Project updated successfully!');
   };
 
   const handleDeleteProject = async () => {
@@ -320,14 +282,13 @@ export default function Dashboard() {
         .eq('id', selectedProject.id);
       if (error) throw error;
       await fetchProjects();
+      setShowDeleteModal(false);
+      setSelectedProject(null);
+      showNotification('Project deleted successfully!', 'error');
     } catch (err) {
-      console.log('Deleting locally:', err.message);
-      setProjects(prev => prev.filter(p => p.id !== selectedProject.id));
+      console.error('Failed to delete project:', err.message);
+      showNotification(`Failed to delete project: ${err.message}`, 'error');
     }
-
-    setShowDeleteModal(false);
-    setSelectedProject(null);
-    showNotification('Project deleted successfully!', 'error');
   };
 
   const openEditModal = (project) => {
@@ -463,6 +424,7 @@ export default function Dashboard() {
               { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
               { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
               { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+              { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z' },
             ].map(item => (
               <button
                 key={item.id}
@@ -542,6 +504,7 @@ export default function Dashboard() {
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
                 {activeTab === 'reports' && 'Reports'}
+                {activeTab === 'feedback' && 'Community Feedback'}
                 {activeTab === 'settings' && 'Settings'}
               </h1>
               <p className="text-sm text-slate-600 mt-1">
@@ -550,6 +513,7 @@ export default function Dashboard() {
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
+                {activeTab === 'feedback' && 'View and manage citizen feedback on projects'}
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
@@ -572,6 +536,22 @@ export default function Dashboard() {
 
         {/* Content Area */}
         <div className="p-6 sm:p-10">
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+              <svg className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800">{error}</p>
+                <p className="text-xs text-red-600 mt-1">Make sure the projects table exists in Supabase. Run the SQL migration file if needed.</p>
+              </div>
+              <button onClick={() => { setError(null); fetchProjects(); }} className="text-xs font-medium text-red-700 hover:text-red-900 underline">
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <>
@@ -1010,6 +990,222 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* Feedback Tab */}
+          {activeTab === 'feedback' && (() => {
+            const filteredFeedbacks = feedbacks.filter(fb => {
+              const matchesStatus = feedbackFilter === 'all' || fb.status === feedbackFilter;
+              const matchesType = feedbackTypeFilter === 'all' || fb.type === feedbackTypeFilter;
+              const q = feedbackSearch.toLowerCase();
+              const matchesSearch = !q ||
+                (fb.project_name || '').toLowerCase().includes(q) ||
+                (fb.user_email || '').toLowerCase().includes(q) ||
+                (fb.message || '').toLowerCase().includes(q);
+              return matchesStatus && matchesType && matchesSearch;
+            });
+            const pendingCount = feedbacks.filter(f => f.status === 'pending').length;
+            const reviewedCount = feedbacks.filter(f => f.status === 'reviewed').length;
+            const resolvedCount = feedbacks.filter(f => f.status === 'resolved').length;
+
+            return (
+              <div className="space-y-6">
+                {/* Feedback Stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                    <p className="text-3xl font-bold text-slate-900">{feedbacks.length}</p>
+                    <p className="text-sm text-slate-500 mt-1">Total Feedback</p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-amber-700">{pendingCount}</p>
+                    <p className="text-sm text-amber-600 mt-1">Pending Review</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-blue-700">{reviewedCount}</p>
+                    <p className="text-sm text-blue-600 mt-1">Reviewed</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-emerald-700">{resolvedCount}</p>
+                    <p className="text-sm text-emerald-600 mt-1">Resolved</p>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="relative flex-1">
+                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+                      <input type="text" value={feedbackSearch} onChange={e => setFeedbackSearch(e.target.value)} placeholder="Search by project, user, or message..."
+                        className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                    </div>
+                    <select value={feedbackFilter} onChange={e => setFeedbackFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="all">All Status</option>
+                      <option value="pending">Pending</option>
+                      <option value="reviewed">Reviewed</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                    <select value={feedbackTypeFilter} onChange={e => setFeedbackTypeFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="all">All Types</option>
+                      <option value="issue">Issues</option>
+                      <option value="suggestion">Suggestions</option>
+                      <option value="compliment">Compliments</option>
+                      <option value="concern">Safety Concerns</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Feedback Detail Modal */}
+                {selectedFeedback && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedFeedback(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                      <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Feedback Detail</h3>
+                          <p className="text-sm text-slate-500 mt-0.5">{selectedFeedback.project_name || 'General Feedback'}</p>
+                        </div>
+                        <button onClick={() => setSelectedFeedback(null)} className="p-2 hover:bg-slate-100 rounded-xl">
+                          <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                      <div className="p-6 space-y-5">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                            { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' }[selectedFeedback.type] || 'text-slate-600 bg-slate-50 border-slate-200'
+                          }`}>
+                            {selectedFeedback.type === 'issue' ? 'Issue' : selectedFeedback.type === 'suggestion' ? 'Suggestion' : selectedFeedback.type === 'compliment' ? 'Compliment' : selectedFeedback.type === 'concern' ? 'Safety Concern' : selectedFeedback.type}
+                          </span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' }[selectedFeedback.status] || 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {selectedFeedback.status?.charAt(0).toUpperCase() + selectedFeedback.status?.slice(1)}
+                          </span>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">From</p>
+                          <p className="text-sm text-slate-700">{selectedFeedback.user_email || 'Anonymous'}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Date</p>
+                          <p className="text-sm text-slate-700">{new Date(selectedFeedback.created_at).toLocaleString()}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Message</p>
+                          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedFeedback.message}</p>
+                        </div>
+
+                        {selectedFeedback.latitude && selectedFeedback.longitude && (
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Geo-Tagged Location</p>
+                            <div className="flex items-center gap-2 p-3 bg-teal-50 border border-teal-200 rounded-xl">
+                              <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                              <span className="text-sm font-medium text-teal-800">{Number(selectedFeedback.latitude).toFixed(6)}, {Number(selectedFeedback.longitude).toFixed(6)}</span>
+                              {selectedFeedback.geo_accuracy && <span className="text-xs text-teal-600">(±{Math.round(selectedFeedback.geo_accuracy)}m)</span>}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedFeedback.photo_urls?.length > 0 && (
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Photos ({selectedFeedback.photo_urls.length})</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {selectedFeedback.photo_urls.map((url, i) => (
+                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-opacity" />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Admin Actions */}
+                        <div className="pt-4 border-t border-slate-100">
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
+                          <div className="flex gap-3 flex-wrap">
+                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'pending'); setSelectedFeedback(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50'}`}>
+                              Pending
+                            </button>
+                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'reviewed'); setSelectedFeedback(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'reviewed' ? 'bg-blue-100 text-blue-700 border-blue-300 ring-2 ring-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50'}`}>
+                              Reviewed
+                            </button>
+                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'resolved'); setSelectedFeedback(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'resolved' ? 'bg-emerald-100 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>
+                              Resolved
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Feedback List */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
+                    <p className="text-sm font-semibold text-slate-700">{filteredFeedbacks.length} feedback{filteredFeedbacks.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  {feedbacksLoading ? (
+                    <div className="p-8 text-center text-slate-400">
+                      <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
+                      <p className="text-sm">Loading feedbacks...</p>
+                    </div>
+                  ) : filteredFeedbacks.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.282 48.282 0 0 0 5.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
+                      <p className="font-medium text-slate-900">No feedback found</p>
+                      <p className="text-sm text-slate-500 mt-1">Citizen feedback will appear here once submitted</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredFeedbacks.map(fb => {
+                        const typeStyles = { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' };
+                        const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
+                        const typeLabel = { issue: 'Issue', suggestion: 'Suggestion', compliment: 'Compliment', concern: 'Concern' };
+                        return (
+                          <button key={fb.id} onClick={() => setSelectedFeedback(fb)}
+                            className="w-full text-left px-6 py-4 hover:bg-slate-50 transition-colors group">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                  <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeStyles[fb.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                    {typeLabel[fb.type] || fb.type}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[fb.status] || 'bg-slate-100 text-slate-600'}`}>
+                                    {fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1)}
+                                  </span>
+                                  {fb.photo_urls?.length > 0 && (
+                                    <span className="flex items-center gap-1 text-xs text-slate-400">
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>
+                                      {fb.photo_urls.length}
+                                    </span>
+                                  )}
+                                  {fb.latitude && fb.longitude && (
+                                    <span className="flex items-center gap-1 text-xs text-slate-400">
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                                      GPS
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">{fb.project_name || 'General Feedback'}</p>
+                                <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{fb.message}</p>
+                                <p className="text-xs text-slate-400 mt-1.5">{fb.user_email || 'Anonymous'} &middot; {new Date(fb.created_at).toLocaleDateString()}</p>
+                              </div>
+                              <svg className="w-5 h-5 text-slate-300 group-hover:text-teal-500 mt-1 shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (

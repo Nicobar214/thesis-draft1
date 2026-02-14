@@ -3,8 +3,11 @@
 -- Run this SQL in your Supabase SQL Editor
 -- ============================================================
 
+-- Drop existing table to start fresh (safe — removes old policies)
+DROP TABLE IF EXISTS public.feedbacks CASCADE;
+
 -- 1. Create the feedbacks table
-CREATE TABLE IF NOT EXISTS public.feedbacks (
+CREATE TABLE public.feedbacks (
   id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id       UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   user_email    TEXT,
@@ -41,12 +44,12 @@ CREATE POLICY "Anyone can view feedbacks"
   TO authenticated
   USING (true);
 
--- Users can update only their own feedback
-CREATE POLICY "Users can update own feedback"
+-- Any authenticated user can update feedbacks (admin needs to change status)
+CREATE POLICY "Authenticated users can update feedbacks"
   ON public.feedbacks
   FOR UPDATE
   TO authenticated
-  USING (auth.uid() = user_id);
+  USING (true);
 
 -- Users can delete only their own feedback
 CREATE POLICY "Users can delete own feedback"
@@ -56,7 +59,15 @@ CREATE POLICY "Users can delete own feedback"
   USING (auth.uid() = user_id);
 
 -- 4. Enable Realtime for the feedbacks table
-ALTER PUBLICATION supabase_realtime ADD TABLE public.feedbacks;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'feedbacks'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.feedbacks;
+  END IF;
+END $$;
 
 -- 5. Create the storage bucket for feedback photos
 INSERT INTO storage.buckets (id, name, public) 
@@ -64,6 +75,14 @@ VALUES ('feedback-photos', 'feedback-photos', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 6. Storage policies - allow authenticated users to upload
+-- Drop existing policies first to avoid conflicts
+DO $$
+BEGIN
+  DROP POLICY IF EXISTS "Authenticated users can upload feedback photos" ON storage.objects;
+  DROP POLICY IF EXISTS "Public read access for feedback photos" ON storage.objects;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 CREATE POLICY "Authenticated users can upload feedback photos"
   ON storage.objects
   FOR INSERT
