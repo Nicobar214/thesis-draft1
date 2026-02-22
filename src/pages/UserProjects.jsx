@@ -276,6 +276,17 @@ function ProjectDetail({ project, onBack }) {
   const [geoLocation, setGeoLocation] = useState(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState('');
+  const geoWatchRef = useRef(null);
+
+  // Cleanup GPS watcher on unmount
+  useEffect(() => {
+    return () => {
+      if (geoWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(geoWatchRef.current);
+        geoWatchRef.current = null;
+      }
+    };
+  }, []);
 
   // Fetch feedback for this project
   useEffect(() => {
@@ -308,7 +319,12 @@ function ProjectDetail({ project, onBack }) {
   function requestGeoLocation() {
     if (!navigator.geolocation) { setGeoError('Geolocation not supported.'); return; }
     setGeoLoading(true); setGeoError('');
-    navigator.geolocation.getCurrentPosition(
+    // Clear existing watcher
+    if (geoWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(geoWatchRef.current);
+    }
+    // Use watchPosition for realtime GPS updates
+    geoWatchRef.current = navigator.geolocation.watchPosition(
       pos => { setGeoLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }); setGeoLoading(false); },
       err => { setGeoError(`Location error: ${err.message}`); setGeoLoading(false); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -326,12 +342,57 @@ function ProjectDetail({ project, onBack }) {
     setPhotos(prev => { const u = [...prev]; URL.revokeObjectURL(u[i].preview); u.splice(i, 1); return u; });
   }
 
+  /** Watermark a photo file with timestamp + GPS for credibility */
+  function watermarkPhoto(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        // Timestamp text
+        const now = new Date();
+        const tsText = now.toLocaleString('en-PH', {
+          year: 'numeric', month: 'short', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+        });
+        const gpsText = geoLocation
+          ? `GPS: ${geoLocation.lat.toFixed(6)}, ${geoLocation.lng.toFixed(6)} (\u00b1${Math.round(geoLocation.accuracy || 0)}m)`
+          : '';
+
+        const fontSize = Math.max(14, Math.floor(canvas.width / 50));
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.textBaseline = 'bottom';
+
+        const padding = 8;
+        const lineHeight = fontSize + 4;
+        const lines = [tsText, gpsText].filter(Boolean);
+        const maxWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const stripH = lines.length * lineHeight + padding * 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(0, canvas.height - stripH, maxWidth + padding * 2, stripH);
+
+        ctx.fillStyle = '#ffffff';
+        lines.forEach((line, i) => {
+          ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineHeight);
+        });
+
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   async function uploadPhotos() {
     const urls = [];
     for (const photo of photos) {
-      const ext = photo.file.name.split('.').pop();
-      const fileName = `feedback/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('feedback-photos').upload(fileName, photo.file, { cacheControl: '3600', upsert: false });
+      // Watermark each photo with timestamp + GPS
+      const watermarked = await watermarkPhoto(photo.file);
+      const fileName = `feedback/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const { error: upErr } = await supabase.storage.from('feedback-photos').upload(fileName, watermarked, { contentType: 'image/jpeg', cacheControl: '3600', upsert: false });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
       const { data: urlData } = supabase.storage.from('feedback-photos').getPublicUrl(fileName);
       urls.push(urlData.publicUrl);
@@ -362,6 +423,7 @@ function ProjectDetail({ project, onBack }) {
         latitude: geoLocation?.lat || null,
         longitude: geoLocation?.lng || null,
         geo_accuracy: geoLocation?.accuracy || null,
+        photo_timestamp: new Date().toISOString(),
         status: 'pending',
       };
 
@@ -371,6 +433,11 @@ function ProjectDetail({ project, onBack }) {
       setForm({ type: 'issue', message: '' });
       photos.forEach(p => URL.revokeObjectURL(p.preview));
       setPhotos([]); setGeoLocation(null); setShowFeedbackForm(false);
+      // Stop GPS watcher
+      if (geoWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(geoWatchRef.current);
+        geoWatchRef.current = null;
+      }
       setSuccess('Feedback submitted! Thank you for your input.');
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
@@ -522,12 +589,17 @@ function ProjectDetail({ project, onBack }) {
               </label>
               {geoLocation ? (
                 <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                  <div className="size-10 bg-emerald-100 rounded-lg grid place-items-center text-emerald-600 shrink-0"><Icons.MapPinLg /></div>
+                  <div className="size-10 bg-emerald-100 rounded-lg grid place-items-center text-emerald-600 shrink-0">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-emerald-800">Location captured!</p>
+                    <p className="text-sm font-medium text-emerald-800">Live GPS Active</p>
                     <p className="text-xs text-emerald-600">{geoLocation.lat.toFixed(6)}, {geoLocation.lng.toFixed(6)}{geoLocation.accuracy && ` (±${Math.round(geoLocation.accuracy)}m)`}</p>
                   </div>
-                  <button type="button" onClick={() => setGeoLocation(null)} className="text-emerald-500 hover:text-emerald-700 text-xs font-medium">Remove</button>
+                  <button type="button" onClick={() => { setGeoLocation(null); if (geoWatchRef.current !== null) { navigator.geolocation.clearWatch(geoWatchRef.current); geoWatchRef.current = null; } }} className="text-emerald-500 hover:text-emerald-700 text-xs font-medium">Remove</button>
                 </div>
               ) : (
                 <button type="button" onClick={requestGeoLocation} disabled={geoLoading}

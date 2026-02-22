@@ -57,6 +57,9 @@ export default function PublicReportForm() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
 
+  // ── GPS watcher ref ──
+  const gpsWatchRef = useRef(null);
+
   // ── Camera / photo ──
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -70,6 +73,9 @@ export default function PublicReportForm() {
   const [description, setDescription] = useState('');
   const [fullName, setFullName] = useState('');
   const [contactInfo, setContactInfo] = useState('');
+
+  // ── Photo timestamp ──
+  const [photoTimestamp, setPhotoTimestamp] = useState(null);
 
   // ── Submission ──
   const [submitting, setSubmitting] = useState(false);
@@ -86,7 +92,14 @@ export default function PublicReportForm() {
     }
     setGpsLoading(true);
     setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
+
+    // Clear any existing watcher
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+    }
+
+    // Use watchPosition for realtime GPS updates
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         setGps({
           lat: pos.coords.latitude,
@@ -94,7 +107,7 @@ export default function PublicReportForm() {
           accuracy: pos.coords.accuracy,
         });
         setGpsLoading(false);
-        setStep(0); // move to location step
+        setStep((prev) => (prev === -1 ? 0 : prev)); // move to location step on first fix
       },
       (err) => {
         setGpsLoading(false);
@@ -106,6 +119,16 @@ export default function PublicReportForm() {
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+  }, []);
+
+  // Cleanup GPS watcher on unmount
+  useEffect(() => {
+    return () => {
+      if (gpsWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchRef.current);
+        gpsWatchRef.current = null;
+      }
+    };
   }, []);
 
   // ────────────────────────────────────────────────────────
@@ -188,6 +211,37 @@ export default function PublicReportForm() {
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
+
+    // ── Timestamp watermark for credibility ──
+    const now = new Date();
+    setPhotoTimestamp(now.toISOString());
+    const tsText = now.toLocaleString('en-PH', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+    });
+    const gpsText = gps.lat && gps.lng
+      ? `GPS: ${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)} (±${Math.round(gps.accuracy || 0)}m)`
+      : '';
+
+    const fontSize = Math.max(14, Math.floor(canvas.width / 50));
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textBaseline = 'bottom';
+
+    // Semi-transparent background strip
+    const padding = 8;
+    const lineHeight = fontSize + 4;
+    const lines = [tsText, gpsText].filter(Boolean);
+    const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const stripH = lines.length * lineHeight + padding * 2;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, canvas.height - stripH, maxWidth + padding * 2, stripH);
+
+    // White text
+    ctx.fillStyle = '#ffffff';
+    lines.forEach((line, i) => {
+      ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineHeight);
+    });
+
     canvas.toBlob(
       (blob) => {
         setPhotoBlob(blob);
@@ -249,7 +303,7 @@ export default function PublicReportForm() {
         latitude: gps.lat,
         longitude: gps.lng,
         geo_accuracy: gps.accuracy,
-        photo_timestamp: new Date().toISOString(),
+        photo_timestamp: photoTimestamp || new Date().toISOString(),
         verification,
         description: description.trim(),
         source: fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
@@ -277,6 +331,7 @@ export default function PublicReportForm() {
     setStreet('');
     setSelectedProject(null);
     setPhotoBlob(null);
+    setPhotoTimestamp(null);
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview(null);
     setDescription('');
@@ -284,6 +339,11 @@ export default function PublicReportForm() {
     setContactInfo('');
     setSubmitted(false);
     setError(null);
+    // Stop GPS watcher
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
   };
 
   // ════════════════════════════════════════════════════════
@@ -392,10 +452,13 @@ export default function PublicReportForm() {
         </div>
       )}
 
-      {/* GPS mini-badge */}
+      {/* GPS mini-badge – live updating */}
       <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 w-fit">
-        <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-        <span>GPS: {gps.lat?.toFixed(5)}, {gps.lng?.toFixed(5)}</span>
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span>Live GPS: {gps.lat?.toFixed(5)}, {gps.lng?.toFixed(5)}</span>
         <span className="text-slate-400">(±{Math.round(gps.accuracy || 0)}m)</span>
       </div>
 
