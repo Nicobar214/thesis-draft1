@@ -2,6 +2,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -31,14 +32,28 @@ export default function Dashboard() {
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [selectedFeedback, setSelectedFeedback] = useState(null);
 
+  // Public reports state (admin view)
+  const [publicReports, setPublicReports] = useState([]);
+  const [publicReportsLoading, setPublicReportsLoading] = useState(false);
+  const [publicReportFilter, setPublicReportFilter] = useState('all');
+  const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
+  const [publicReportSearch, setPublicReportSearch] = useState('');
+  const [selectedPublicReport, setSelectedPublicReport] = useState(null);
+
+  // Project feedback viewer state (admin: see all feedback linked to a project)
+  const [projectFeedbackModal, setProjectFeedbackModal] = useState(null); // holds the project object
+  const [projectLinkedFeedbacks, setProjectLinkedFeedbacks] = useState([]);
+  const [projectLinkedReports, setProjectLinkedReports] = useState([]);
+  const [projectFeedbackLoading, setProjectFeedbackLoading] = useState(false);
+
   // Form state
   const emptyForm = {
     projectName: '',
     projectCode: '',
-    region: '',
+    region: 'Region VI – Western Visayas',
     barangay: '',
     municipality: '',
-    province: '',
+    province: 'Iloilo',
     latitude: '',
     longitude: '',
     roadLength: '',
@@ -100,6 +115,39 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch public reports from Supabase
+  const fetchPublicReports = useCallback(async () => {
+    setPublicReportsLoading(true);
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('public_reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (fetchErr) throw fetchErr;
+      setPublicReports(data || []);
+    } catch (err) {
+      console.error('Error fetching public reports:', err.message);
+    } finally {
+      setPublicReportsLoading(false);
+    }
+  }, []);
+
+  // Update public report status (admin action)
+  const updatePublicReportStatus = async (reportId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('public_reports')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+      if (error) throw error;
+      await fetchPublicReports();
+      showNotification(`Public report marked as ${newStatus}`);
+    } catch (err) {
+      console.error('Failed to update public report:', err.message);
+      showNotification(`Failed to update: ${err.message}`, 'error');
+    }
+  };
+
   // Update feedback status (admin action)
   const updateFeedbackStatus = async (feedbackId, newStatus) => {
     try {
@@ -116,9 +164,30 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch all feedback linked to a specific project (both registered + anonymous)
+  const openProjectFeedbackModal = async (project) => {
+    setProjectFeedbackModal(project);
+    setProjectFeedbackLoading(true);
+    setProjectLinkedFeedbacks([]);
+    setProjectLinkedReports([]);
+    try {
+      const [fbRes, prRes] = await Promise.all([
+        supabase.from('feedbacks').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
+        supabase.from('public_reports').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
+      ]);
+      if (fbRes.data) setProjectLinkedFeedbacks(fbRes.data);
+      if (prRes.data) setProjectLinkedReports(prRes.data);
+    } catch (err) {
+      console.error('Failed to fetch project feedback:', err);
+    } finally {
+      setProjectFeedbackLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchProjects();
     fetchFeedbacks();
+    fetchPublicReports();
 
     // Real-time subscription for projects
     const projectChannel = supabase
@@ -132,11 +201,18 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, () => fetchFeedbacks())
       .subscribe();
 
+    // Real-time subscription for public reports
+    const publicReportsChannel = supabase
+      .channel('admin-public-reports-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchPublicReports())
+      .subscribe();
+
     return () => {
       supabase.removeChannel(projectChannel);
       supabase.removeChannel(feedbackChannel);
+      supabase.removeChannel(publicReportsChannel);
     };
-  }, [fetchProjects, fetchFeedbacks]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
@@ -176,10 +252,12 @@ export default function Dashboard() {
   // Form handlers
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      // Reset barangay when municipality changes
+      if (name === 'municipality') next.barangay = '';
+      return next;
+    });
   };
 
   const generateProjectCode = () => {
@@ -425,6 +503,7 @@ export default function Dashboard() {
               { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
               { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
               { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z' },
+              { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418' },
             ].map(item => (
               <button
                 key={item.id}
@@ -505,6 +584,7 @@ export default function Dashboard() {
                 {activeTab === 'analytics' && 'Analytics'}
                 {activeTab === 'reports' && 'Reports'}
                 {activeTab === 'feedback' && 'Community Feedback'}
+                {activeTab === 'public-reports' && 'Public Reports'}
                 {activeTab === 'settings' && 'Settings'}
               </h1>
               <p className="text-sm text-slate-600 mt-1">
@@ -514,6 +594,7 @@ export default function Dashboard() {
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
                 {activeTab === 'feedback' && 'View and manage citizen feedback on projects'}
+                {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
@@ -822,6 +903,12 @@ export default function Dashboard() {
                         <span className="font-bold text-slate-900">{formatCurrency(project.totalBudget)}</span>
                       </div>
                       <div className="flex gap-3 pt-5 border-t border-slate-100">
+                        <button 
+                          onClick={() => openProjectFeedbackModal(project)}
+                          className="flex-1 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-sm font-semibold transition-colors duration-200"
+                        >
+                          Feedback
+                        </button>
                         <button 
                           onClick={() => openEditModal(project)}
                           className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-semibold transition-colors duration-200"
@@ -1207,6 +1294,260 @@ export default function Dashboard() {
             );
           })()}
 
+          {/* Public Reports Tab */}
+          {activeTab === 'public-reports' && (() => {
+            const filteredPublicReports = publicReports.filter(rpt => {
+              const matchesStatus = publicReportFilter === 'all' || rpt.status === publicReportFilter;
+              const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
+              const q = publicReportSearch.toLowerCase();
+              const matchesSearch = !q ||
+                (rpt.full_name || '').toLowerCase().includes(q) ||
+                (rpt.municipality || '').toLowerCase().includes(q) ||
+                (rpt.barangay || '').toLowerCase().includes(q) ||
+                (rpt.project_name || '').toLowerCase().includes(q) ||
+                (rpt.description || '').toLowerCase().includes(q);
+              return matchesStatus && matchesVerification && matchesSearch;
+            });
+            const pendingCount = publicReports.filter(r => r.status === 'pending').length;
+            const reviewedCount = publicReports.filter(r => r.status === 'reviewed').length;
+            const resolvedCount = publicReports.filter(r => r.status === 'resolved').length;
+            const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
+
+            const verifyBadge = (v) => {
+              const map = {
+                'Verified On-Site': { icon: '✔', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                'Needs Review': { icon: '⚠', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+                'Location Mismatch': { icon: '✖', cls: 'bg-red-50 text-red-700 border-red-200' },
+              };
+              const s = map[v] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+              return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${s.cls}`}>{s.icon} {v}</span>;
+            };
+
+            const statusBadge = (status) => {
+              const styles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
+              return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${styles[status] || 'bg-slate-100 text-slate-600'}`}>{status?.charAt(0).toUpperCase() + status?.slice(1)}</span>;
+            };
+
+            return (
+              <div className="space-y-6">
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                    <p className="text-3xl font-bold text-slate-900">{publicReports.length}</p>
+                    <p className="text-sm text-slate-500 mt-1">Total Reports</p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-amber-700">{pendingCount}</p>
+                    <p className="text-sm text-amber-600 mt-1">Pending</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-blue-700">{reviewedCount}</p>
+                    <p className="text-sm text-blue-600 mt-1">Reviewed</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-emerald-700">{resolvedCount}</p>
+                    <p className="text-sm text-emerald-600 mt-1">Resolved</p>
+                  </div>
+                  <div className="bg-teal-50 border border-teal-200/60 rounded-2xl p-5">
+                    <p className="text-3xl font-bold text-teal-700">{verifiedCount}</p>
+                    <p className="text-sm text-teal-600 mt-1">Verified On-Site</p>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="relative flex-1">
+                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+                      <input type="text" value={publicReportSearch} onChange={e => setPublicReportSearch(e.target.value)} placeholder="Search by name, location, project, or description..."
+                        className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                    </div>
+                    <select value={publicReportFilter} onChange={e => setPublicReportFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="all">All Status</option>
+                      <option value="pending">Pending</option>
+                      <option value="reviewed">Reviewed</option>
+                      <option value="resolved">Resolved</option>
+                    </select>
+                    <select value={publicReportCategoryFilter} onChange={e => setPublicReportCategoryFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="all">All Verification</option>
+                      <option value="Verified On-Site">✔ Verified On-Site</option>
+                      <option value="Needs Review">⚠ Needs Review</option>
+                      <option value="Location Mismatch">✖ Location Mismatch</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Detail Modal */}
+                {selectedPublicReport && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedPublicReport(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                      <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Public Report Detail</h3>
+                          <p className="text-sm text-slate-500 mt-0.5">{selectedPublicReport.project_name || 'No project linked'}</p>
+                        </div>
+                        <button onClick={() => setSelectedPublicReport(null)} className="p-2 hover:bg-slate-100 rounded-xl">
+                          <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                      <div className="p-6 space-y-5">
+                        {/* Badges row */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                          {verifyBadge(selectedPublicReport.verification)}
+                          {statusBadge(selectedPublicReport.status)}
+                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
+                            {selectedPublicReport.source || 'Anonymous'}
+                          </span>
+                        </div>
+
+                        {/* Captured photo */}
+                        {selectedPublicReport.photo_url && (
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Site Photo</p>
+                            <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
+                              <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-56 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition" />
+                            </a>
+                          </div>
+                        )}
+
+                        {/* Info grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Submitted By</p>
+                            <p className="text-sm text-slate-700">{selectedPublicReport.full_name || 'Anonymous'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Contact</p>
+                            <p className="text-sm text-slate-700">{selectedPublicReport.contact_info || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Municipality</p>
+                            <p className="text-sm text-slate-700">{selectedPublicReport.municipality || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Barangay</p>
+                            <p className="text-sm text-slate-700">{selectedPublicReport.barangay || '—'}</p>
+                          </div>
+                          {selectedPublicReport.street && (
+                            <div>
+                              <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Street / Sitio</p>
+                              <p className="text-sm text-slate-700">{selectedPublicReport.street}</p>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Project</p>
+                            <p className="text-sm text-slate-700">{selectedPublicReport.project_name || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Date Submitted</p>
+                            <p className="text-sm text-slate-700">{new Date(selectedPublicReport.created_at).toLocaleString()}</p>
+                          </div>
+                        </div>
+
+                        {/* GPS info */}
+                        {(selectedPublicReport.latitude || selectedPublicReport.longitude) && (
+                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">GPS Verification</p>
+                            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-700">
+                              <span><strong>Lat:</strong> {Number(selectedPublicReport.latitude).toFixed(6)}</span>
+                              <span><strong>Lng:</strong> {Number(selectedPublicReport.longitude).toFixed(6)}</span>
+                              {selectedPublicReport.geo_accuracy && <span><strong>Accuracy:</strong> ±{Math.round(selectedPublicReport.geo_accuracy)}m</span>}
+                            </div>
+                            {selectedPublicReport.latitude && selectedPublicReport.longitude && (
+                              <a href={`https://www.google.com/maps?q=${selectedPublicReport.latitude},${selectedPublicReport.longitude}`} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-teal-600 hover:text-teal-700 transition">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                                View on Google Maps
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Description */}
+                        <div>
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Description</p>
+                          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedPublicReport.description}</p>
+                        </div>
+
+                        {/* Admin Actions */}
+                        <div className="pt-4 border-t border-slate-100">
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
+                          <div className="flex gap-3 flex-wrap">
+                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'pending'); setSelectedPublicReport(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50'}`}>
+                              Pending
+                            </button>
+                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'reviewed'); setSelectedPublicReport(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'reviewed' ? 'bg-blue-100 text-blue-700 border-blue-300 ring-2 ring-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50'}`}>
+                              Reviewed
+                            </button>
+                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'resolved'); setSelectedPublicReport(null); }}
+                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'resolved' ? 'bg-emerald-100 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>
+                              Resolved
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reports List */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
+                    <p className="text-sm font-semibold text-slate-700">{filteredPublicReports.length} public report{filteredPublicReports.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  {publicReportsLoading ? (
+                    <div className="p-8 text-center text-slate-400">
+                      <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
+                      <p className="text-sm">Loading public reports...</p>
+                    </div>
+                  ) : filteredPublicReports.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3" /></svg>
+                      <p className="font-medium text-slate-900">No public reports yet</p>
+                      <p className="text-sm text-slate-500 mt-1">Location-verified reports from the landing page will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredPublicReports.map(rpt => (
+                        <button key={rpt.id} onClick={() => setSelectedPublicReport(rpt)}
+                          className="w-full text-left px-6 py-4 hover:bg-slate-50 transition-colors group">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                {verifyBadge(rpt.verification)}
+                                {statusBadge(rpt.status)}
+                                {rpt.photo_url && (
+                                  <span className="flex items-center gap-1 text-xs text-slate-400">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
+                                    Photo
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
+                                {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}</p>
+                              <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
+                              <p className="text-xs text-slate-400 mt-1.5">{rpt.full_name || 'Anonymous'} &middot; {new Date(rpt.created_at).toLocaleDateString()}</p>
+                            </div>
+                            {rpt.photo_url && (
+                              <img src={rpt.photo_url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0" />
+                            )}
+                            <svg className="w-5 h-5 text-slate-300 group-hover:text-teal-500 mt-1 shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
@@ -1286,20 +1627,26 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Region *</label>
-                  <input type="text" name="region" value={formData.region} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Region VII" />
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Region</label>
+                  <input type="text" name="region" value={formData.region} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Province *</label>
-                  <input type="text" name="province" value={formData.province} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Cebu" />
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Province</label>
+                  <input type="text" name="province" value={formData.province} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Municipality *</label>
-                  <input type="text" name="municipality" value={formData.municipality} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Cebu City" />
+                  <select name="municipality" value={formData.municipality} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                    <option value="">Select municipality</option>
+                    {getMunicipalities().map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Barangay *</label>
-                  <input type="text" name="barangay" value={formData.barangay} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Lahug" />
+                  <select name="barangay" value={formData.barangay} onChange={handleInputChange} required disabled={!formData.municipality} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed">
+                    <option value="">Select barangay</option>
+                    {getBarangays(formData.municipality).map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Latitude</label>
@@ -1408,19 +1755,25 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Region</label>
-                  <input type="text" name="region" value={formData.region} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <input type="text" name="region" value={formData.region} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Province</label>
-                  <input type="text" name="province" value={formData.province} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <input type="text" name="province" value={formData.province} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Municipality</label>
-                  <input type="text" name="municipality" value={formData.municipality} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <select name="municipality" value={formData.municipality} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                    <option value="">Select municipality</option>
+                    {getMunicipalities().map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Barangay</label>
-                  <input type="text" name="barangay" value={formData.barangay} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <select name="barangay" value={formData.barangay} onChange={handleInputChange} disabled={!formData.municipality} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed">
+                    <option value="">Select barangay</option>
+                    {getBarangays(formData.municipality).map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km)</label>
@@ -1492,6 +1845,130 @@ export default function Dashboard() {
                   Delete Project
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Feedback Modal — shows all citizen feedback linked to a project */}
+      {projectFeedbackModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between bg-gradient-to-r from-slate-50 to-white">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Citizen Feedback</h3>
+                <p className="text-sm text-slate-500 mt-0.5">{projectFeedbackModal.projectName} — {projectFeedbackModal.barangay}, {projectFeedbackModal.municipality}</p>
+              </div>
+              <button onClick={() => setProjectFeedbackModal(null)} className="p-2 hover:bg-slate-100 rounded-xl transition">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {projectFeedbackLoading ? (
+                <div className="py-12 text-center">
+                  <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
+                  <p className="text-sm text-slate-400">Loading feedback…</p>
+                </div>
+              ) : (projectLinkedFeedbacks.length === 0 && projectLinkedReports.length === 0) ? (
+                <div className="py-12 text-center">
+                  <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
+                  <p className="font-medium text-slate-900">No feedback yet</p>
+                  <p className="text-sm text-slate-500 mt-1">No citizen feedback has been submitted for this project</p>
+                </div>
+              ) : (
+                <>
+                  {/* Summary chips */}
+                  <div className="flex gap-3 flex-wrap">
+                    <span className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700">
+                      {projectLinkedFeedbacks.length} Registered User Feedback{projectLinkedFeedbacks.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-xs font-semibold text-violet-700">
+                      {projectLinkedReports.length} Public Report{projectLinkedReports.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {/* Registered user feedbacks */}
+                  {projectLinkedFeedbacks.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                        Registered Users
+                      </h4>
+                      <div className="space-y-3">
+                        {projectLinkedFeedbacks.map(fb => {
+                          const typeStyles = { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' };
+                          const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
+                          return (
+                            <div key={fb.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="flex items-center gap-2 flex-wrap mb-2">
+                                <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeStyles[fb.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                  {fb.type?.charAt(0).toUpperCase() + fb.type?.slice(1)}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[fb.status] || 'bg-slate-100 text-slate-600'}`}>
+                                  {fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1)}
+                                </span>
+                                <span className="text-xs text-slate-400 ml-auto">{new Date(fb.created_at).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{fb.message}</p>
+                              {fb.photo_urls?.length > 0 && (
+                                <div className="flex gap-2 mt-2 overflow-x-auto">
+                                  {fb.photo_urls.map((url, i) => (
+                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                                      <img src={url} alt="" className="h-14 w-14 object-cover rounded-lg border border-slate-200 hover:opacity-80 transition" />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                              <p className="text-xs text-slate-400 mt-2">— {fb.user_email || 'Unknown'}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Anonymous public reports */}
+                  {projectLinkedReports.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3" /></svg>
+                        Anonymous / Public Reports
+                      </h4>
+                      <div className="space-y-3">
+                        {projectLinkedReports.map(rpt => {
+                          const verifyMap = { 'Verified On-Site': { icon: '✔', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }, 'Needs Review': { icon: '⚠', cls: 'bg-amber-50 text-amber-700 border-amber-200' }, 'Location Mismatch': { icon: '✖', cls: 'bg-red-50 text-red-700 border-red-200' } };
+                          const vInfo = verifyMap[rpt.verification] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+                          const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
+                          return (
+                            <div key={rpt.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="flex items-center gap-2 flex-wrap mb-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${vInfo.cls}`}>
+                                  {vInfo.icon} {rpt.verification}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[rpt.status] || 'bg-slate-100 text-slate-600'}`}>
+                                  {rpt.status?.charAt(0).toUpperCase() + rpt.status?.slice(1)}
+                                </span>
+                                <span className="text-xs text-slate-400 ml-auto">{new Date(rpt.created_at).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{rpt.description}</p>
+                              {rpt.photo_url && (
+                                <a href={rpt.photo_url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+                                  <img src={rpt.photo_url} alt="Site photo" className="h-20 w-auto object-cover rounded-lg border border-slate-200 hover:opacity-80 transition" />
+                                </a>
+                              )}
+                              {(rpt.latitude || rpt.longitude) && (
+                                <p className="text-xs text-slate-400 mt-1.5">📍 {Number(rpt.latitude).toFixed(5)}, {Number(rpt.longitude).toFixed(5)}</p>
+                              )}
+                              <p className="text-xs text-slate-400 mt-1">— {rpt.full_name || 'Anonymous'}{rpt.contact_info ? ` · ${rpt.contact_info}` : ''}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
