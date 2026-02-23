@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import UserLayout from '../components/UserLayout';
+import PublicReportForm from '../components/PublicReportForm';
 
 /* ─── Icons ─── */
 const Icons = {
@@ -85,13 +86,31 @@ function FeedbackCard({ feedback }) {
       <div className="p-5">
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeInfo.color}`}>
-                {typeInfo.label}
-              </span>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              {feedback._type === 'public_report' || feedback.source === 'public_report' ? (
+                <span className="px-2 py-0.5 rounded-md text-xs font-medium border bg-violet-50 text-violet-600 border-violet-200">
+                  Public Report
+                </span>
+              ) : (
+                <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeInfo.color}`}>
+                  {typeInfo.label}
+                </span>
+              )}
               <StatusBadge status={feedback.status} />
+              {feedback.verification && (
+                <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium border ${
+                  feedback.verification === 'Verified On-Site' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  feedback.verification === 'Needs Review' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                  'bg-red-50 text-red-700 border-red-200'
+                }`}>
+                  {feedback.verification}
+                </span>
+              )}
             </div>
             <h3 className="font-medium text-zinc-900 truncate">{feedback.project_name || 'General Feedback'}</h3>
+            {feedback.municipality && feedback.barangay && (
+              <p className="text-xs text-zinc-400 mt-0.5">{feedback.barangay}, {feedback.municipality}</p>
+            )}
           </div>
           <div className="flex items-center gap-1 text-xs text-zinc-400 shrink-0">
             <Icons.Clock />
@@ -156,58 +175,54 @@ function FeedbackSkeleton() {
 ───────────────────────────────────────────────────────────── */
 export default function UserFeedback() {
   const [feedbacks, setFeedbacks] = useState([]);
+  const [publicReports, setPublicReports] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const fileInputRef = useRef(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
 
-  // Form state
-  const [form, setForm] = useState({
-    project_id: '',
-    type: 'issue',
-    message: '',
-  });
-  const [photos, setPhotos] = useState([]); // { file, preview, lat, lng }
-  const [geoLocation, setGeoLocation] = useState(null);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoError, setGeoError] = useState('');
-  const geoWatchRef = useRef(null);
-
-  // Cleanup GPS watcher on unmount
-  useEffect(() => {
-    return () => {
-      if (geoWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(geoWatchRef.current);
-        geoWatchRef.current = null;
-      }
-    };
-  }, []);
-
-  // Fetch feedbacks + projects
+  // Fetch feedbacks + user's public reports + projects
   useEffect(() => {
     fetchData();
-    const channel = supabase
+    const fbChannel = supabase
       .channel('feedbacks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, fetchData)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    const prChannel = supabase
+      .channel('user-public-reports')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchData)
+      .subscribe();
+    return () => {
+      supabase.removeChannel(fbChannel);
+      supabase.removeChannel(prChannel);
+    };
   }, []);
 
   async function fetchData() {
     try {
-      const [feedbackRes, projectRes, userRes] = await Promise.all([
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+      setCurrentUserId(userId);
+
+      const [feedbackRes, publicReportRes, projectRes] = await Promise.all([
         supabase.from('feedbacks').select('*').order('created_at', { ascending: false }),
+        userId
+          ? supabase.from('public_reports').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
         supabase.from('projects').select('id, projectName, project_name, municipality, province'),
-        supabase.auth.getUser(),
       ]);
 
       if (feedbackRes.data) {
-        // Show only current user's feedbacks + all public feedbacks
-        const userId = userRes.data?.user?.id;
-        setFeedbacks(feedbackRes.data);
+        // Show only current user's feedbacks
+        const userFeedbacks = userId
+          ? feedbackRes.data.filter(fb => fb.user_id === userId)
+          : feedbackRes.data;
+        setFeedbacks(userFeedbacks);
+      }
+      if (publicReportRes.data) {
+        setPublicReports(publicReportRes.data);
       }
       if (projectRes.data) {
         setProjects(projectRes.data);
@@ -219,202 +234,41 @@ export default function UserFeedback() {
     }
   }
 
-  /* ─── Geolocation ─── */
-  function requestGeoLocation() {
-    if (!navigator.geolocation) {
-      setGeoError('Geolocation is not supported by your browser.');
-      return;
-    }
-    setGeoLoading(true);
-    setGeoError('');
-    // Clear existing watcher
-    if (geoWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(geoWatchRef.current);
-    }
-    // Use watchPosition for realtime GPS updates
-    geoWatchRef.current = navigator.geolocation.watchPosition(
-      (position) => {
-        setGeoLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
-        setGeoLoading(false);
-      },
-      (err) => {
-        setGeoError(`Unable to get location: ${err.message}`);
-        setGeoLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
+  // Combine feedbacks and public reports (that don't already have a linked feedback) into one list
+  const combinedItems = (() => {
+    // Get IDs of public reports that already have a linked feedback
+    const linkedReportIds = new Set(feedbacks.filter(fb => fb.public_report_id).map(fb => fb.public_report_id));
 
-  /* ─── Photo handling ─── */
-  function handlePhotoSelect(e) {
-    const files = Array.from(e.target.files);
-    if (photos.length + files.length > 5) {
-      setError('Maximum 5 photos allowed per feedback.');
-      return;
-    }
-
-    const newPhotos = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
+    // Map feedbacks
+    const fbItems = feedbacks.map(fb => ({
+      ...fb,
+      _type: fb.source === 'public_report' ? 'public_report_feedback' : 'feedback',
+      _sortDate: fb.created_at,
     }));
 
-    setPhotos(prev => [...prev, ...newPhotos]);
-    setError('');
-  }
+    // Only add public reports that are NOT already linked as feedback
+    const prItems = publicReports
+      .filter(pr => !linkedReportIds.has(pr.id))
+      .map(pr => ({
+        id: `pr-${pr.id}`,
+        _originalId: pr.id,
+        _type: 'public_report',
+        _sortDate: pr.created_at,
+        project_name: pr.project_name,
+        type: 'issue',
+        message: pr.description,
+        status: pr.status,
+        created_at: pr.created_at,
+        photo_urls: pr.photo_url ? [pr.photo_url] : [],
+        latitude: pr.latitude,
+        longitude: pr.longitude,
+        verification: pr.verification,
+        municipality: pr.municipality,
+        barangay: pr.barangay,
+      }));
 
-  function removePhoto(index) {
-    setPhotos(prev => {
-      const updated = [...prev];
-      URL.revokeObjectURL(updated[index].preview);
-      updated.splice(index, 1);
-      return updated;
-    });
-  }
-
-  /* ─── Watermark photo with timestamp + GPS ─── */
-  function watermarkPhoto(file) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-
-        const now = new Date();
-        const tsText = now.toLocaleString('en-PH', {
-          year: 'numeric', month: 'short', day: '2-digit',
-          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-        });
-        const gpsText = geoLocation
-          ? `GPS: ${geoLocation.lat.toFixed(6)}, ${geoLocation.lng.toFixed(6)} (\u00b1${Math.round(geoLocation.accuracy || 0)}m)`
-          : '';
-
-        const fontSize = Math.max(14, Math.floor(canvas.width / 50));
-        ctx.font = `bold ${fontSize}px monospace`;
-        ctx.textBaseline = 'bottom';
-
-        const padding = 8;
-        const lineHeight = fontSize + 4;
-        const lines = [tsText, gpsText].filter(Boolean);
-        const maxWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
-        const stripH = lines.length * lineHeight + padding * 2;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-        ctx.fillRect(0, canvas.height - stripH, maxWidth + padding * 2, stripH);
-
-        ctx.fillStyle = '#ffffff';
-        lines.forEach((line, i) => {
-          ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineHeight);
-        });
-
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
-      };
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
-  /* ─── Upload photos to Supabase Storage ─── */
-  async function uploadPhotos() {
-    const urls = [];
-    for (const photo of photos) {
-      // Watermark each photo with timestamp + GPS
-      const watermarked = await watermarkPhoto(photo.file);
-      const fileName = `feedback/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-
-      const { data, error: uploadErr } = await supabase.storage
-        .from('feedback-photos')
-        .upload(fileName, watermarked, {
-          contentType: 'image/jpeg',
-          cacheControl: '3600',
-          upsert: false,
-        });
-
-      if (uploadErr) {
-        console.error('Upload error:', uploadErr);
-        throw new Error(`Failed to upload photo: ${uploadErr.message}`);
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('feedback-photos')
-        .getPublicUrl(fileName);
-
-      urls.push(urlData.publicUrl);
-    }
-    return urls;
-  }
-
-  /* ─── Submit feedback ─── */
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!form.message.trim()) {
-      setError('Please write your feedback message.');
-      return;
-    }
-
-    setSubmitting(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('You must be signed in.');
-
-      // Upload photos if any
-      let photoUrls = [];
-      if (photos.length > 0) {
-        photoUrls = await uploadPhotos();
-      }
-
-      // Find project name
-      const selectedProject = projects.find(p => String(p.id) === String(form.project_id));
-      const projectName = selectedProject
-        ? (selectedProject.projectName || selectedProject.project_name)
-        : null;
-
-      const feedbackData = {
-        user_id: user.id,
-        user_email: user.email,
-        project_id: form.project_id || null,
-        project_name: projectName,
-        type: form.type,
-        message: form.message.trim(),
-        photo_urls: photoUrls,
-        latitude: geoLocation?.lat || null,
-        longitude: geoLocation?.lng || null,
-        geo_accuracy: geoLocation?.accuracy || null,
-        photo_timestamp: new Date().toISOString(),
-        status: 'pending',
-      };
-
-      const { error: insertErr } = await supabase.from('feedbacks').insert([feedbackData]);
-      if (insertErr) throw insertErr;
-
-      // Reset form
-      setForm({ project_id: '', type: 'issue', message: '' });
-      photos.forEach(p => URL.revokeObjectURL(p.preview));
-      setPhotos([]);
-      setGeoLocation(null);
-      // Stop GPS watcher
-      if (geoWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(geoWatchRef.current);
-        geoWatchRef.current = null;
-      }
-      setShowForm(false);
-      setSuccess('Your feedback has been submitted! Thank you for participating.');
-
-      setTimeout(() => setSuccess(''), 5000);
-    } catch (err) {
-      console.error('Submit error:', err);
-      setError(err.message || 'Failed to submit feedback. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    return [...fbItems, ...prItems].sort((a, b) => new Date(b._sortDate) - new Date(a._sortDate));
+  })();
 
   return (
     <UserLayout>
@@ -448,201 +302,18 @@ export default function UserFeedback() {
           </div>
         )}
 
-        {/* ─── Feedback Form ─── */}
+        {/* ─── Location-Verified Feedback Form (PublicReportForm) ─── */}
         {showForm && (
-          <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-zinc-200/60 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-zinc-200/60 overflow-hidden">
             <div className="px-6 py-5 border-b border-zinc-100">
-              <h2 className="font-semibold text-zinc-900">New Feedback</h2>
-              <p className="text-sm text-zinc-500 mt-0.5">Help improve road projects in your community</p>
+              <p className="text-sm font-medium text-emerald-600 uppercase tracking-wider">Location-Verified Feedback</p>
+              <h2 className="font-semibold text-zinc-900 mt-1">Report from the Ground</h2>
+              <p className="text-sm text-zinc-500 mt-0.5">Take a photo and verify your location to submit a report about a road project</p>
             </div>
-
-            <div className="p-6 space-y-5">
-              {/* Project Selection */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1.5">Related Project (optional)</label>
-                <select
-                  value={form.project_id}
-                  onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}
-                  className="w-full border border-zinc-300 rounded-xl px-4 py-2.5 text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-shadow"
-                >
-                  <option value="">— General feedback (no specific project) —</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.projectName || p.project_name} — {p.municipality}, {p.province}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Feedback Type */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1.5">Feedback Type</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {feedbackTypes.map(t => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, type: t.value }))}
-                      className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-                        form.type === t.value
-                          ? t.color + ' ring-2 ring-offset-1 ring-current'
-                          : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Message */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1.5">Your Feedback</label>
-                <textarea
-                  value={form.message}
-                  onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
-                  placeholder="Describe what you observed, any issues, or your suggestion..."
-                  rows={4}
-                  className="w-full border border-zinc-300 rounded-xl px-4 py-3 text-sm resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-shadow"
-                />
-              </div>
-
-              {/* Photo Upload */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1.5">
-                  Photos <span className="text-zinc-400 font-normal">(up to 5 images)</span>
-                </label>
-
-                <div className="flex flex-wrap gap-3">
-                  {/* Photo previews */}
-                  {photos.map((photo, i) => (
-                    <div key={i} className="relative group">
-                      <img
-                        src={photo.preview}
-                        alt={`Upload ${i + 1}`}
-                        className="h-24 w-24 object-cover rounded-xl border border-zinc-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(i)}
-                        className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                      >
-                        <svg className="size-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-
-                  {/* Add photo button */}
-                  {photos.length < 5 && (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="h-24 w-24 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-zinc-300 rounded-xl text-zinc-400 hover:text-emerald-500 hover:border-emerald-300 transition-colors"
-                    >
-                      <Icons.Upload />
-                      <span className="text-[10px] font-medium">Add Photo</span>
-                    </button>
-                  )}
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handlePhotoSelect}
-                  className="hidden"
-                  capture="environment"
-                />
-                <p className="text-xs text-zinc-400 mt-2">You can capture directly from your camera or pick from gallery.</p>
-              </div>
-
-              {/* Geolocation */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-1.5">
-                  Location Geo-Tag <span className="text-zinc-400 font-normal">(optional but recommended)</span>
-                </label>
-
-                {geoLocation ? (
-                  <div className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <div className="size-10 bg-emerald-100 rounded-lg grid place-items-center text-emerald-600 shrink-0">
-                      <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-emerald-800">Live GPS Active</p>
-                      <p className="text-xs text-emerald-600">
-                        {geoLocation.lat.toFixed(6)}, {geoLocation.lng.toFixed(6)}
-                        {geoLocation.accuracy && ` (±${Math.round(geoLocation.accuracy)}m)`}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setGeoLocation(null); if (geoWatchRef.current !== null) { navigator.geolocation.clearWatch(geoWatchRef.current); geoWatchRef.current = null; } }}
-                      className="text-emerald-500 hover:text-emerald-700 text-xs font-medium"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={requestGeoLocation}
-                    disabled={geoLoading}
-                    className="flex items-center gap-3 w-full p-3 border border-zinc-300 rounded-xl text-left hover:bg-zinc-50 transition-colors disabled:opacity-60"
-                  >
-                    <div className="size-10 bg-zinc-100 rounded-lg grid place-items-center text-zinc-500 shrink-0">
-                      <Icons.MapPin />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-zinc-700">
-                        {geoLoading ? 'Getting your location...' : 'Tag your current location'}
-                      </p>
-                      <p className="text-xs text-zinc-400">
-                        Helps verify where the concern was observed
-                      </p>
-                    </div>
-                    {geoLoading && (
-                      <div className="ml-auto animate-spin size-5 border-2 border-zinc-300 border-t-emerald-600 rounded-full" />
-                    )}
-                  </button>
-                )}
-                {geoError && <p className="text-xs text-red-500 mt-1.5">{geoError}</p>}
-              </div>
+            <div className="p-6">
+              <PublicReportForm />
             </div>
-
-            {/* Submit Button */}
-            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 text-sm font-medium text-zinc-600 hover:text-zinc-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting || !form.message.trim()}
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
-              >
-                {submitting ? (
-                  <>
-                    <div className="animate-spin size-4 border-2 border-white/30 border-t-white rounded-full" />
-                    Submitting...
-                  </>
-                ) : (
-                  <>
-                    <Icons.Send />
-                    Submit Feedback
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+          </div>
         )}
 
         {/* ─── Info Banner ─── */}
@@ -661,17 +332,17 @@ export default function UserFeedback() {
           </div>
         )}
 
-        {/* ─── Feedbacks List ─── */}
+        {/* ─── Combined Feedbacks & Reports List ─── */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-zinc-900">Recent Feedback</h2>
-            <span className="text-sm text-zinc-400">{feedbacks.length} total</span>
+            <span className="text-sm text-zinc-400">{combinedItems.length} total</span>
           </div>
 
           <div className="space-y-4">
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => <FeedbackSkeleton key={i} />)
-            ) : feedbacks.length === 0 ? (
+            ) : combinedItems.length === 0 ? (
               <div className="bg-white rounded-2xl border border-zinc-200/60 py-16 text-center">
                 <div className="mx-auto size-14 bg-zinc-100 rounded-xl grid place-items-center text-zinc-400 mb-3">
                   <Icons.Camera />
@@ -680,7 +351,9 @@ export default function UserFeedback() {
                 <p className="text-sm text-zinc-500 mt-1">Be the first to share your thoughts!</p>
               </div>
             ) : (
-              feedbacks.map(fb => <FeedbackCard key={fb.id} feedback={fb} />)
+              combinedItems.map(item => (
+                <FeedbackCard key={item.id} feedback={item} />
+              ))
             )}
           </div>
         </section>

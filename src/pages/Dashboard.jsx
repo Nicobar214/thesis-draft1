@@ -133,6 +133,8 @@ export default function Dashboard() {
   }, []);
 
   // Update public report status (admin action)
+  // If the public report belongs to a registered user, also create/update
+  // a feedback entry so it appears on their Community Feedback page.
   const updatePublicReportStatus = async (reportId, newStatus) => {
     try {
       const { error } = await supabase
@@ -140,7 +142,45 @@ export default function Dashboard() {
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', reportId);
       if (error) throw error;
+
+      // Find the report to check if it belongs to a registered user
+      const report = publicReports.find(r => r.id === reportId);
+      if (report && report.user_id) {
+        // Upsert a feedback entry so it shows in the user's Community Feedback page
+        // Check if a linked feedback already exists for this public report
+        const { data: existingFb } = await supabase
+          .from('feedbacks')
+          .select('id')
+          .eq('public_report_id', reportId)
+          .maybeSingle();
+
+        if (existingFb) {
+          // Update the existing linked feedback status
+          await supabase
+            .from('feedbacks')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', existingFb.id);
+        } else {
+          // Create a new feedback entry linked to this public report
+          await supabase.from('feedbacks').insert([{
+            user_id: report.user_id,
+            user_email: report.contact_info || null,
+            project_id: report.project_id || null,
+            project_name: report.project_name || null,
+            type: 'issue',
+            message: report.description,
+            photo_urls: report.photo_url ? [report.photo_url] : [],
+            latitude: report.latitude || null,
+            longitude: report.longitude || null,
+            status: newStatus,
+            public_report_id: reportId,
+            source: 'public_report',
+          }]);
+        }
+      }
+
       await fetchPublicReports();
+      await fetchFeedbacks();
       showNotification(`Public report marked as ${newStatus}`);
     } catch (err) {
       console.error('Failed to update public report:', err.message);
@@ -245,8 +285,31 @@ export default function Dashboard() {
     const avgProgress = projects.length > 0 
       ? Math.round(projects.reduce((sum, p) => sum + (p.progress || 0), 0) / projects.length)
       : 0;
+    const totalReports = publicReports.length;
+    const totalFeedbacks = feedbacks.length;
     
-    return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress };
+    return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports, totalFeedbacks };
+  }, [projects, publicReports, feedbacks]);
+
+  // Classify projects for Reports tab: Completed, Delayed, Ongoing
+  const classifiedProjects = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const completedProjects = [];
+    const delayedProjects = [];
+    const ongoingProjects = [];
+
+    projects.forEach(p => {
+      if (p.status === 'Completed') {
+        completedProjects.push(p);
+      } else if (p.expectedEndDate && new Date(p.expectedEndDate) < today && p.status !== 'Cancelled') {
+        delayedProjects.push(p);
+      } else if (['In Progress', 'Planning', 'Bidding', 'On Hold'].includes(p.status)) {
+        ongoingProjects.push(p);
+      }
+    });
+
+    return { completedProjects, delayedProjects, ongoingProjects };
   }, [projects]);
 
   // Form handlers
@@ -693,6 +756,37 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* Reports & Feedback Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-8 mb-10">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-violet-50 to-violet-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-violet-700 bg-violet-50 px-2.5 py-1.5 rounded-lg tracking-wider">REPORTS</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{metrics.totalReports}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">Public Reports Submitted</p>
+                  <p className="text-xs text-slate-400 mt-1">{publicReports.filter(r => r.status === 'pending').length} pending review</p>
+                </div>
+
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-pink-50 to-pink-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-pink-700 bg-pink-50 px-2.5 py-1.5 rounded-lg tracking-wider">FEEDBACK</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{metrics.totalFeedbacks}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">User Feedback Submitted</p>
+                  <p className="text-xs text-slate-400 mt-1">{feedbacks.filter(f => f.status === 'pending').length} pending review</p>
+                </div>
+              </div>
+
               {/* Projects Table */}
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-6 sm:px-8 py-6 sm:py-7 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
@@ -1047,36 +1141,103 @@ export default function Dashboard() {
           )}
 
           {/* Reports Tab */}
-          {activeTab === 'reports' && (
-            <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-8 py-7 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Project Reports</h2>
-                <p className="text-sm text-slate-500 mt-1.5">Generate and download project reports</p>
-              </div>
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {[
-                    { title: 'Project Summary Report', desc: 'Overview of all active projects', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-                    { title: 'Budget Utilization Report', desc: 'Financial allocation and spending', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
-                    { title: 'Progress Report', desc: 'Completion status of all projects', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-                  ].map((report, index) => (
-                    <div key={index} className="bg-white border border-slate-200/60 rounded-2xl p-7 hover:shadow-lg hover:border-slate-300/60 transition-all duration-300">
-                      <div className="w-14 h-14 bg-gradient-to-br from-teal-50 to-teal-100 rounded-2xl flex items-center justify-center mb-5">
-                        <svg className="w-7 h-7 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={report.icon} />
-                        </svg>
-                      </div>
-                      <h3 className="font-bold text-lg text-slate-900 mb-2">{report.title}</h3>
-                      <p className="text-sm text-slate-500 mb-6">{report.desc}</p>
-                      <button className="w-full px-5 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-semibold transition-colors duration-200">
-                        Generate Report
-                      </button>
+          {activeTab === 'reports' && (() => {
+            const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+            const today = new Date(); today.setHours(0,0,0,0);
+
+            const renderProjectTable = (title, list, color, emptyMsg) => (
+              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r from-${color}-50 to-white flex items-center justify-between`}>
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl bg-${color}-100 text-${color}-600`}>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+                      <p className="text-sm text-slate-500">{list.length} project{list.length !== 1 ? 's' : ''}</p>
                     </div>
-                  ))}
+                  </div>
                 </div>
+                {list.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <p className="text-sm text-slate-500">{emptyMsg}</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-50/50">
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Start Date</th>
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Expected End</th>
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {list.map((p) => {
+                          const isOverdue = p.expectedEndDate && new Date(p.expectedEndDate) < today && p.status !== 'Completed';
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4">
+                                <p className="font-semibold text-sm text-slate-900">{p.projectName}</p>
+                                <p className="text-xs text-slate-400 font-mono mt-0.5">{p.projectCode}</p>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{p.barangay}, {p.municipality}</td>
+                              <td className="px-6 py-4 text-sm text-slate-600">{fmtDateShort(p.startDate)}</td>
+                              <td className="px-6 py-4">
+                                <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>{fmtDateShort(p.expectedEndDate)}</span>
+                                {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${getStatusBadge(p.status)}`}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                    <div className={`h-2 rounded-full ${p.progress === 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${p.progress || 0}%` }} />
+                                  </div>
+                                  <span className="text-xs font-bold text-slate-700">{p.progress || 0}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+
+            return (
+              <div className="space-y-8">
+                {/* Summary stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-6">
+                    <p className="text-3xl font-bold text-emerald-700">{classifiedProjects.completedProjects.length}</p>
+                    <p className="text-sm text-emerald-600 mt-1 font-medium">Completed Projects</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-200/60 rounded-2xl p-6">
+                    <p className="text-3xl font-bold text-red-700">{classifiedProjects.delayedProjects.length}</p>
+                    <p className="text-sm text-red-600 mt-1 font-medium">Delayed Projects</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-6">
+                    <p className="text-3xl font-bold text-blue-700">{classifiedProjects.ongoingProjects.length}</p>
+                    <p className="text-sm text-blue-600 mt-1 font-medium">Ongoing Projects</p>
+                  </div>
+                </div>
+
+                {renderProjectTable('Completed Projects', classifiedProjects.completedProjects, 'emerald', 'No completed projects yet.')}
+                {renderProjectTable('Delayed Projects', classifiedProjects.delayedProjects, 'red', 'No delayed projects — all on schedule!')}
+                {renderProjectTable('Ongoing Projects', classifiedProjects.ongoingProjects, 'blue', 'No ongoing projects.')}
+              </div>
+            );
+          })()}
 
           {/* Feedback Tab */}
           {activeTab === 'feedback' && (() => {
