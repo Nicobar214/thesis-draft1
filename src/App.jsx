@@ -7,6 +7,7 @@ import UserDashboard from "./pages/UserDashboard";
 import UserProjects from "./pages/UserProjects";
 import UserReports from "./pages/UserReports";
 import UserFeedback from "./pages/UserFeedback";
+import UserFMRProjects from "./pages/UserFMRProjects";
 import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -37,6 +38,11 @@ function App() {
         <Route path="/user/feedback" element={
           <ProtectedRoute requiredRole="user">
             <UserFeedback />
+          </ProtectedRoute>
+        } />
+        <Route path="/user/fmr-projects" element={
+          <ProtectedRoute requiredRole="user">
+            <UserFMRProjects />
           </ProtectedRoute>
         } />
 

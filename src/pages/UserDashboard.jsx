@@ -160,6 +160,7 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, inProgress: 0, completed: 0, reports: 0 });
+  const [fmrStats, setFmrStats] = useState({ total: 0, ongoing: 0, completed: 0, proposed: 0 });
   const [projects, setProjects] = useState([]);
 
   // Data fetching with realtime
@@ -182,6 +183,16 @@ export default function UserDashboard() {
           inProgress: data.filter(p => p.status === 'In Progress').length,
           completed: data.filter(p => p.status === 'Completed').length,
           reports: 0,
+        });
+      }
+      // Also fetch FMR stats
+      const { data: fmrData } = await supabase.from('fmr_projects').select('status');
+      if (fmrData) {
+        setFmrStats({
+          total: fmrData.length,
+          ongoing: fmrData.filter(p => p.status === 'On-Going').length,
+          completed: fmrData.filter(p => p.status === 'Completed').length,
+          proposed: fmrData.filter(p => p.status === 'Proposed').length,
         });
       }
     } catch (e) {
@@ -286,6 +297,24 @@ export default function UserDashboard() {
               <div>
                 <p className="font-semibold text-zinc-900">Browse Projects</p>
                 <p className="text-sm text-zinc-500">View all FMR projects</p>
+              </div>
+            </Link>
+
+            {/* FMR Projects CTA */}
+            <Link
+              to="/user/fmr-projects"
+              className="flex items-center gap-4 p-5 bg-white hover:bg-zinc-50 rounded-2xl border border-zinc-200/60 transition-colors"
+            >
+              <div className="size-11 bg-emerald-100 rounded-xl grid place-items-center text-emerald-600 shrink-0">
+                <svg className="size-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900">DA FMR Projects</p>
+                <p className="text-sm text-zinc-500">
+                  {fmrStats.total > 0 ? `${fmrStats.ongoing} on-going, ${fmrStats.completed} completed` : 'View DA road projects'}
+                </p>
               </div>
             </Link>
 
