@@ -77,10 +77,20 @@ export default function PublicReportForm() {
   // ── Photo timestamp ──
   const [photoTimestamp, setPhotoTimestamp] = useState(null);
 
+  // ── Current user (if logged in) ──
+  const [currentUser, setCurrentUser] = useState(null);
+
   // ── Submission ──
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
+
+  // ── Check if user is authenticated ──
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUser(user);
+    });
+  }, []);
 
   // ────────────────────────────────────────────────────────
   // GPS Request
@@ -289,7 +299,7 @@ export default function PublicReportForm() {
       );
 
       // 3. Insert report
-      const { error: insertErr } = await supabase.from('public_reports').insert({
+      const reportPayload = {
         full_name: fullName.trim() || 'Anonymous',
         contact_info: contactInfo.trim(),
         region: REGION,
@@ -307,7 +317,12 @@ export default function PublicReportForm() {
         verification,
         description: description.trim(),
         source: fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
-      });
+      };
+      // Link to user account if logged in
+      if (currentUser) {
+        reportPayload.user_id = currentUser.id;
+      }
+      const { error: insertErr } = await supabase.from('public_reports').insert(reportPayload);
 
       if (insertErr) throw insertErr;
       setSubmitted(true);

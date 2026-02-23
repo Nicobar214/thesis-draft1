@@ -7,6 +7,7 @@ import UserDashboard from "./pages/UserDashboard";
 import UserProjects from "./pages/UserProjects";
 import UserReports from "./pages/UserReports";
 import UserFeedback from "./pages/UserFeedback";
+import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/signin" element={<AuthPage mode="signin" />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
+        <Route path="/reports" element={<PublicReportsPage />} />
         <Route path="/user" element={
           <ProtectedRoute requiredRole="user">
             <UserDashboard />

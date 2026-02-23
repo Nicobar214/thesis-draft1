@@ -1,7 +1,6 @@
 /* LandingPage.jsx - Professional Redesign */
 import { Link } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
-import PublicReportForm from '../components/PublicReportForm';
 
 export default function LandingPage() {
   const observerRef = useRef(null);
@@ -55,7 +54,7 @@ export default function LandingPage() {
               <a href="#features" className="text-slate-600 hover:text-slate-900 transition text-sm">Features</a>
               <a href="#how-it-works" className="text-slate-600 hover:text-slate-900 transition text-sm">How It Works</a>
               <a href="#impact" className="text-slate-600 hover:text-slate-900 transition text-sm">Impact</a>
-              <a href="#public-report" className="text-slate-600 hover:text-slate-900 transition text-sm">Report</a>
+              <Link to="/reports" className="text-slate-600 hover:text-slate-900 transition text-sm">Report</Link>
             </div>
 
             <div className="flex items-center gap-3">
@@ -113,6 +112,15 @@ export default function LandingPage() {
                   <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                   </svg>
+                </Link>
+                <Link
+                  to="/reports"
+                  className="inline-flex items-center justify-center border-2 border-white/30 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/10 transition group"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Submit a Report
                 </Link>
               </div>
 
@@ -245,30 +253,6 @@ export default function LandingPage() {
               <div className="text-4xl sm:text-5xl font-extrabold text-cyan-400 mb-1 tracking-tight">95%</div>
               <p className="text-slate-400 text-sm font-medium">Data Accuracy</p>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Public Reports / Feedback Section */}
-      <section id="public-report" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-white border-t border-slate-100">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-              <svg className="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.282 48.282 0 0 0 5.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium text-emerald-600 uppercase tracking-wider mb-3">Location-Verified Feedback</p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-              Report from the Ground
-            </h2>
-            <p className="text-lg text-slate-600 max-w-xl mx-auto">
-              Capture a live photo and verify your GPS location to submit on-site feedback about farm-to-market road projects in Iloilo. No account required.
-            </p>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8">
-            <PublicReportForm />
           </div>
         </div>
       </section>
