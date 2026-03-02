@@ -318,6 +318,23 @@ export default function UserDashboard() {
               </div>
             </Link>
 
+            {/* Map View CTA */}
+            <Link
+              to="/user/map"
+              className="flex items-center gap-4 p-5 bg-white hover:bg-zinc-50 rounded-2xl border border-zinc-200/60 transition-colors"
+            >
+              <div className="size-11 bg-sky-100 rounded-xl grid place-items-center text-sky-600 shrink-0">
+                <svg className="size-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900">Map View</p>
+                <p className="text-sm text-zinc-500">See project locations on map</p>
+              </div>
+            </Link>
+
             {/* Info Card */}
             <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
               <p className="font-medium text-sky-900 mb-1">Your voice matters</p>

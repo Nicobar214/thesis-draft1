@@ -8,6 +8,7 @@ import UserProjects from "./pages/UserProjects";
 import UserReports from "./pages/UserReports";
 import UserFeedback from "./pages/UserFeedback";
 import UserFMRProjects from "./pages/UserFMRProjects";
+import UserMapView from "./pages/UserMapView";
 import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -43,6 +44,11 @@ function App() {
         <Route path="/user/fmr-projects" element={
           <ProtectedRoute requiredRole="user">
             <UserFMRProjects />
+          </ProtectedRoute>
+        } />
+        <Route path="/user/map" element={
+          <ProtectedRoute requiredRole="user">
+            <UserMapView />
           </ProtectedRoute>
         } />
 
