@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
 import UserLayout from '../components/UserLayout';
 import 'leaflet/dist/leaflet.css';
@@ -69,9 +69,19 @@ const Icons = {
   ),
 };
 
+/* ─── Normalize status for consistent filtering ─── */
+function normalizeStatus(s) {
+  if (!s) return '';
+  const lower = s.toLowerCase().replace(/[-\s]/g, '');
+  if (lower === 'ongoing') return 'On-Going';
+  if (lower === 'completed') return 'Completed';
+  if (lower === 'proposed') return 'Proposed';
+  return s;
+}
+
 /* ─── Status color helpers ─── */
 function getStatusColor(status) {
-  switch (status) {
+  switch (normalizeStatus(status)) {
     case 'Completed': return { fill: '#10b981', stroke: '#059669', bg: 'bg-emerald-500' };
     case 'On-Going':  return { fill: '#f59e0b', stroke: '#d97706', bg: 'bg-amber-500' };
     case 'Proposed':  return { fill: '#3b82f6', stroke: '#2563eb', bg: 'bg-blue-500' };
@@ -80,7 +90,7 @@ function getStatusColor(status) {
 }
 
 function getStatusBadge(status) {
-  switch (status) {
+  switch (normalizeStatus(status)) {
     case 'Completed': return 'bg-emerald-100 text-emerald-700';
     case 'On-Going':  return 'bg-amber-100 text-amber-700';
     case 'Proposed':  return 'bg-sky-100 text-sky-700';
@@ -113,7 +123,7 @@ const statusFilters = ['All', 'Completed', 'On-Going', 'Proposed'];
 
 /* ─── Year options from data ─── */
 function getYearOptions(projects) {
-  const years = [...new Set(projects.map(p => p.year_funded).filter(Boolean))].sort((a, b) => b - a);
+  const years = [...new Set(projects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
   return years;
 }
 
@@ -169,8 +179,8 @@ export default function UserMapView() {
       const muni = (p.municipality || '').toLowerCase();
 
       const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-      const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
-      const matchesYear = yearFilter === 'All' || String(p.year_funded) === yearFilter;
+      const matchesStatus = statusFilter === 'All' || normalizeStatus(p.status) === statusFilter;
+      const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
       return matchesSearch && matchesStatus && matchesYear;
     });
   }, [projects, search, statusFilter, yearFilter]);
@@ -184,9 +194,9 @@ export default function UserMapView() {
   const stats = useMemo(() => ({
     total: filtered.length,
     mapped: mappable.length,
-    completed: filtered.filter(p => p.status === 'Completed').length,
-    ongoing: filtered.filter(p => p.status === 'On-Going').length,
-    proposed: filtered.filter(p => p.status === 'Proposed').length,
+    completed: filtered.filter(p => normalizeStatus(p.status) === 'Completed').length,
+    ongoing: filtered.filter(p => normalizeStatus(p.status) === 'On-Going').length,
+    proposed: filtered.filter(p => normalizeStatus(p.status) === 'Proposed').length,
     totalKm: filtered.reduce((s, p) => s + (p.project_length_km || 0), 0).toFixed(2),
   }), [filtered, mappable]);
 
@@ -335,6 +345,11 @@ export default function UserMapView() {
                         },
                       }}
                     >
+                      <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                        <span style={{ fontWeight: 600, fontSize: '12px' }}>{project.project_name}</span>
+                        <br />
+                        <span style={{ fontSize: '11px', color: '#6b7280' }}>{normalizeStatus(project.status)} · {project.municipality || 'N/A'}</span>
+                      </Tooltip>
                       <Popup maxWidth={320} className="custom-popup">
                         <div className="p-1">
                           <h3 className="font-semibold text-zinc-900 text-sm leading-snug mb-2">

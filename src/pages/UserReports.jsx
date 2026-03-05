@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import UserLayout from '../components/UserLayout';
+import PublicReportForm from '../components/PublicReportForm';
 
 /* ─── Icons ─── */
 const Icons = {
@@ -103,6 +103,7 @@ function UserReports() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [showReportForm, setShowReportForm] = useState(false);
 
   /* ── Get current user & fetch their reports ── */
   useEffect(() => {
@@ -183,13 +184,13 @@ function UserReports() {
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">My Reports</h1>
             <p className="mt-1 text-zinc-500">Track the status of your submitted reports</p>
           </section>
-          <Link
-            to="/reports"
+          <button
+            onClick={() => setShowReportForm(true)}
             className="inline-flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-emerald-700 transition text-sm shrink-0 self-start sm:self-auto"
           >
             <Icons.Plus />
             Submit New Report
-          </Link>
+          </button>
         </div>
 
         {/* Quick stats */}
@@ -266,13 +267,13 @@ function UserReports() {
                 : 'Try adjusting your search or filters'}
             </p>
             {reports.length === 0 && (
-              <Link
-                to="/reports"
+              <button
+                onClick={() => setShowReportForm(true)}
                 className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-emerald-600 hover:text-emerald-700"
               >
-                Go to Reports Page
+                Submit a Report
                 <Icons.ExternalLink />
-              </Link>
+              </button>
             )}
           </div>
         )}
@@ -379,6 +380,28 @@ function UserReports() {
                   <img src={selected.photo_url} alt="Report photo" className="w-full rounded-xl border border-zinc-200" />
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Report form modal */}
+      {showReportForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowReportForm(false)}>
+          <div
+            className="bg-white border border-zinc-200 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 pb-0">
+              <div>
+                <p className="text-sm font-medium text-emerald-600 uppercase tracking-wider">Location-Verified Feedback</p>
+                <h3 className="text-lg font-semibold text-zinc-900 mt-1">Submit a Report</h3>
+              </div>
+              <button onClick={() => setShowReportForm(false)} className="text-zinc-400 hover:text-zinc-700 transition p-1 -mr-1">
+                <Icons.X />
+              </button>
+            </div>
+            <div className="p-6">
+              <PublicReportForm />
             </div>
           </div>
         </div>

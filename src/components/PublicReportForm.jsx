@@ -142,7 +142,7 @@ export default function PublicReportForm() {
   }, []);
 
   // ────────────────────────────────────────────────────────
-  // Fetch projects for selected barangay
+  // Fetch projects for selected barangay (both projects + fmr_projects)
   // ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!barangay || !municipality) {
@@ -153,15 +153,44 @@ export default function PublicReportForm() {
     (async () => {
       setProjectsLoading(true);
       try {
-        const { data, error: fetchErr } = await supabase
+        // Fetch from projects table
+        const { data: projData, error: projErr } = await supabase
           .from('projects')
           .select('id, "projectName", latitude, longitude, barangay, municipality, status')
           .ilike('municipality', `%${municipality}%`)
           .ilike('barangay', `%${barangay}%`)
           .order('projectName', { ascending: true });
 
-        if (fetchErr) throw fetchErr;
-        if (!cancelled) setProjects(data || []);
+        if (projErr) throw projErr;
+
+        // Fetch from fmr_projects table
+        const { data: fmrData, error: fmrErr } = await supabase
+          .from('fmr_projects')
+          .select('id, project_name, start_latitude, start_longitude, location, municipality, status')
+          .ilike('municipality', `%${municipality}%`)
+          .order('project_name', { ascending: true });
+
+        if (fmrErr) throw fmrErr;
+
+        // Include all FMR projects in the municipality (location field may not exactly match barangay)
+        const normalizedFmr = (fmrData || []).map((f) => ({
+          id: `fmr-${f.id}`,
+          projectName: f.project_name,
+          latitude: f.start_latitude,
+          longitude: f.start_longitude,
+          barangay: f.location,
+          municipality: f.municipality,
+          status: f.status,
+          _source: 'FMR',
+        }));
+
+        // Normalize projects table entries
+        const normalizedProj = (projData || []).map((p) => ({
+          ...p,
+          _source: 'Project',
+        }));
+
+        if (!cancelled) setProjects([...normalizedFmr, ...normalizedProj]);
       } catch (err) {
         console.error('Error loading projects:', err.message);
         if (!cancelled) setProjects([]);
@@ -541,8 +570,8 @@ export default function PublicReportForm() {
           ) : projects.length === 0 ? (
             <div className="py-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
               <svg className="w-10 h-10 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" /></svg>
-              <p className="text-sm font-medium text-slate-900">No registered projects found</p>
-              <p className="text-xs text-slate-500 mt-1">No farm-to-market road projects are registered in this barangay yet.</p>
+              <p className="text-sm font-medium text-slate-900">No projects found</p>
+              <p className="text-xs text-slate-500 mt-1">No projects or FMR road projects are registered in this area yet.</p>
             </div>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -552,6 +581,7 @@ export default function PublicReportForm() {
                   <p className="text-sm font-semibold text-slate-900">{p.projectName}</p>
                   <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'In Progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{p.status}</span>
+                    {p._source === 'FMR' && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">FMR</span>}
                     {p.latitude && p.longitude && <span>GPS: {Number(p.latitude).toFixed(4)}, {Number(p.longitude).toFixed(4)}</span>}
                   </div>
                 </button>

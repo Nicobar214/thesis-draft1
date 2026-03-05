@@ -4,7 +4,6 @@ import AuthPage from "./pages/AuthPage";
 import AdminAuthPage from "./pages/AdminAuthPage";
 import Dashboard from "./pages/Dashboard";
 import UserDashboard from "./pages/UserDashboard";
-import UserProjects from "./pages/UserProjects";
 import UserReports from "./pages/UserReports";
 import UserFeedback from "./pages/UserFeedback";
 import UserFMRProjects from "./pages/UserFMRProjects";
@@ -24,11 +23,6 @@ function App() {
         <Route path="/user" element={
           <ProtectedRoute requiredRole="user">
             <UserDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/user/projects" element={
-          <ProtectedRoute requiredRole="user">
-            <UserProjects />
           </ProtectedRoute>
         } />
         <Route path="/user/reports" element={

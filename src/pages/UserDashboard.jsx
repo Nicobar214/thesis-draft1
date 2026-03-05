@@ -234,7 +234,7 @@ export default function UserDashboard() {
                 <h2 className="font-semibold text-zinc-900">Recent Projects</h2>
                 <p className="text-sm text-zinc-500">Latest updates</p>
               </div>
-              <Link to="/user/projects" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+              <Link to="/user/fmr-projects" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700">
                 View all <Icons.ArrowRight />
               </Link>
             </header>
@@ -286,16 +286,16 @@ export default function UserDashboard() {
               </div>
             </Link>
 
-            {/* Browse Projects CTA */}
+            {/* Browse FMR Projects CTA */}
             <Link
-              to="/user/projects"
+              to="/user/fmr-projects"
               className="flex items-center gap-4 p-5 bg-white hover:bg-zinc-50 rounded-2xl border border-zinc-200/60 transition-colors"
             >
               <div className="size-11 bg-zinc-100 rounded-xl grid place-items-center text-zinc-500">
                 <Icons.Folder />
               </div>
               <div>
-                <p className="font-semibold text-zinc-900">Browse Projects</p>
+                <p className="font-semibold text-zinc-900">Browse FMR Projects</p>
                 <p className="text-sm text-zinc-500">View all FMR projects</p>
               </div>
             </Link>

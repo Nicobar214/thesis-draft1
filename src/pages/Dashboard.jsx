@@ -3,6 +3,44 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+
+/* ─── FMR Status helpers (matches user-side) ─── */
+function normalizeFmrStatus(s) {
+  if (!s) return '';
+  const lower = s.toLowerCase().replace(/[-\s]/g, '');
+  if (lower === 'ongoing') return 'On-Going';
+  if (lower === 'completed') return 'Completed';
+  if (lower === 'proposed') return 'Proposed';
+  return s;
+}
+
+function getFmrStatusColor(status) {
+  switch (normalizeFmrStatus(status)) {
+    case 'Completed': return { fill: '#10b981', stroke: '#059669' };
+    case 'On-Going':  return { fill: '#f59e0b', stroke: '#d97706' };
+    case 'Proposed':  return { fill: '#3b82f6', stroke: '#2563eb' };
+    default:          return { fill: '#6b7280', stroke: '#4b5563' };
+  }
+}
+
+/* ─── Map bounds fitter for admin ─── */
+function AdminFitBounds({ projects }) {
+  const map = useMap();
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const lats = projects.map(p => p.start_latitude).filter(Boolean);
+    const lngs = projects.map(p => p.start_longitude).filter(Boolean);
+    if (lats.length === 0) return;
+    const bounds = [
+      [Math.min(...lats) - 0.05, Math.min(...lngs) - 0.05],
+      [Math.max(...lats) + 0.05, Math.max(...lngs) + 0.05],
+    ];
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }, [projects, map]);
+  return null;
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -39,6 +77,30 @@ export default function Dashboard() {
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportSearch, setPublicReportSearch] = useState('');
   const [selectedPublicReport, setSelectedPublicReport] = useState(null);
+
+  // FMR Projects state (synced from user side - DA data)
+  const [fmrProjects, setFmrProjects] = useState([]);
+  const [fmrLoading, setFmrLoading] = useState(false);
+  const [adminMapSearch, setAdminMapSearch] = useState('');
+  const [adminMapStatusFilter, setAdminMapStatusFilter] = useState('All');
+  const [adminMapYearFilter, setAdminMapYearFilter] = useState('All');
+  const [adminMapSelectedProject, setAdminMapSelectedProject] = useState(null);
+
+  // FMR CRUD state (edit / delete)
+  const [showFmrEditModal, setShowFmrEditModal] = useState(false);
+  const [showFmrDeleteModal, setShowFmrDeleteModal] = useState(false);
+  const [selectedFmrProject, setSelectedFmrProject] = useState(null);
+  const emptyFmrForm = {
+    project_name: '', status: 'Proposed', year_funded: '', municipality: '', province: 'Iloilo',
+    accomplishment: '', project_length_km: '', start_latitude: '', start_longitude: '',
+    end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', location: '', remarks: ''
+  };
+  const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
+
+  // FMR projects-tab filter state
+  const [fmrProjectSearch, setFmrProjectSearch] = useState('');
+  const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('All');
+  const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
 
   // Project feedback viewer state (admin: see all feedback linked to a project)
   const [projectFeedbackModal, setProjectFeedbackModal] = useState(null); // holds the project object
@@ -129,6 +191,23 @@ export default function Dashboard() {
       console.error('Error fetching public reports:', err.message);
     } finally {
       setPublicReportsLoading(false);
+    }
+  }, []);
+
+  // Fetch FMR projects (DA data - synced from user side)
+  const fetchFmrProjects = useCallback(async () => {
+    setFmrLoading(true);
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('fmr_projects')
+        .select('*')
+        .order('year_funded', { ascending: false });
+      if (fetchErr) throw fetchErr;
+      setFmrProjects(data || []);
+    } catch (err) {
+      console.error('Error fetching FMR projects:', err.message);
+    } finally {
+      setFmrLoading(false);
     }
   }, []);
 
@@ -228,6 +307,7 @@ export default function Dashboard() {
     fetchProjects();
     fetchFeedbacks();
     fetchPublicReports();
+    fetchFmrProjects();
 
     // Real-time subscription for projects
     const projectChannel = supabase
@@ -247,12 +327,19 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchPublicReports())
       .subscribe();
 
+    // Real-time subscription for FMR projects
+    const fmrChannel = supabase
+      .channel('admin-fmr-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchFmrProjects())
+      .subscribe();
+
     return () => {
       supabase.removeChannel(projectChannel);
       supabase.removeChannel(feedbackChannel);
       supabase.removeChannel(publicReportsChannel);
+      supabase.removeChannel(fmrChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
@@ -452,6 +539,86 @@ export default function Dashboard() {
     setShowDeleteModal(true);
   };
 
+  // ─── FMR CRUD Handlers ───
+  const handleFmrInputChange = (e) => {
+    const { name, value } = e.target;
+    setFmrFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const openFmrEditModal = (project) => {
+    setSelectedFmrProject(project);
+    setFmrFormData({
+      project_name: project.project_name || '',
+      status: normalizeFmrStatus(project.status) || 'Proposed',
+      year_funded: project.year_funded?.toString() || '',
+      municipality: project.municipality || '',
+      province: project.province || 'Iloilo',
+      accomplishment: project.accomplishment?.toString() || '',
+      project_length_km: project.project_length_km?.toString() || '',
+      start_latitude: project.start_latitude?.toString() || '',
+      start_longitude: project.start_longitude?.toString() || '',
+      end_latitude: project.end_latitude?.toString() || '',
+      end_longitude: project.end_longitude?.toString() || '',
+      date_completed: project.date_completed || '',
+      target_completion_date: project.target_completion_date || '',
+      location: project.location || '',
+      remarks: project.remarks || ''
+    });
+    setShowFmrEditModal(true);
+  };
+
+  const openFmrDeleteModal = (project) => {
+    setSelectedFmrProject(project);
+    setShowFmrDeleteModal(true);
+  };
+
+  const handleEditFmrProject = async (e) => {
+    e.preventDefault();
+    const payload = {
+      project_name: fmrFormData.project_name,
+      status: fmrFormData.status,
+      year_funded: fmrFormData.year_funded ? parseInt(fmrFormData.year_funded) : null,
+      municipality: fmrFormData.municipality,
+      province: fmrFormData.province,
+      accomplishment: fmrFormData.accomplishment ? parseFloat(fmrFormData.accomplishment) : null,
+      project_length_km: fmrFormData.project_length_km ? parseFloat(fmrFormData.project_length_km) : null,
+      start_latitude: fmrFormData.start_latitude ? parseFloat(fmrFormData.start_latitude) : null,
+      start_longitude: fmrFormData.start_longitude ? parseFloat(fmrFormData.start_longitude) : null,
+      end_latitude: fmrFormData.end_latitude ? parseFloat(fmrFormData.end_latitude) : null,
+      end_longitude: fmrFormData.end_longitude ? parseFloat(fmrFormData.end_longitude) : null,
+      date_completed: fmrFormData.date_completed || null,
+      target_completion_date: fmrFormData.target_completion_date || null,
+      location: fmrFormData.location,
+      remarks: fmrFormData.remarks
+    };
+    try {
+      const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
+      if (error) throw error;
+      await fetchFmrProjects();
+      setShowFmrEditModal(false);
+      setSelectedFmrProject(null);
+      setFmrFormData(emptyFmrForm);
+      showNotification('FMR project updated successfully!');
+    } catch (err) {
+      console.error('Failed to update FMR project:', err.message);
+      showNotification(`Failed to update FMR project: ${err.message}`, 'error');
+    }
+  };
+
+  const handleDeleteFmrProject = async () => {
+    try {
+      const { error } = await supabase.from('fmr_projects').delete().eq('id', selectedFmrProject.id);
+      if (error) throw error;
+      await fetchFmrProjects();
+      setShowFmrDeleteModal(false);
+      setSelectedFmrProject(null);
+      showNotification('FMR project deleted successfully!', 'error');
+    } catch (err) {
+      console.error('Failed to delete FMR project:', err.message);
+      showNotification(`Failed to delete FMR project: ${err.message}`, 'error');
+    }
+  };
+
   // Format currency
   const formatCurrency = (amount) => {
     if (!amount) return '₱0';
@@ -642,7 +809,7 @@ export default function Dashboard() {
             <div className="pl-12 lg:pl-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                 {activeTab === 'dashboard' && 'Dashboard Overview'}
-                {activeTab === 'projects' && 'All Projects'}
+                {activeTab === 'projects' && 'FMR Projects'}
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
                 {activeTab === 'reports' && 'Reports'}
@@ -652,7 +819,7 @@ export default function Dashboard() {
               </h1>
               <p className="text-sm text-slate-600 mt-1">
                 {activeTab === 'dashboard' && 'Real-time monitoring of farm-to-market road projects'}
-                {activeTab === 'projects' && 'Manage all infrastructure projects'}
+                {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
@@ -661,7 +828,7 @@ export default function Dashboard() {
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
-            {(activeTab === 'dashboard' || activeTab === 'projects') && (
+            {activeTab === 'dashboard' && (
               <button
                 onClick={() => {
                   setFormData({ ...emptyForm, projectCode: generateProjectCode() });
@@ -784,6 +951,58 @@ export default function Dashboard() {
                   <p className="text-4xl font-bold text-slate-900 tracking-tight">{metrics.totalFeedbacks}</p>
                   <p className="text-sm text-slate-500 mt-2 font-medium">User Feedback Submitted</p>
                   <p className="text-xs text-slate-400 mt-1">{feedbacks.filter(f => f.status === 'pending').length} pending review</p>
+                </div>
+              </div>
+
+              {/* DA FMR Projects Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 sm:gap-8 mb-10">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-cyan-700 bg-cyan-50 px-2.5 py-1.5 rounded-lg tracking-wider">DA-FMR</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{fmrProjects.length}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">DA FMR Projects</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg tracking-wider">FMR</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed').length}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">FMR Completed</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-amber-50 to-amber-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg tracking-wider">FMR</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">FMR On-Going</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
+                  <div className="flex items-start justify-between mb-5">
+                    <div className="w-14 h-14 bg-gradient-to-br from-sky-50 to-sky-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" />
+                      </svg>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-sky-700 bg-sky-50 px-2.5 py-1.5 rounded-lg tracking-wider">FMR</span>
+                  </div>
+                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length}</p>
+                  <p className="text-sm text-slate-500 mt-2 font-medium">FMR Proposed</p>
                 </div>
               </div>
 
@@ -963,102 +1182,427 @@ export default function Dashboard() {
             </>
           )}
 
-          {/* Projects Tab */}
-          {activeTab === 'projects' && (
-            <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-8 py-7 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Project Management</h2>
-                <p className="text-sm text-slate-500 mt-1.5">View, edit, and manage all road projects</p>
-              </div>
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {projects.map(project => (
-                    <div key={project.id} className="bg-white border border-slate-200/60 rounded-2xl p-6 hover:shadow-lg hover:border-slate-300/60 transition-all duration-300">
-                      <div className="flex items-start justify-between mb-4">
-                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold ${getStatusBadge(project.status)}`}>
-                          {project.status}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">{project.projectCode}</span>
-                      </div>
-                      <h3 className="font-bold text-lg text-slate-900 mb-2">{project.projectName}</h3>
-                      <p className="text-sm text-slate-500 mb-5">{project.municipality}, {project.province}</p>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-slate-500">Progress</span>
-                        <span className="text-sm font-bold text-slate-900">{project.progress}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2.5 mb-5">
-                        <div 
-                          className={`h-2.5 rounded-full transition-all duration-500 ${project.progress === 100 ? 'bg-emerald-500' : 'bg-teal-500'}`}
-                          style={{ width: `${project.progress}%` }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-sm mb-5">
-                        <span className="text-slate-500">Budget</span>
-                        <span className="font-bold text-slate-900">{formatCurrency(project.totalBudget)}</span>
-                      </div>
-                      <div className="flex gap-3 pt-5 border-t border-slate-100">
-                        <button 
-                          onClick={() => openProjectFeedbackModal(project)}
-                          className="flex-1 px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-sm font-semibold transition-colors duration-200"
-                        >
-                          Feedback
-                        </button>
-                        <button 
-                          onClick={() => openEditModal(project)}
-                          className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-semibold transition-colors duration-200"
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => openDeleteModal(project)}
-                          className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition-colors duration-200"
-                        >
-                          Delete
-                        </button>
-                      </div>
+          {/* Projects Tab — Unified FMR Projects */}
+          {activeTab === 'projects' && (() => {
+            const fmrYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
+            const filteredFmr = fmrProjects.filter(p => {
+              const q = fmrProjectSearch.toLowerCase();
+              const name = (p.project_name || '').toLowerCase();
+              const loc = (p.location || '').toLowerCase();
+              const muni = (p.municipality || '').toLowerCase();
+              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+              const matchesStatus = fmrProjectStatusFilter === 'All' || normalizeFmrStatus(p.status) === fmrProjectStatusFilter;
+              const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
+              return matchesSearch && matchesStatus && matchesYear;
+            });
+            const fmrCounts = {
+              all: fmrProjects.length,
+              completed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
+              ongoing: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
+              proposed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+            };
+            return (
+            <div className="space-y-6">
+              {/* Summary Stat Chips */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-50 to-cyan-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
                     </div>
-                  ))}
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.all}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Total FMR Projects</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.completed}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Completed</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.ongoing}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">On-Going</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-50 to-sky-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Map Tab */}
-          {activeTab === 'map' && (
-            <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-8 py-7 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Project Locations</h2>
-                <p className="text-sm text-slate-500 mt-1.5">Geographic view of all road projects</p>
-              </div>
-              <div className="p-8">
-                <div className="bg-gradient-to-br from-slate-100 to-slate-50 rounded-2xl h-[450px] flex items-center justify-center border border-slate-200/50">
-                  <div className="text-center">
-                    <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm">
-                      <svg className="w-10 h-10 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                      </svg>
-                    </div>
-                    <p className="text-slate-700 font-semibold text-lg">Map Integration Coming Soon</p>
-                    <p className="text-slate-400 text-sm mt-2">Leaflet or Google Maps integration will be added here</p>
+              {/* Filters Bar */}
+              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-5">
+                <div className="flex flex-col lg:flex-row gap-4">
+                  {/* Search */}
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>
+                    <input type="text" value={fmrProjectSearch} onChange={e => setFmrProjectSearch(e.target.value)} placeholder="Search by name, location, municipality..."
+                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all" />
+                  </div>
+                  {/* Year Filter */}
+                  <select value={fmrProjectYearFilter} onChange={e => setFmrProjectYearFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none min-w-[130px]">
+                    <option value="All">All Years</option>
+                    {fmrYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
+                  </select>
+                  {/* Status Tabs */}
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {['All', 'Completed', 'On-Going', 'Proposed'].map(s => (
+                      <button key={s} onClick={() => setFmrProjectStatusFilter(s)}
+                        className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                          fmrProjectStatusFilter === s
+                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm shadow-teal-500/25'
+                            : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}>
+                        {s}{s !== 'All' ? '' : ` (${fmrCounts.all})`}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {projects.map(project => (
-                    <div key={project.id} className="flex items-center gap-4 p-4 bg-slate-50 border border-slate-200/50 rounded-xl hover:bg-white hover:shadow-sm transition-all duration-200">
-                      <div className={`w-4 h-4 rounded-full shadow-sm ${
-                        project.status === 'Completed' ? 'bg-emerald-500' : 
-                        project.status === 'In Progress' ? 'bg-blue-500' : 'bg-slate-400'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">{project.projectName}</p>
-                        <p className="text-xs text-slate-400 font-mono mt-0.5">{project.latitude?.toFixed(4)}°N, {project.longitude?.toFixed(4)}°E</p>
-                      </div>
-                    </div>
-                  ))}
+                {/* Results count */}
+                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <p className="text-sm text-slate-500">
+                    Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of {fmrProjects.length} projects
+                  </p>
+                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'All' || fmrProjectYearFilter !== 'All') && (
+                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('All'); setFmrProjectYearFilter('All'); }}
+                      className="text-sm text-teal-600 hover:text-teal-700 font-medium">
+                      Clear filters
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {/* Project Cards */}
+              {fmrLoading ? (
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-12 text-center">
+                  <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-sm text-slate-500 font-medium">Loading FMR projects...</p>
+                </div>
+              ) : filteredFmr.length === 0 ? (
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-12 text-center">
+                  <svg className="w-12 h-12 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
+                  <p className="text-slate-900 font-semibold mb-1">No projects found</p>
+                  <p className="text-sm text-slate-500">Try adjusting your search or filters</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {filteredFmr.map(project => {
+                    const status = normalizeFmrStatus(project.status);
+                    const statusStyle = status === 'Completed'
+                      ? { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' }
+                      : status === 'On-Going'
+                      ? { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' }
+                      : { badge: 'bg-sky-50 text-sky-700 border-sky-200', bar: 'bg-sky-500', dot: 'bg-sky-500' };
+                    return (
+                      <div key={project.id} className="group bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:shadow-lg hover:border-slate-300 transition-all duration-300 flex flex-col">
+                        {/* Card Header Accent */}
+                        <div className={`h-1 ${statusStyle.bar}`} />
+                        <div className="p-6 flex-1 flex flex-col">
+                          {/* Status & Year */}
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold ${statusStyle.badge}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                              {status}
+                            </span>
+                            {project.year_funded && (
+                              <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">FY {project.year_funded}</span>
+                            )}
+                          </div>
+
+                          {/* Project Name */}
+                          <h3 className="font-bold text-base text-slate-900 mb-2 line-clamp-2 leading-snug group-hover:text-teal-700 transition-colors">{project.project_name}</h3>
+
+                          {/* Location */}
+                          <div className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
+                            <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                            <span className="truncate">{project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}</span>
+                          </div>
+
+                          {/* Accomplishment Progress */}
+                          {status !== 'Proposed' && (
+                            <div className="mb-4">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-xs text-slate-500 font-medium">Accomplishment</span>
+                                <span className="text-xs font-bold text-slate-700">{project.accomplishment || 0}%</span>
+                              </div>
+                              <div className="w-full bg-slate-100 rounded-full h-2">
+                                <div className={`h-2 rounded-full transition-all duration-700 ease-out ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Meta Info */}
+                          <div className="flex items-center gap-4 text-xs text-slate-400 mt-auto mb-5">
+                            {project.project_length_km > 0 && (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+                                {project.project_length_km} km
+                              </span>
+                            )}
+                            {project.date_completed && (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v9.75" /></svg>
+                                {project.date_completed}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-2 pt-4 border-t border-slate-100">
+                            <button
+                              onClick={() => openFmrEditModal(project)}
+                              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => openFmrDeleteModal(project)}
+                              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200/60 rounded-xl text-sm font-semibold text-red-600 transition-all duration-200"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
+            );
+          })()}
+
+          {/* Map Tab */}
+          {activeTab === 'map' && (() => {
+            const mapFiltered = fmrProjects.filter(p => {
+              const q = adminMapSearch.toLowerCase();
+              const name = (p.project_name || '').toLowerCase();
+              const loc = (p.location || '').toLowerCase();
+              const muni = (p.municipality || '').toLowerCase();
+              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+              const matchesStatus = adminMapStatusFilter === 'All' || normalizeFmrStatus(p.status) === adminMapStatusFilter;
+              const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
+              return matchesSearch && matchesStatus && matchesYear;
+            });
+            const mapMappable = mapFiltered.filter(p => p.start_latitude && p.start_longitude);
+            const mapYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
+            const mapStats = {
+              total: mapFiltered.length,
+              mapped: mapMappable.length,
+              completed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
+              ongoing: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
+              proposed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+            };
+
+            return (
+              <div className="space-y-5">
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>
+                    <input type="text" value={adminMapSearch} onChange={e => setAdminMapSearch(e.target.value)} placeholder="Search by name, municipality..."
+                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                  </div>
+                  <select value={adminMapYearFilter} onChange={e => setAdminMapYearFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                    <option value="All">All Years</option>
+                    {mapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
+                  </select>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {['All', 'Completed', 'On-Going', 'Proposed'].map(s => (
+                      <button key={s} onClick={() => setAdminMapStatusFilter(s)}
+                        className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                          adminMapStatusFilter === s
+                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        }`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
+                  <span>{mapStats.mapped} pins on map</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> {mapStats.proposed} Proposed</span>
+                </div>
+
+                {/* Map */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '500px' }}>
+                  {fmrLoading ? (
+                    <div className="h-full flex items-center justify-center bg-slate-50">
+                      <div className="text-center">
+                        <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-sm text-slate-500">Loading map data...</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <AdminFitBounds projects={mapMappable} />
+                      {mapMappable.map(project => {
+                        const color = getFmrStatusColor(project.status);
+                        const isSelected = adminMapSelectedProject?.id === project.id;
+                        return (
+                          <CircleMarker
+                            key={project.id}
+                            center={[project.start_latitude, project.start_longitude]}
+                            radius={isSelected ? 10 : 7}
+                            pathOptions={{
+                              fillColor: color.fill,
+                              color: isSelected ? '#000' : color.stroke,
+                              weight: isSelected ? 3 : 2,
+                              opacity: 1,
+                              fillOpacity: 0.85,
+                            }}
+                            eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
+                          >
+                            <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                              <span style={{ fontWeight: 600, fontSize: '12px' }}>{project.project_name}</span>
+                              <br />
+                              <span style={{ fontSize: '11px', color: '#6b7280' }}>{normalizeFmrStatus(project.status)} &middot; {project.municipality || 'N/A'}</span>
+                            </Tooltip>
+                            <Popup maxWidth={320}>
+                              <div className="p-1">
+                                <h3 className="font-semibold text-slate-900 text-sm leading-snug mb-2">{project.project_name}</h3>
+                                <div className="space-y-1.5 text-xs text-slate-600">
+                                  <p><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                                    normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>{normalizeFmrStatus(project.status)}</span></p>
+                                  {project.municipality && <p>&#128205; {project.municipality}, {project.province || 'Iloilo'}</p>}
+                                  {project.year_funded && <p>&#128197; FY {project.year_funded}</p>}
+                                  {project.project_length_km > 0 && <p>&#128207; {project.project_length_km} km</p>}
+                                  {project.date_completed && <p className="text-emerald-600">&#9989; Completed: {project.date_completed}</p>}
+                                  {project.start_latitude && project.end_latitude && (
+                                    <a href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude},${project.end_longitude}`}
+                                      target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 mt-1 text-teal-600 hover:text-teal-700 font-medium">
+                                      View route on Google Maps &#8599;
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </Popup>
+                          </CircleMarker>
+                        );
+                      })}
+                    </MapContainer>
+                  )}
+                </div>
+
+                {/* Selected project detail */}
+                {adminMapSelectedProject && (
+                  <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div>
+                        <h3 className="font-bold text-lg text-slate-900">{adminMapSelectedProject.project_name}</h3>
+                        <p className="text-sm text-slate-500 mt-1">DA-RAED Region VI &middot; FMR Development Program</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                          normalizeFmrStatus(adminMapSelectedProject.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                          normalizeFmrStatus(adminMapSelectedProject.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>{normalizeFmrStatus(adminMapSelectedProject.status)}</span>
+                        <button onClick={() => setAdminMapSelectedProject(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      {adminMapSelectedProject.municipality && (
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Municipality</p>
+                          <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.municipality}</p>
+                        </div>
+                      )}
+                      {adminMapSelectedProject.year_funded && (
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Year Funded</p>
+                          <p className="text-sm font-medium text-slate-800">FY {adminMapSelectedProject.year_funded}</p>
+                        </div>
+                      )}
+                      {adminMapSelectedProject.project_length_km > 0 && (
+                        <div className="p-3 bg-slate-50 rounded-xl">
+                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Road Length</p>
+                          <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.project_length_km} km</p>
+                        </div>
+                      )}
+                      {adminMapSelectedProject.date_completed && (
+                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                          <p className="text-xs text-emerald-600 uppercase tracking-wider mb-0.5">Completed</p>
+                          <p className="text-sm font-medium text-emerald-800">{adminMapSelectedProject.date_completed}</p>
+                        </div>
+                      )}
+                      {adminMapSelectedProject.target_completion_date && (
+                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                          <p className="text-xs text-amber-600 uppercase tracking-wider mb-0.5">Target</p>
+                          <p className="text-sm font-medium text-amber-800">{adminMapSelectedProject.target_completion_date}</p>
+                        </div>
+                      )}
+                    </div>
+                    {adminMapSelectedProject.start_latitude && adminMapSelectedProject.end_latitude && (
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md font-mono">
+                            START: {adminMapSelectedProject.start_latitude?.toFixed(6)}, {adminMapSelectedProject.start_longitude?.toFixed(6)}
+                          </span>
+                          <span>&rarr;</span>
+                          <span className="px-2 py-1 bg-rose-50 text-rose-700 rounded-md font-mono">
+                            END: {adminMapSelectedProject.end_latitude?.toFixed(6)}, {adminMapSelectedProject.end_longitude?.toFixed(6)}
+                          </span>
+                        </div>
+                        <a href={`https://www.google.com/maps/dir/${adminMapSelectedProject.start_latitude},${adminMapSelectedProject.start_longitude}/${adminMapSelectedProject.end_latitude},${adminMapSelectedProject.end_longitude}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                          Google Maps
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Source info */}
+                {!fmrLoading && fmrProjects.length > 0 && (
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
+                    <p className="text-xs text-slate-400">
+                      Data from Department of Agriculture &mdash; RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
@@ -1145,11 +1689,11 @@ export default function Dashboard() {
             const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const today = new Date(); today.setHours(0,0,0,0);
 
-            const renderProjectTable = (title, list, color, emptyMsg) => (
+            const renderProjectTable = (title, list, colorStyles, emptyMsg) => (
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-                <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r from-${color}-50 to-white flex items-center justify-between`}>
+                <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r ${colorStyles.gradient} to-white flex items-center justify-between`}>
                   <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl bg-${color}-100 text-${color}-600`}>
+                    <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${colorStyles.iconBg} ${colorStyles.iconText}`}>
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     </span>
                     <div>
@@ -1232,9 +1776,9 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {renderProjectTable('Completed Projects', classifiedProjects.completedProjects, 'emerald', 'No completed projects yet.')}
-                {renderProjectTable('Delayed Projects', classifiedProjects.delayedProjects, 'red', 'No delayed projects — all on schedule!')}
-                {renderProjectTable('Ongoing Projects', classifiedProjects.ongoingProjects, 'blue', 'No ongoing projects.')}
+                {renderProjectTable('Completed Projects', classifiedProjects.completedProjects, { gradient: 'from-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' }, 'No completed projects yet.')}
+                {renderProjectTable('Delayed Projects', classifiedProjects.delayedProjects, { gradient: 'from-red-50', iconBg: 'bg-red-100', iconText: 'text-red-600' }, 'No delayed projects — all on schedule!')}
+                {renderProjectTable('Ongoing Projects', classifiedProjects.ongoingProjects, { gradient: 'from-blue-50', iconBg: 'bg-blue-100', iconText: 'text-blue-600' }, 'No ongoing projects.')}
               </div>
             );
           })()}
@@ -2001,6 +2545,133 @@ export default function Dashboard() {
                 </button>
                 <button 
                   onClick={handleDeleteProject}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
+                >
+                  Delete Project
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FMR Edit Modal */}
+      {showFmrEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Edit FMR Project</h2>
+                <p className="text-sm text-slate-500 mt-1">{selectedFmrProject?.project_name}</p>
+              </div>
+              <button onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleEditFmrProject} className="flex-1 overflow-y-auto p-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Project Name *</label>
+                  <input type="text" name="project_name" value={fmrFormData.project_name} onChange={handleFmrInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Status *</label>
+                  <select name="status" value={fmrFormData.status} onChange={handleFmrInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                    <option value="Completed">Completed</option>
+                    <option value="On-Going">On-Going</option>
+                    <option value="Proposed">Proposed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Year Funded</label>
+                  <input type="number" name="year_funded" value={fmrFormData.year_funded} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Municipality</label>
+                  <select name="municipality" value={fmrFormData.municipality} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                    <option value="">Select municipality</option>
+                    {getMunicipalities().map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Province</label>
+                  <input type="text" name="province" value={fmrFormData.province} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Accomplishment (%)</label>
+                  <input type="number" min="0" max="100" step="0.01" name="accomplishment" value={fmrFormData.accomplishment} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km)</label>
+                  <input type="number" step="0.01" name="project_length_km" value={fmrFormData.project_length_km} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Location / Address</label>
+                  <input type="text" name="location" value={fmrFormData.location} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Start Latitude</label>
+                  <input type="number" step="any" name="start_latitude" value={fmrFormData.start_latitude} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Start Longitude</label>
+                  <input type="number" step="any" name="start_longitude" value={fmrFormData.start_longitude} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">End Latitude</label>
+                  <input type="number" step="any" name="end_latitude" value={fmrFormData.end_latitude} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">End Longitude</label>
+                  <input type="number" step="any" name="end_longitude" value={fmrFormData.end_longitude} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Date Completed</label>
+                  <input type="date" name="date_completed" value={fmrFormData.date_completed} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Target Completion Date</label>
+                  <input type="date" name="target_completion_date" value={fmrFormData.target_completion_date} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Remarks</label>
+                  <textarea name="remarks" value={fmrFormData.remarks} onChange={handleFmrInputChange} rows="3" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 resize-none" />
+                </div>
+              </div>
+            </form>
+            <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
+              <button type="button" onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button type="submit" onClick={handleEditFmrProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FMR Delete Confirmation Modal */}
+      {showFmrDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+            <div className="text-center">
+              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{width: '72px', height: '72px'}}>
+                <svg className="w-9 h-9 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">Delete FMR Project?</h3>
+              <p className="text-slate-500 mb-8">
+                Are you sure you want to delete <span className="font-semibold text-slate-700">{selectedFmrProject?.project_name}</span>? This action cannot be undone.
+              </p>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => { setShowFmrDeleteModal(false); setSelectedFmrProject(null); }}
+                  className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDeleteFmrProject}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
                 >
                   Delete Project
