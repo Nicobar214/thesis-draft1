@@ -1,7 +1,7 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -77,6 +77,14 @@ export default function Dashboard() {
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportSearch, setPublicReportSearch] = useState('');
   const [selectedPublicReport, setSelectedPublicReport] = useState(null);
+  const [publicReportMunicipalityFilter, setPublicReportMunicipalityFilter] = useState('all');
+  const [publicReportBarangayFilter, setPublicReportBarangayFilter] = useState('all');
+  const [publicReportStreetFilter, setPublicReportStreetFilter] = useState('all');
+
+  // Field engineer state
+  const [fieldEngineers, setFieldEngineers] = useState([]);
+  const [assigningEngineer, setAssigningEngineer] = useState(false);
+  const [selectedEngineerId, setSelectedEngineerId] = useState('');
 
   // FMR Projects state (synced from user side - DA data)
   const [fmrProjects, setFmrProjects] = useState([]);
@@ -194,6 +202,98 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch field engineers from profiles
+  const [feLoadError, setFeLoadError] = useState('');
+  const fetchFieldEngineers = useCallback(async () => {
+    setFeLoadError('');
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'field_engineer')
+        .order('full_name', { ascending: true });
+      if (fetchErr) {
+        console.error('Error fetching field engineers:', fetchErr);
+        setFeLoadError(`Failed to load engineers: ${fetchErr.message}. Run supabase_complete_fe_setup.sql in SQL Editor.`);
+        return;
+      }
+      console.log('Field engineers loaded:', data?.length || 0, data);
+      setFieldEngineers(data || []);
+      if (data?.length === 0) {
+        setFeLoadError('No field engineers registered yet. Use the form below to register one.');
+      }
+    } catch (err) {
+      console.error('Error fetching field engineers:', err.message);
+      setFeLoadError(`Error: ${err.message}`);
+    }
+  }, []);
+
+  // Assign field engineer to a public report
+  const assignEngineerToReport = async (reportId, engineerId) => {
+    setAssigningEngineer(true);
+    try {
+      const engineer = fieldEngineers.find(e => e.id === engineerId);
+      if (!engineer) {
+        showNotification('Selected engineer not found. Refresh and try again.', 'error');
+        return;
+      }
+      const updatePayload = {
+        assigned_engineer_id: engineerId,
+        assigned_engineer_name: engineer.full_name || engineer.email || '',
+        assigned_at: new Date().toISOString(),
+        engineer_status: 'assigned',
+      };
+      const { data: updated, error } = await supabase
+        .from('public_reports')
+        .update(updatePayload)
+        .eq('id', reportId)
+        .select();
+      if (error) {
+        console.error('Assignment DB error:', error);
+        if (error.message?.includes('column') || error.code === '42703') {
+          showNotification('Database columns missing. Run supabase_complete_fe_setup.sql first.', 'error');
+        } else {
+          showNotification(`Failed to assign: ${error.message}`, 'error');
+        }
+        return;
+      }
+      if (!updated || updated.length === 0) {
+        showNotification('No report was updated. The report may have been deleted.', 'error');
+        return;
+      }
+      await fetchPublicReports();
+      showNotification(`Report assigned to ${engineer.full_name || engineer.email}`);
+      setSelectedEngineerId('');
+    } catch (err) {
+      console.error('Failed to assign engineer:', err.message);
+      showNotification(`Failed to assign: ${err.message}`, 'error');
+    } finally {
+      setAssigningEngineer(false);
+    }
+  };
+
+  // Unassign field engineer from a public report
+  const unassignEngineerFromReport = async (reportId) => {
+    try {
+      const { error } = await supabase
+        .from('public_reports')
+        .update({
+          assigned_engineer_id: null,
+          assigned_engineer_name: '',
+          assigned_at: null,
+          engineer_status: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reportId);
+      if (error) throw error;
+      await fetchPublicReports();
+      showNotification('Engineer unassigned from report');
+    } catch (err) {
+      console.error('Failed to unassign engineer:', err.message);
+      showNotification(`Failed to unassign: ${err.message}`, 'error');
+    }
+  };
+
   // Fetch FMR projects (DA data - synced from user side)
   const fetchFmrProjects = useCallback(async () => {
     setFmrLoading(true);
@@ -303,11 +403,75 @@ export default function Dashboard() {
     }
   };
 
+  // Ensure the admin has a profile row (needed for is_admin() RLS function)
+  const ensureAdminProfile = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Check if admin profile already exists
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (existing && existing.role === 'admin') return; // already set
+
+      // Try RPC first (bypasses RLS via SECURITY DEFINER)
+      const { error: rpcErr } = await supabase.rpc('create_field_engineer_profile', {
+        user_id: user.id,
+        user_email: user.email,
+        user_name: user.user_metadata?.full_name || 'Admin',
+        user_phone: ''
+      });
+      // RPC creates as field_engineer, so we need to update to admin
+      // OR just do a direct upsert
+      if (rpcErr) {
+        console.warn('RPC for admin profile failed, trying direct upsert:', rpcErr);
+      }
+
+      // Upsert admin profile directly
+      const { error: upsertErr } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name || 'Admin',
+          role: 'admin',
+        }, { onConflict: 'id' });
+
+      if (upsertErr) {
+        console.warn('Admin profile upsert failed:', upsertErr);
+        // Last resort: insert with service role if table is empty / no RLS issues
+        const { error: insertErr } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || 'Admin',
+            role: 'admin',
+          });
+        if (insertErr) {
+          console.error('All admin profile creation attempts failed:', insertErr);
+          console.error('You need to run supabase_complete_fe_setup.sql AND manually insert admin profile');
+        }
+      } else {
+        console.log('Admin profile ensured successfully');
+      }
+    } catch (err) {
+      console.error('ensureAdminProfile error:', err);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchProjects();
-    fetchFeedbacks();
-    fetchPublicReports();
-    fetchFmrProjects();
+    ensureAdminProfile().then(() => {
+      fetchProjects();
+      fetchFeedbacks();
+      fetchPublicReports();
+      fetchFmrProjects();
+      fetchFieldEngineers();
+    });
 
     // Real-time subscription for projects
     const projectChannel = supabase
@@ -333,13 +497,20 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchFmrProjects())
       .subscribe();
 
+    // Real-time subscription for profiles (field engineers)
+    const profilesChannel = supabase
+      .channel('admin-profiles-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchFieldEngineers())
+      .subscribe();
+
     return () => {
       supabase.removeChannel(projectChannel);
       supabase.removeChannel(feedbackChannel);
       supabase.removeChannel(publicReportsChannel);
       supabase.removeChannel(fmrChannel);
+      supabase.removeChannel(profilesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, ensureAdminProfile]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
@@ -2001,17 +2172,33 @@ export default function Dashboard() {
 
           {/* Public Reports Tab */}
           {activeTab === 'public-reports' && (() => {
+            // Derive unique streets from reports for the street filter
+            const allMunicipalities = [...new Set(publicReports.map(r => r.municipality).filter(Boolean))].sort();
+            const filteredBarangayOptions = publicReportMunicipalityFilter !== 'all'
+              ? [...new Set(publicReports.filter(r => r.municipality === publicReportMunicipalityFilter).map(r => r.barangay).filter(Boolean))].sort()
+              : [...new Set(publicReports.map(r => r.barangay).filter(Boolean))].sort();
+            const filteredStreetOptions = (() => {
+              let pool = publicReports;
+              if (publicReportMunicipalityFilter !== 'all') pool = pool.filter(r => r.municipality === publicReportMunicipalityFilter);
+              if (publicReportBarangayFilter !== 'all') pool = pool.filter(r => r.barangay === publicReportBarangayFilter);
+              return [...new Set(pool.map(r => r.street).filter(Boolean))].sort();
+            })();
+
             const filteredPublicReports = publicReports.filter(rpt => {
               const matchesStatus = publicReportFilter === 'all' || rpt.status === publicReportFilter;
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
+              const matchesMunicipality = publicReportMunicipalityFilter === 'all' || rpt.municipality === publicReportMunicipalityFilter;
+              const matchesBarangay = publicReportBarangayFilter === 'all' || rpt.barangay === publicReportBarangayFilter;
+              const matchesStreet = publicReportStreetFilter === 'all' || (rpt.street || '') === publicReportStreetFilter;
               const q = publicReportSearch.toLowerCase();
               const matchesSearch = !q ||
                 (rpt.full_name || '').toLowerCase().includes(q) ||
                 (rpt.municipality || '').toLowerCase().includes(q) ||
                 (rpt.barangay || '').toLowerCase().includes(q) ||
+                (rpt.street || '').toLowerCase().includes(q) ||
                 (rpt.project_name || '').toLowerCase().includes(q) ||
                 (rpt.description || '').toLowerCase().includes(q);
-              return matchesStatus && matchesVerification && matchesSearch;
+              return matchesStatus && matchesVerification && matchesMunicipality && matchesBarangay && matchesStreet && matchesSearch;
             });
             const pendingCount = publicReports.filter(r => r.status === 'pending').length;
             const reviewedCount = publicReports.filter(r => r.status === 'reviewed').length;
@@ -2061,26 +2248,62 @@ export default function Dashboard() {
 
                 {/* Filters */}
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="relative flex-1">
-                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-                      <input type="text" value={publicReportSearch} onChange={e => setPublicReportSearch(e.target.value)} placeholder="Search by name, location, project, or description..."
-                        className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                  <div className="flex flex-col gap-4">
+                    {/* Row 1: Search + Status + Verification */}
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="relative flex-1">
+                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+                        <input type="text" value={publicReportSearch} onChange={e => setPublicReportSearch(e.target.value)} placeholder="Search by name, location, project, or description..."
+                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                      </div>
+                      <select value={publicReportFilter} onChange={e => setPublicReportFilter(e.target.value)}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="reviewed">Reviewed</option>
+                        <option value="resolved">Resolved</option>
+                      </select>
+                      <select value={publicReportCategoryFilter} onChange={e => setPublicReportCategoryFilter(e.target.value)}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                        <option value="all">All Verification</option>
+                        <option value="Verified On-Site">✔ Verified On-Site</option>
+                        <option value="Needs Review">⚠ Needs Review</option>
+                        <option value="Location Mismatch">✖ Location Mismatch</option>
+                      </select>
                     </div>
-                    <select value={publicReportFilter} onChange={e => setPublicReportFilter(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                      <option value="all">All Status</option>
-                      <option value="pending">Pending</option>
-                      <option value="reviewed">Reviewed</option>
-                      <option value="resolved">Resolved</option>
-                    </select>
-                    <select value={publicReportCategoryFilter} onChange={e => setPublicReportCategoryFilter(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                      <option value="all">All Verification</option>
-                      <option value="Verified On-Site">✔ Verified On-Site</option>
-                      <option value="Needs Review">⚠ Needs Review</option>
-                      <option value="Location Mismatch">✖ Location Mismatch</option>
-                    </select>
+                    {/* Row 2: Location Filters (Municipality → Barangay → Street) */}
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Municipality</label>
+                        <select value={publicReportMunicipalityFilter} onChange={e => { setPublicReportMunicipalityFilter(e.target.value); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                          <option value="all">All Municipalities</option>
+                          {allMunicipalities.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Barangay</label>
+                        <select value={publicReportBarangayFilter} onChange={e => { setPublicReportBarangayFilter(e.target.value); setPublicReportStreetFilter('all'); }}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                          <option value="all">All Barangays</option>
+                          {filteredBarangayOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Street / Sitio</label>
+                        <select value={publicReportStreetFilter} onChange={e => setPublicReportStreetFilter(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                          <option value="all">All Streets</option>
+                          {filteredStreetOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      {(publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all') && (
+                        <button onClick={() => { setPublicReportMunicipalityFilter('all'); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
+                          className="self-end px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors whitespace-nowrap">
+                          Clear Location
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2194,6 +2417,58 @@ export default function Dashboard() {
                             </button>
                           </div>
                         </div>
+
+                        {/* Assign Field Engineer */}
+                        <div className="pt-4 border-t border-slate-100">
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Assign Field Engineer</p>
+                          {selectedPublicReport.assigned_engineer_id ? (
+                            <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                                    {(selectedPublicReport.assigned_engineer_name || 'FE').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-semibold text-teal-900">{selectedPublicReport.assigned_engineer_name || 'Field Engineer'}</p>
+                                    <p className="text-xs text-teal-600">
+                                      {selectedPublicReport.engineer_status ? selectedPublicReport.engineer_status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Assigned'}
+                                      {selectedPublicReport.assigned_at && ` · ${new Date(selectedPublicReport.assigned_at).toLocaleDateString()}`}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button onClick={() => { unassignEngineerFromReport(selectedPublicReport.id); setSelectedPublicReport(prev => ({ ...prev, assigned_engineer_id: null, assigned_engineer_name: '', engineer_status: null, assigned_at: null })); }}
+                                  className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                                  Unassign
+                                </button>
+                              </div>
+                              {selectedPublicReport.engineer_notes && (
+                                <div className="mt-3 pt-3 border-t border-teal-200">
+                                  <p className="text-xs text-teal-500 uppercase font-semibold mb-1">Engineer Notes</p>
+                                  <p className="text-sm text-teal-800">{selectedPublicReport.engineer_notes}</p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex gap-3">
+                              <select value={selectedEngineerId} onChange={e => setSelectedEngineerId(e.target.value)}
+                                className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                                <option value="">Select a field engineer...</option>
+                                {fieldEngineers.map(eng => (
+                                  <option key={eng.id} value={eng.id}>{eng.full_name || eng.email} {eng.phone ? `(${eng.phone})` : ''}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => { if (selectedEngineerId) { assignEngineerToReport(selectedPublicReport.id, selectedEngineerId); setSelectedPublicReport(prev => ({ ...prev, assigned_engineer_id: selectedEngineerId, assigned_engineer_name: fieldEngineers.find(e => e.id === selectedEngineerId)?.full_name || '', engineer_status: 'assigned', assigned_at: new Date().toISOString() })); } }}
+                                disabled={!selectedEngineerId || assigningEngineer}
+                                className="px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 text-white rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:from-teal-700 hover:to-teal-600 shadow-lg shadow-teal-500/25">
+                                {assigningEngineer ? 'Assigning...' : 'Assign'}
+                              </button>
+                            </div>
+                          )}
+                          {fieldEngineers.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">No field engineers registered yet. Go to <strong>Settings → Field Engineers</strong> to register one, then come back here to assign.</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2235,9 +2510,17 @@ export default function Dashboard() {
                               <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
                                 {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
                               </p>
-                              <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
                               <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
-                              <p className="text-xs text-slate-400 mt-1.5">{rpt.full_name || 'Anonymous'} &middot; {new Date(rpt.created_at).toLocaleDateString()}</p>
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} &middot; {new Date(rpt.created_at).toLocaleDateString()}</p>
+                                {rpt.assigned_engineer_name && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    {rpt.assigned_engineer_name}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             {rpt.photo_url && (
                               <img src={rpt.photo_url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0" />
@@ -2283,6 +2566,161 @@ export default function Dashboard() {
                         <span className="text-sm font-medium text-slate-700">{item}</span>
                       </label>
                     ))}
+                  </div>
+                </div>
+                {/* Field Engineers Management */}
+                <div className="pt-8 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-lg text-slate-900">Field Engineers</h3>
+                    <button onClick={fetchFieldEngineers} className="px-3 py-1.5 text-xs font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50 transition-colors">
+                      Refresh List
+                    </button>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-5">Manage field engineer accounts. Engineers log in at <code className="text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md text-xs">/field-engineer/login</code></p>
+
+                  {feLoadError && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm mb-4">
+                      {feLoadError}
+                    </div>
+                  )}
+
+                  {/* Existing Engineers */}
+                  {fieldEngineers.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      {fieldEngineers.map(eng => (
+                        <div key={eng.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                              {(eng.full_name || eng.email || 'FE').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{eng.full_name || '—'}</p>
+                              <p className="text-xs text-slate-500">{eng.email} {eng.phone ? `· ${eng.phone}` : ''}</p>
+                            </div>
+                          </div>
+                          <span className="px-3 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-semibold">Field Engineer</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Field Engineer Form */}
+                  <div className="bg-teal-50/50 border border-teal-200/60 rounded-xl p-5">
+                    <p className="text-sm font-semibold text-teal-900 mb-4">Register New Field Engineer</p>
+                    <p className="text-xs text-teal-700 mb-4">
+                      <strong>Important:</strong> Go to your <strong>Supabase Dashboard → Authentication → Providers → Email</strong> and <strong>disable "Confirm email"</strong> to avoid email rate limits.
+                    </p>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.target);
+                      const feEmail = fd.get('fe_email')?.toString().trim();
+                      const feName = fd.get('fe_name')?.toString().trim();
+                      const fePhone = fd.get('fe_phone')?.toString().trim();
+                      const fePassword = fd.get('fe_password')?.toString().trim();
+                      if (!feEmail || !fePassword) { showNotification('Email and password are required', 'error'); return; }
+                      try {
+                        // Use the separate supabaseAdmin client so the admin session is NOT replaced
+                        const { data: signUpData, error: signUpErr } = await supabaseAdmin.auth.signUp({
+                          email: feEmail,
+                          password: fePassword,
+                          options: {
+                            data: { role: 'field_engineer', full_name: feName || '' },
+                            emailRedirectTo: `${window.location.origin}/field-engineer/login`
+                          }
+                        });
+                        if (signUpErr) {
+                          if (signUpErr.message?.toLowerCase().includes('rate') || signUpErr.status === 429) {
+                            showNotification('Email rate limit exceeded. Disable "Confirm email" in Supabase Auth settings, or wait and try again.', 'error');
+                            return;
+                          }
+                          throw signUpErr;
+                        }
+                        // Check if user was actually created (identities array is empty if email already exists)
+                        if (signUpData?.user?.identities?.length === 0) {
+                          showNotification('A user with this email already exists. Use a different email.', 'error');
+                          return;
+                        }
+                        if (signUpData?.user) {
+                          let profileCreated = false;
+
+                          // Try 1: SECURITY DEFINER RPC (bypasses RLS)
+                          const { error: profErr } = await supabase.rpc('create_field_engineer_profile', {
+                            user_id: signUpData.user.id,
+                            user_email: feEmail,
+                            user_name: feName || '',
+                            user_phone: fePhone || ''
+                          });
+                          if (!profErr) {
+                            profileCreated = true;
+                          } else {
+                            console.warn('RPC create_field_engineer_profile failed:', profErr);
+
+                            // Try 2: direct insert
+                            const { error: insertErr } = await supabase.from('profiles').insert({
+                              id: signUpData.user.id,
+                              email: feEmail,
+                              full_name: feName || '',
+                              phone: fePhone || '',
+                              role: 'field_engineer',
+                            });
+                            if (!insertErr) {
+                              profileCreated = true;
+                            } else {
+                              console.warn('Direct insert failed:', insertErr);
+
+                              // Try 3: upsert
+                              const { error: upsertErr } = await supabase.from('profiles').upsert({
+                                id: signUpData.user.id,
+                                email: feEmail,
+                                full_name: feName || '',
+                                phone: fePhone || '',
+                                role: 'field_engineer',
+                              }, { onConflict: 'id' });
+                              if (!upsertErr) {
+                                profileCreated = true;
+                              } else {
+                                console.error('All profile creation attempts failed:', upsertErr);
+                              }
+                            }
+                          }
+
+                          if (!profileCreated) {
+                            showNotification('Account created but profile failed. Run supabase_complete_fe_setup.sql in SQL Editor, then refresh.', 'error');
+                          } else {
+                            await fetchFieldEngineers();
+                            showNotification(`Field engineer ${feName || feEmail} registered successfully!`);
+                            e.target.reset();
+                          }
+                        }
+                      } catch (err) {
+                        console.error('Failed to register field engineer:', err.message);
+                        showNotification(`Failed: ${err.message}`, 'error');
+                      }
+                    }} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                          <input type="text" name="fe_name" placeholder="Juan Dela Cruz" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone</label>
+                          <input type="tel" name="fe_phone" placeholder="09XX-XXX-XXXX" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email *</label>
+                          <input type="email" name="fe_email" required placeholder="engineer@email.com" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Password *</label>
+                          <input type="password" name="fe_password" required minLength={6} placeholder="Min 6 characters" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                        </div>
+                      </div>
+                      <button type="submit" className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-teal-500/25">
+                        Register Field Engineer
+                      </button>
+                    </form>
                   </div>
                 </div>
                 <div className="pt-8 border-t border-slate-100">

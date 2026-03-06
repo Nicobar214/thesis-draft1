@@ -23,22 +23,25 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
         setUser(currentUser);
 
-        // Fetch role from profiles table
+        // Fetch role from profiles table, fall back to user_metadata
         try {
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('role')
             .eq('id', currentUser.id)
-            .single();
+            .maybeSingle();
 
           if (profileError) {
-            console.log('Profiles table may not exist yet, defaulting to user role');
-            setRole('user');
+            console.warn('Profile query error, using metadata fallback:', profileError);
+            setRole(currentUser.user_metadata?.role || 'user');
+          } else if (profile) {
+            setRole(profile.role || 'user');
           } else {
-            setRole(profile?.role || 'user');
+            // No profile row – use metadata role
+            setRole(currentUser.user_metadata?.role || 'user');
           }
         } catch {
-          setRole('user');
+          setRole(currentUser.user_metadata?.role || 'user');
         }
       } catch (err) {
         console.error('Auth check error:', err);
@@ -68,11 +71,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
   // Role check: if a specific role is required and user doesn't have it
   if (requiredRole && role !== requiredRole) {
-    // Admin trying to access user pages → send to dashboard
+    // Admin trying to access other pages → send to dashboard
     if (role === 'admin') {
       return <Navigate to="/dashboard" replace />;
     }
-    // User trying to access admin pages → send to user dashboard
+    // Field engineer trying to access other pages → send to field engineer dashboard
+    if (role === 'field_engineer') {
+      return <Navigate to="/field-engineer" replace />;
+    }
+    // User trying to access admin/engineer pages → send to user dashboard
     return <Navigate to="/user" replace />;
   }
 

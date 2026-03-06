@@ -110,6 +110,9 @@ export default function PublicReportsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [municipalityFilter, setMunicipalityFilter] = useState('all');
+  const [barangayFilter, setBarangayFilter] = useState('all');
+  const [streetFilter, setStreetFilter] = useState('all');
 
   const [selected, setSelected] = useState(null);
   const [showReportForm, setShowReportForm] = useState(false);
@@ -138,6 +141,19 @@ export default function PublicReportsPage() {
     })();
   }, []);
 
+  /* ── Derived location options ── */
+  const allMunicipalities = useMemo(() => [...new Set(reports.map(r => r.municipality).filter(Boolean))].sort(), [reports]);
+  const filteredBarangays = useMemo(() => {
+    const pool = municipalityFilter !== 'all' ? reports.filter(r => r.municipality === municipalityFilter) : reports;
+    return [...new Set(pool.map(r => r.barangay).filter(Boolean))].sort();
+  }, [reports, municipalityFilter]);
+  const filteredStreets = useMemo(() => {
+    let pool = reports;
+    if (municipalityFilter !== 'all') pool = pool.filter(r => r.municipality === municipalityFilter);
+    if (barangayFilter !== 'all') pool = pool.filter(r => r.barangay === barangayFilter);
+    return [...new Set(pool.map(r => r.street).filter(Boolean))].sort();
+  }, [reports, municipalityFilter, barangayFilter]);
+
   /* ── Filter ── */
   const filtered = useMemo(() => {
     return reports.filter((r) => {
@@ -147,11 +163,14 @@ export default function PublicReportsPage() {
         if (!hay.includes(q)) return false;
       }
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (municipalityFilter !== 'all' && r.municipality !== municipalityFilter) return false;
+      if (barangayFilter !== 'all' && r.barangay !== barangayFilter) return false;
+      if (streetFilter !== 'all' && (r.street || '') !== streetFilter) return false;
       if (dateFrom && new Date(r.created_at) < new Date(dateFrom)) return false;
       if (dateTo) { const to = new Date(dateTo); to.setHours(23,59,59,999); if (new Date(r.created_at) > to) return false; }
       return true;
     });
-  }, [reports, search, statusFilter, dateFrom, dateTo]);
+  }, [reports, search, statusFilter, municipalityFilter, barangayFilter, streetFilter, dateFrom, dateTo]);
 
   /* ── Stat counts ── */
   const counts = useMemo(() => ({
@@ -269,6 +288,48 @@ export default function PublicReportsPage() {
               </select>
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
+          </div>
+
+          {/* Location Filters Row */}
+          <div className="flex flex-col sm:flex-row gap-3 mt-3">
+            <div className="flex-1">
+              <select
+                value={municipalityFilter}
+                onChange={(e) => { setMunicipalityFilter(e.target.value); setBarangayFilter('all'); setStreetFilter('all'); }}
+                className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition cursor-pointer"
+              >
+                <option value="all">All Municipalities</option>
+                {allMunicipalities.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <select
+                value={barangayFilter}
+                onChange={(e) => { setBarangayFilter(e.target.value); setStreetFilter('all'); }}
+                className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition cursor-pointer"
+              >
+                <option value="all">All Barangays</option>
+                {filteredBarangays.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <select
+                value={streetFilter}
+                onChange={(e) => setStreetFilter(e.target.value)}
+                className="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition cursor-pointer"
+              >
+                <option value="all">All Streets</option>
+                {filteredStreets.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {(municipalityFilter !== 'all' || barangayFilter !== 'all' || streetFilter !== 'all') && (
+              <button
+                onClick={() => { setMunicipalityFilter('all'); setBarangayFilter('all'); setStreetFilter('all'); }}
+                className="px-4 py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors whitespace-nowrap"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
       </div>

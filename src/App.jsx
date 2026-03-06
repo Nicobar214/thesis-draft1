@@ -10,6 +10,8 @@ import UserFMRProjects from "./pages/UserFMRProjects";
 import UserMapView from "./pages/UserMapView";
 import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import FieldEngineerAuth from "./pages/FieldEngineerAuth";
+import FieldEngineerDashboard from "./pages/FieldEngineerDashboard";
 
 function App() {
   return (
@@ -43,6 +45,14 @@ function App() {
         <Route path="/user/map" element={
           <ProtectedRoute requiredRole="user">
             <UserMapView />
+          </ProtectedRoute>
+        } />
+
+        {/* ===== FIELD ENGINEER SIDE ===== */}
+        <Route path="/field-engineer/login" element={<FieldEngineerAuth />} />
+        <Route path="/field-engineer" element={
+          <ProtectedRoute requiredRole="field_engineer">
+            <FieldEngineerDashboard />
           </ProtectedRoute>
         } />
 
