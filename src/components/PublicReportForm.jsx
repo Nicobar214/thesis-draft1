@@ -34,7 +34,7 @@ function computeVerification(userLat, userLng, accuracy, projectLat, projectLng)
 
 // ── Shared input class ─────────────────────────────────────
 const inputCls =
-  'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition';
+  'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition';
 
 // ═══════════════════════════════════════════════════════════
 export default function PublicReportForm() {
@@ -399,7 +399,7 @@ export default function PublicReportForm() {
     return (
       <div className="text-center py-12 px-6">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
-          <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
@@ -407,7 +407,7 @@ export default function PublicReportForm() {
         <p className="text-slate-600 max-w-md mx-auto mb-6">
           Your feedback has been recorded. The photo and location were verified to support your report. Thank you for helping monitor community projects.
         </p>
-        <button onClick={resetAll} className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-semibold text-sm transition">
+        <button onClick={resetAll} className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-semibold text-sm transition">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
           Submit another report
         </button>
@@ -422,7 +422,7 @@ export default function PublicReportForm() {
       {stepLabels.map((label, i) => (
         <div key={label} className="flex-1">
           <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-          <p className={`text-[10px] mt-1 text-center font-medium ${i <= step ? 'text-emerald-600' : 'text-slate-400'}`}>{label}</p>
+          <p className={`text-[10px] mt-1 text-center font-medium ${i <= step ? 'text-teal-600' : 'text-slate-400'}`}>{label}</p>
         </div>
       ))}
     </div>
@@ -444,7 +444,7 @@ export default function PublicReportForm() {
 
         <div className="text-center py-4">
           <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+            <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
           </div>
           <h3 className="text-lg font-bold text-slate-900 mb-1">Enable Location Access</h3>
           <p className="text-sm text-slate-500 max-w-xs mx-auto mb-5">
@@ -462,7 +462,7 @@ export default function PublicReportForm() {
             type="button"
             onClick={requestGps}
             disabled={gpsLoading}
-            className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-60 transition shadow-lg shadow-emerald-500/20"
+            className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20"
           >
             {gpsLoading ? (
               <>
@@ -549,7 +549,7 @@ export default function PublicReportForm() {
 
           <div className="flex justify-end pt-2">
             <button type="button" disabled={!municipality || !barangay} onClick={() => { setError(null); setStep(1); }}
-              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 transition">
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
               Next: Select Project
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
@@ -592,7 +592,7 @@ export default function PublicReportForm() {
           <div className="flex justify-between pt-2">
             <button type="button" onClick={() => setStep(0)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
             <button type="button" disabled={!selectedProject} onClick={() => { setError(null); setStep(2); }}
-              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 transition">
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
               Next: Take Photo
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
@@ -650,7 +650,7 @@ export default function PublicReportForm() {
           <div className="flex justify-between pt-2">
             <button type="button" onClick={() => { stopCamera(); setStep(1); }} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
             <button type="button" disabled={!photoBlob} onClick={() => { setError(null); setStep(3); }}
-              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 transition">
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
               Next: Add Details
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
@@ -684,7 +684,7 @@ export default function PublicReportForm() {
           <div className="flex justify-between pt-2">
             <button type="button" onClick={() => setStep(2)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
             <button type="button" disabled={!description.trim()} onClick={() => { setError(null); setStep(4); }}
-              className="inline-flex items-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-50 transition">
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
               Review &amp; Submit
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
@@ -739,7 +739,7 @@ export default function PublicReportForm() {
             <div className="flex justify-between pt-2">
               <button type="button" onClick={() => setStep(3)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
               <button type="button" onClick={handleSubmit} disabled={submitting}
-                className="inline-flex items-center gap-2 bg-emerald-600 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-emerald-700 disabled:opacity-60 transition shadow-lg shadow-emerald-500/20">
+                className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20">
                 {submitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -759,3 +759,4 @@ export default function PublicReportForm() {
     </div>
   );
 }
+

@@ -80,6 +80,17 @@ $$ LANGUAGE plpgsql SECURITY DEFINER STABLE
    SET search_path = public
    SET row_security = off;
 
+CREATE OR REPLACE FUNCTION public.is_admin_jwt()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN COALESCE(auth.jwt()->'user_metadata'->>'role', '') = 'admin'
+    OR COALESCE(auth.jwt()->'app_metadata'->>'role', '') = 'admin';
+END;
+$$ LANGUAGE plpgsql STABLE
+   SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION public.is_admin_jwt TO authenticated;
+
 -- ══════════════════════════════════════════════════════════════
 -- 4. RPC: create_field_engineer_profile (SECURITY DEFINER)
 --    Called from admin dashboard and FE login fallback.
@@ -108,6 +119,31 @@ $$ LANGUAGE plpgsql SECURITY DEFINER
 
 GRANT EXECUTE ON FUNCTION public.create_field_engineer_profile TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.get_field_engineers_secure()
+RETURNS TABLE (
+  id UUID,
+  email TEXT,
+  full_name TEXT,
+  phone TEXT,
+  role TEXT,
+  created_at TIMESTAMPTZ
+) AS $$
+  SELECT
+    p.id,
+    p.email,
+    p.full_name,
+    p.phone,
+    p.role,
+    p.created_at
+  FROM public.profiles p
+  WHERE lower(replace(replace(COALESCE(p.role, ''), '-', '_'), ' ', '_')) = 'field_engineer'
+  ORDER BY lower(COALESCE(p.full_name, p.email, ''));
+$$ LANGUAGE sql SECURITY DEFINER STABLE
+   SET search_path = public
+   SET row_security = off;
+
+GRANT EXECUTE ON FUNCTION public.get_field_engineers_secure() TO authenticated;
+
 -- ══════════════════════════════════════════════════════════════
 -- 5. RLS POLICIES – profiles
 -- ══════════════════════════════════════════════════════════════
@@ -119,17 +155,18 @@ CREATE POLICY "Authenticated can view profiles"
 DO $$ BEGIN DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 CREATE POLICY "Users can update own profile"
   ON public.profiles FOR UPDATE TO authenticated
-  USING (auth.uid() = id OR public.is_admin());
+  USING (auth.uid() = id OR public.is_admin_jwt())
+  WITH CHECK (auth.uid() = id OR public.is_admin_jwt());
 
 DO $$ BEGIN DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT TO authenticated
-  WITH CHECK (auth.uid() = id OR public.is_admin());
+  WITH CHECK (auth.uid() = id OR public.is_admin_jwt());
 
 DO $$ BEGIN DROP POLICY IF EXISTS "Admin can delete profiles" ON public.profiles; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 CREATE POLICY "Admin can delete profiles"
   ON public.profiles FOR DELETE TO authenticated
-  USING (public.is_admin());
+  USING (public.is_admin_jwt());
 
 -- ══════════════════════════════════════════════════════════════
 -- 6. RLS POLICIES – public_reports (SELECT, UPDATE, INSERT, DELETE)

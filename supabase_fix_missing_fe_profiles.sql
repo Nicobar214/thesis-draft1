@@ -20,19 +20,82 @@ ON CONFLICT (id) DO UPDATE SET
   role = 'field_engineer',
   updated_at = now();
 
--- Fix infinite recursion: is_admin() queries profiles but RLS policies call is_admin()
--- Adding SET row_security = off makes the function bypass RLS internally
-CREATE OR REPLACE FUNCTION public.is_admin()
+-- Non-recursive admin helper for RLS policies on public.profiles.
+-- Uses JWT metadata and does not query public.profiles.
+CREATE OR REPLACE FUNCTION public.is_admin_jwt()
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid() AND role = 'admin'
-  );
+  RETURN COALESCE(auth.jwt()->'user_metadata'->>'role', '') = 'admin'
+    OR COALESCE(auth.jwt()->'app_metadata'->>'role', '') = 'admin';
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE
+$$ LANGUAGE plpgsql STABLE
+   SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION public.is_admin_jwt TO authenticated;
+
+-- Recreate profiles policies without any profiles self-query to avoid recursion.
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Drop ALL existing profiles policies first, including legacy/custom names.
+DO $$
+DECLARE pol RECORD;
+BEGIN
+  FOR pol IN
+    SELECT policyname
+    FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'profiles'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.profiles', pol.policyname);
+  END LOOP;
+END $$;
+
+CREATE POLICY "Authenticated can view profiles"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Users can update own profile"
+  ON public.profiles FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = id OR public.is_admin_jwt())
+  WITH CHECK (auth.uid() = id OR public.is_admin_jwt());
+
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = id OR public.is_admin_jwt());
+
+CREATE POLICY "Admin can delete profiles"
+  ON public.profiles FOR DELETE
+  TO authenticated
+  USING (public.is_admin_jwt());
+
+-- SECURITY DEFINER RPC for dashboard engineer dropdown.
+-- Bypasses RLS recursion and returns only field engineers.
+CREATE OR REPLACE FUNCTION public.get_field_engineers_secure()
+RETURNS TABLE (
+  id UUID,
+  email TEXT,
+  full_name TEXT,
+  phone TEXT,
+  role TEXT,
+  created_at TIMESTAMPTZ
+) AS $$
+  SELECT
+    p.id,
+    p.email,
+    p.full_name,
+    p.phone,
+    p.role,
+    p.created_at
+  FROM public.profiles p
+  WHERE lower(replace(replace(COALESCE(p.role, ''), '-', '_'), ' ', '_')) = 'field_engineer'
+  ORDER BY lower(COALESCE(p.full_name, p.email, ''));
+$$ LANGUAGE sql SECURITY DEFINER STABLE
    SET search_path = public
    SET row_security = off;
+
+GRANT EXECUTE ON FUNCTION public.get_field_engineers_secure() TO authenticated;
 
 -- Also ensure the RPC function exists (in case migration wasn't run)
 CREATE OR REPLACE FUNCTION public.create_field_engineer_profile(

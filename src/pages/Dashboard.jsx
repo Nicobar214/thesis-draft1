@@ -292,20 +292,78 @@ export default function Dashboard() {
   const fetchFieldEngineers = useCallback(async () => {
     setFeLoadError('');
     try {
-      const { data, error: fetchErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'field_engineer')
-        .order('full_name', { ascending: true });
-      if (fetchErr) {
-        console.error('Error fetching field engineers:', fetchErr);
-        setFeLoadError(`Failed to load engineers: ${fetchErr.message}. Run supabase_complete_fe_setup.sql in SQL Editor.`);
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('get_field_engineers_secure');
+      if (!rpcErr && Array.isArray(rpcData)) {
+        console.log('Field engineers loaded via RPC:', rpcData.length, rpcData);
+        setFieldEngineers(rpcData);
+        if (rpcData.length === 0) {
+          setFeLoadError('No field engineers found. Go to Settings -> Field Engineers to register one.');
+        }
         return;
       }
-      console.log('Field engineers loaded:', data?.length || 0, data);
-      setFieldEngineers(data || []);
-      if (data?.length === 0) {
-        setFeLoadError('No field engineers registered yet. Use the form below to register one.');
+
+      const rpcMessage = String(rpcErr?.message || '');
+      const rpcMissing = rpcMessage.toLowerCase().includes('does not exist');
+      if (!rpcMissing && rpcErr) {
+        console.error('Error fetching field engineers via RPC:', rpcErr);
+        setFeLoadError(`Failed to load engineers via secure RPC: ${rpcMessage}. Re-run supabase_fix_missing_fe_profiles.sql in SQL Editor.`);
+        return;
+      }
+
+      const { data, error: fetchErr } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, phone, role, created_at')
+        .order('created_at', { ascending: false });
+      if (fetchErr) {
+        console.error('Error fetching field engineers:', fetchErr);
+        const msg = String(fetchErr.message || 'Unknown error');
+        if (msg.toLowerCase().includes('infinite recursion')) {
+          setFeLoadError('Failed to load engineers: profiles RLS recursion detected. Run supabase_fix_missing_fe_profiles.sql in SQL Editor, then refresh this page.');
+        } else {
+          setFeLoadError(`Failed to load engineers: ${msg}. Run supabase_complete_fe_setup.sql in SQL Editor.`);
+        }
+        return;
+      }
+
+      const normalizeRole = (role) =>
+        String(role || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[\s-]+/g, '_');
+
+      const engineersByRole = (data || [])
+        .filter((profile) => normalizeRole(profile.role) === 'field_engineer')
+        .sort((a, b) => {
+          const aName = (a.full_name || a.email || '').toLowerCase();
+          const bName = (b.full_name || b.email || '').toLowerCase();
+          return aName.localeCompare(bName);
+        });
+
+      let engineers = engineersByRole;
+
+      // Fallback for legacy datasets where FE accounts were created but role was not set correctly.
+      if (engineers.length === 0) {
+        const fallbackProfiles = (data || [])
+          .filter((profile) => {
+            const role = normalizeRole(profile.role);
+            return role !== 'admin' && profile.id && (profile.full_name || profile.email);
+          })
+          .sort((a, b) => {
+            const aName = (a.full_name || a.email || '').toLowerCase();
+            const bName = (b.full_name || b.email || '').toLowerCase();
+            return aName.localeCompare(bName);
+          });
+
+        if (fallbackProfiles.length > 0) {
+          engineers = fallbackProfiles;
+          setFeLoadError('No profiles are tagged as field_engineer. Showing non-admin profiles as fallback. Update profile roles to field_engineer for accurate assignment.');
+        }
+      }
+
+      console.log('Field engineers loaded:', engineers.length, engineers);
+      setFieldEngineers(engineers);
+      if (engineers.length === 0) {
+        setFeLoadError('No field engineers found in profiles. If you created users directly in Auth, run supabase_fix_missing_fe_profiles.sql, then refresh.');
       }
     } catch (err) {
       console.error('Error fetching field engineers:', err.message);
@@ -494,6 +552,16 @@ export default function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Keep this list aligned with AdminAuthPage.
+      const adminEmails = ['gab@gmail.com'];
+      const currentEmail = (user.email || '').toLowerCase();
+      const isAllowedAdmin = adminEmails.includes(currentEmail);
+
+      if (!isAllowedAdmin) {
+        // Never auto-promote non-admin accounts.
+        return;
+      }
+
       // Check if admin profile already exists
       const { data: existing } = await supabase
         .from('profiles')
@@ -502,19 +570,6 @@ export default function Dashboard() {
         .maybeSingle();
 
       if (existing && existing.role === 'admin') return; // already set
-
-      // Try RPC first (bypasses RLS via SECURITY DEFINER)
-      const { error: rpcErr } = await supabase.rpc('create_field_engineer_profile', {
-        user_id: user.id,
-        user_email: user.email,
-        user_name: user.user_metadata?.full_name || 'Admin',
-        user_phone: ''
-      });
-      // RPC creates as field_engineer, so we need to update to admin
-      // OR just do a direct upsert
-      if (rpcErr) {
-        console.warn('RPC for admin profile failed, trying direct upsert:', rpcErr);
-      }
 
       // Upsert admin profile directly
       const { error: upsertErr } = await supabase
@@ -528,7 +583,7 @@ export default function Dashboard() {
 
       if (upsertErr) {
         console.warn('Admin profile upsert failed:', upsertErr);
-        // Last resort: insert with service role if table is empty / no RLS issues
+        // Last resort: direct insert
         const { error: insertErr } = await supabase
           .from('profiles')
           .insert({
@@ -2966,6 +3021,9 @@ export default function Dashboard() {
                           )}
                           {fieldEngineers.length === 0 && (
                             <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">No field engineers registered yet. Go to <strong>Settings → Field Engineers</strong> to register one, then come back here to assign.</p>
+                          )}
+                          {feLoadError && (
+                            <p className="text-xs text-amber-700 mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">{feLoadError}</p>
                           )}
                         </div>
                       </div>

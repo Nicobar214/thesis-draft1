@@ -8,6 +8,8 @@ import UserReports from "./pages/UserReports";
 import UserFeedback from "./pages/UserFeedback";
 import UserFMRProjects from "./pages/UserFMRProjects";
 import UserMapView from "./pages/UserMapView";
+import UserProfile from "./pages/UserProfile";
+import UserProjects from "./pages/UserProjects";
 import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import FieldEngineerAuth from "./pages/FieldEngineerAuth";
@@ -37,6 +39,11 @@ function App() {
             <UserFeedback />
           </ProtectedRoute>
         } />
+        <Route path="/user/projects" element={
+          <ProtectedRoute requiredRole="user">
+            <UserProjects />
+          </ProtectedRoute>
+        } />
         <Route path="/user/fmr-projects" element={
           <ProtectedRoute requiredRole="user">
             <UserFMRProjects />
@@ -45,6 +52,11 @@ function App() {
         <Route path="/user/map" element={
           <ProtectedRoute requiredRole="user">
             <UserMapView />
+          </ProtectedRoute>
+        } />
+        <Route path="/user/profile" element={
+          <ProtectedRoute requiredRole="user">
+            <UserProfile />
           </ProtectedRoute>
         } />
 

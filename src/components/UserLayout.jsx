@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import UserSidebar from './UserSidebar';
 
@@ -9,8 +10,22 @@ import UserSidebar from './UserSidebar';
  */
 export default function UserLayout({ children }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  const pageTitleMap = {
+    '/user': 'Dashboard',
+    '/user/fmr-projects': 'FMR Projects',
+    '/user/projects': 'Projects',
+    '/user/map': 'Map View',
+    '/user/reports': 'My Reports',
+    '/user/feedback': 'Community Feedback',
+    '/user/profile': 'Profile',
+  };
+
+  const pageTitle = pageTitleMap[location.pathname] || 'User Portal';
+  const userLabel = user?.email?.split('@')?.[0] || 'there';
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -20,7 +35,7 @@ export default function UserLayout({ children }) {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-slate-50">
       <UserSidebar collapsed={collapsed} setCollapsed={setCollapsed} user={user} />
 
       {/* Main content area */}
@@ -29,10 +44,18 @@ export default function UserLayout({ children }) {
           collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'
         }`}
       >
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8 pt-16 lg:pt-8">
+        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <h1 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
+            <p className="hidden sm:block text-sm text-slate-500">Welcome back, {userLabel}</p>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pt-20 lg:pt-6">
           {children}
         </div>
       </main>
     </div>
   );
 }
+
