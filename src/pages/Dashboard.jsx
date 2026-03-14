@@ -23,12 +23,10 @@ import {
 } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 
-/* ─── FMR Status helpers (matches user-side) ─── */
 function normalizeFmrStatus(s) {
   if (!s) return '';
   const lower = s.toLowerCase().replace(/[-\s]/g, '');
   if (lower === 'ongoing') return 'On-Going';
-  if (lower === 'completed') return 'Completed';
   if (lower === 'proposed') return 'Proposed';
   return s;
 }
@@ -40,6 +38,40 @@ function getFmrStatusColor(status) {
     case 'Proposed':  return { fill: '#3b82f6', stroke: '#2563eb' };
     default:          return { fill: '#6b7280', stroke: '#4b5563' };
   }
+}
+
+function parseDateOnly(dateValue) {
+  if (!dateValue) return null;
+
+  if (dateValue instanceof Date) {
+    if (Number.isNaN(dateValue.getTime())) return null;
+    const normalized = new Date(dateValue);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  }
+
+  const raw = String(dateValue).trim();
+  if (!raw) return null;
+
+  // Handle yyyy-mm-dd safely in local time (avoid UTC offset surprises).
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const year = Number(isoMatch[1]);
+    const month = Number(isoMatch[2]) - 1;
+    const day = Number(isoMatch[3]);
+    return new Date(year, month, day);
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function isPastDate(dateValue, todayDate) {
+  const date = parseDateOnly(dateValue);
+  if (!date) return false;
+  return date < todayDate;
 }
 
 /* ─── Map bounds fitter for admin ─── */
@@ -90,7 +122,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('projects');
   const [showSidebar, setShowSidebar] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -157,6 +189,11 @@ export default function Dashboard() {
   const [fmrProjectSearch, setFmrProjectSearch] = useState('');
   const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('All');
   const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
+
+  // Reports tab state (split sections + per-section pagination)
+  const [reportsSectionFilter, setReportsSectionFilter] = useState('ongoing');
+  const [reportsPageBySection, setReportsPageBySection] = useState({ completed: 1, delayed: 1, ongoing: 1 });
+  const reportsPerSectionPage = 8;
 
   // Project feedback viewer state (admin: see all feedback linked to a project)
   const [projectFeedbackModal, setProjectFeedbackModal] = useState(null); // holds the project object
@@ -635,7 +672,7 @@ export default function Dashboard() {
   const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
 
   const analyticsProjectsByMunicipality = useMemo(() => {
-    const counts = projects.reduce((acc, p) => {
+    const counts = fmrProjects.reduce((acc, p) => {
       const municipality = p.municipality || 'Unspecified';
       acc[municipality] = (acc[municipality] || 0) + 1;
       return acc;
@@ -644,21 +681,20 @@ export default function Dashboard() {
       .map(([municipality, count]) => ({ municipality, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
-  }, [projects]);
+  }, [fmrProjects]);
 
   const analyticsStatusDistribution = useMemo(() => {
-    const statuses = ['Planning', 'Bidding', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
+    const statuses = ['Completed', 'On-Going', 'Proposed'];
     return statuses
-      .map((status) => ({ name: status, value: projects.filter((p) => p.status === status).length }))
+      .map((status) => ({ name: status, value: fmrProjects.filter((p) => normalizeFmrStatus(p.status) === status).length }))
       .filter((entry) => entry.value > 0);
-  }, [projects]);
+  }, [fmrProjects]);
 
   const analyticsProjectsPerMonth = useMemo(() => {
-    const monthly = projects.reduce((acc, project) => {
-      if (!project.created_at) return acc;
-      const d = new Date(project.created_at);
-      if (Number.isNaN(d.getTime())) return acc;
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const monthly = fmrProjects.reduce((acc, project) => {
+      const year = Number(project.year_funded);
+      if (!year || Number.isNaN(year)) return acc;
+      const key = `${year}-01`;
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
@@ -668,21 +704,28 @@ export default function Dashboard() {
         month: key,
         projects: monthly[key],
       }));
-  }, [projects]);
+  }, [fmrProjects]);
 
   const analyticsBudgetDisbursedOverTime = useMemo(() => {
-    const monthly = projects.reduce((acc, project) => {
-      if (!project.created_at) return acc;
-      const d = new Date(project.created_at);
-      if (Number.isNaN(d.getTime())) return acc;
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const monthly = fmrProjects.reduce((acc, project) => {
+      const year = Number(project.year_funded);
+      if (!year || Number.isNaN(year)) return acc;
+      const key = `${year}-01`;
       if (!acc[key]) acc[key] = { month: key, budget: 0, disbursed: 0 };
-      acc[key].budget += Number(project.totalBudget || 0);
-      acc[key].disbursed += Number(project.disbursedAmount || 0);
+
+      const budgetValue = Number(
+        project.total_budget ?? project.totalBudget ?? project.budget ?? project.project_cost ?? project.cost ?? project.allocated_budget ?? 0
+      );
+      const disbursedValue = Number(
+        project.disbursed_amount ?? project.disbursedAmount ?? project.spent_amount ?? project.released_amount ?? 0
+      );
+
+      acc[key].budget += Number.isNaN(budgetValue) ? 0 : budgetValue;
+      acc[key].disbursed += Number.isNaN(disbursedValue) ? 0 : disbursedValue;
       return acc;
     }, {});
     return Object.values(monthly).sort((a, b) => a.month.localeCompare(b.month));
-  }, [projects]);
+  }, [fmrProjects]);
 
   const formatMonthKey = (monthKey) => {
     const [year, month] = monthKey.split('-').map(Number);
@@ -766,26 +809,60 @@ export default function Dashboard() {
     showNotification('CSV export complete.');
   };
 
-  // Classify projects for Reports tab: Completed, Delayed, Ongoing
-  const classifiedProjects = useMemo(() => {
+  // Classify FMR projects for Reports tab: Completed, Delayed, Ongoing
+  const classifiedFmrProjects = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const completedProjects = [];
     const delayedProjects = [];
     const ongoingProjects = [];
 
-    projects.forEach(p => {
-      if (p.status === 'Completed') {
+    fmrProjects.forEach(p => {
+      const status = normalizeFmrStatus(p.status);
+      const accomplishment = Number(p.accomplishment || 0);
+      const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
+      const isDelayed = !isCompleted && isPastDate(p.target_completion_date, today);
+
+      if (isCompleted) {
         completedProjects.push(p);
-      } else if (p.expectedEndDate && new Date(p.expectedEndDate) < today && p.status !== 'Cancelled') {
+      } else if (isDelayed) {
         delayedProjects.push(p);
-      } else if (['In Progress', 'Planning', 'Bidding', 'On Hold'].includes(p.status)) {
+      } else {
         ongoingProjects.push(p);
       }
     });
 
     return { completedProjects, delayedProjects, ongoingProjects };
-  }, [projects]);
+  }, [fmrProjects]);
+
+  useEffect(() => {
+    const sectionSizes = {
+      completed: classifiedFmrProjects.completedProjects.length,
+      delayed: classifiedFmrProjects.delayedProjects.length,
+      ongoing: classifiedFmrProjects.ongoingProjects.length,
+    };
+
+    setReportsPageBySection((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      Object.entries(sectionSizes).forEach(([key, totalItems]) => {
+        const maxPage = Math.max(1, Math.ceil(totalItems / reportsPerSectionPage));
+        const current = prev[key] || 1;
+        if (current > maxPage) {
+          next[key] = maxPage;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [
+    classifiedFmrProjects.completedProjects.length,
+    classifiedFmrProjects.delayedProjects.length,
+    classifiedFmrProjects.ongoingProjects.length,
+    reportsPerSectionPage,
+  ]);
 
   // Form handlers
   const handleInputChange = (e) => {
@@ -1017,7 +1094,6 @@ export default function Dashboard() {
   };
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
@@ -1193,7 +1269,6 @@ export default function Dashboard() {
           <div className="px-6 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
             <div className="pl-12 lg:pl-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                {activeTab === 'dashboard' && 'Dashboard Overview'}
                 {activeTab === 'projects' && 'FMR Projects'}
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
@@ -1203,7 +1278,6 @@ export default function Dashboard() {
                 {activeTab === 'settings' && 'Settings'}
               </h1>
               <p className="text-sm text-slate-600 mt-1">
-                {activeTab === 'dashboard' && 'Real-time monitoring of farm-to-market road projects'}
                 {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
@@ -1213,7 +1287,7 @@ export default function Dashboard() {
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
-            {(activeTab === 'dashboard' || activeTab === 'projects') && (
+            {activeTab === 'projects' && (
               <button
                 onClick={() => {
                   setFormData({ ...emptyForm, projectCode: generateProjectCode() });
@@ -1644,6 +1718,30 @@ export default function Dashboard() {
                   </div>
                   <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
                   <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-50 to-violet-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3" /></svg>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{metrics.totalReports}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Public Reports Submitted</p>
+                  <p className="text-xs text-slate-400 mt-1">{pendingPublicReportsCount} pending review</p>
+                </div>
+
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-50 to-pink-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
+                    </div>
+                  </div>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{metrics.totalFeedbacks}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">User Feedback Submitted</p>
+                  <p className="text-xs text-slate-400 mt-1">{pendingFeedbackCount} pending review</p>
                 </div>
               </div>
 
@@ -2105,7 +2203,40 @@ export default function Dashboard() {
             const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const today = new Date(); today.setHours(0,0,0,0);
 
-            const renderProjectTable = (title, list, colorStyles, emptyMsg) => (
+            const sectionMeta = {
+              completed: {
+                key: 'completed',
+                title: 'Completed Projects',
+                emptyMsg: 'No completed projects yet.',
+                colorStyles: { gradient: 'from-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' },
+                list: classifiedFmrProjects.completedProjects,
+              },
+              delayed: {
+                key: 'delayed',
+                title: 'Delayed Projects',
+                emptyMsg: 'No delayed projects - all on schedule!',
+                colorStyles: { gradient: 'from-red-50', iconBg: 'bg-red-100', iconText: 'text-red-600' },
+                list: classifiedFmrProjects.delayedProjects,
+              },
+              ongoing: {
+                key: 'ongoing',
+                title: 'Ongoing Projects',
+                emptyMsg: 'No ongoing projects.',
+                colorStyles: { gradient: 'from-blue-50', iconBg: 'bg-blue-100', iconText: 'text-blue-600' },
+                list: classifiedFmrProjects.ongoingProjects,
+              },
+            };
+
+            const sectionKeys = ['ongoing', 'delayed', 'completed'];
+
+            const renderProjectTable = (section) => {
+              const { key, title, list, colorStyles, emptyMsg } = section;
+              const totalPages = Math.max(1, Math.ceil(list.length / reportsPerSectionPage));
+              const currentPage = Math.min(reportsPageBySection[key] || 1, totalPages);
+              const start = (currentPage - 1) * reportsPerSectionPage;
+              const pagedList = list.slice(start, start + reportsPerSectionPage);
+
+              return (
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
                 <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r ${colorStyles.gradient} to-white flex items-center justify-between`}>
                   <div className="flex items-center gap-3">
@@ -2114,82 +2245,137 @@ export default function Dashboard() {
                     </span>
                     <div>
                       <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-                      <p className="text-sm text-slate-500">{list.length} project{list.length !== 1 ? 's' : ''}</p>
+                      <p className="text-sm text-slate-500">{list.length} project{list.length !== 1 ? 's' : ''} total</p>
                     </div>
                   </div>
                 </div>
                 {list.length === 0 ? (
                   <EmptyState title="No records" description={emptyMsg} />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[700px]">
-                      <thead>
-                        <tr className="bg-slate-50/50">
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Start Date</th>
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Expected End</th>
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Progress</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {list.map((p) => {
-                          const isOverdue = p.expectedEndDate && new Date(p.expectedEndDate) < today && p.status !== 'Completed';
-                          return (
-                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4">
-                                <p className="font-semibold text-sm text-slate-900">{p.projectName}</p>
-                                <p className="text-xs text-slate-400 font-mono mt-0.5">{p.projectCode}</p>
-                              </td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{p.barangay}, {p.municipality}</td>
-                              <td className="px-6 py-4 text-sm text-slate-600">{fmtDateShort(p.startDate)}</td>
-                              <td className="px-6 py-4">
-                                <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>{fmtDateShort(p.expectedEndDate)}</span>
-                                {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
-                              </td>
-                              <td className="px-6 py-4">
-                                {renderStatusPill(p.status)}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
-                                    <div className={`h-2 rounded-full ${p.progress === 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${p.progress || 0}%` }} />
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[700px]">
+                        <thead>
+                          <tr className="bg-slate-50/50">
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Year Funded</th>
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Completion</th>
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Accomplishment</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {pagedList.map((p) => {
+                            const status = normalizeFmrStatus(p.status);
+                            const accomplishment = Number(p.accomplishment || 0);
+                            const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
+                            const isOverdue = !isCompleted && isPastDate(p.target_completion_date, today);
+                            return (
+                              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-6 py-4">
+                                  <p className="font-semibold text-sm text-slate-900">{p.project_name}</p>
+                                  <p className="text-xs text-slate-400 font-mono mt-0.5">{p.id ? `ID-${p.id}` : 'FMR'}</p>
+                                </td>
+                                <td className="px-6 py-4 text-sm text-slate-700">{p.location || `${p.municipality || 'N/A'}, ${p.province || 'Iloilo'}`}</td>
+                                <td className="px-6 py-4 text-sm text-slate-600">{p.year_funded || '—'}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>{fmtDateShort(p.target_completion_date)}</span>
+                                  {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
+                                </td>
+                                <td className="px-6 py-4">
+                                  {renderStatusPill(status)}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                      <div className={`h-2 rounded-full ${(p.accomplishment || 0) >= 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${Math.min(p.accomplishment || 0, 100)}%` }} />
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-700">{p.accomplishment || 0}%</span>
                                   </div>
-                                  <span className="text-xs font-bold text-slate-700">{p.progress || 0}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="px-6 sm:px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <p className="text-xs sm:text-sm text-slate-500">
+                        Showing <span className="font-bold text-slate-700">{start + 1}</span> to{' '}
+                        <span className="font-bold text-slate-700">{Math.min(start + reportsPerSectionPage, list.length)}</span> of{' '}
+                        <span className="font-bold text-slate-700">{list.length}</span>
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.max(1, currentPage - 1) }))}
+                          disabled={currentPage === 1}
+                          className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-xs sm:text-sm font-semibold text-slate-600 min-w-[78px] text-center">Page {currentPage} / {totalPages}</span>
+                        <button
+                          onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.min(totalPages, currentPage + 1) }))}
+                          disabled={currentPage === totalPages}
+                          className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-            );
+              );
+            };
 
             return (
               <div className="space-y-8">
                 {/* Summary stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-emerald-700">{classifiedProjects.completedProjects.length}</p>
-                    <p className="text-sm text-emerald-600 mt-1 font-medium">Completed Projects</p>
+                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-6">
+                    <p className="text-3xl font-bold text-blue-700">{classifiedFmrProjects.ongoingProjects.length}</p>
+                    <p className="text-sm text-blue-600 mt-1 font-medium">Ongoing Projects</p>
                   </div>
                   <div className="bg-red-50 border border-red-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-red-700">{classifiedProjects.delayedProjects.length}</p>
+                    <p className="text-3xl font-bold text-red-700">{classifiedFmrProjects.delayedProjects.length}</p>
                     <p className="text-sm text-red-600 mt-1 font-medium">Delayed Projects</p>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-blue-700">{classifiedProjects.ongoingProjects.length}</p>
-                    <p className="text-sm text-blue-600 mt-1 font-medium">Ongoing Projects</p>
+                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-6">
+                    <p className="text-3xl font-bold text-emerald-700">{classifiedFmrProjects.completedProjects.length}</p>
+                    <p className="text-sm text-emerald-600 mt-1 font-medium">Completed Projects</p>
                   </div>
                 </div>
 
-                {renderProjectTable('Completed Projects', classifiedProjects.completedProjects, { gradient: 'from-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' }, 'No completed projects yet.')}
-                {renderProjectTable('Delayed Projects', classifiedProjects.delayedProjects, { gradient: 'from-red-50', iconBg: 'bg-red-100', iconText: 'text-red-600' }, 'No delayed projects — all on schedule!')}
-                {renderProjectTable('Ongoing Projects', classifiedProjects.ongoingProjects, { gradient: 'from-blue-50', iconBg: 'bg-blue-100', iconText: 'text-blue-600' }, 'No ongoing projects.')}
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-4 sm:p-5 shadow-sm">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Report Sections</p>
+                  <div className="flex flex-wrap gap-2">
+                    {sectionKeys.map((key) => {
+                      const section = sectionMeta[key];
+                      const isActive = reportsSectionFilter === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setReportsSectionFilter(key);
+                            setReportsPageBySection((prev) => ({ ...prev, [key]: 1 }));
+                          }}
+                          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
+                            isActive
+                              ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-transparent shadow-md shadow-teal-500/20'
+                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          {section.title} ({section.list.length})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {renderProjectTable(sectionMeta[reportsSectionFilter])}
               </div>
             );
           })()}
@@ -2464,6 +2650,12 @@ export default function Dashboard() {
             const resolvedCount = publicReports.filter(r => r.status === 'resolved').length;
             const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
 
+            const groupedPublicReports = {
+              pending: filteredPublicReports.filter(r => r.status === 'pending'),
+              reviewed: filteredPublicReports.filter(r => r.status === 'reviewed'),
+              resolved: filteredPublicReports.filter(r => r.status === 'resolved'),
+            };
+
             const verifyBadge = (v) => {
               const map = {
                 'Verified On-Site': { icon: '✔', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -2477,6 +2669,43 @@ export default function Dashboard() {
             const statusBadge = (status) => {
               return renderStatusPill(status, status?.charAt(0).toUpperCase() + status?.slice(1));
             };
+
+            const renderPublicReportItem = (rpt) => (
+              <button key={rpt.id} onClick={() => setSelectedPublicReport(rpt)}
+                className="w-full text-left px-4 py-4 hover:bg-slate-50 transition-colors group">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                      {verifyBadge(rpt.verification)}
+                      {statusBadge(rpt.status)}
+                      {rpt.photo_url && (
+                        <span className="flex items-center gap-1 text-xs text-slate-400">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
+                          Photo
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
+                      {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
+                    <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} · {new Date(rpt.created_at).toLocaleDateString()}</p>
+                      {rpt.assigned_engineer_name && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                          {rpt.assigned_engineer_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {rpt.photo_url && (
+                    <img src={rpt.photo_url} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0" />
+                  )}
+                </div>
+              </button>
+            );
 
             return (
               <div className="space-y-6">
@@ -2747,7 +2976,8 @@ export default function Dashboard() {
                 {/* Reports List */}
                 <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                    <p className="text-sm font-semibold text-slate-700">{filteredPublicReports.length} public report{filteredPublicReports.length !== 1 ? 's' : ''}</p>
+                    <p className="text-sm font-semibold text-slate-700">{filteredPublicReports.length} public report{filteredPublicReports.length !== 1 ? 's' : ''} (divided into 3 sections)</p>
+                    <p className="text-xs text-slate-500 mt-1">Tip: Swipe sideways on smaller screens to switch between sections.</p>
                   </div>
                   {publicReportsLoading ? (
                     <div className="p-8 text-center text-slate-400">
@@ -2771,43 +3001,28 @@ export default function Dashboard() {
                       }}
                     />
                   ) : (
-                    <div className="divide-y divide-slate-100">
-                      {filteredPublicReports.map(rpt => (
-                        <button key={rpt.id} onClick={() => setSelectedPublicReport(rpt)}
-                          className="w-full text-left px-6 py-4 hover:bg-slate-50 transition-colors group">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                {verifyBadge(rpt.verification)}
-                                {statusBadge(rpt.status)}
-                                {rpt.photo_url && (
-                                  <span className="flex items-center gap-1 text-xs text-slate-400">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
-                                    Photo
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
-                                {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
-                              </p>
-                              <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
-                              <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
-                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} &middot; {new Date(rpt.created_at).toLocaleDateString()}</p>
-                                {rpt.assigned_engineer_name && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                    {rpt.assigned_engineer_name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {rpt.photo_url && (
-                              <img src={rpt.photo_url} alt="" className="w-16 h-16 rounded-lg object-cover border border-slate-200 shrink-0" />
-                            )}
-                            <svg className="w-5 h-5 text-slate-300 group-hover:text-teal-500 mt-1 shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                    <div className="flex gap-4 p-4 overflow-x-auto snap-x snap-mandatory lg:grid lg:grid-cols-3 lg:overflow-visible">
+                      {[
+                        { key: 'pending', title: 'Pending', tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+                        { key: 'reviewed', title: 'Reviewed', tone: 'text-blue-700 bg-blue-50 border-blue-200' },
+                        { key: 'resolved', title: 'Resolved', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+                      ].map((section) => (
+                        <div key={section.key} className="min-w-[88%] sm:min-w-[60%] lg:min-w-0 snap-start border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${section.tone}`}>{section.title}</span>
+                            <span className="text-xs font-semibold text-slate-500">{groupedPublicReports[section.key].length}</span>
                           </div>
-                        </button>
+                          <div className="max-h-[360px] lg:max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                            {groupedPublicReports[section.key].length === 0 ? (
+                              <div className="px-4 py-8 text-center">
+                                <p className="text-sm font-medium text-slate-700">No {section.title.toLowerCase()} reports</p>
+                                <p className="text-xs text-slate-500 mt-1">Reports matching your filters will appear here.</p>
+                              </div>
+                            ) : (
+                              groupedPublicReports[section.key].map(renderPublicReportItem)
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
