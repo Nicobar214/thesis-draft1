@@ -1,281 +1,205 @@
-/* PublicReportForm.jsx – Location-Verified Public Feedback (Region VI – Iloilo)
- * Live camera capture + GPS verification. No file uploads allowed.
+﻿/* PublicReportForm.jsx — Location-First Public Report (Region VI — Iloilo)
+ * Flow: locating → picking → reporting → success
+ * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 
 // ── Constants ──────────────────────────────────────────────
-const GPS_MISMATCH_RADIUS = 100; // metres
-const REGION = 'Region VI – Western Visayas';
-const PROVINCE = 'Iloilo';
+const REGION          = 'Region VI – Western Visayas';
+const PROVINCE        = 'Iloilo';
+const RADIUS_MIDPOINT = 250;   // metres – midpoint check
+const RADIUS_ENDPOINT = 150;   // metres – start / end point check
+const RADIUS_WIDER    = 1000;  // metres – "wider search" fallback
 
-// ── Helpers ────────────────────────────────────────────────
-/** Haversine distance in metres between two lat/lng points */
+// ── Haversine ──────────────────────────────────────────────
 function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R = 6_371_000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const R    = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a    = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-// Legacy alias used by computeVerification
-const haversineMetres = haversineMeters;
 
-/** Check if user is within radiusMeters of a point */
-function isNearPoint(userLat, userLng, pointLat, pointLng, radiusMeters) {
-  if (!userLat || !userLng || !pointLat || !pointLng) return false;
-  return haversineMeters(userLat, userLng, pointLat, pointLng) <= radiusMeters;
+function projectMidpoint(p) {
+  if (!p.start_latitude || !p.end_latitude) return null;
+  return {
+    lat: (p.start_latitude  + p.end_latitude)  / 2,
+    lng: (p.start_longitude + p.end_longitude) / 2,
+  };
 }
 
-/**
- * Compute geofence radius for an FMR project corridor.
- * Uses midpoint + half segment length + 300m buffer, min 500m.
- */
-function computeGeofenceRadius(project) {
-  const { start_latitude: sLat, start_longitude: sLng,
-          end_latitude: eLat,   end_longitude: eLng } = project || {};
-  if (!sLat || !sLng || !eLat || !eLng) return 500;
-  const segLen = haversineMeters(sLat, sLng, eLat, eLng);
-  return Math.max(500, (segLen / 2) + 300);
+function isProjectNearby(userLat, userLng, p, midR = RADIUS_MIDPOINT, endR = RADIUS_ENDPOINT) {
+  if (!p.start_latitude) return false;
+  const mid      = projectMidpoint(p);
+  const nearMid  = mid  && haversineMeters(userLat, userLng, mid.lat, mid.lng) <= midR;
+  const nearStart =       haversineMeters(userLat, userLng, p.start_latitude, p.start_longitude) <= endR;
+  const nearEnd  = p.end_latitude &&
+                   haversineMeters(userLat, userLng, p.end_latitude, p.end_longitude) <= endR;
+  return !!(nearMid || nearStart || nearEnd);
 }
 
-/** Midpoint of a project's road segment */
-function segmentMidpoint(project) {
-  const { start_latitude: sLat, start_longitude: sLng,
-          end_latitude: eLat,   end_longitude: eLng } = project || {};
-  if (!sLat || !eLat) return null;
-  return { lat: (sLat + eLat) / 2, lng: (sLng + eLng) / 2 };
+function distToProject(userLat, userLng, p) {
+  const mid = projectMidpoint(p);
+  if (mid)              return haversineMeters(userLat, userLng, mid.lat, mid.lng);
+  if (p.start_latitude) return haversineMeters(userLat, userLng, p.start_latitude, p.start_longitude);
+  return Infinity;
 }
 
-/** Format metres/km distance label */
-function fmtDistance(meters) {
-  if (meters < 1000) return `~${Math.round(meters)}m away`;
-  return `~${(meters / 1000).toFixed(1)}km away`;
+function fmtDist(m) {
+  return m < 1000 ? `~${Math.round(m)}m away` : `~${(m / 1000).toFixed(1)}km away`;
 }
 
-/** Determine verification label */
-function computeVerification(userLat, userLng, accuracy, projectLat, projectLng) {
-  if (!projectLat || !projectLng || !userLat || !userLng) return 'Needs Review';
-  const dist = haversineMetres(userLat, userLng, projectLat, projectLng);
-  if (dist <= GPS_MISMATCH_RADIUS) return 'Verified On-Site';
-  if (accuracy && accuracy > 50) return 'Needs Review'; // weak GPS
+function computeVerification(userLat, userLng, accuracy, projLat, projLng) {
+  if (!projLat || !projLng || !userLat) return 'Needs Review';
+  const d = haversineMeters(userLat, userLng, projLat, projLng);
+  if (d <= 100) return 'Verified On-Site';
+  if (accuracy && accuracy > 50) return 'Needs Review';
   return 'Location Mismatch';
 }
 
-// ── Shared input class ─────────────────────────────────────
-const inputCls =
-  'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition';
+function statusCls(status) {
+  const s = (status || '').toLowerCase();
+  if (s.includes('complet'))                                               return 'bg-emerald-100 text-emerald-700';
+  if (s.includes('progress') || s.includes('going') || s.includes('ongoing')) return 'bg-blue-100 text-blue-700';
+  if (s.includes('proposed'))                                              return 'bg-sky-100 text-sky-700';
+  return 'bg-slate-100 text-slate-600';
+}
 
+// ── Categories ─────────────────────────────────────────────
+const CATS = [
+  { id: 'issue',   label: 'Issue',   icon: '⚠️' },
+  { id: 'safety',  label: 'Safety',  icon: '🦺' },
+  { id: 'flood',   label: 'Flood',   icon: '🌊' },
+  { id: 'general', label: 'General', icon: '📋' },
+];
+
+// ── Shared input style ──────────────────────────────────────
+const inputCls =
+  'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm ' +
+  'focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition';
+// ═══════════════════════════════════════════════════════════
+//  COMPONENT
 // ═══════════════════════════════════════════════════════════
 export default function PublicReportForm() {
-  // ── Step management (0-based) ──
-  const STEPS = ['location', 'project', 'photo', 'feedback', 'review'];
-  const [step, setStep] = useState(-1); // -1 = GPS consent screen
+  // ── Step: 'locating' | 'picking' | 'reporting' | 'success' ──
+  const [step, setStep] = useState('locating');
 
-  // ── GPS state ──
-  const [gps, setGps] = useState({ lat: null, lng: null, accuracy: null });
-  const [gpsError, setGpsError] = useState(null);
+  // ── GPS ──
+  const [gps,        setGps]        = useState(null);  // { lat, lng, accuracy }
+  const [gpsError,   setGpsError]   = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
-
-  // ── Location selection ──
-  const [municipality, setMunicipality] = useState('');
-  const [barangay, setBarangay] = useState('');
-  const [street, setStreet] = useState('');
-
-  // ── Projects ──
-  const [projects, setProjects] = useState([]);
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  const [selectedProject, setSelectedProject] = useState(null);
-
-  // ── Geofencing state ──
-  const [gpsReady, setGpsReady] = useState(false);          // first fix received
-  const [gpsPermDenied, setGpsPermDenied] = useState(false);
-  const [nearbyProjects, setNearbyProjects] = useState([]);  // detections from fmr_projects
-  const [allFmrProjects, setAllFmrProjects] = useState([]);  // preloaded for geofencing
-  const [geofenceOverride, setGeofenceOverride] = useState(false); // "show all" escape hatch
-
-  // ── GPS watcher ref ──
   const gpsWatchRef = useRef(null);
 
+  // ── FMR projects ──
+  const [allProjects, setAllProjects] = useState([]);
+  const [projReady,   setProjReady]   = useState(false);
+  const [nearby,      setNearby]      = useState([]);
+  const [widerSearch, setWiderSearch] = useState(false);
+  const [browseAll,   setBrowseAll]   = useState(false);
+  const [selProject,  setSelProject]  = useState(null);
+
   // ── Camera / photo ──
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const [photoBlob, setPhotoBlob] = useState(null);
+  const videoRef   = useRef(null);
+  const canvasRef  = useRef(null);
+  const streamRef  = useRef(null);
+  const [photoBlob,    setPhotoBlob]    = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
-  const [cameraError, setCameraError] = useState(null);
-  const [cameraReady, setCameraReady] = useState(false);
+  const [photoTs,      setPhotoTs]      = useState(null);
+  const [camError,     setCamError]     = useState(null);
+  const [camReady,     setCamReady]     = useState(false);
 
-  // ── Feedback fields ──
+  // ── Form fields ──
   const [description, setDescription] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [contactInfo, setContactInfo] = useState('');
+  const [category,    setCategory]    = useState('general');
+  const [fullName,    setFullName]    = useState('');
+  const [contact,     setContact]     = useState('');
 
-  // ── Photo timestamp ──
-  const [photoTimestamp, setPhotoTimestamp] = useState(null);
-
-  // ── Current user (if logged in) ──
+  // ── Auth + submission ──
   const [currentUser, setCurrentUser] = useState(null);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [error,       setError]       = useState(null);
 
-  // ── Submission ──
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState(null);
-
-  // ── Check if user is authenticated ──
+  // ── Auth check ───────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUser(user);
-    });
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user); });
   }, []);
 
-  // ── Pre-load all FMR projects for geofencing (runs once on mount) ──
-  useEffect(() => {
-    supabase
-      .from('fmr_projects')
-      .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status')
-      .then(({ data }) => {
-        if (data) setAllFmrProjects(data);
-      });
-  }, []);
-
-  // ────────────────────────────────────────────────────────
-  // GPS Request
-  // ────────────────────────────────────────────────────────
-  const requestGps = useCallback(() => {
+  // ── Acquire GPS ──────────────────────────────────────────────
+  const acquireGps = useCallback(() => {
     if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by your browser.');
+      setGpsError('Geolocation is not supported by this browser.');
       return;
     }
     setGpsLoading(true);
     setGpsError(null);
-
-    // Clear any existing watcher
-    if (gpsWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(gpsWatchRef.current);
-    }
-
-    // Use watchPosition for realtime GPS updates
-    gpsWatchRef.current = navigator.geolocation.watchPosition(
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const accuracy = pos.coords.accuracy;
-        setGps({ lat, lng, accuracy });
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        setGps(loc);
         setGpsLoading(false);
-        setGpsReady(true);
-        setStep((prev) => (prev === -1 ? 0 : prev)); // move to location step on first fix
-
-        // ── Geofence detection (runs each position update, no Supabase calls) ──
-        setAllFmrProjects((fmrList) => {
-          const nearby = fmrList.filter((p) => {
-            if (!p.start_latitude || !p.start_longitude) return false;
-            const radius = computeGeofenceRadius(p);
-            const mid = segmentMidpoint(p);
-            const nearMid = mid ? isNearPoint(lat, lng, mid.lat, mid.lng, radius) : false;
-            const nearStart = isNearPoint(lat, lng, p.start_latitude, p.start_longitude, 400);
-            const nearEnd = p.end_latitude
-              ? isNearPoint(lat, lng, p.end_latitude, p.end_longitude, 400)
-              : false;
-            return nearMid || nearStart || nearEnd;
-          });
-          setNearbyProjects(nearby);
-          return fmrList; // no mutation
-        });
+        setStep('picking');
+        // Start watcher for live drift correction
+        if (gpsWatchRef.current !== null) navigator.geolocation.clearWatch(gpsWatchRef.current);
+        gpsWatchRef.current = navigator.geolocation.watchPosition(
+          (p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 5000 },
+        );
       },
       (err) => {
         setGpsLoading(false);
         if (err.code === 1) {
-          setGpsPermDenied(true);
-          setGpsError('Location permission denied. You must allow GPS access to submit a report.');
+          setGpsError('Location permission denied. Open your browser settings, enable Location for this site, then tap "Try Again".');
+        } else if (err.code === 3) {
+          setGpsError('GPS timed out. Move to open sky and try again.');
         } else {
-          setGpsError(`Unable to get location: ${err.message}`);
+          setGpsError(`Unable to get your location: ${err.message}`);
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   }, []);
 
-  // Cleanup GPS watcher on unmount
+  // Auto-start on mount
   useEffect(() => {
+    acquireGps();
     return () => {
       if (gpsWatchRef.current !== null) {
         navigator.geolocation.clearWatch(gpsWatchRef.current);
         gpsWatchRef.current = null;
       }
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ────────────────────────────────────────────────────────
-  // Fetch projects for selected barangay (both projects + fmr_projects)
-  // ────────────────────────────────────────────────────────
+  // ── Load all FMR projects once GPS resolves ──────────────────
   useEffect(() => {
-    if (!barangay || !municipality) {
-      setProjects([]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setProjectsLoading(true);
-      try {
-        // Fetch from projects table
-        const { data: projData, error: projErr } = await supabase
-          .from('projects')
-          .select('id, "projectName", latitude, longitude, barangay, municipality, status')
-          .ilike('municipality', `%${municipality}%`)
-          .ilike('barangay', `%${barangay}%`)
-          .order('projectName', { ascending: true });
+    if (!gps || projReady) return;
+    supabase
+      .from('fmr_projects')
+      .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status, project_length_km')
+      .then(({ data }) => {
+        if (data) { setAllProjects(data); setProjReady(true); }
+      });
+  }, [gps, projReady]);
 
-        if (projErr) throw projErr;
+  // ── Recompute nearby when GPS or projects change ─────────────
+  useEffect(() => {
+    if (!gps || !projReady) return;
+    const midR = widerSearch ? RADIUS_WIDER : RADIUS_MIDPOINT;
+    const endR = widerSearch ? RADIUS_WIDER : RADIUS_ENDPOINT;
+    const list = allProjects
+      .filter((p) => isProjectNearby(gps.lat, gps.lng, p, midR, endR))
+      .sort((a, b) => distToProject(gps.lat, gps.lng, a) - distToProject(gps.lat, gps.lng, b));
+    setNearby(list);
+  }, [gps, allProjects, projReady, widerSearch]);
 
-        // Fetch from fmr_projects table
-        const { data: fmrData, error: fmrErr } = await supabase
-          .from('fmr_projects')
-          .select('id, project_name, start_latitude, start_longitude, location, municipality, status')
-          .ilike('municipality', `%${municipality}%`)
-          .order('project_name', { ascending: true });
-
-        if (fmrErr) throw fmrErr;
-
-        // Include all FMR projects in the municipality (location field may not exactly match barangay)
-        const normalizedFmr = (fmrData || []).map((f) => ({
-          id: `fmr-${f.id}`,
-          projectName: f.project_name,
-          latitude: f.start_latitude,
-          longitude: f.start_longitude,
-          barangay: f.location,
-          municipality: f.municipality,
-          status: f.status,
-          _source: 'FMR',
-        }));
-
-        // Normalize projects table entries
-        const normalizedProj = (projData || []).map((p) => ({
-          ...p,
-          _source: 'Project',
-        }));
-
-        if (!cancelled) setProjects([...normalizedFmr, ...normalizedProj]);
-      } catch (err) {
-        console.error('Error loading projects:', err.message);
-        if (!cancelled) setProjects([]);
-      } finally {
-        if (!cancelled) setProjectsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [municipality, barangay]);
-
-  // ────────────────────────────────────────────────────────
-  // Camera lifecycle
-  // ────────────────────────────────────────────────────────
+  // ── Camera ────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
-    setCameraError(null);
-    setCameraReady(false);
+    setCamError(null);
+    setCamReady(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -284,13 +208,13 @@ export default function PublicReportForm() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => setCameraReady(true);
+        videoRef.current.onloadedmetadata = () => setCamReady(true);
       }
     } catch (err) {
-      setCameraError(
+      setCamError(
         err.name === 'NotAllowedError'
           ? 'Camera permission denied. Please allow camera access.'
-          : `Camera error: ${err.message}`
+          : `Camera error: ${err.message}`,
       );
     }
   }, []);
@@ -298,67 +222,39 @@ export default function PublicReportForm() {
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    setCameraReady(false);
+    setCamReady(false);
   }, []);
 
-  // Start camera when entering the photo step
   useEffect(() => {
-    if (step === 2 && !photoBlob) {
-      startCamera();
-    }
-    return () => {
-      if (step !== 2) stopCamera();
-    };
+    if (step === 'reporting' && !photoBlob) startCamera();
+    return () => { if (step !== 'reporting') stopCamera(); };
   }, [step, photoBlob, startCamera, stopCamera]);
 
   const capturePhoto = () => {
-    const video = videoRef.current;
+    const video  = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    canvas.width = video.videoWidth;
+    canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0);
-
-    // ── Timestamp watermark for credibility ──
-    const now = new Date();
-    setPhotoTimestamp(now.toISOString());
-    const tsText = now.toLocaleString('en-PH', {
-      year: 'numeric', month: 'short', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
-    });
-    const gpsText = gps.lat && gps.lng
-      ? `GPS: ${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)} (±${Math.round(gps.accuracy || 0)}m)`
-      : '';
-
+    const now     = new Date();
+    setPhotoTs(now.toISOString());
+    const tsText  = now.toLocaleString('en-PH', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+    const gpsText = gps ? `GPS: ${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)} (±${Math.round(gps.accuracy || 0)}m)` : '';
     const fontSize = Math.max(14, Math.floor(canvas.width / 50));
-    ctx.font = `bold ${fontSize}px monospace`;
+    const lineH    = fontSize + 4;
+    const padding  = 8;
+    const lines    = [tsText, gpsText].filter(Boolean);
+    ctx.font         = `bold ${fontSize}px monospace`;
     ctx.textBaseline = 'bottom';
-
-    // Semi-transparent background strip
-    const padding = 8;
-    const lineHeight = fontSize + 4;
-    const lines = [tsText, gpsText].filter(Boolean);
-    const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-    const stripH = lines.length * lineHeight + padding * 2;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.fillRect(0, canvas.height - stripH, maxWidth + padding * 2, stripH);
-
-    // White text
+    const maxW   = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const stripH = lines.length * lineH + padding * 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, canvas.height - stripH, maxW + padding * 2, stripH);
     ctx.fillStyle = '#ffffff';
-    lines.forEach((line, i) => {
-      ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineHeight);
-    });
-
-    canvas.toBlob(
-      (blob) => {
-        setPhotoBlob(blob);
-        setPhotoPreview(URL.createObjectURL(blob));
-        stopCamera();
-      },
-      'image/jpeg',
-      0.85
-    );
+    lines.forEach((line, i) => ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineH));
+    canvas.toBlob((blob) => { setPhotoBlob(blob); setPhotoPreview(URL.createObjectURL(blob)); stopCamera(); }, 'image/jpeg', 0.85);
   };
 
   const retakePhoto = () => {
@@ -368,103 +264,86 @@ export default function PublicReportForm() {
     startCamera();
   };
 
-  // ────────────────────────────────────────────────────────
-  // Upload photo + submit
-  // ────────────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError(null);
     if (!description.trim()) { setError('Please enter a description.'); return; }
-    if (!photoBlob) { setError('A photo is required.'); return; }
-    if (!selectedProject) { setError('Please select a project.'); return; }
-
+    if (!photoBlob)           { setError('A site photo is required.');   return; }
+    if (!selProject)          { setError('No project selected.');        return; }
+    if (!gps)                 { setError('GPS coordinates are required.'); return; }
     setSubmitting(true);
     try {
-      // 1. Upload photo
       const path = `reports/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-      const { error: upErr } = await supabase.storage
-        .from('public-report-photos')
-        .upload(path, photoBlob, { contentType: 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('public-report-photos').upload(path, photoBlob, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
-
-      const { data: urlData } = supabase.storage
-        .from('public-report-photos')
-        .getPublicUrl(path);
-
-      // 2. Compute verification
-      const verification = computeVerification(
-        gps.lat, gps.lng, gps.accuracy,
-        selectedProject.latitude, selectedProject.longitude
-      );
-
-      // 3. Insert report
-      const reportPayload = {
-        full_name: fullName.trim() || 'Anonymous',
-        contact_info: contactInfo.trim(),
-        region: REGION,
-        province: PROVINCE,
-        municipality,
-        barangay,
-        street: street.trim(),
-        project_id: selectedProject.id,
-        project_name: selectedProject.projectName,
-        photo_url: urlData.publicUrl,
-        latitude: gps.lat,
-        longitude: gps.lng,
-        geo_accuracy: gps.accuracy,
-        photo_timestamp: photoTimestamp || new Date().toISOString(),
+      const { data: urlData } = supabase.storage.from('public-report-photos').getPublicUrl(path);
+      const verification = computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude);
+      const payload = {
+        full_name:       fullName.trim() || 'Anonymous',
+        contact_info:    contact.trim(),
+        region:          REGION,
+        province:        PROVINCE,
+        municipality:    selProject.municipality || '',
+        barangay:        selProject.location     || '',
+        street:          '',
+        project_id:      `fmr-${selProject.id}`,
+        project_name:    selProject.project_name,
+        photo_url:       urlData.publicUrl,
+        latitude:        gps.lat,
+        longitude:       gps.lng,
+        geo_accuracy:    gps.accuracy,
+        photo_timestamp: photoTs || new Date().toISOString(),
         verification,
-        description: description.trim(),
-        source: fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
+        description:     description.trim(),
+        category,
+        source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
       };
-      // Link to user account if logged in
-      if (currentUser) {
-        reportPayload.user_id = currentUser.id;
-      }
-      const { error: insertErr } = await supabase.from('public_reports').insert(reportPayload);
-
-      if (insertErr) throw insertErr;
-      setSubmitted(true);
+      if (currentUser) payload.user_id = currentUser.id;
+      const { error: insErr } = await supabase.from('public_reports').insert(payload);
+      if (insErr) throw insErr;
+      setStep('success');
     } catch (err) {
-      console.error('Submission error:', err);
+      console.error('Submit error:', err);
       setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ────────────────────────────────────────────────────────
-  // Full reset
-  // ────────────────────────────────────────────────────────
+  // ── Reset ─────────────────────────────────────────────────────
   const resetAll = () => {
-    setStep(-1);
-    setGps({ lat: null, lng: null, accuracy: null });
-    setGpsError(null);
-    setMunicipality('');
-    setBarangay('');
-    setStreet('');
-    setSelectedProject(null);
-    setPhotoBlob(null);
-    setPhotoTimestamp(null);
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoPreview(null);
-    setDescription('');
-    setFullName('');
-    setContactInfo('');
-    setSubmitted(false);
-    setError(null);
-    // Stop GPS watcher
+    stopCamera();
     if (gpsWatchRef.current !== null) {
       navigator.geolocation.clearWatch(gpsWatchRef.current);
       gpsWatchRef.current = null;
     }
+    setStep('locating');
+    setGps(null);
+    setGpsError(null);
+    setGpsLoading(false);
+    setProjReady(false);
+    setAllProjects([]);
+    setNearby([]);
+    setWiderSearch(false);
+    setBrowseAll(false);
+    setSelProject(null);
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoBlob(null);
+    setPhotoPreview(null);
+    setPhotoTs(null);
+    setDescription('');
+    setCategory('general');
+    setFullName('');
+    setContact('');
+    setError(null);
+    setTimeout(acquireGps, 80);
   };
-
   // ════════════════════════════════════════════════════════
   //  RENDER
   // ════════════════════════════════════════════════════════
 
-  // ── Success ────────────────────────────────────────────
-  if (submitted) {
+  // ── SUCCESS ──────────────────────────────────────────────
+  if (step === 'success') {
     return (
       <div className="text-center py-12 px-6">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
@@ -474,296 +353,315 @@ export default function PublicReportForm() {
         </div>
         <h3 className="text-xl font-bold text-slate-900 mb-2">Report Submitted!</h3>
         <p className="text-slate-600 max-w-md mx-auto mb-6">
-          Your feedback has been recorded. The photo and location were verified to support your report. Thank you for helping monitor community projects.
+          Your report has been recorded and location-verified. The photo and GPS coordinates confirm your on-site presence. Thank you for helping monitor community infrastructure.
         </p>
         <button onClick={resetAll} className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-semibold text-sm transition">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
           Submit another report
         </button>
       </div>
     );
   }
 
-  // ── Progress indicator ─────────────────────────────────
-  const stepLabels = ['Location', 'Project', 'Photo', 'Details', 'Review'];
-  const ProgressBar = () => (
-    <div className="flex items-center gap-1.5 mb-6">
-      {stepLabels.map((label, i) => (
-        <div key={label} className="flex-1">
-          <div className={`h-1.5 rounded-full transition-colors ${i <= step ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-          <p className={`text-[10px] mt-1 text-center font-medium ${i <= step ? 'text-teal-600' : 'text-slate-400'}`}>{label}</p>
-        </div>
-      ))}
-    </div>
-  );
-
-  // ── GPS Consent (step -1) ──────────────────────────────
-  if (step === -1) {
+  // ── LOCATING ─────────────────────────────────────────────
+  if (step === 'locating') {
     return (
-      <div className="space-y-5">
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-          <div className="flex gap-3">
-            <svg className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <div>
-              <p className="font-semibold mb-1">Privacy Notice</p>
-              <p>This form collects your GPS location and a live photo to verify the report is submitted on-site. Your location data is used solely for report verification. You may submit anonymously.</p>
+      <div className="flex flex-col items-center justify-center min-h-[320px] py-10 px-6 space-y-6">
+        {gpsLoading && (
+          <>
+            <div className="relative flex items-center justify-center">
+              <span className="absolute inline-flex h-24 w-24 rounded-full bg-teal-400 opacity-20 animate-ping" />
+              <span className="absolute inline-flex h-16 w-16 rounded-full bg-teal-400 opacity-25 animate-ping" style={{ animationDelay: '0.25s' }} />
+              <div className="relative z-10 w-14 h-14 bg-teal-500 rounded-full flex items-center justify-center shadow-lg shadow-teal-500/40">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+              </div>
             </div>
+            <div className="text-center">
+              <p className="text-base font-semibold text-slate-800">Getting your GPS position…</p>
+              <p className="text-sm text-slate-400 mt-1">Please stay still for the best accuracy</p>
+            </div>
+          </>
+        )}
+
+        {!gpsLoading && gpsError && (
+          <>
+            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center">
+              <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              </svg>
+            </div>
+            <div className="text-center space-y-2 max-w-xs">
+              <p className="font-semibold text-slate-900">Location Access Required</p>
+              <p className="text-sm text-slate-500">{gpsError}</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 text-left mt-2">
+                <p className="font-semibold mb-1">Enable Location in Browser Settings:</p>
+                <ul className="space-y-0.5 list-disc list-inside">
+                  <li>Tap the lock / info icon in the address bar</li>
+                  <li>Set "Location" to "Allow"</li>
+                  <li>Reload or tap "Try Again" below</li>
+                </ul>
+              </div>
+            </div>
+            <button type="button" onClick={acquireGps}
+              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 transition shadow-lg shadow-teal-500/20">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+              </svg>
+              Try Again
+            </button>
+          </>
+        )}
+
+        {!gpsLoading && !gpsError && (
+          <button type="button" onClick={acquireGps}
+            className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 transition">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+            </svg>
+            Detect My Location
+          </button>
+        )}
+      </div>
+    );
+  }
+  // ── PICKING ──────────────────────────────────────────────
+  if (step === 'picking') {
+    const displayList = browseAll
+      ? [...allProjects].sort((a, b) => distToProject(gps.lat, gps.lng, a) - distToProject(gps.lat, gps.lng, b))
+      : nearby;
+    const lowAcc = gps && gps.accuracy > 100;
+
+    return (
+      <div className="space-y-4">
+        {/* GPS / found banner */}
+        <div className={`px-4 py-3.5 rounded-2xl border ${lowAcc ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${lowAcc ? 'bg-amber-400' : 'bg-teal-400'}`} />
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${lowAcc ? 'bg-amber-500' : 'bg-teal-500'}`} />
+            </span>
+            <span className={`text-sm font-semibold ${lowAcc ? 'text-amber-900' : 'text-teal-900'}`}>
+              {browseAll
+                ? `Browsing all ${allProjects.length} projects`
+                : widerSearch
+                ? `${nearby.length} project${nearby.length !== 1 ? 's' : ''} within 1km`
+                : `📍 Found ${nearby.length} project${nearby.length !== 1 ? 's' : ''} near you`}
+            </span>
           </div>
+          <p className={`text-xs pl-4 ${lowAcc ? 'text-amber-700' : 'text-teal-700'}`}>
+            GPS accuracy: ±{Math.round(gps?.accuracy || 0)}m
+            {lowAcc && <span className="ml-1 font-medium">— move to open sky for better results</span>}
+          </p>
         </div>
 
-        <div className="text-center py-4">
-          <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
-          </div>
-          <h3 className="text-lg font-bold text-slate-900 mb-1">Enable Location Access</h3>
-          <p className="text-sm text-slate-500 max-w-xs mx-auto mb-5">
-            GPS is required to verify you are at the project site. Please allow location access to continue.
-          </p>
-
-          {gpsError && (
-            <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 text-left mb-4 max-w-sm mx-auto">
-              <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-              <span>{gpsError}</span>
+        {/* Zero results state */}
+        {!browseAll && displayList.length === 0 && (
+          <div className="text-center py-8 px-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              </svg>
             </div>
-          )}
-
-          <button
-            type="button"
-            onClick={requestGps}
-            disabled={gpsLoading}
-            className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20"
-          >
-            {gpsLoading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Getting location…
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
-                Allow GPS &amp; Continue
-              </>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">
+                No projects found within {widerSearch ? '1km' : '250m'} of your location
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">GPS accuracy: ±{Math.round(gps?.accuracy || 0)}m</p>
+            </div>
+            {!widerSearch && (
+              <button type="button" onClick={() => setWiderSearch(true)}
+                className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 transition">
+                Search a wider area (1km)
+              </button>
             )}
-          </button>
+            <button type="button" onClick={() => setBrowseAll(true)}
+              className="block mx-auto text-sm text-slate-400 hover:text-teal-600 underline">
+              Browse all projects
+            </button>
+          </div>
+        )}
+
+        {/* Project cards */}
+        {displayList.length > 0 && (
+          <div className="space-y-3">
+            {displayList.map((p) => {
+              const dist     = gps ? distToProject(gps.lat, gps.lng, p) : null;
+              const isOngoing = /progress|going|ongoing/i.test(p.status || '');
+              return (
+                <button type="button" key={p.id}
+                  onClick={() => { setSelProject(p); setStep('reporting'); }}
+                  className="w-full text-left p-5 rounded-2xl border-2 border-slate-200 bg-white hover:border-teal-400 hover:bg-teal-50/30 transition-all active:scale-[0.98] shadow-sm">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <p className="text-sm font-semibold text-slate-900 leading-tight">{p.project_name}</p>
+                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${statusCls(p.status)}`}>
+                      {p.status || 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap mb-2">
+                    {dist !== null && <span className="text-teal-600 font-semibold">{fmtDist(dist)}</span>}
+                    {p.municipality && <span>📍 {p.municipality}</span>}
+                    {p.project_length_km > 0 && <span>{p.project_length_km} km road</span>}
+                  </div>
+                  {isOngoing && (
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                        <span>Implementation in progress</span>
+                        <span>On-Going</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full w-3/5" />
+                      </div>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Escape hatch */}
+        <div className="text-center pt-1">
+          {!browseAll ? (
+            <button type="button" onClick={() => setBrowseAll(true)}
+              className="text-xs text-slate-400 hover:text-teal-600 underline">
+              Not near a project? Browse all
+            </button>
+          ) : (
+            <button type="button" onClick={() => { setBrowseAll(false); setWiderSearch(false); }}
+              className="text-xs text-slate-400 hover:text-teal-600 underline">
+              ← Back to nearby projects
+            </button>
+          )}
         </div>
       </div>
     );
   }
+  // ── REPORTING ────────────────────────────────────────────
+  if (step === 'reporting') {
+    const lowAcc = gps && gps.accuracy > 100;
+    return (
+      <div className="space-y-5">
+        {/* Back */}
+        <button type="button"
+          onClick={() => { stopCamera(); setSelProject(null); setStep('picking'); }}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to project list
+        </button>
 
-  // ════════════════════════════════════════════════════════
-  //  Multi-step form (steps 0-4)
-  // ════════════════════════════════════════════════════════
-  return (
-    <div className="space-y-5">
-      <ProgressBar />
-
-      {/* Error Banner */}
-      {error && (
-        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-          <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* GPS mini-badge – live updating */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 w-fit">
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-        </span>
-        <span>Live GPS: {gps.lat?.toFixed(5)}, {gps.lng?.toFixed(5)}</span>
-        <span className="text-slate-400">(±{Math.round(gps.accuracy || 0)}m)</span>
-      </div>
-
-      {/* ──────────────── STEP 0: Location ─────────────── */}
-      {step === 0 && (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-900">Select Location</h4>
-
-          {/* Region + Province (fixed) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Region</label>
-              <input type="text" value={REGION} readOnly className={`${inputCls} bg-slate-50 cursor-not-allowed`} />
+        {/* Auto-filled read-only chips */}
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Auto-filled from GPS</p>
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl max-w-full">
+              <svg className="w-3.5 h-3.5 text-teal-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              <span className="text-xs font-medium text-slate-700 truncate">{selProject?.project_name}</span>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Province</label>
-              <input type="text" value={PROVINCE} readOnly className={`${inputCls} bg-slate-50 cursor-not-allowed`} />
-            </div>
-          </div>
-
-          {/* Municipality */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Municipality <span className="text-red-500">*</span></label>
-            <select value={municipality} onChange={(e) => { setMunicipality(e.target.value); setBarangay(''); setSelectedProject(null); }} className={inputCls}>
-              <option value="">Select municipality</option>
-              {getMunicipalities().map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-
-          {/* Barangay */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Barangay <span className="text-red-500">*</span></label>
-            <select value={barangay} onChange={(e) => { setBarangay(e.target.value); setSelectedProject(null); }} disabled={!municipality} className={inputCls}>
-              <option value="">Select barangay</option>
-              {getBarangays(municipality).map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-
-          {/* Street / Sitio */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Street / Sitio <span className="text-slate-400 font-normal">(optional)</span></label>
-            <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} placeholder="e.g., Purok 3, Sitio Ilaya" className={inputCls} />
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <button type="button" disabled={!municipality || !barangay} onClick={() => { setError(null); setStep(1); }}
-              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
-              Next: Select Project
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-            </button>
+            {selProject?.municipality && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl">
+                <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21" />
+                </svg>
+                <span className="text-xs text-slate-600">{selProject.municipality}</span>
+              </div>
+            )}
+            {selProject?.location && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl">
+                <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                </svg>
+                <span className="text-xs text-slate-600">{selProject.location}</span>
+              </div>
+            )}
+            {gps && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
+                <span className="text-xs text-teal-700 font-mono font-medium">
+                  📍 {gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
-      {/* ──────────────── STEP 1: Project ────────────────── */}
-      {step === 1 && (() => {
-        // Determine which project list to show
-        const showingNearby = gpsReady && !gpsPermDenied && nearbyProjects.length > 0 && !geofenceOverride;
-        const showingAll = geofenceOverride || gpsPermDenied || !gpsReady;
+        {/* Low-accuracy warning */}
+        {lowAcc && (
+          <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+            <svg className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+            </svg>
+            <span>Low GPS accuracy (±{Math.round(gps.accuracy)}m) — move to open sky for better results. You can still submit.</span>
+          </div>
+        )}
 
-        // Merge nearby FMR detections into the form project list shape
-        const nearbyForForm = nearbyProjects.map((p) => ({
-          id: `fmr-${p.id}`,
-          projectName: p.project_name,
-          latitude: p.start_latitude,
-          longitude: p.start_longitude,
-          barangay: p.location || '',
-          municipality: p.municipality || '',
-          status: p.status,
-          _source: 'FMR',
-          _raw: p,
-        }));
+        {/* Error banner */}
+        {error && (
+          <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <span>{error}</span>
+          </div>
+        )}
 
-        // If exactly one nearby, auto-select it
-        if (showingNearby && nearbyForForm.length === 1 && !selectedProject) {
-          const auto = nearbyForForm[0];
-          setTimeout(() => {
-            setSelectedProject(auto);
-            if (auto.municipality && !municipality) setMunicipality(auto.municipality);
-            if (auto.barangay && !barangay) setBarangay(auto.barangay);
-          }, 0);
-        }
-
-        const displayList = showingNearby ? nearbyForForm : projects;
-
-        return (
-          <div className="space-y-4">
-            <h4 className="text-base font-semibold text-slate-900">Select Project in {barangay}, {municipality}</h4>
-
-            {/* Geofence banner */}
-            {gpsReady && !gpsPermDenied && !geofenceOverride && nearbyProjects.length > 0 && (
-              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2.5 w-2.5 shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500" />
-                  </span>
-                  <span className="font-medium">📍 {nearbyProjects.length} project{nearbyProjects.length > 1 ? 's' : ''} detected near you</span>
-                </div>
-                <button type="button" onClick={() => setGeofenceOverride(true)}
-                  className="text-xs text-teal-600 hover:text-teal-800 underline whitespace-nowrap">
-                  Override — show all
-                </button>
-              </div>
-            )}
-            {gpsReady && !gpsPermDenied && !geofenceOverride && nearbyProjects.length === 0 && (
-              <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-500">
-                No projects detected in your immediate area — showing all projects
-              </div>
-            )}
-            {geofenceOverride && (
-              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-500">
-                <span>Showing all projects (geofence bypassed)</span>
-                <button type="button" onClick={() => setGeofenceOverride(false)}
-                  className="text-teal-600 hover:text-teal-800 underline">Use GPS detection</button>
-              </div>
-            )}
-
-            {projectsLoading ? (
-              <div className="py-8 text-center">
-                <div className="animate-spin mx-auto w-7 h-7 border-2 border-slate-300 border-t-emerald-600 rounded-full mb-2" />
-                <p className="text-sm text-slate-500">Loading projects…</p>
-              </div>
-            ) : displayList.length === 0 ? (
-              <div className="py-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
-                <svg className="w-10 h-10 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" /></svg>
-                <p className="text-sm font-medium text-slate-900">No projects found</p>
-                <p className="text-xs text-slate-500 mt-1">No projects or FMR road projects are registered in this area yet.</p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {displayList.map((p) => {
-                  const mid = p._raw ? segmentMidpoint(p._raw) : null;
-                  const distM = mid && gps.lat
-                    ? haversineMeters(gps.lat, gps.lng, mid.lat, mid.lng)
-                    : null;
-                  return (
-                    <button type="button" key={p.id}
-                      onClick={() => {
-                        setSelectedProject(p);
-                        if (p.municipality && !municipality) setMunicipality(p.municipality);
-                        if (p.barangay && !barangay) setBarangay(p.barangay);
-                      }}
-                      className={`w-full text-left p-4 rounded-xl border-2 transition ${selectedProject?.id === p.id ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
-                      <p className="text-sm font-semibold text-slate-900">{p.projectName}</p>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'In Progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{p.status}</span>
-                        {p._source === 'FMR' && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">FMR</span>}
-                        {distM !== null && (
-                          <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
-                            📍 {fmtDistance(distM)}
-                          </span>
-                        )}
-                        {p.latitude && p.longitude && !distM && <span>GPS: {Number(p.latitude).toFixed(4)}, {Number(p.longitude).toFixed(4)}</span>}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="flex justify-between pt-2">
-              <button type="button" onClick={() => setStep(0)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
-              <button type="button" disabled={!selectedProject} onClick={() => { setError(null); setStep(2); }}
-                className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
-                Next: Take Photo
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+        {/* Category pills */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
+          <div className="flex flex-wrap gap-2">
+            {CATS.map((c) => (
+              <button key={c.id} type="button" onClick={() => setCategory(c.id)}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
+                  category === c.id
+                    ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-teal-300'
+                }`}>
+                <span>{c.icon}</span>{c.label}
               </button>
-            </div>
+            ))}
           </div>
-        );
-      })()}
+        </div>
 
-      {/* ──────────────── STEP 2: Photo ──────────────────── */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-900">Capture Site Photo</h4>
-          <p className="text-sm text-slate-500 -mt-2">Take a live photo of the project site. Gallery uploads are not allowed.</p>
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Description <span className="text-red-500">*</span>
+          </label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+            placeholder="Describe the current condition, issue, or observation at this project site…"
+            className={`${inputCls} resize-none`} />
+        </div>
 
-          {cameraError && (
-            <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-              <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
-              <span>{cameraError}</span>
+        {/* Photo capture */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Site Photo <span className="text-red-500">*</span>
+            <span className="text-xs font-normal text-slate-400 ml-1">(live camera only)</span>
+          </label>
+          {camError && (
+            <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 mb-3">
+              <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              <span>{camError}</span>
             </div>
           )}
-
-          {/* Live viewfinder or captured preview */}
-          <div className="relative bg-black rounded-xl overflow-hidden aspect-video">
+          <div className="relative bg-black rounded-2xl overflow-hidden aspect-video">
             {!photoPreview ? (
               <>
                 <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                {!cameraReady && !cameraError && (
+                {!camReady && !camError && (
                   <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
                     <div className="animate-spin w-8 h-8 border-2 border-white/30 border-t-white rounded-full" />
                   </div>
@@ -774,134 +672,67 @@ export default function PublicReportForm() {
             )}
             <canvas ref={canvasRef} className="hidden" />
           </div>
-
-          {/* Capture / retake buttons */}
-          <div className="flex justify-center gap-3">
+          <div className="flex justify-center gap-3 mt-3">
             {!photoPreview ? (
-              <button type="button" onClick={capturePhoto} disabled={!cameraReady}
+              <button type="button" onClick={capturePhoto} disabled={!camReady}
                 className="inline-flex items-center gap-2 bg-white text-slate-900 border-2 border-slate-300 px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 disabled:opacity-40 transition">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" /></svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+                </svg>
                 Capture Photo
               </button>
             ) : (
               <button type="button" onClick={retakePhoto}
                 className="inline-flex items-center gap-2 text-slate-600 border border-slate-300 px-5 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+                </svg>
                 Retake
               </button>
             )}
           </div>
-
-          <div className="flex justify-between pt-2">
-            <button type="button" onClick={() => { stopCamera(); setStep(1); }} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
-            <button type="button" disabled={!photoBlob} onClick={() => { setError(null); setStep(3); }}
-              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
-              Next: Add Details
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-            </button>
-          </div>
         </div>
-      )}
 
-      {/* ──────────────── STEP 3: Feedback Details ────────── */}
-      {step === 3 && (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-900">Report Details</h4>
-
+        {/* Optional identity */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Description <span className="text-red-500">*</span></label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} required
-              placeholder="Describe the current condition, issue, or feedback about this project…"
-              className={`${inputCls} resize-none`} />
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Your Name <span className="text-xs text-slate-400 font-normal">(optional)</span>
+            </label>
+            <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
+              placeholder="Juan Dela Cruz" className={inputCls} />
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Your Name <span className="text-slate-400 font-normal">(optional)</span></label>
-              <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Juan Dela Cruz" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Contact Info <span className="text-slate-400 font-normal">(optional)</span></label>
-              <input type="text" value={contactInfo} onChange={(e) => setContactInfo(e.target.value)} placeholder="Email or phone" className={inputCls} />
-            </div>
-          </div>
-
-          <div className="flex justify-between pt-2">
-            <button type="button" onClick={() => setStep(2)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
-            <button type="button" disabled={!description.trim()} onClick={() => { setError(null); setStep(4); }}
-              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
-              Review &amp; Submit
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-            </button>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Contact Info <span className="text-xs text-slate-400 font-normal">(optional)</span>
+            </label>
+            <input type="text" value={contact} onChange={(e) => setContact(e.target.value)}
+              placeholder="Email or phone" className={inputCls} />
           </div>
         </div>
-      )}
 
-      {/* ──────────────── STEP 4: Review & Submit ─────────── */}
-      {step === 4 && (() => {
-        const verification = computeVerification(gps.lat, gps.lng, gps.accuracy, selectedProject?.latitude, selectedProject?.longitude);
-        const verifyStyle = {
-          'Verified On-Site': 'bg-emerald-50 border-emerald-200 text-emerald-700',
-          'Needs Review': 'bg-amber-50 border-amber-200 text-amber-700',
-          'Location Mismatch': 'bg-red-50 border-red-200 text-red-700',
-        }[verification] || 'bg-slate-50 border-slate-200 text-slate-600';
-        const verifyIcon = {
-          'Verified On-Site': '✔',
-          'Needs Review': '⚠',
-          'Location Mismatch': '✖',
-        }[verification] || '?';
+        {/* Submit */}
+        <button type="button" onClick={handleSubmit}
+          disabled={submitting || !description.trim() || !photoBlob}
+          className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20">
+          {submitting ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Submitting…
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+              </svg>
+              Submit Report
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
 
-        return (
-          <div className="space-y-5">
-            <h4 className="text-base font-semibold text-slate-900">Review Your Report</h4>
-
-            {/* Verification badge */}
-            <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-semibold ${verifyStyle}`}>
-              <span className="text-base">{verifyIcon}</span>
-              {verification}
-            </div>
-
-            {/* Photo thumbnail */}
-            {photoPreview && (
-              <img src={photoPreview} alt="Captured site" className="w-full max-h-48 object-cover rounded-xl border border-slate-200" />
-            )}
-
-            {/* Summary grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-              <div><span className="text-xs text-slate-400 uppercase font-semibold">Municipality</span><p className="text-slate-800">{municipality}</p></div>
-              <div><span className="text-xs text-slate-400 uppercase font-semibold">Barangay</span><p className="text-slate-800">{barangay}</p></div>
-              {street && <div><span className="text-xs text-slate-400 uppercase font-semibold">Street / Sitio</span><p className="text-slate-800">{street}</p></div>}
-              <div><span className="text-xs text-slate-400 uppercase font-semibold">Project</span><p className="text-slate-800">{selectedProject?.projectName}</p></div>
-              <div><span className="text-xs text-slate-400 uppercase font-semibold">Name</span><p className="text-slate-800">{fullName || 'Anonymous'}</p></div>
-              <div><span className="text-xs text-slate-400 uppercase font-semibold">Contact</span><p className="text-slate-800">{contactInfo || '—'}</p></div>
-            </div>
-
-            <div>
-              <span className="text-xs text-slate-400 uppercase font-semibold">Description</span>
-              <p className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 p-3 rounded-xl mt-1">{description}</p>
-            </div>
-
-            <div className="flex justify-between pt-2">
-              <button type="button" onClick={() => setStep(3)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
-              <button type="button" onClick={handleSubmit} disabled={submitting}
-                className="inline-flex items-center gap-2 bg-teal-600 text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20">
-                {submitting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Submitting…
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
-                    Submit Report
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        );
-      })()}
-    </div>
-  );
+  return null;
 }
-

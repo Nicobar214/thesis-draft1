@@ -14,6 +14,10 @@ import PublicReportsPage from "./pages/PublicReportsPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import FieldEngineerAuth from "./pages/FieldEngineerAuth";
 import FieldEngineerDashboard from "./pages/FieldEngineerDashboard";
+import ContractorAuth from "./pages/ContractorAuth";
+import ContractorDashboard from "./pages/ContractorDashboard";
+import ContractorProjects from "./pages/ContractorProjects";
+import ContractorReports from "./pages/ContractorReports";
 
 function App() {
   return (
@@ -65,6 +69,24 @@ function App() {
         <Route path="/field-engineer" element={
           <ProtectedRoute requiredRole="field_engineer">
             <FieldEngineerDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* ===== CONTRACTOR SIDE ===== */}
+        <Route path="/contractor/login" element={<ContractorAuth />} />
+        <Route path="/contractor" element={
+          <ProtectedRoute requiredRole="contractor">
+            <ContractorDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/contractor/projects" element={
+          <ProtectedRoute requiredRole="contractor">
+            <ContractorProjects />
+          </ProtectedRoute>
+        } />
+        <Route path="/contractor/reports" element={
+          <ProtectedRoute requiredRole="contractor">
+            <ContractorReports />
           </ProtectedRoute>
         } />
 

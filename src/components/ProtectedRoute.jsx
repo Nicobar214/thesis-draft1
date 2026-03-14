@@ -79,6 +79,10 @@ export default function ProtectedRoute({ children, requiredRole }) {
     if (role === 'field_engineer') {
       return <Navigate to="/field-engineer" replace />;
     }
+    // Contractor trying to access other pages → send to contractor dashboard
+    if (role === 'contractor') {
+      return <Navigate to="/contractor" replace />;
+    }
     // User trying to access admin/engineer pages → send to user dashboard
     return <Navigate to="/user" replace />;
   }

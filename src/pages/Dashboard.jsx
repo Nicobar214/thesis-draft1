@@ -74,6 +74,36 @@ function isPastDate(dateValue, todayDate) {
   return date < todayDate;
 }
 
+function calculateRoadLengthKm(startLat, startLng, endLat, endLng) {
+  const R = 6371000; // meters
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(endLat - startLat);
+  const dLng = toRad(endLng - startLng);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(startLat)) * Math.cos(toRad(endLat)) * Math.sin(dLng / 2) ** 2;
+  const meters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return meters / 1000;
+}
+
+// Accepts plain decimals and values like "10.82492N" or "122.53211E".
+function parseCoordinate(value) {
+  if (value === null || value === undefined) return NaN;
+  const raw = String(value).trim();
+  if (!raw) return NaN;
+
+  const normalized = raw.replace(/,/g, '.').toUpperCase();
+  const match = normalized.match(/^([+-]?\d+(?:\.\d+)?)(?:\s*([NSEW]))?$/);
+  if (!match) return NaN;
+
+  let num = Number(match[1]);
+  if (Number.isNaN(num)) return NaN;
+
+  const dir = match[2] || '';
+  if (dir === 'S' || dir === 'W') num = -Math.abs(num);
+  return num;
+}
+
 /* ─── Map bounds fitter for admin ─── */
 function AdminFitBounds({ projects }) {
   const map = useMap();
@@ -190,6 +220,15 @@ export default function Dashboard() {
   const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('All');
   const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
 
+  // Contractor state
+  const [contractors, setContractors] = useState([]);
+  const [progressUpdates, setProgressUpdates] = useState([]);
+  const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
+  const [assignContractorModal, setAssignContractorModal] = useState(null); // holds fmr project
+  const [assigningContractor, setAssigningContractor] = useState(false);
+  const [selectedContractorId, setSelectedContractorId] = useState('');
+  const [newProjectContractorId, setNewProjectContractorId] = useState('');
+
   // Reports tab state (split sections + per-section pagination)
   const [reportsSectionFilter, setReportsSectionFilter] = useState('ongoing');
   const [reportsPageBySection, setReportsPageBySection] = useState({ completed: 1, delayed: 1, ongoing: 1 });
@@ -209,8 +248,10 @@ export default function Dashboard() {
     barangay: '',
     municipality: '',
     province: 'Iloilo',
-    latitude: '',
-    longitude: '',
+    startLatitude: '',
+    startLongitude: '',
+    endLatitude: '',
+    endLongitude: '',
     roadLength: '',
     roadWidth: '',
     totalBudget: '',
@@ -454,6 +495,102 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch contractor profiles
+  const fetchContractors = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name')
+        .eq('role', 'contractor')
+        .order('full_name', { ascending: true });
+      if (error) throw error;
+      setContractors(data || []);
+    } catch (err) {
+      console.error('Error fetching contractors:', err.message);
+    }
+  }, []);
+
+  // Fetch all progress_updates with project info
+  const fetchProgressUpdates = useCallback(async () => {
+    setProgressUpdatesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('progress_updates')
+        .select('id, fmr_project_id, contractor_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality)')
+        .order('submitted_at', { ascending: false });
+      if (error) throw error;
+      setProgressUpdates(data || []);
+    } catch (err) {
+      console.error('Error fetching progress updates:', err.message);
+    } finally {
+      setProgressUpdatesLoading(false);
+    }
+  }, []);
+
+  // Assign contractor to FMR project
+  const assignContractorToProject = async (projectId, contractorId) => {
+    setAssigningContractor(true);
+    try {
+      const { error } = await supabase
+        .from('fmr_projects')
+        .update({ contractor_id: contractorId || null })
+        .eq('id', projectId);
+      if (error) throw error;
+      await fetchFmrProjects();
+      const contractor = contractors.find(c => c.id === contractorId);
+      showNotification(contractorId
+        ? `Contractor ${contractor?.full_name || contractor?.email || ''} assigned`
+        : 'Contractor unassigned');
+      setAssignContractorModal(null);
+      setSelectedContractorId('');
+    } catch (err) {
+      console.error('Assign contractor error:', err.message);
+      showNotification(`Failed: ${err.message}`, 'error');
+    } finally {
+      setAssigningContractor(false);
+    }
+  };
+
+  // Approve progress update (and bump fmr_projects.accomplishment)
+  const approveProgressUpdate = async (update) => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('progress_updates')
+        .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id })
+        .eq('id', update.id);
+      if (error) throw error;
+      // Bump accomplishment on the project
+      const { error: projErr } = await supabase
+        .from('fmr_projects')
+        .update({ accomplishment: update.reported_accomplishment })
+        .eq('id', update.fmr_project_id);
+      if (projErr) console.warn('Could not update accomplishment:', projErr);
+      await Promise.all([fetchProgressUpdates(), fetchFmrProjects()]);
+      showNotification('Progress update approved');
+    } catch (err) {
+      console.error('Approve error:', err.message);
+      showNotification(`Failed: ${err.message}`, 'error');
+    }
+  };
+
+  // Reject progress update
+  const rejectProgressUpdate = async (updateId) => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('progress_updates')
+        .update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id })
+        .eq('id', updateId);
+      if (error) throw error;
+      await fetchProgressUpdates();
+      showNotification('Progress update rejected');
+    } catch (err) {
+      console.error('Reject error:', err.message);
+      showNotification(`Failed: ${err.message}`, 'error');
+    }
+  };
+
   // Update public report status (admin action)
   // If the public report belongs to a registered user, also create/update
   // a feedback entry so it appears on their Community Feedback page.
@@ -626,6 +763,8 @@ export default function Dashboard() {
       fetchPublicReports();
       fetchFmrProjects();
       fetchFieldEngineers();
+      fetchContractors();
+      fetchProgressUpdates();
     });
 
     // Real-time subscription for projects
@@ -652,10 +791,16 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchFmrProjects())
       .subscribe();
 
-    // Real-time subscription for profiles (field engineers)
+    // Real-time subscription for profiles (field engineers + contractors)
     const profilesChannel = supabase
       .channel('admin-profiles-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchFieldEngineers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { fetchFieldEngineers(); fetchContractors(); })
+      .subscribe();
+
+    // Real-time subscription for progress updates
+    const progressUpdatesChannel = supabase
+      .channel('admin-progress-updates-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchProgressUpdates())
       .subscribe();
 
     return () => {
@@ -664,12 +809,55 @@ export default function Dashboard() {
       supabase.removeChannel(publicReportsChannel);
       supabase.removeChannel(fmrChannel);
       supabase.removeChannel(profilesChannel);
+      supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, fetchContractors, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+
+  const unifiedProjects = useMemo(() => {
+    const mappedFmr = fmrProjects.map((p) => {
+      const normalizedStatus = normalizeFmrStatus(p.status) || 'Proposed';
+      const mappedStatus =
+        normalizedStatus === 'On-Going'
+          ? 'In Progress'
+          : normalizedStatus === 'Proposed'
+          ? 'Planning'
+          : normalizedStatus;
+
+      const startLat = Number(p.start_latitude);
+      const startLng = Number(p.start_longitude);
+      const endLat = Number(p.end_latitude);
+      const endLng = Number(p.end_longitude);
+      const centerLat = !Number.isNaN(startLat) && !Number.isNaN(endLat) ? (startLat + endLat) / 2 : startLat;
+      const centerLng = !Number.isNaN(startLng) && !Number.isNaN(endLng) ? (startLng + endLng) / 2 : startLng;
+
+      const remarksText = p.remarks || '';
+      const codeMatch = remarksText.match(/FMR Code:\s*([^|]+)/i);
+
+      return {
+        id: `fmr-${p.id}`,
+        projectName: p.project_name || 'Unnamed FMR Project',
+        projectCode: codeMatch ? codeMatch[1].trim() : `FMR-${p.id}`,
+        municipality: p.municipality || '',
+        province: p.province || 'Iloilo',
+        latitude: Number.isNaN(centerLat) ? null : centerLat,
+        longitude: Number.isNaN(centerLng) ? null : centerLng,
+        roadLength: Number(p.project_length_km || 0),
+        contractor: '',
+        totalBudget: 0,
+        status: mappedStatus,
+        progress: Number(p.accomplishment || 0),
+        _source: 'fmr',
+        _raw: p,
+      };
+    });
+
+    const mappedProjects = projects.map((p) => ({ ...p, _source: 'projects' }));
+    return [...mappedProjects, ...mappedFmr];
+  }, [projects, fmrProjects]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
-    const filtered = projects.filter(project => {
+    const filtered = unifiedProjects.filter(project => {
       const matchesSearch = project.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.projectCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.municipality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -698,7 +886,7 @@ export default function Dashboard() {
     });
 
     return sorted;
-  }, [projects, searchQuery, statusFilter, sortField, sortDirection]);
+  }, [unifiedProjects, searchQuery, statusFilter, sortField, sortDirection]);
 
   // Pagination
   const totalPages = Math.ceil(filteredProjects.length / projectsPerPage);
@@ -709,19 +897,19 @@ export default function Dashboard() {
 
   // Calculate metrics
   const metrics = useMemo(() => {
-    const totalProjects = projects.length;
-    const inProgress = projects.filter(p => p.status === 'In Progress').length;
-    const completed = projects.filter(p => p.status === 'Completed').length;
-    const totalBudget = projects.reduce((sum, p) => sum + (p.totalBudget || 0), 0);
-    const disbursed = projects.reduce((sum, p) => sum + (p.disbursedAmount || 0), 0);
-    const avgProgress = projects.length > 0 
-      ? Math.round(projects.reduce((sum, p) => sum + (p.progress || 0), 0) / projects.length)
+    const totalProjects = unifiedProjects.length;
+    const inProgress = unifiedProjects.filter(p => p.status === 'In Progress').length;
+    const completed = unifiedProjects.filter(p => p.status === 'Completed').length;
+    const totalBudget = unifiedProjects.reduce((sum, p) => sum + (p.totalBudget || 0), 0);
+    const disbursed = unifiedProjects.reduce((sum, p) => sum + (p.disbursedAmount || 0), 0);
+    const avgProgress = unifiedProjects.length > 0
+      ? Math.round(unifiedProjects.reduce((sum, p) => sum + (p.progress || 0), 0) / unifiedProjects.length)
       : 0;
     const totalReports = publicReports.length;
     const totalFeedbacks = feedbacks.length;
     
     return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports, totalFeedbacks };
-  }, [projects, publicReports, feedbacks]);
+  }, [unifiedProjects, publicReports, feedbacks]);
 
   const pendingFeedbackCount = useMemo(() => feedbacks.filter(f => f.status === 'pending').length, [feedbacks]);
   const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
@@ -926,54 +1114,100 @@ export default function Dashboard() {
       const next = { ...prev, [name]: value };
       // Reset barangay when municipality changes
       if (name === 'municipality') next.barangay = '';
+
+      // Auto-calculate road length from start/end coordinates on create form.
+      if (
+        name === 'startLatitude' ||
+        name === 'startLongitude' ||
+        name === 'endLatitude' ||
+        name === 'endLongitude'
+      ) {
+        const startLat = parseCoordinate(name === 'startLatitude' ? value : next.startLatitude);
+        const startLng = parseCoordinate(name === 'startLongitude' ? value : next.startLongitude);
+        const endLat = parseCoordinate(name === 'endLatitude' ? value : next.endLatitude);
+        const endLng = parseCoordinate(name === 'endLongitude' ? value : next.endLongitude);
+
+        if (
+          !Number.isNaN(startLat) &&
+          !Number.isNaN(startLng) &&
+          !Number.isNaN(endLat) &&
+          !Number.isNaN(endLng)
+        ) {
+          const computedKm = calculateRoadLengthKm(startLat, startLng, endLat, endLng);
+          next.roadLength = computedKm.toFixed(2);
+        } else {
+          next.roadLength = '';
+        }
+      }
+
       return next;
     });
   };
 
-  const generateProjectCode = () => {
-    const year = new Date().getFullYear();
-    const num = String(projects.length + 1).padStart(3, '0');
-    return `FMR-${year}-${num}`;
-  };
-
   const handleAddProject = async (e) => {
     e.preventDefault();
-    
-    // Build insert payload — do NOT include `id` or `created_at`
-    // Supabase auto-generates both via IDENTITY and DEFAULT now()
-    const newProject = {
-      projectName: formData.projectName,
-      projectCode: formData.projectCode || generateProjectCode(),
-      region: formData.region,
-      province: formData.province,
+
+    const enteredCode = (formData.projectCode || '').trim();
+    if (!enteredCode) {
+      showNotification('FMR code is required.', 'error');
+      return;
+    }
+
+    const startLat = parseCoordinate(formData.startLatitude);
+    const startLng = parseCoordinate(formData.startLongitude);
+    const endLat = parseCoordinate(formData.endLatitude);
+    const endLng = parseCoordinate(formData.endLongitude);
+
+    if (
+      Number.isNaN(startLat) ||
+      Number.isNaN(startLng) ||
+      Number.isNaN(endLat) ||
+      Number.isNaN(endLng)
+    ) {
+      showNotification('Invalid coordinates. Use decimal format, e.g. 10.82492 or 122.53211E.', 'error');
+      return;
+    }
+
+    const computedRoadLengthKm = Number(calculateRoadLengthKm(startLat, startLng, endLat, endLng).toFixed(2));
+
+    // FMR master payload: save directly to fmr_projects for validity in FMR datasets.
+    const fmrPayload = {
+      project_name: formData.projectName,
+      status: 'On-Going',
+      year_funded: formData.startDate ? new Date(formData.startDate).getFullYear() : new Date().getFullYear(),
       municipality: formData.municipality,
-      barangay: formData.barangay,
-      latitude: parseFloat(formData.latitude) || 0,
-      longitude: parseFloat(formData.longitude) || 0,
-      roadLength: parseFloat(formData.roadLength) || 0,
-      roadWidth: parseFloat(formData.roadWidth) || 0,
-      roadType: formData.roadType,
-      totalBudget: parseFloat(formData.totalBudget) || 0,
-      budgetSource: formData.budgetSource,
-      disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
-      contractor: formData.contractor,
-      startDate: formData.startDate,
-      expectedEndDate: formData.expectedEndDate,
-      status: formData.status || 'Planning',
-      progress: parseInt(formData.progress) || 0,
-      description: formData.description
+      province: formData.province,
+      accomplishment: 0,
+      project_length_km: computedRoadLengthKm,
+      start_latitude: startLat,
+      start_longitude: startLng,
+      end_latitude: endLat,
+      end_longitude: endLng,
+      target_completion_date: formData.expectedEndDate || null,
+      location: formData.barangay,
+      contractor_id: newProjectContractorId || null,
+      remarks: [
+        `FMR Code: ${enteredCode}`,
+        formData.roadType ? `Road Type: ${formData.roadType}` : null,
+        formData.contractor ? `Contractor: ${formData.contractor}` : null,
+        formData.budgetSource ? `Funding Source: ${formData.budgetSource}` : null,
+        formData.totalBudget ? `Total Budget: ${formData.totalBudget}` : null,
+        formData.disbursedAmount ? `Disbursed Amount: ${formData.disbursedAmount}` : null,
+        formData.description ? `Description: ${formData.description}` : null,
+      ].filter(Boolean).join(' | '),
     };
 
     try {
-      const { error } = await supabase.from('projects').insert([newProject]);
+      const { error } = await supabase.from('fmr_projects').insert([fmrPayload]);
       if (error) throw error;
-      await fetchProjects();
+      await fetchFmrProjects();
       setShowAddModal(false);
       setFormData(emptyForm);
-      showNotification('Project created successfully!');
+      setNewProjectContractorId('');
+      showNotification('FMR project created successfully!');
     } catch (err) {
       console.error('Failed to create project:', err.message);
-      showNotification(`Failed to save project: ${err.message}`, 'error');
+      showNotification(`Failed to save FMR project: ${err.message}`, 'error');
     }
   };
 
@@ -1155,6 +1389,7 @@ export default function Dashboard() {
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z', badgeCount: pendingFeedbackCount },
     { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
+    { id: 'progress-updates', label: 'Progress Updates', icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', badgeCount: progressUpdates.filter(u => u.status === 'pending').length },
   ];
 
   // Handle sign out
@@ -1330,6 +1565,7 @@ export default function Dashboard() {
                 {activeTab === 'reports' && 'Reports'}
                 {activeTab === 'feedback' && 'Community Feedback'}
                 {activeTab === 'public-reports' && 'Public Reports'}
+                {activeTab === 'progress-updates' && 'Progress Updates'}
                 {activeTab === 'settings' && 'Settings'}
               </h1>
               <p className="text-sm text-slate-600 mt-1">
@@ -1339,13 +1575,14 @@ export default function Dashboard() {
                 {activeTab === 'reports' && 'Generate and view project reports'}
                 {activeTab === 'feedback' && 'View and manage citizen feedback on projects'}
                 {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
+                {activeTab === 'progress-updates' && 'Review contractor-submitted progress updates for FMR projects'}
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
             {activeTab === 'projects' && (
               <button
                 onClick={() => {
-                  setFormData({ ...emptyForm, projectCode: generateProjectCode() });
+                  setFormData({ ...emptyForm, projectCode: '' });
                   setShowAddModal(true);
                 }}
                 className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm flex items-center gap-2.5 transition-all duration-200 shadow-lg shadow-teal-500/25 hover:shadow-xl hover:shadow-teal-500/30"
@@ -1628,7 +1865,13 @@ export default function Dashboard() {
                               <td className="px-8 py-5">
                                 <div className="flex items-center justify-end gap-2">
                                   <button 
-                                    onClick={() => openEditModal(project)}
+                                    onClick={() => {
+                                      if (project._source === 'fmr' && project._raw) {
+                                        openFmrEditModal(project._raw);
+                                      } else {
+                                        openEditModal(project);
+                                      }
+                                    }}
                                     className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-150" 
                                     title="Edit"
                                   >
@@ -1637,7 +1880,13 @@ export default function Dashboard() {
                                     </svg>
                                   </button>
                                   <button 
-                                    onClick={() => openDeleteModal(project)}
+                                    onClick={() => {
+                                      if (project._source === 'fmr' && project._raw) {
+                                        openFmrDeleteModal(project._raw);
+                                      } else {
+                                        openDeleteModal(project);
+                                      }
+                                    }}
                                     className="p-2.5 hover:bg-red-50 rounded-xl transition-colors duration-150" 
                                     title="Delete"
                                   >
@@ -1930,13 +2179,20 @@ export default function Dashboard() {
                           </div>
 
                           {/* Action Buttons */}
-                          <div className="flex gap-2 pt-4 border-t border-slate-100">
+                          <div className="flex gap-2 pt-4 border-t border-slate-100 flex-wrap">
                             <button
                               onClick={() => openFmrEditModal(project)}
                               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
                               Edit
+                            </button>
+                            <button
+                              onClick={() => { setAssignContractorModal(project); setSelectedContractorId(project.contractor_id || ''); }}
+                              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl text-sm font-semibold text-amber-700 transition-all duration-200"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
+                              Assign
                             </button>
                             <button
                               onClick={() => openFmrDeleteModal(project)}
@@ -2753,6 +3009,11 @@ export default function Dashboard() {
                           {rpt.assigned_engineer_name}
                         </span>
                       )}
+                      {rpt.contractor_remark && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                          Contractor responded
+                        </span>
+                      )}
                     </div>
                   </div>
                   {rpt.photo_url && (
@@ -3089,6 +3350,124 @@ export default function Dashboard() {
             );
           })()}
 
+          {/* Progress Updates Tab */}
+          {activeTab === 'progress-updates' && (() => {
+            const pendingUpdatesCount  = progressUpdates.filter(u => u.status === 'pending').length;
+            const approvedUpdatesCount = progressUpdates.filter(u => u.status === 'approved').length;
+            const rejectedUpdatesCount = progressUpdates.filter(u => u.status === 'rejected').length;
+            const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+            const updateStatusCls = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
+            return (
+              <div className="space-y-6">
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                    <p className="text-3xl font-bold text-amber-700">{pendingUpdatesCount}</p>
+                    <p className="text-sm text-slate-500 mt-1">Pending Review</p>
+                  </div>
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                    <p className="text-3xl font-bold text-emerald-700">{approvedUpdatesCount}</p>
+                    <p className="text-sm text-slate-500 mt-1">Approved</p>
+                  </div>
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                    <p className="text-3xl font-bold text-red-600">{rejectedUpdatesCount}</p>
+                    <p className="text-sm text-slate-500 mt-1">Rejected</p>
+                  </div>
+                </div>
+
+                {/* Table */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                  {progressUpdatesLoading ? (
+                    <div className="py-16 flex items-center justify-center">
+                      <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
+                    </div>
+                  ) : progressUpdates.length === 0 ? (
+                    <EmptyState title="No progress updates yet" description="Contractors will submit updates once they are assigned to projects." />
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[900px]">
+                        <thead>
+                          <tr className="bg-slate-50/60 border-b border-slate-200">
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {progressUpdates.map((upd) => {
+                            const contractorProfile = contractors.find(c => c.id === upd.contractor_id);
+                            const contractorName = contractorProfile?.full_name || contractorProfile?.email || upd.contractor_id?.slice(0, 8) || '—';
+                            const projectName = upd.fmr_projects?.project_name || `Project ${upd.fmr_project_id}`;
+                            const municipality = upd.fmr_projects?.municipality || '';
+                            return (
+                              <tr key={upd.id} className="hover:bg-slate-50/60 transition-colors align-top">
+                                <td className="px-5 py-4 max-w-xs">
+                                  <p className="text-sm font-semibold text-slate-900 line-clamp-2">{projectName}</p>
+                                  {municipality && <p className="text-xs text-slate-500 mt-0.5">{municipality}</p>}
+                                </td>
+                                <td className="px-5 py-4">
+                                  <p className="text-sm text-slate-700">{contractorName}</p>
+                                </td>
+                                <td className="px-5 py-4">
+                                  <span className="text-sm font-bold text-slate-900 font-mono">{upd.reported_accomplishment}%</span>
+                                </td>
+                                <td className="px-5 py-4 max-w-xs">
+                                  <p className="text-xs text-slate-600 line-clamp-3">{upd.remarks || '—'}</p>
+                                </td>
+                                <td className="px-5 py-4">
+                                  {upd.photo_url ? (
+                                    <a href={upd.photo_url} target="_blank" rel="noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">
+                                      View
+                                    </a>
+                                  ) : <span className="text-xs text-slate-400">—</span>}
+                                </td>
+                                <td className="px-5 py-4">
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${updateStatusCls[upd.status] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                    {upd.status?.charAt(0).toUpperCase() + upd.status?.slice(1)}
+                                  </span>
+                                </td>
+                                <td className="px-5 py-4 whitespace-nowrap">
+                                  <span className="text-xs text-slate-500">{fmtDate(upd.submitted_at)}</span>
+                                </td>
+                                <td className="px-5 py-4">
+                                  {upd.status === 'pending' && (
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => approveProgressUpdate(upd)}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => rejectProgressUpdate(upd.id)}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
+                                  {upd.status !== 'pending' && (
+                                    <span className="text-xs text-slate-400">{fmtDate(upd.reviewed_at)}</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
@@ -3292,6 +3671,143 @@ export default function Dashboard() {
                     </form>
                   </div>
                 </div>
+                {/* Contractors Management */}
+                <div className="pt-8 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-lg text-slate-900">Contractors</h3>
+                    <button onClick={fetchContractors} className="px-3 py-1.5 text-xs font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">
+                      Refresh List
+                    </button>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-5">Manage contractor accounts. Contractors log in at <code className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md text-xs">/contractor/login</code> — share this URL with your contractors.</p>
+
+                  {/* Existing Contractors */}
+                  {contractors.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      {contractors.map(c => {
+                        const assignedCount = fmrProjects.filter(p => p.contractor_id === c.id).length;
+                        return (
+                          <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                                {(c.full_name || c.email || 'C').charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">{c.full_name || '—'}</p>
+                                <p className="text-xs text-slate-500">{c.email}{c.phone ? ` · ${c.phone}` : ''} · {assignedCount} project{assignedCount !== 1 ? 's' : ''} assigned</p>
+                              </div>
+                            </div>
+                            <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold">Contractor</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Add Contractor Form */}
+                  <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl p-5">
+                    <p className="text-sm font-semibold text-amber-900 mb-4">Register New Contractor</p>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.target);
+                      const ctEmail    = fd.get('ct_email')?.toString().trim();
+                      const ctName     = fd.get('ct_name')?.toString().trim();
+                      const ctPhone    = fd.get('ct_phone')?.toString().trim();
+                      const ctPassword = fd.get('ct_password')?.toString().trim();
+                      if (!ctEmail || !ctPassword) { showNotification('Email and password are required', 'error'); return; }
+                      try {
+                        const { data: signUpData, error: signUpErr } = await supabaseAdmin.auth.signUp({
+                          email: ctEmail,
+                          password: ctPassword,
+                          options: {
+                            data: { role: 'contractor', full_name: ctName || '' },
+                          }
+                        });
+                        if (signUpErr) {
+                          if (signUpErr.message?.toLowerCase().includes('rate') || signUpErr.status === 429) {
+                            showNotification('Email rate limit exceeded. Disable "Confirm email" in Supabase Auth settings, or wait and try again.', 'error');
+                            return;
+                          }
+                          throw signUpErr;
+                        }
+                        if (signUpData?.user?.identities?.length === 0) { showNotification('A user with this email already exists.', 'error'); return; }
+                        if (signUpData?.user) {
+                          let profileCreated = false;
+
+                          // Try 1: SECURITY DEFINER RPC (bypasses RLS)
+                          const { error: rpcErr } = await supabase.rpc('create_contractor_profile', {
+                            user_id:    signUpData.user.id,
+                            user_email: ctEmail,
+                            user_name:  ctName || '',
+                            user_phone: ctPhone || '',
+                          });
+                          if (!rpcErr) {
+                            profileCreated = true;
+                          } else {
+                            console.warn('RPC create_contractor_profile failed:', rpcErr);
+
+                            // Try 2: direct insert
+                            const { error: insertErr } = await supabase.from('profiles').insert({
+                              id: signUpData.user.id, email: ctEmail,
+                              full_name: ctName || '', phone: ctPhone || '', role: 'contractor',
+                            });
+                            if (!insertErr) {
+                              profileCreated = true;
+                            } else {
+                              console.warn('Direct insert failed:', insertErr);
+
+                              // Try 3: upsert
+                              const { error: upsertErr } = await supabase.from('profiles').upsert({
+                                id: signUpData.user.id, email: ctEmail,
+                                full_name: ctName || '', phone: ctPhone || '', role: 'contractor',
+                              }, { onConflict: 'id' });
+                              if (!upsertErr) {
+                                profileCreated = true;
+                              } else {
+                                console.error('All profile creation attempts failed:', upsertErr);
+                              }
+                            }
+                          }
+
+                          if (!profileCreated) {
+                            showNotification('Account created but profile failed. Run supabase_create_contractor_profile_fn.sql in SQL Editor, then refresh.', 'error');
+                          } else {
+                            await fetchContractors();
+                            showNotification(`Contractor ${ctName || ctEmail} registered successfully!`);
+                            e.target.reset();
+                          }
+                        }
+                      } catch (err) {
+                        showNotification(`Failed: ${err.message}`, 'error');
+                      }
+                    }} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                          <input type="text" name="ct_name" placeholder="Contractor Name" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone</label>
+                          <input type="tel" name="ct_phone" placeholder="09XX-XXX-XXXX" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email *</label>
+                          <input type="email" name="ct_email" required placeholder="contractor@email.com" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Password *</label>
+                          <input type="password" name="ct_password" required minLength={6} placeholder="Min 6 characters" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none" />
+                        </div>
+                      </div>
+                      <button type="submit" className="bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-amber-500/25">
+                        Register Contractor
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
                 <div className="pt-8 border-t border-slate-100">
                   <button className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white px-8 py-3 rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25 hover:shadow-xl hover:shadow-teal-500/30">
                     Save Changes
@@ -3312,7 +3828,7 @@ export default function Dashboard() {
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Road Project</h2>
                 <p className="text-sm text-slate-500 mt-1">Create a new farm-to-market road project</p>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -3325,18 +3841,8 @@ export default function Dashboard() {
                   <input type="text" name="projectName" value={formData.projectName} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Barangay Access Road" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Project Code</label>
-                  <input type="text" name="projectCode" value={formData.projectCode} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50" readOnly />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Status *</label>
-                  <select name="status" value={formData.status} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
-                    <option value="Planning">Planning</option>
-                    <option value="Bidding">Bidding</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="On Hold">On Hold</option>
-                    <option value="Completed">Completed</option>
-                  </select>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">FMR Code *</label>
+                  <input type="text" name="projectCode" value={formData.projectCode} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="e.g., FMR-2026-ILO-001" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Region</label>
@@ -3361,20 +3867,25 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Latitude</label>
-                  <input type="number" step="any" name="latitude" value={formData.latitude} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="10.3157" />
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Start Latitude *</label>
+                  <input type="text" inputMode="decimal" name="startLatitude" value={formData.startLatitude} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="10.315700 or 10.315700N" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Longitude</label>
-                  <input type="number" step="any" name="longitude" value={formData.longitude} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="123.8854" />
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Start Longitude *</label>
+                  <input type="text" inputMode="decimal" name="startLongitude" value={formData.startLongitude} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="123.885400 or 123.885400E" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">End Latitude *</label>
+                  <input type="text" inputMode="decimal" name="endLatitude" value={formData.endLatitude} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="10.319100 or 10.319100N" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">End Longitude *</label>
+                  <input type="text" inputMode="decimal" name="endLongitude" value={formData.endLongitude} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="123.891000 or 123.891000E" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km) *</label>
-                  <input type="number" step="0.01" name="roadLength" value={formData.roadLength} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="3.5" />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Road Width (m) *</label>
-                  <input type="number" step="0.1" name="roadWidth" value={formData.roadWidth} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="6.0" />
+                  <input type="number" step="0.01" name="roadLength" value={formData.roadLength} readOnly required className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700" placeholder="Auto-calculated" />
+                  <p className="text-xs text-slate-500 mt-1">Auto-calculated from start and end coordinates.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Type *</label>
@@ -3400,8 +3911,45 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Contractor *</label>
-                  <input type="text" name="contractor" value={formData.contractor} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., ABC Construction Inc." />
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Contractor</label>
+                  {contractors.length > 0 && (
+                    <select
+                      value={newProjectContractorId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setNewProjectContractorId(id);
+                        if (id) {
+                          const c = contractors.find(c => c.id === id);
+                          if (c) handleInputChange({ target: { name: 'contractor', value: c.full_name || c.email } });
+                        } else {
+                          handleInputChange({ target: { name: 'contractor', value: '' } });
+                        }
+                      }}
+                      className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 mb-2"
+                    >
+                      <option value="">— Select a registered contractor —</option>
+                      {contractors.map(c => (
+                        <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    type="text"
+                    name="contractor"
+                    value={formData.contractor}
+                    onChange={(e) => {
+                      handleInputChange(e);
+                      if (newProjectContractorId) setNewProjectContractorId('');
+                    }}
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200"
+                    placeholder={contractors.length > 0 ? 'Or type a contractor name manually' : 'e.g., ABC Construction Inc.'}
+                  />
+                  {newProjectContractorId && (
+                    <p className="text-xs text-amber-700 mt-1.5 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                      Registered contractor selected — they will see this project in their portal.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date *</label>
@@ -3411,10 +3959,6 @@ export default function Dashboard() {
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Expected End Date *</label>
                   <input type="date" name="expectedEndDate" value={formData.expectedEndDate} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Progress (%)</label>
-                  <input type="number" min="0" max="100" name="progress" value={formData.progress} onChange={handleInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="0" />
-                </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Description</label>
                   <textarea name="description" value={formData.description} onChange={handleInputChange} rows="3" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 resize-none" placeholder="Project description..." />
@@ -3422,7 +3966,7 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => setShowAddModal(false)} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
               <button type="submit" onClick={handleAddProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Create Project</button>
             </div>
           </div>
@@ -3557,6 +4101,64 @@ export default function Dashboard() {
                   Delete Project
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Contractor Modal */}
+      {assignContractorModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Assign Contractor</h2>
+                <p className="text-sm text-slate-500 mt-1 line-clamp-1">{assignContractorModal.project_name}</p>
+              </div>
+              <button onClick={() => setAssignContractorModal(null)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-8">
+              {contractors.length === 0 ? (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  No contractors registered yet. Go to <strong>Settings → Contractors</strong> to register one first.
+                </p>
+              ) : (
+                <>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Select Contractor</label>
+                  <select
+                    value={selectedContractorId}
+                    onChange={(e) => setSelectedContractorId(e.target.value)}
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 mb-6 text-sm"
+                  >
+                    <option value="">— None (unassign) —</option>
+                    {contractors.map(c => (
+                      <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setAssignContractorModal(null)}
+                      className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      disabled={assigningContractor}
+                      onClick={async () => {
+                        await assignContractorToProject(assignContractorModal.id, selectedContractorId || null);
+                        setAssignContractorModal(null);
+                      }}
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:opacity-50"
+                    >
+                      {assigningContractor ? 'Saving…' : 'Assign'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
