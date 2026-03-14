@@ -1,6 +1,5 @@
-/* ContractorReports.jsx – Public reports linked to this contractor's projects
- * Table with report details + inline "Add Remark" functionality.
- * UPDATE public_reports SET contractor_remark, contractor_remark_at for own projects only.
+/* ContractorReports.jsx – Operations page for contractor progress history
+ * and public reports linked to assigned projects.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,11 +22,38 @@ function ReportStatusBadge({ status }) {
   );
 }
 
+function ProgressStatusBadge({ status }) {
+  const map = {
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    rejected: 'bg-red-50 text-red-700 border-red-200',
+  };
+  const cls = map[status] || 'bg-slate-50 text-slate-600 border-slate-200';
+  const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
+function SummaryCard({ value, label, tone }) {
+  return (
+    <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+      <p className={`text-3xl font-bold ${tone}`}>{value}</p>
+      <p className="text-sm text-slate-500 mt-1">{label}</p>
+    </div>
+  );
+}
+
 export default function ContractorReports() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [reports, setReports] = useState([]);
+  const [publicReports, setPublicReports] = useState([]);
+  const [progressHistory, setProgressHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [remarkState, setRemarkState] = useState({}); // { [reportId]: { open, text, saving } }
   const [notification, setNotification] = useState(null);
 
@@ -43,44 +69,79 @@ export default function ContractorReports() {
     check();
   }, [navigate]);
 
-  // ── Fetch reports ────────────────────────────────────────────
-  const fetchReports = useCallback(async () => {
+  // ── Fetch reports + progress history ────────────────────────
+  const fetchData = useCallback(async (showSpinner = true) => {
     if (!user) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
+    else setRefreshing(true);
     try {
-      // Get the contractor's assigned project IDs
       const { data: projs } = await supabase
         .from('fmr_projects')
-        .select('id')
+        .select('id, project_name, municipality, accomplishment, status')
         .eq('contractor_id', user.id);
-      const projectIds = (projs || []).map((p) => `fmr-${p.id}`);
+      const rawProjectIds = (projs || []).map((p) => p.id);
+      const reportProjectIds = rawProjectIds.map((id) => `fmr-${id}`);
 
-      if (projectIds.length === 0) { setReports([]); setLoading(false); return; }
+      if (rawProjectIds.length === 0) {
+        setPublicReports([]);
+        setProgressHistory([]);
+        setLastSyncedAt(new Date());
+        return;
+      }
 
-      const { data, error } = await supabase
-        .from('public_reports')
-        .select('id, project_name, description, category, status, created_at, contractor_remark, contractor_remark_at, verification, municipality, barangay, photo_url, project_id')
-        .in('project_id', projectIds)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setReports(data || []);
+      const [{ data: reportRows, error: reportErr }, { data: progressRows, error: progressErr }] = await Promise.all([
+        supabase
+          .from('public_reports')
+          .select('id, project_name, description, category, status, created_at, contractor_remark, contractor_remark_at, verification, municipality, barangay, photo_url, project_id')
+          .in('project_id', reportProjectIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('progress_updates')
+          .select('id, fmr_project_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment, status)')
+          .eq('contractor_id', user.id)
+          .in('fmr_project_id', rawProjectIds)
+          .order('submitted_at', { ascending: false })
+      ]);
+
+      if (reportErr) throw reportErr;
+      if (progressErr) throw progressErr;
+
+      setPublicReports(reportRows || []);
+      setProgressHistory(progressRows || []);
+      setLastSyncedAt(new Date());
     } catch (err) {
       console.error('ContractorReports fetch error:', err);
+      setNotification({ message: `Failed to refresh data: ${err.message}`, type: 'error' });
+      setTimeout(() => setNotification(null), 3500);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [user]);
 
   useEffect(() => {
     if (user) {
-      fetchReports();
+      fetchData();
       const ch = supabase
         .channel('contractor-reports-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchReports)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchData(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchData(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchData(false))
         .subscribe();
-      return () => supabase.removeChannel(ch);
+
+      const refreshOnFocus = () => fetchData(false);
+      const pollId = window.setInterval(() => fetchData(false), 15000);
+      window.addEventListener('focus', refreshOnFocus);
+      document.addEventListener('visibilitychange', refreshOnFocus);
+
+      return () => {
+        window.clearInterval(pollId);
+        window.removeEventListener('focus', refreshOnFocus);
+        document.removeEventListener('visibilitychange', refreshOnFocus);
+        supabase.removeChannel(ch);
+      };
     }
-  }, [user, fetchReports]);
+  }, [user, fetchData]);
 
   // ── Remark helpers ───────────────────────────────────────────
   const openRemark = (reportId, existing) => {
@@ -108,7 +169,7 @@ export default function ContractorReports() {
       if (error) throw error;
       setNotification({ message: 'Remark saved.', type: 'success' });
       setTimeout(() => setNotification(null), 3000);
-      await fetchReports();
+      await fetchData(false);
       closeRemark(reportId);
     } catch (err) {
       console.error('Save remark error:', err);
@@ -120,6 +181,8 @@ export default function ContractorReports() {
 
   const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  const fmtDateTime = (d) =>
+    d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
   if (loading) {
     return (
@@ -144,14 +207,95 @@ export default function ContractorReports() {
 
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Reports</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {reports.length} public report{reports.length !== 1 ? 's' : ''} linked to your projects
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Operations Reports</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Review your submission history and public reports linked to assigned projects.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Last synced</p>
+              <p className="text-sm text-slate-600">{lastSyncedAt ? fmtDateTime(lastSyncedAt) : 'Not yet synced'}</p>
+            </div>
+            <button
+              onClick={() => fetchData(false)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
+              </svg>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
-        {reports.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <SummaryCard value={progressHistory.length} label="Total Submissions" tone="text-slate-900" />
+          <SummaryCard value={progressHistory.filter((item) => item.status === 'pending').length} label="Pending Review" tone="text-amber-700" />
+          <SummaryCard value={progressHistory.filter((item) => item.status === 'approved').length} label="Approved" tone="text-emerald-700" />
+          <SummaryCard value={progressHistory.filter((item) => item.status === 'rejected').length} label="Rejected" tone="text-red-600" />
+          <SummaryCard value={publicReports.length} label="Linked Public Reports" tone="text-sky-700" />
+        </div>
+
+        <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
+              <p className="text-sm text-slate-500 mt-1">Every contractor update, its review outcome, and the current project progress.</p>
+            </div>
+            <span className="text-sm font-medium text-slate-500">{progressHistory.length} record{progressHistory.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {progressHistory.length === 0 ? (
+            <div className="py-14 text-center">
+              <p className="text-base font-bold text-slate-900">No submission history yet</p>
+              <p className="text-sm text-slate-500 mt-1">Your approved, pending, and rejected progress updates will appear here.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px]">
+                <thead>
+                  <tr className="bg-slate-50/60 border-b border-slate-200">
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Project %</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted At</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reviewed At</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {progressHistory.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors align-top">
+                      <td className="px-5 py-4 max-w-xs">
+                        <p className="text-sm font-semibold text-slate-900 line-clamp-2">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
+                        {item.fmr_projects?.municipality && <p className="text-xs text-slate-500 mt-0.5">{item.fmr_projects.municipality}</p>}
+                      </td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-slate-900 font-mono">{Number(item.reported_accomplishment || 0).toFixed(2)}%</td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 font-mono">{Number(item.fmr_projects?.accomplishment || 0).toFixed(2)}%</td>
+                      <td className="px-5 py-4"><ProgressStatusBadge status={item.status} /></td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{fmtDateTime(item.submitted_at)}</td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{item.status === 'pending' ? 'Awaiting review' : fmtDateTime(item.reviewed_at)}</td>
+                      <td className="px-5 py-4 max-w-xs"><p className="text-xs text-slate-600 line-clamp-3">{item.remarks || '—'}</p></td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        {item.photo_url ? (
+                          <a href={item.photo_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">View</a>
+                        ) : <span className="text-xs text-slate-400">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {publicReports.length === 0 ? (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm py-16 text-center">
             <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -163,6 +307,13 @@ export default function ContractorReports() {
           </div>
         ) : (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
+                <p className="text-sm text-slate-500 mt-1">Citizen-submitted reports tied to your assigned projects.</p>
+              </div>
+              <span className="text-sm font-medium text-slate-500">{publicReports.length} report{publicReports.length !== 1 ? 's' : ''}</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px]">
                 <thead>
@@ -176,7 +327,7 @@ export default function ContractorReports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {reports.map((rpt) => {
+                  {publicReports.map((rpt) => {
                     const rstate = remarkState[rpt.id] || { open: false, text: rpt.contractor_remark || '', saving: false };
                     return (
                       <tr key={rpt.id} className="hover:bg-slate-50/60 transition-colors align-top">

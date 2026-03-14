@@ -39,6 +39,8 @@ export default function ContractorDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
   // KPI data
   const [totalProjects, setTotalProjects]     = useState(0);
@@ -61,7 +63,8 @@ export default function ContractorDashboard() {
   // ── Fetch KPIs ──────────────────────────────────────────────
   const fetchKPIs = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
+    if (!lastSyncedAt) setLoading(true);
+    else setRefreshing(true);
     try {
       // 1. Total assigned projects
       const { count: projCount } = await supabase
@@ -115,12 +118,14 @@ export default function ContractorDashboard() {
         .order('submitted_at', { ascending: false })
         .limit(5);
       setRecentActivity(recent || []);
+      setLastSyncedAt(new Date());
     } catch (err) {
       console.error('ContractorDashboard KPI error:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [user]);
+  }, [user, lastSyncedAt]);
 
   useEffect(() => {
     if (user) {
@@ -128,8 +133,20 @@ export default function ContractorDashboard() {
       const channel = supabase
         .channel('contractor-dashboard-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, fetchKPIs)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchKPIs)
         .subscribe();
-      return () => supabase.removeChannel(channel);
+
+      const refreshOnFocus = () => fetchKPIs();
+      const pollId = window.setInterval(fetchKPIs, 15000);
+      window.addEventListener('focus', refreshOnFocus);
+      document.addEventListener('visibilitychange', refreshOnFocus);
+
+      return () => {
+        window.clearInterval(pollId);
+        window.removeEventListener('focus', refreshOnFocus);
+        document.removeEventListener('visibilitychange', refreshOnFocus);
+        supabase.removeChannel(channel);
+      };
     }
   }, [user, fetchKPIs]);
 
@@ -147,9 +164,27 @@ export default function ContractorDashboard() {
     <ContractorLayout>
       <div className="space-y-8">
         {/* Page title */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Contractor Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">Overview of your projects and activities</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Contractor Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">Overview of your projects, submission workload, and current field activity.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Last synced</p>
+              <p className="text-sm text-slate-600">{lastSyncedAt ? new Date(lastSyncedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not yet synced'}</p>
+            </div>
+            <button
+              onClick={fetchKPIs}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+              <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
+              </svg>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
         {/* KPI stat cards */}

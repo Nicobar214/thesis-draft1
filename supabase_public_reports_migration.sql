@@ -24,7 +24,7 @@ CREATE TABLE public.public_reports (
   street            TEXT DEFAULT '',
 
   -- Linked project
-  project_id        BIGINT,                   -- FK to projects.id (nullable in case project is deleted)
+  project_id        TEXT DEFAULT '',          -- stores values like fmr-123 for FMR-linked reports
   project_name      TEXT NOT NULL DEFAULT '',
 
   -- Captured photo URL (camera-only, stored in bucket)
@@ -45,6 +45,8 @@ CREATE TABLE public.public_reports (
                       )),
 
   -- Feedback content
+  category          TEXT NOT NULL DEFAULT 'general'
+                    CHECK (category IN ('issue', 'safety', 'flood', 'general')),
   description       TEXT NOT NULL,
 
   -- Submission metadata

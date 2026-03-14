@@ -217,13 +217,16 @@ export default function Dashboard() {
 
   // FMR projects-tab filter state
   const [fmrProjectSearch, setFmrProjectSearch] = useState('');
-  const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('All');
+  const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('On-Going');
   const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
+  const [fmrProjectCurrentPage, setFmrProjectCurrentPage] = useState(1);
+  const fmrProjectsPerPage = 9;
 
   // Contractor state
   const [contractors, setContractors] = useState([]);
   const [progressUpdates, setProgressUpdates] = useState([]);
   const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
+  const [progressUpdatesLastSyncedAt, setProgressUpdatesLastSyncedAt] = useState(null);
   const [assignContractorModal, setAssignContractorModal] = useState(null); // holds fmr project
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState('');
@@ -516,10 +519,11 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('progress_updates')
-        .select('id, fmr_project_id, contractor_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality)')
+        .select('id, fmr_project_id, contractor_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
         .order('submitted_at', { ascending: false });
       if (error) throw error;
       setProgressUpdates(data || []);
+      setProgressUpdatesLastSyncedAt(new Date());
     } catch (err) {
       console.error('Error fetching progress updates:', err.message);
     } finally {
@@ -554,40 +558,41 @@ export default function Dashboard() {
   // Approve progress update (and bump fmr_projects.accomplishment)
   const approveProgressUpdate = async (update) => {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from('progress_updates')
-        .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id })
-        .eq('id', update.id);
+      const { error } = await supabase.rpc('approve_progress_update_admin', {
+        progress_update_id: update.id,
+      });
       if (error) throw error;
-      // Bump accomplishment on the project
-      const { error: projErr } = await supabase
-        .from('fmr_projects')
-        .update({ accomplishment: update.reported_accomplishment })
-        .eq('id', update.fmr_project_id);
-      if (projErr) console.warn('Could not update accomplishment:', projErr);
+
       await Promise.all([fetchProgressUpdates(), fetchFmrProjects()]);
       showNotification('Progress update approved');
     } catch (err) {
       console.error('Approve error:', err.message);
-      showNotification(`Failed: ${err.message}`, 'error');
+      if (err.message?.includes('approve_progress_update_admin')) {
+        showNotification('Failed: run supabase_progress_update_admin_actions.sql in Supabase SQL Editor, then try again.', 'error');
+      } else if (err.message?.includes('invalid input syntax for type integer')) {
+        showNotification('Failed: fmr_projects.accomplishment still uses INTEGER. Run supabase_fix_fmr_accomplishment_numeric.sql in Supabase SQL Editor, then try again.', 'error');
+      } else {
+        showNotification(`Failed: ${err.message}`, 'error');
+      }
     }
   };
 
   // Reject progress update
   const rejectProgressUpdate = async (updateId) => {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from('progress_updates')
-        .update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: currentUser?.id })
-        .eq('id', updateId);
+      const { error } = await supabase.rpc('reject_progress_update_admin', {
+        progress_update_id: updateId,
+      });
       if (error) throw error;
       await fetchProgressUpdates();
       showNotification('Progress update rejected');
     } catch (err) {
       console.error('Reject error:', err.message);
-      showNotification(`Failed: ${err.message}`, 'error');
+      if (err.message?.includes('reject_progress_update_admin')) {
+        showNotification('Failed: run supabase_progress_update_admin_actions.sql in Supabase SQL Editor, then try again.', 'error');
+      } else {
+        showNotification(`Failed: ${err.message}`, 'error');
+      }
     }
   };
 
@@ -812,6 +817,10 @@ export default function Dashboard() {
       supabase.removeChannel(progressUpdatesChannel);
     };
   }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, fetchContractors, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+
+  useEffect(() => {
+    setFmrProjectCurrentPage(1);
+  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter]);
 
   const unifiedProjects = useMemo(() => {
     const mappedFmr = fmrProjects.map((p) => {
@@ -1954,7 +1963,12 @@ export default function Dashboard() {
               const loc = (p.location || '').toLowerCase();
               const muni = (p.municipality || '').toLowerCase();
               const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-              const matchesStatus = fmrProjectStatusFilter === 'All' || normalizeFmrStatus(p.status) === fmrProjectStatusFilter;
+              const normalizedStatus = normalizeFmrStatus(p.status);
+              const isPendingStatus = normalizedStatus === 'Pending' || normalizedStatus === 'Proposed';
+              const matchesStatus =
+                fmrProjectStatusFilter === 'Pending'
+                  ? isPendingStatus
+                  : normalizedStatus === fmrProjectStatusFilter;
               const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
               return matchesSearch && matchesStatus && matchesYear;
             });
@@ -1962,8 +1976,17 @@ export default function Dashboard() {
               all: fmrProjects.length,
               completed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
               ongoing: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
-              proposed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+              pending: fmrProjects.filter(p => {
+                const status = normalizeFmrStatus(p.status);
+                return status === 'Pending' || status === 'Proposed';
+              }).length,
             };
+            const fmrTotalPages = Math.max(1, Math.ceil(filteredFmr.length / fmrProjectsPerPage));
+            const safeFmrPage = Math.min(fmrProjectCurrentPage, fmrTotalPages);
+            const paginatedFilteredFmr = filteredFmr.slice(
+              (safeFmrPage - 1) * fmrProjectsPerPage,
+              safeFmrPage * fmrProjectsPerPage
+            );
             const exportFilteredFmr = () => {
               const rows = filteredFmr.map((p) => ({
                 project_name: p.project_name || '',
@@ -2020,8 +2043,8 @@ export default function Dashboard() {
                       <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
                     </div>
                   </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.pending}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Pending</p>
                 </div>
               </div>
 
@@ -2068,14 +2091,14 @@ export default function Dashboard() {
                   </select>
                   {/* Status Tabs */}
                   <div className="flex gap-1.5 overflow-x-auto">
-                    {['All', 'Completed', 'On-Going', 'Proposed'].map(s => (
-                      <button key={s} onClick={() => setFmrProjectStatusFilter(s)}
+                    {['On-Going', 'Pending', 'Completed'].map(s => (
+                      <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
                         className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                           fmrProjectStatusFilter === s
                             ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm shadow-teal-500/25'
                             : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
                         }`}>
-                        {s}{s !== 'All' ? '' : ` (${fmrCounts.all})`}
+                        {s}
                       </button>
                     ))}
                   </div>
@@ -2091,8 +2114,8 @@ export default function Dashboard() {
                   <p className="text-sm text-slate-500">
                     Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of {fmrProjects.length} projects
                   </p>
-                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'All' || fmrProjectYearFilter !== 'All') && (
-                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('All'); setFmrProjectYearFilter('All'); }}
+                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All') && (
+                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectCurrentPage(1); }}
                       className="text-sm text-teal-600 hover:text-teal-700 font-medium">
                       Clear filters
                     </button>
@@ -2112,13 +2135,15 @@ export default function Dashboard() {
                     title="No projects found"
                     description="Try adjusting search, fiscal year, or status filters."
                     buttonLabel="Reset Filters"
-                    onButtonClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('All'); setFmrProjectYearFilter('All'); }}
+                    onButtonClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectCurrentPage(1); }}
                   />
                 </div>
               ) : (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                  {filteredFmr.map(project => {
+                  {paginatedFilteredFmr.map(project => {
                     const status = normalizeFmrStatus(project.status);
+                    const displayStatus = status === 'Proposed' ? 'Pending' : status;
                     const statusStyle = status === 'Completed'
                       ? { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' }
                       : status === 'On-Going'
@@ -2133,7 +2158,7 @@ export default function Dashboard() {
                           <div className="flex items-center justify-between mb-4">
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold ${statusStyle.badge}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                              {status}
+                              {displayStatus}
                             </span>
                             {project.year_funded && (
                               <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">FY {project.year_funded}</span>
@@ -2207,6 +2232,43 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
+                {fmrTotalPages > 1 && (
+                  <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <p className="text-sm text-slate-500">
+                      Page <span className="font-semibold text-slate-700">{safeFmrPage}</span> of <span className="font-semibold text-slate-700">{fmrTotalPages}</span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setFmrProjectCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={safeFmrPage === 1}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      {Array.from({ length: fmrTotalPages }, (_, i) => i + 1).map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => setFmrProjectCurrentPage(page)}
+                          className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                            safeFmrPage === page
+                              ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                              : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setFmrProjectCurrentPage((p) => Math.min(fmrTotalPages, p + 1))}
+                        disabled={safeFmrPage === fmrTotalPages}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+                </>
               )}
             </div>
             );
@@ -3356,9 +3418,33 @@ export default function Dashboard() {
             const approvedUpdatesCount = progressUpdates.filter(u => u.status === 'approved').length;
             const rejectedUpdatesCount = progressUpdates.filter(u => u.status === 'rejected').length;
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+            const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
             const updateStatusCls = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
             return (
               <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Operations Review Queue</p>
+                    <p className="text-sm text-slate-500 mt-1">Track contractor submissions, approval outcomes, and review timestamps.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Last synced</p>
+                      <p className="text-sm text-slate-600">{progressUpdatesLastSyncedAt ? fmtDateTime(progressUpdatesLastSyncedAt) : 'Not yet synced'}</p>
+                    </div>
+                    <button
+                      onClick={fetchProgressUpdates}
+                      disabled={progressUpdatesLoading}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      <svg className={`w-4 h-4 ${progressUpdatesLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
+                      </svg>
+                      {progressUpdatesLoading ? 'Refreshing…' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
@@ -3391,10 +3477,12 @@ export default function Dashboard() {
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current %</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted At</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reviewed At</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
@@ -3416,6 +3504,9 @@ export default function Dashboard() {
                                 <td className="px-5 py-4">
                                   <span className="text-sm font-bold text-slate-900 font-mono">{upd.reported_accomplishment}%</span>
                                 </td>
+                                <td className="px-5 py-4 whitespace-nowrap">
+                                  <span className="text-sm font-semibold text-slate-700 font-mono">{Number(upd.fmr_projects?.accomplishment || 0).toFixed(2)}%</span>
+                                </td>
                                 <td className="px-5 py-4 max-w-xs">
                                   <p className="text-xs text-slate-600 line-clamp-3">{upd.remarks || '—'}</p>
                                 </td>
@@ -3433,7 +3524,10 @@ export default function Dashboard() {
                                   </span>
                                 </td>
                                 <td className="px-5 py-4 whitespace-nowrap">
-                                  <span className="text-xs text-slate-500">{fmtDate(upd.submitted_at)}</span>
+                                  <span className="text-xs text-slate-500">{fmtDateTime(upd.submitted_at)}</span>
+                                </td>
+                                <td className="px-5 py-4 whitespace-nowrap">
+                                  <span className="text-xs text-slate-500">{upd.status === 'pending' ? 'Awaiting review' : fmtDateTime(upd.reviewed_at)}</span>
                                 </td>
                                 <td className="px-5 py-4">
                                   {upd.status === 'pending' && (
@@ -3451,9 +3545,6 @@ export default function Dashboard() {
                                         Reject
                                       </button>
                                     </div>
-                                  )}
-                                  {upd.status !== 'pending' && (
-                                    <span className="text-xs text-slate-400">{fmtDate(upd.reviewed_at)}</span>
                                   )}
                                 </td>
                               </tr>

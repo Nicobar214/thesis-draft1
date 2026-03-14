@@ -52,6 +52,19 @@ export default function ContractorProgressForm({ project, user, onClose }) {
 
     setSubmitting(true);
     try {
+      const { data: existingPending, error: pendingErr } = await supabase
+        .from('progress_updates')
+        .select('id, status')
+        .eq('fmr_project_id', project.id)
+        .eq('contractor_id', user.id)
+        .eq('status', 'pending')
+        .order('submitted_at', { ascending: false })
+        .limit(1);
+      if (pendingErr) throw pendingErr;
+      if (existingPending?.length) {
+        throw new Error('There is already a pending progress update for this project. Wait for admin review before submitting another.');
+      }
+
       let photoUrl = null;
 
       // Upload photo if provided

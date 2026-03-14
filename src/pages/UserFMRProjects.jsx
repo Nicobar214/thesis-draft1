@@ -5,14 +5,23 @@ import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import { normalizeProjectName } from '../lib/projectHelpers';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
+
+function normalizeUserProjectStatus(status) {
+  const lower = String(status || '').toLowerCase().replace(/[-\s]/g, '');
+  if (lower === 'ongoing') return 'On-Going';
+  if (lower === 'proposed' || lower === 'pending') return 'Pending';
+  if (lower === 'completed') return 'Completed';
+  return status || 'Pending';
+}
+
 /* â”€â”€â”€ Status Style Helper â”€â”€â”€ */
 function getStatusStyle(status) {
   const styles = {
     'Completed':  { badge: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
     'On-Going':   { badge: 'bg-amber-100 text-amber-700',     bar: 'bg-amber-500',   dot: 'bg-amber-500' },
-    'Proposed':   { badge: 'bg-sky-100 text-sky-700',          bar: 'bg-sky-500',     dot: 'bg-sky-500' },
+    'Pending':    { badge: 'bg-sky-100 text-sky-700',          bar: 'bg-sky-500',     dot: 'bg-sky-500' },
   };
-  return styles[status] || styles['Proposed'];
+  return styles[status] || styles['Pending'];
 }
 
 /* â”€â”€â”€ Stat Card â”€â”€â”€ */
@@ -38,7 +47,8 @@ function StatCard({ icon, value, label, variant = 'default' }) {
 
 /* â”€â”€â”€ Project List Card â”€â”€â”€ */
 function FMRProjectCard({ project, onClick }) {
-  const style = getStatusStyle(project.status);
+  const normalizedStatus = normalizeUserProjectStatus(project.status);
+  const style = getStatusStyle(normalizedStatus);
   const name = normalizeProjectName(project);
 
   return (
@@ -57,12 +67,12 @@ function FMRProjectCard({ project, onClick }) {
           </div>
         </div>
         <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${style.badge}`}>
-          {project.status}
+          {normalizedStatus}
         </span>
       </div>
 
       {/* Progress bar (only for On-Going) */}
-      {project.status === 'On-Going' && (
+      {normalizedStatus === 'On-Going' && (
         <div className="flex items-center gap-3 mb-2">
           <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full ${style.bar} transition-all`} style={{ width: `${project.accomplishment || 0}%` }} />
@@ -74,7 +84,7 @@ function FMRProjectCard({ project, onClick }) {
       )}
 
       {/* Completed indicator */}
-      {project.status === 'Completed' && (
+      {normalizedStatus === 'Completed' && (
         <div className="flex items-center gap-3 mb-2">
           <div className="flex-1 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
             <div className="h-full rounded-full bg-emerald-500 w-full" />
@@ -256,7 +266,7 @@ function FMRProjectDetail({ project, onBack }) {
 }
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['All', 'On-Going', 'Completed', 'Proposed'];
+const statusFilters = ['On-Going', 'Pending', 'Completed'];
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN FMR PROJECTS PAGE
@@ -266,9 +276,11 @@ export default function UserFMRProjects() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('On-Going');
   const [selectedProject, setSelectedProject] = useState(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const projectsPerPage = 8;
 
   // Fetch FMR projects from Supabase
   useEffect(() => {
@@ -285,6 +297,10 @@ export default function UserFMRProjects() {
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
 
   async function fetchFMRProjects() {
     try {
@@ -311,9 +327,9 @@ export default function UserFMRProjects() {
   // Compute stats
   const stats = {
     total: projects.length,
-    ongoing: projects.filter(p => p.status === 'On-Going').length,
-    completed: projects.filter(p => p.status === 'Completed').length,
-    proposed: projects.filter(p => p.status === 'Proposed').length,
+    ongoing: projects.filter(p => normalizeUserProjectStatus(p.status) === 'On-Going').length,
+    pending: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Pending').length,
+    completed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Completed').length,
     totalKm: projects.reduce((sum, p) => sum + (p.project_length_km || 0), 0).toFixed(2),
   };
 
@@ -325,9 +341,16 @@ export default function UserFMRProjects() {
     const q = search.toLowerCase();
 
     const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-    const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
+    const matchesStatus = normalizeUserProjectStatus(p.status) === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / projectsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedProjects = filtered.slice(
+    (safeCurrentPage - 1) * projectsPerPage,
+    safeCurrentPage * projectsPerPage
+  );
 
   // If a project is selected, show detail view
   if (selectedProject) {
@@ -368,8 +391,8 @@ export default function UserFMRProjects() {
             <>
               <StatCard icon={<Icons.Road />} value={stats.total} label="Total Projects" variant="emerald" />
               <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="On-Going" variant="amber" />
+              <StatCard icon={<Icons.Lightbulb />} value={stats.pending} label="Pending" variant="violet" />
               <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed" variant="sky" />
-              <StatCard icon={<Icons.Lightbulb />} value={stats.proposed} label="Proposed" variant="violet" />
               <StatCard icon={<Icons.Ruler />} value={`${stats.totalKm} km`} label="Total Road Length" variant="default" />
             </>
           )}
@@ -409,11 +432,11 @@ export default function UserFMRProjects() {
           {/* Status filter pills */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {statusFilters.map(s => {
-              const count = s === 'All' ? stats.total : s === 'On-Going' ? stats.ongoing : s === 'Completed' ? stats.completed : stats.proposed;
+              const count = s === 'On-Going' ? stats.ongoing : s === 'Pending' ? stats.pending : stats.completed;
               return (
                 <button
                   key={s}
-                  onClick={() => setStatusFilter(s)}
+                  onClick={() => { setStatusFilter(s); setCurrentPage(1); }}
                   className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                     statusFilter === s
                       ? 'bg-teal-600 text-white shadow-sm'
@@ -440,20 +463,57 @@ export default function UserFMRProjects() {
                 <Icons.Road />
               </div>
               <p className="font-medium text-slate-900">
-                {search || statusFilter !== 'All' ? 'No matching FMR projects' : 'No FMR projects loaded'}
+                {search || statusFilter !== 'On-Going' ? 'No matching FMR projects' : 'No FMR projects loaded'}
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                {search || statusFilter !== 'All'
+                {search || statusFilter !== 'On-Going'
                   ? 'Try adjusting your search or filters'
                   : 'Run the SQL migration to load DA-RAED data'}
               </p>
             </div>
           ) : (
-            filtered.map(p => (
+            paginatedProjects.map(p => (
               <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} />
             ))
           )}
         </div>
+
+        {!loading && filtered.length > 0 && totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <p className="text-sm text-slate-500">
+              Page <span className="font-semibold text-slate-700">{safeCurrentPage}</span> of <span className="font-semibold text-slate-700">{totalPages}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safeCurrentPage === 1}
+                className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                    safeCurrentPage === page
+                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                      : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safeCurrentPage === totalPages}
+                className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Source Footer */}
         {!loading && projects.length > 0 && (

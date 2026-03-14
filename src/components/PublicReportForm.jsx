@@ -304,7 +304,13 @@ export default function PublicReportForm() {
       setStep('success');
     } catch (err) {
       console.error('Submit error:', err);
-      setError(err.message || 'Something went wrong. Please try again.');
+      if (err.message?.includes("Could not find the 'category' column")) {
+        setError('The database schema is outdated. Run supabase_fix_public_reports_schema.sql in Supabase SQL Editor, then submit again.');
+      } else if (err.message?.toLowerCase().includes('project_id') && err.message?.toLowerCase().includes('integer')) {
+        setError('The database schema is outdated. Run supabase_fix_public_reports_schema.sql in Supabase SQL Editor to update public_reports.project_id, then submit again.');
+      } else {
+        setError(err.message || 'Something went wrong. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }

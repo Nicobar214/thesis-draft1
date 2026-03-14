@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS public.fmr_projects (
   date_completed        TEXT DEFAULT '',
   status                TEXT NOT NULL DEFAULT 'Proposed',
   remarks               TEXT DEFAULT '',
-  accomplishment        INTEGER DEFAULT 0,
+  accomplishment        NUMERIC(5,2) DEFAULT 0,
   project_length_km     DOUBLE PRECISION DEFAULT 0,
   start_latitude        DOUBLE PRECISION,
   start_longitude       DOUBLE PRECISION,

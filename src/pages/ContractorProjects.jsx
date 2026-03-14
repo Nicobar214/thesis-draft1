@@ -70,6 +70,8 @@ export default function ContractorProjects() {
           if (!map[upd.fmr_project_id]) map[upd.fmr_project_id] = upd;
         }
         setLatestUpdates(map);
+      } else {
+        setLatestUpdates({});
       }
     } catch (err) {
       console.error('ContractorProjects fetch error:', err);
@@ -81,11 +83,23 @@ export default function ContractorProjects() {
   useEffect(() => {
     if (user) {
       fetchData();
-      const ch = supabase
+      const updatesChannel = supabase
         .channel('contractor-projects-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchData)
         .subscribe();
-      return () => supabase.removeChannel(ch);
+
+      const refreshOnFocus = () => fetchData();
+      const pollId = window.setInterval(fetchData, 15000);
+      window.addEventListener('focus', refreshOnFocus);
+      document.addEventListener('visibilitychange', refreshOnFocus);
+
+      return () => {
+        window.clearInterval(pollId);
+        window.removeEventListener('focus', refreshOnFocus);
+        document.removeEventListener('visibilitychange', refreshOnFocus);
+        supabase.removeChannel(updatesChannel);
+      };
     }
   }, [user, fetchData]);
 
