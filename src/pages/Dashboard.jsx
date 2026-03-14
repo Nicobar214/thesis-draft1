@@ -4,6 +4,23 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  Legend,
+} from 'recharts';
 import 'leaflet/dist/leaflet.css';
 
 /* ─── FMR Status helpers (matches user-side) ─── */
@@ -42,6 +59,30 @@ function AdminFitBounds({ projects }) {
   return null;
 }
 
+const enterpriseCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
+
+function EmptyState({ title, description, buttonLabel, onButtonClick }) {
+  return (
+    <div className="py-12 px-6 text-center flex flex-col items-center justify-center">
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+        <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 2.5h7m-7 4h7m-7-8h7" />
+        </svg>
+      </div>
+      <p className="text-base font-bold text-slate-900">{title}</p>
+      <p className="text-sm text-slate-500 mt-1 max-w-md">{description}</p>
+      {buttonLabel && onButtonClick && (
+        <button
+          onClick={onButtonClick}
+          className="mt-5 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold transition-colors"
+        >
+          {buttonLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   
@@ -56,8 +97,11 @@ export default function Dashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [adminIdentity, setAdminIdentity] = useState({ full_name: 'Administrator', email: '', role: 'System Administrator' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortField, setSortField] = useState('projectName');
+  const [sortDirection, setSortDirection] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [notification, setNotification] = useState(null);
   const projectsPerPage = 5;
@@ -68,6 +112,8 @@ export default function Dashboard() {
   const [feedbackFilter, setFeedbackFilter] = useState('all');
   const [feedbackTypeFilter, setFeedbackTypeFilter] = useState('all');
   const [feedbackSearch, setFeedbackSearch] = useState('');
+  const [feedbackDateFrom, setFeedbackDateFrom] = useState('');
+  const [feedbackDateTo, setFeedbackDateTo] = useState('');
   const [selectedFeedback, setSelectedFeedback] = useState(null);
 
   // Public reports state (admin view)
@@ -76,6 +122,8 @@ export default function Dashboard() {
   const [publicReportFilter, setPublicReportFilter] = useState('all');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportSearch, setPublicReportSearch] = useState('');
+  const [publicReportDateFrom, setPublicReportDateFrom] = useState('');
+  const [publicReportDateTo, setPublicReportDateTo] = useState('');
   const [selectedPublicReport, setSelectedPublicReport] = useState(null);
   const [publicReportMunicipalityFilter, setPublicReportMunicipalityFilter] = useState('all');
   const [publicReportBarangayFilter, setPublicReportBarangayFilter] = useState('all');
@@ -464,7 +512,22 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchAdminIdentity = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setAdminIdentity({
+        full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'Administrator',
+        email: user.email || '',
+        role: user.user_metadata?.role === 'admin' ? 'System Administrator' : 'System Administrator',
+      });
+    } catch (err) {
+      console.error('Failed to fetch admin identity:', err);
+    }
+  }, []);
+
   useEffect(() => {
+    fetchAdminIdentity();
     ensureAdminProfile().then(() => {
       fetchProjects();
       fetchFeedbacks();
@@ -510,11 +573,11 @@ export default function Dashboard() {
       supabase.removeChannel(fmrChannel);
       supabase.removeChannel(profilesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, ensureAdminProfile]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, ensureAdminProfile, fetchAdminIdentity]);
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
-    return projects.filter(project => {
+    const filtered = projects.filter(project => {
       const matchesSearch = project.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.projectCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.municipality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -524,7 +587,26 @@ export default function Dashboard() {
       
       return matchesSearch && matchesStatus;
     });
-  }, [projects, searchQuery, statusFilter]);
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aValue = a?.[sortField];
+      const bValue = b?.[sortField];
+
+      if (typeof aValue === 'number' || typeof bValue === 'number') {
+        const first = Number(aValue || 0);
+        const second = Number(bValue || 0);
+        return sortDirection === 'asc' ? first - second : second - first;
+      }
+
+      const first = (aValue || '').toString().toLowerCase();
+      const second = (bValue || '').toString().toLowerCase();
+      if (first < second) return sortDirection === 'asc' ? -1 : 1;
+      if (first > second) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return sorted;
+  }, [projects, searchQuery, statusFilter, sortField, sortDirection]);
 
   // Pagination
   const totalPages = Math.ceil(filteredProjects.length / projectsPerPage);
@@ -548,6 +630,141 @@ export default function Dashboard() {
     
     return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports, totalFeedbacks };
   }, [projects, publicReports, feedbacks]);
+
+  const pendingFeedbackCount = useMemo(() => feedbacks.filter(f => f.status === 'pending').length, [feedbacks]);
+  const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
+
+  const analyticsProjectsByMunicipality = useMemo(() => {
+    const counts = projects.reduce((acc, p) => {
+      const municipality = p.municipality || 'Unspecified';
+      acc[municipality] = (acc[municipality] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .map(([municipality, count]) => ({ municipality, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [projects]);
+
+  const analyticsStatusDistribution = useMemo(() => {
+    const statuses = ['Planning', 'Bidding', 'In Progress', 'On Hold', 'Completed', 'Cancelled'];
+    return statuses
+      .map((status) => ({ name: status, value: projects.filter((p) => p.status === status).length }))
+      .filter((entry) => entry.value > 0);
+  }, [projects]);
+
+  const analyticsProjectsPerMonth = useMemo(() => {
+    const monthly = projects.reduce((acc, project) => {
+      if (!project.created_at) return acc;
+      const d = new Date(project.created_at);
+      if (Number.isNaN(d.getTime())) return acc;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.keys(monthly)
+      .sort((a, b) => a.localeCompare(b))
+      .map((key) => ({
+        month: key,
+        projects: monthly[key],
+      }));
+  }, [projects]);
+
+  const analyticsBudgetDisbursedOverTime = useMemo(() => {
+    const monthly = projects.reduce((acc, project) => {
+      if (!project.created_at) return acc;
+      const d = new Date(project.created_at);
+      if (Number.isNaN(d.getTime())) return acc;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!acc[key]) acc[key] = { month: key, budget: 0, disbursed: 0 };
+      acc[key].budget += Number(project.totalBudget || 0);
+      acc[key].disbursed += Number(project.disbursedAmount || 0);
+      return acc;
+    }, {});
+    return Object.values(monthly).sort((a, b) => a.month.localeCompare(b.month));
+  }, [projects]);
+
+  const formatMonthKey = (monthKey) => {
+    const [year, month] = monthKey.split('-').map(Number);
+    if (!year || !month) return monthKey;
+    return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  };
+
+  const getPillTone = (status) => {
+    const map = {
+      Planning: { dot: 'bg-slate-500', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+      Bidding: { dot: 'bg-violet-500', badge: 'bg-violet-50 text-violet-700 border-violet-200' },
+      'In Progress': { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+      'On Hold': { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+      Completed: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      Cancelled: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200' },
+      pending: { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+      reviewed: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+      resolved: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      Proposed: { dot: 'bg-sky-500', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
+      'On-Going': { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+    };
+    return map[status] || { dot: 'bg-slate-500', badge: 'bg-slate-50 text-slate-700 border-slate-200' };
+  };
+
+  const renderStatusPill = (status, label) => {
+    const tone = getPillTone(status);
+    return (
+      <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${tone.badge}`}>
+        <span className={`w-2 h-2 rounded-full ${tone.dot}`} />
+        {label || status}
+      </span>
+    );
+  };
+
+  const inDateRange = (dateValue, from, to) => {
+    if (!dateValue) return false;
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return false;
+    if (from) {
+      const fromDate = new Date(from);
+      fromDate.setHours(0, 0, 0, 0);
+      if (date < fromDate) return false;
+    }
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      if (date > toDate) return false;
+    }
+    return true;
+  };
+
+  const toggleProjectSort = (field) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortField(field);
+    setSortDirection('asc');
+  };
+
+  const exportRowsToCsv = (rows, fileName) => {
+    if (!rows.length) {
+      showNotification('Nothing to export for current filters.', 'error');
+      return;
+    }
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((h) => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showNotification('CSV export complete.');
+  };
 
   // Classify projects for Reports tab: Completed, Delayed, Ongoing
   const classifiedProjects = useMemo(() => {
@@ -799,18 +1016,15 @@ export default function Dashboard() {
     return `₱${amount.toLocaleString()}`;
   };
 
-  // Get status badge styles
-  const getStatusBadge = (status) => {
-    const styles = {
-      'Planning': 'bg-slate-100 text-slate-700 border-slate-200',
-      'Bidding': 'bg-purple-50 text-purple-700 border-purple-200',
-      'In Progress': 'bg-blue-50 text-blue-700 border-blue-200',
-      'On Hold': 'bg-amber-50 text-amber-700 border-amber-200',
-      'Completed': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      'Cancelled': 'bg-red-50 text-red-700 border-red-200'
-    };
-    return styles[status] || styles['Planning'];
-  };
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+    { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+    { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
+    { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z', badgeCount: pendingFeedbackCount },
+    { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
+  ];
 
   // Handle sign out
   const handleSignOut = async () => {
@@ -854,7 +1068,7 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-24' : 'w-80'} bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col transition-all duration-300 ${
+      <aside className={`fixed lg:static inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-24' : 'w-80'} bg-slate-900 text-white flex flex-col transition-all duration-300 ${
         showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         {/* Logo */}
@@ -897,20 +1111,12 @@ export default function Dashboard() {
         <nav className="flex-1 px-4 py-8 overflow-y-auto">
           {!sidebarCollapsed && <p className="px-4 mb-6 text-xs font-bold text-slate-500 uppercase tracking-widest">Main Menu</p>}
           <div className="space-y-3">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-              { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-              { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
-              { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-              { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-              { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z' },
-              { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418' },
-            ].map(item => (
+            {navItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 title={sidebarCollapsed ? item.label : undefined}
-                className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-3' : 'gap-5 px-6'} py-5 rounded-2xl text-left transition-all duration-200 group ${
+                className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-3' : 'gap-5 px-6'} py-5 rounded-2xl text-left transition-all duration-200 group ${
                   activeTab === item.id
                     ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
                     : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
@@ -919,7 +1125,15 @@ export default function Dashboard() {
                 <svg className={`${sidebarCollapsed ? 'w-7 h-7' : 'w-7 h-7'} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
                 </svg>
-                {!sidebarCollapsed && <span className="text-lg font-semibold">{item.label}</span>}
+                {!sidebarCollapsed && (
+                  <span className="text-lg font-semibold flex items-center gap-2">
+                    {item.label}
+                    {item.badgeCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-red-500" />}
+                  </span>
+                )}
+                {sidebarCollapsed && item.badgeCount > 0 && (
+                  <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-red-500" />
+                )}
               </button>
             ))}
 
@@ -949,13 +1163,13 @@ export default function Dashboard() {
         {/* User Profile */}
         <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-t border-slate-700/50 bg-slate-800/50`}>
           <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-4 px-2'} py-3`}>
-            <div className="w-12 h-12 bg-gradient-to-br from-teal-400 to-teal-600 rounded-xl flex items-center justify-center font-bold text-sm shadow-lg shadow-teal-500/20 flex-shrink-0">
-              AD
+            <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-bold text-sm shadow-lg shadow-teal-500/20 flex-shrink-0">
+              {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
             </div>
             {!sidebarCollapsed && (
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-base truncate">Admin User</p>
-                <p className="text-sm text-slate-400 mt-0.5">System Administrator</p>
+                <p className="font-semibold text-base truncate">{adminIdentity.full_name}</p>
+                <p className="text-sm text-slate-400 mt-0.5 truncate">{adminIdentity.email}</p>
               </div>
             )}
           </div>
@@ -999,7 +1213,7 @@ export default function Dashboard() {
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
-            {activeTab === 'dashboard' && (
+            {(activeTab === 'dashboard' || activeTab === 'projects') && (
               <button
                 onClick={() => {
                   setFormData({ ...emptyForm, projectCode: generateProjectCode() });
@@ -1222,25 +1436,28 @@ export default function Dashboard() {
                     <p className="text-slate-600 mt-4">Loading projects...</p>
                   </div>
                 ) : filteredProjects.length === 0 ? (
-                  <div className="p-12 text-center">
-                    <svg className="w-12 h-12 text-slate-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    <p className="text-slate-600 font-medium">No projects found</p>
-                    <p className="text-slate-500 text-sm mt-1">Try adjusting your search or filter</p>
-                  </div>
+                  <EmptyState
+                    title="No projects found"
+                    description="Try adjusting the search keyword or status filters."
+                    buttonLabel="Reset Filters"
+                    onButtonClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+                  />
                 ) : (
                   <>
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[800px]">
                         <thead>
                           <tr className="bg-slate-50/50">
-                            <th className="px-8 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
-                            <th className="px-6 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
-                            <th className="px-6 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
-                            <th className="px-6 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Budget</th>
-                            <th className="px-6 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Progress</th>
+                            {[['projectName', 'Project'], ['municipality', 'Location'], ['contractor', 'Contractor'], ['totalBudget', 'Budget'], ['status', 'Status'], ['progress', 'Progress']].map(([field, label], idx) => (
+                              <th key={field} className={`${idx === 0 ? 'px-8' : 'px-6'} py-5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider`}>
+                                <button className="inline-flex items-center gap-1 hover:text-slate-700" onClick={() => toggleProjectSort(field)}>
+                                  {label}
+                                  {sortField === field && (
+                                    <span className="text-teal-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                  )}
+                                </button>
+                              </th>
+                            ))}
                             <th className="px-8 py-5 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
@@ -1262,10 +1479,7 @@ export default function Dashboard() {
                                 <p className="text-sm font-bold text-slate-900">{formatCurrency(project.totalBudget)}</p>
                               </td>
                               <td className="px-6 py-5">
-                                <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold ${getStatusBadge(project.status)}`}>
-                                  <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                                  {project.status}
-                                </span>
+                                {renderStatusPill(project.status)}
                               </td>
                               <td className="px-6 py-5">
                                 <div className="space-y-2">
@@ -1372,6 +1586,25 @@ export default function Dashboard() {
               ongoing: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
               proposed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
             };
+            const exportFilteredFmr = () => {
+              const rows = filteredFmr.map((p) => ({
+                project_name: p.project_name || '',
+                status: normalizeFmrStatus(p.status) || '',
+                year_funded: p.year_funded || '',
+                municipality: p.municipality || '',
+                province: p.province || 'Iloilo',
+                accomplishment: p.accomplishment || 0,
+                project_length_km: p.project_length_km || 0,
+                location: p.location || '',
+                start_latitude: p.start_latitude || '',
+                start_longitude: p.start_longitude || '',
+                end_latitude: p.end_latitude || '',
+                end_longitude: p.end_longitude || '',
+                date_completed: p.date_completed || '',
+                target_completion_date: p.target_completion_date || '',
+              }));
+              exportRowsToCsv(rows, 'kalsatrack_filtered_projects.csv');
+            };
             return (
             <div className="space-y-6">
               {/* Summary Stat Chips */}
@@ -1444,6 +1677,12 @@ export default function Dashboard() {
                       </button>
                     ))}
                   </div>
+                  <button
+                    onClick={exportFilteredFmr}
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                  >
+                    Export CSV
+                  </button>
                 </div>
                 {/* Results count */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
@@ -1466,10 +1705,13 @@ export default function Dashboard() {
                   <p className="text-sm text-slate-500 font-medium">Loading FMR projects...</p>
                 </div>
               ) : filteredFmr.length === 0 ? (
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-12 text-center">
-                  <svg className="w-12 h-12 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
-                  <p className="text-slate-900 font-semibold mb-1">No projects found</p>
-                  <p className="text-sm text-slate-500">Try adjusting your search or filters</p>
+                <div className="bg-white border border-slate-200/60 rounded-2xl">
+                  <EmptyState
+                    title="No projects found"
+                    description="Try adjusting search, fiscal year, or status filters."
+                    buttonLabel="Reset Filters"
+                    onButtonClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('All'); setFmrProjectYearFilter('All'); }}
+                  />
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -1777,79 +2019,82 @@ export default function Dashboard() {
 
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
-            <div className="space-y-8">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-8">
-                  <h3 className="font-bold text-lg text-slate-900 mb-6">Project Status Distribution</h3>
-                  <div className="space-y-5">
-                    {['Planning', 'Bidding', 'In Progress', 'On Hold', 'Completed', 'Cancelled'].map(status => {
-                      const count = projects.filter(p => p.status === status).length;
-                      const percentage = projects.length > 0 ? (count / projects.length) * 100 : 0;
-                      return (
-                        <div key={status}>
-                          <div className="flex justify-between text-sm mb-2">
-                            <span className="text-slate-500 font-medium">{status}</span>
-                            <span className="font-bold text-slate-900">{count} ({percentage.toFixed(0)}%)</span>
-                          </div>
-                          <div className="w-full bg-slate-100 rounded-full h-2.5">
-                            <div 
-                              className={`h-2.5 rounded-full transition-all duration-500 ${
-                                status === 'Completed' ? 'bg-emerald-500' :
-                                status === 'In Progress' ? 'bg-blue-500' :
-                                status === 'Planning' ? 'bg-slate-500' :
-                                status === 'Bidding' ? 'bg-purple-500' :
-                                status === 'On Hold' ? 'bg-amber-500' :
-                                'bg-red-500'
-                              }`}
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-8">
-                  <h3 className="font-bold text-lg text-slate-900 mb-6">Budget Overview</h3>
-                  <div className="space-y-8">
-                    <div>
-                      <p className="text-sm text-slate-500 mb-2 font-medium">Total Allocated</p>
-                      <p className="text-4xl font-bold text-slate-900 tracking-tight">{formatCurrency(metrics.totalBudget)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500 mb-2 font-medium">Total Disbursed</p>
-                      <p className="text-4xl font-bold text-emerald-600 tracking-tight">{formatCurrency(metrics.disbursed)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-slate-500 mb-3 font-medium">Disbursement Rate</p>
-                      <div className="w-full bg-slate-100 rounded-full h-5 overflow-hidden">
-                        <div 
-                          className="bg-emerald-500 h-5 rounded-full transition-all duration-500"
-                          style={{ width: `${metrics.totalBudget > 0 ? (metrics.disbursed / metrics.totalBudget) * 100 : 0}%` }}
-                        />
-                      </div>
-                      <p className="text-sm font-bold text-slate-700 mt-2">
-                        {metrics.totalBudget > 0 ? ((metrics.disbursed / metrics.totalBudget) * 100).toFixed(1) : 0}%
-                      </p>
-                    </div>
-                  </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className={enterpriseCardClass}>
+                <h3 className="text-lg font-bold text-slate-900">Projects by Municipality</h3>
+                <p className="text-sm text-slate-500 mb-4">Top municipalities by number of projects</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={analyticsProjectsByMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 24 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={50} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                      <RechartsTooltip />
+                      <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-8">
-                <h3 className="font-bold text-lg text-slate-900 mb-6">Top Projects by Budget</h3>
-                <div className="space-y-5">
-                  {[...projects].sort((a, b) => b.totalBudget - a.totalBudget).slice(0, 5).map((project, index) => (
-                    <div key={project.id} className="flex items-center gap-5 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors duration-200">
-                      <span className="text-2xl font-bold text-slate-300 w-8">{index + 1}</span>
-                      <div className="flex-1">
-                        <p className="font-semibold text-slate-900">{project.projectName}</p>
-                        <p className="text-sm text-slate-500 mt-0.5">{project.municipality}, {project.province}</p>
-                      </div>
-                      <p className="font-bold text-lg text-slate-900">{formatCurrency(project.totalBudget)}</p>
-                    </div>
-                  ))}
+              <div className={enterpriseCardClass}>
+                <h3 className="text-lg font-bold text-slate-900">Project Status Distribution</h3>
+                <p className="text-sm text-slate-500 mb-4">Overall breakdown by current status</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={analyticsStatusDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                        {analyticsStatusDistribution.map((entry, index) => {
+                          const palette = ['#0f766e', '#0ea5e9', '#f59e0b', '#22c55e', '#a855f7', '#ef4444'];
+                          return <Cell key={`status-cell-${entry.name}`} fill={palette[index % palette.length]} />;
+                        })}
+                      </Pie>
+                      <Legend verticalAlign="bottom" height={36} />
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={enterpriseCardClass}>
+                <h3 className="text-lg font-bold text-slate-900">Projects Created Per Month</h3>
+                <p className="text-sm text-slate-500 mb-4">Monthly trend of project records</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analyticsProjectsPerMonth} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tickFormatter={formatMonthKey} tick={{ fill: '#64748b', fontSize: 11 }} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                      <RechartsTooltip labelFormatter={formatMonthKey} />
+                      <Line dataKey="projects" stroke="#0d9488" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className={enterpriseCardClass}>
+                <h3 className="text-lg font-bold text-slate-900">Budget vs Disbursed Over Time</h3>
+                <p className="text-sm text-slate-500 mb-4">Monthly totals for allocation and disbursement</p>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={analyticsBudgetDisbursedOverTime} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                      <defs>
+                        <linearGradient id="budgetGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0f172a" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#0f172a" stopOpacity={0.04} />
+                        </linearGradient>
+                        <linearGradient id="disbursedGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
+                          <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tickFormatter={formatMonthKey} tick={{ fill: '#64748b', fontSize: 11 }} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
+                      <RechartsTooltip labelFormatter={formatMonthKey} formatter={(v) => formatCurrency(Number(v || 0))} />
+                      <Area type="monotone" dataKey="budget" stroke="#0f172a" fill="url(#budgetGradient)" strokeWidth={2} />
+                      <Area type="monotone" dataKey="disbursed" stroke="#0d9488" fill="url(#disbursedGradient)" strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
             </div>
@@ -1874,9 +2119,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 {list.length === 0 ? (
-                  <div className="p-8 text-center">
-                    <p className="text-sm text-slate-500">{emptyMsg}</p>
-                  </div>
+                  <EmptyState title="No records" description={emptyMsg} />
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[700px]">
@@ -1906,10 +2149,7 @@ export default function Dashboard() {
                                 {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
                               </td>
                               <td className="px-6 py-4">
-                                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${getStatusBadge(p.status)}`}>
-                                  <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                                  {p.status}
-                                </span>
+                                {renderStatusPill(p.status)}
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-2">
@@ -1959,12 +2199,13 @@ export default function Dashboard() {
             const filteredFeedbacks = feedbacks.filter(fb => {
               const matchesStatus = feedbackFilter === 'all' || fb.status === feedbackFilter;
               const matchesType = feedbackTypeFilter === 'all' || fb.type === feedbackTypeFilter;
+              const matchesDate = inDateRange(fb.created_at, feedbackDateFrom, feedbackDateTo);
               const q = feedbackSearch.toLowerCase();
               const matchesSearch = !q ||
                 (fb.project_name || '').toLowerCase().includes(q) ||
                 (fb.user_email || '').toLowerCase().includes(q) ||
                 (fb.message || '').toLowerCase().includes(q);
-              return matchesStatus && matchesType && matchesSearch;
+              return matchesStatus && matchesType && matchesDate && matchesSearch;
             });
             const pendingCount = feedbacks.filter(f => f.status === 'pending').length;
             const reviewedCount = feedbacks.filter(f => f.status === 'reviewed').length;
@@ -2015,6 +2256,18 @@ export default function Dashboard() {
                       <option value="compliment">Compliments</option>
                       <option value="concern">Safety Concerns</option>
                     </select>
+                    <input
+                      type="date"
+                      value={feedbackDateFrom}
+                      onChange={(e) => setFeedbackDateFrom(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                    />
+                    <input
+                      type="date"
+                      value={feedbackDateTo}
+                      onChange={(e) => setFeedbackDateTo(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                    />
                   </div>
                 </div>
 
@@ -2118,11 +2371,18 @@ export default function Dashboard() {
                       <p className="text-sm">Loading feedbacks...</p>
                     </div>
                   ) : filteredFeedbacks.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 0 1 1.037-.443 48.282 48.282 0 0 0 5.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
-                      <p className="font-medium text-slate-900">No feedback found</p>
-                      <p className="text-sm text-slate-500 mt-1">Citizen feedback will appear here once submitted</p>
-                    </div>
+                    <EmptyState
+                      title="No feedback found"
+                      description="Citizen feedback matching your current filters will appear here."
+                      buttonLabel="Clear Filters"
+                      onButtonClick={() => {
+                        setFeedbackFilter('all');
+                        setFeedbackTypeFilter('all');
+                        setFeedbackSearch('');
+                        setFeedbackDateFrom('');
+                        setFeedbackDateTo('');
+                      }}
+                    />
                   ) : (
                     <div className="divide-y divide-slate-100">
                       {filteredFeedbacks.map(fb => {
@@ -2138,9 +2398,7 @@ export default function Dashboard() {
                                   <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeStyles[fb.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
                                     {typeLabel[fb.type] || fb.type}
                                   </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[fb.status] || 'bg-slate-100 text-slate-600'}`}>
-                                    {fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1)}
-                                  </span>
+                                  {renderStatusPill(fb.status, fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1))}
                                   {fb.photo_urls?.length > 0 && (
                                     <span className="flex items-center gap-1 text-xs text-slate-400">
                                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>
@@ -2187,6 +2445,7 @@ export default function Dashboard() {
             const filteredPublicReports = publicReports.filter(rpt => {
               const matchesStatus = publicReportFilter === 'all' || rpt.status === publicReportFilter;
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
+              const matchesDate = inDateRange(rpt.created_at, publicReportDateFrom, publicReportDateTo);
               const matchesMunicipality = publicReportMunicipalityFilter === 'all' || rpt.municipality === publicReportMunicipalityFilter;
               const matchesBarangay = publicReportBarangayFilter === 'all' || rpt.barangay === publicReportBarangayFilter;
               const matchesStreet = publicReportStreetFilter === 'all' || (rpt.street || '') === publicReportStreetFilter;
@@ -2198,7 +2457,7 @@ export default function Dashboard() {
                 (rpt.street || '').toLowerCase().includes(q) ||
                 (rpt.project_name || '').toLowerCase().includes(q) ||
                 (rpt.description || '').toLowerCase().includes(q);
-              return matchesStatus && matchesVerification && matchesMunicipality && matchesBarangay && matchesStreet && matchesSearch;
+              return matchesStatus && matchesVerification && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesSearch;
             });
             const pendingCount = publicReports.filter(r => r.status === 'pending').length;
             const reviewedCount = publicReports.filter(r => r.status === 'reviewed').length;
@@ -2216,8 +2475,7 @@ export default function Dashboard() {
             };
 
             const statusBadge = (status) => {
-              const styles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
-              return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${styles[status] || 'bg-slate-100 text-slate-600'}`}>{status?.charAt(0).toUpperCase() + status?.slice(1)}</span>;
+              return renderStatusPill(status, status?.charAt(0).toUpperCase() + status?.slice(1));
             };
 
             return (
@@ -2270,6 +2528,18 @@ export default function Dashboard() {
                         <option value="Needs Review">⚠ Needs Review</option>
                         <option value="Location Mismatch">✖ Location Mismatch</option>
                       </select>
+                      <input
+                        type="date"
+                        value={publicReportDateFrom}
+                        onChange={(e) => setPublicReportDateFrom(e.target.value)}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                      />
+                      <input
+                        type="date"
+                        value={publicReportDateTo}
+                        onChange={(e) => setPublicReportDateTo(e.target.value)}
+                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                      />
                     </div>
                     {/* Row 2: Location Filters (Municipality → Barangay → Street) */}
                     <div className="flex flex-col sm:flex-row gap-4">
@@ -2485,11 +2755,21 @@ export default function Dashboard() {
                       <p className="text-sm">Loading public reports...</p>
                     </div>
                   ) : filteredPublicReports.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3" /></svg>
-                      <p className="font-medium text-slate-900">No public reports yet</p>
-                      <p className="text-sm text-slate-500 mt-1">Location-verified reports from the landing page will appear here</p>
-                    </div>
+                    <EmptyState
+                      title="No public reports found"
+                      description="No records match your current report and location filters."
+                      buttonLabel="Clear Filters"
+                      onButtonClick={() => {
+                        setPublicReportFilter('all');
+                        setPublicReportCategoryFilter('all');
+                        setPublicReportSearch('');
+                        setPublicReportMunicipalityFilter('all');
+                        setPublicReportBarangayFilter('all');
+                        setPublicReportStreetFilter('all');
+                        setPublicReportDateFrom('');
+                        setPublicReportDateTo('');
+                      }}
+                    />
                   ) : (
                     <div className="divide-y divide-slate-100">
                       {filteredPublicReports.map(rpt => (
@@ -2545,15 +2825,31 @@ export default function Dashboard() {
               </div>
               <div className="p-8 space-y-8">
                 <div>
-                  <h3 className="font-bold text-lg text-slate-900 mb-5">Account Settings</h3>
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Display Name</label>
-                      <input type="text" defaultValue="Admin User" className="w-full max-w-md px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <h3 className="text-lg font-bold text-slate-900">Admin Preferences</h3>
+                  <p className="text-sm text-slate-500 mb-4">Identity and role information for the authenticated administrator account.</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-teal-600 text-white flex items-center justify-center text-lg font-bold">
+                        {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Admin Name</p>
+                        <p className="text-base font-semibold text-slate-900">{adminIdentity.full_name}</p>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Email</label>
-                      <input type="email" defaultValue="admin@kalsatrack.gov.ph" className="w-full max-w-md px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+                      <div className="rounded-xl bg-white border border-slate-200 p-4">
+                        <p className="text-xs text-slate-500">Email</p>
+                        <p className="text-sm font-semibold text-slate-900 break-all">{adminIdentity.email || 'No email available'}</p>
+                      </div>
+                      <div className="rounded-xl bg-white border border-slate-200 p-4">
+                        <p className="text-xs text-slate-500">Role</p>
+                        <p className="text-sm font-semibold text-slate-900">{adminIdentity.role}</p>
+                      </div>
+                      <div className="rounded-xl bg-white border border-slate-200 p-4">
+                        <p className="text-xs text-slate-500">Portal</p>
+                        <p className="text-sm font-semibold text-slate-900">KalsaTrack Admin</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -3141,11 +3437,10 @@ export default function Dashboard() {
                   <p className="text-sm text-slate-400">Loading feedback…</p>
                 </div>
               ) : (projectLinkedFeedbacks.length === 0 && projectLinkedReports.length === 0) ? (
-                <div className="py-12 text-center">
-                  <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
-                  <p className="font-medium text-slate-900">No feedback yet</p>
-                  <p className="text-sm text-slate-500 mt-1">No citizen feedback has been submitted for this project</p>
-                </div>
+                <EmptyState
+                  title="No feedback yet"
+                  description="No citizen feedback has been submitted for this project."
+                />
               ) : (
                 <>
                   {/* Summary chips */}
