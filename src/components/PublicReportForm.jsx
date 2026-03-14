@@ -12,15 +12,49 @@ const PROVINCE = 'Iloilo';
 
 // ── Helpers ────────────────────────────────────────────────
 /** Haversine distance in metres between two lat/lng points */
-function haversineMetres(lat1, lon1, lat2, lon2) {
+function haversineMeters(lat1, lng1, lat2, lng2) {
   const R = 6_371_000;
   const toRad = (d) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+  const dLon = toRad(lng2 - lng1);
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+// Legacy alias used by computeVerification
+const haversineMetres = haversineMeters;
+
+/** Check if user is within radiusMeters of a point */
+function isNearPoint(userLat, userLng, pointLat, pointLng, radiusMeters) {
+  if (!userLat || !userLng || !pointLat || !pointLng) return false;
+  return haversineMeters(userLat, userLng, pointLat, pointLng) <= radiusMeters;
+}
+
+/**
+ * Compute geofence radius for an FMR project corridor.
+ * Uses midpoint + half segment length + 300m buffer, min 500m.
+ */
+function computeGeofenceRadius(project) {
+  const { start_latitude: sLat, start_longitude: sLng,
+          end_latitude: eLat,   end_longitude: eLng } = project || {};
+  if (!sLat || !sLng || !eLat || !eLng) return 500;
+  const segLen = haversineMeters(sLat, sLng, eLat, eLng);
+  return Math.max(500, (segLen / 2) + 300);
+}
+
+/** Midpoint of a project's road segment */
+function segmentMidpoint(project) {
+  const { start_latitude: sLat, start_longitude: sLng,
+          end_latitude: eLat,   end_longitude: eLng } = project || {};
+  if (!sLat || !eLat) return null;
+  return { lat: (sLat + eLat) / 2, lng: (sLng + eLng) / 2 };
+}
+
+/** Format metres/km distance label */
+function fmtDistance(meters) {
+  if (meters < 1000) return `~${Math.round(meters)}m away`;
+  return `~${(meters / 1000).toFixed(1)}km away`;
 }
 
 /** Determine verification label */
@@ -57,6 +91,13 @@ export default function PublicReportForm() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
 
+  // ── Geofencing state ──
+  const [gpsReady, setGpsReady] = useState(false);          // first fix received
+  const [gpsPermDenied, setGpsPermDenied] = useState(false);
+  const [nearbyProjects, setNearbyProjects] = useState([]);  // detections from fmr_projects
+  const [allFmrProjects, setAllFmrProjects] = useState([]);  // preloaded for geofencing
+  const [geofenceOverride, setGeofenceOverride] = useState(false); // "show all" escape hatch
+
   // ── GPS watcher ref ──
   const gpsWatchRef = useRef(null);
 
@@ -92,6 +133,16 @@ export default function PublicReportForm() {
     });
   }, []);
 
+  // ── Pre-load all FMR projects for geofencing (runs once on mount) ──
+  useEffect(() => {
+    supabase
+      .from('fmr_projects')
+      .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status')
+      .then(({ data }) => {
+        if (data) setAllFmrProjects(data);
+      });
+  }, []);
+
   // ────────────────────────────────────────────────────────
   // GPS Request
   // ────────────────────────────────────────────────────────
@@ -111,23 +162,41 @@ export default function PublicReportForm() {
     // Use watchPosition for realtime GPS updates
     gpsWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        setGps({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+        setGps({ lat, lng, accuracy });
         setGpsLoading(false);
+        setGpsReady(true);
         setStep((prev) => (prev === -1 ? 0 : prev)); // move to location step on first fix
+
+        // ── Geofence detection (runs each position update, no Supabase calls) ──
+        setAllFmrProjects((fmrList) => {
+          const nearby = fmrList.filter((p) => {
+            if (!p.start_latitude || !p.start_longitude) return false;
+            const radius = computeGeofenceRadius(p);
+            const mid = segmentMidpoint(p);
+            const nearMid = mid ? isNearPoint(lat, lng, mid.lat, mid.lng, radius) : false;
+            const nearStart = isNearPoint(lat, lng, p.start_latitude, p.start_longitude, 400);
+            const nearEnd = p.end_latitude
+              ? isNearPoint(lat, lng, p.end_latitude, p.end_longitude, 400)
+              : false;
+            return nearMid || nearStart || nearEnd;
+          });
+          setNearbyProjects(nearby);
+          return fmrList; // no mutation
+        });
       },
       (err) => {
         setGpsLoading(false);
         if (err.code === 1) {
+          setGpsPermDenied(true);
           setGpsError('Location permission denied. You must allow GPS access to submit a report.');
         } else {
           setGpsError(`Unable to get location: ${err.message}`);
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   }, []);
 
@@ -558,47 +627,123 @@ export default function PublicReportForm() {
       )}
 
       {/* ──────────────── STEP 1: Project ────────────────── */}
-      {step === 1 && (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-900">Select Project in {barangay}, {municipality}</h4>
+      {step === 1 && (() => {
+        // Determine which project list to show
+        const showingNearby = gpsReady && !gpsPermDenied && nearbyProjects.length > 0 && !geofenceOverride;
+        const showingAll = geofenceOverride || gpsPermDenied || !gpsReady;
 
-          {projectsLoading ? (
-            <div className="py-8 text-center">
-              <div className="animate-spin mx-auto w-7 h-7 border-2 border-slate-300 border-t-emerald-600 rounded-full mb-2" />
-              <p className="text-sm text-slate-500">Loading projects…</p>
-            </div>
-          ) : projects.length === 0 ? (
-            <div className="py-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
-              <svg className="w-10 h-10 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" /></svg>
-              <p className="text-sm font-medium text-slate-900">No projects found</p>
-              <p className="text-xs text-slate-500 mt-1">No projects or FMR road projects are registered in this area yet.</p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              {projects.map((p) => (
-                <button type="button" key={p.id} onClick={() => setSelectedProject(p)}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition ${selectedProject?.id === p.id ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
-                  <p className="text-sm font-semibold text-slate-900">{p.projectName}</p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'In Progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{p.status}</span>
-                    {p._source === 'FMR' && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">FMR</span>}
-                    {p.latitude && p.longitude && <span>GPS: {Number(p.latitude).toFixed(4)}, {Number(p.longitude).toFixed(4)}</span>}
-                  </div>
+        // Merge nearby FMR detections into the form project list shape
+        const nearbyForForm = nearbyProjects.map((p) => ({
+          id: `fmr-${p.id}`,
+          projectName: p.project_name,
+          latitude: p.start_latitude,
+          longitude: p.start_longitude,
+          barangay: p.location || '',
+          municipality: p.municipality || '',
+          status: p.status,
+          _source: 'FMR',
+          _raw: p,
+        }));
+
+        // If exactly one nearby, auto-select it
+        if (showingNearby && nearbyForForm.length === 1 && !selectedProject) {
+          const auto = nearbyForForm[0];
+          setTimeout(() => {
+            setSelectedProject(auto);
+            if (auto.municipality && !municipality) setMunicipality(auto.municipality);
+            if (auto.barangay && !barangay) setBarangay(auto.barangay);
+          }, 0);
+        }
+
+        const displayList = showingNearby ? nearbyForForm : projects;
+
+        return (
+          <div className="space-y-4">
+            <h4 className="text-base font-semibold text-slate-900">Select Project in {barangay}, {municipality}</h4>
+
+            {/* Geofence banner */}
+            {gpsReady && !gpsPermDenied && !geofenceOverride && nearbyProjects.length > 0 && (
+              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500" />
+                  </span>
+                  <span className="font-medium">📍 {nearbyProjects.length} project{nearbyProjects.length > 1 ? 's' : ''} detected near you</span>
+                </div>
+                <button type="button" onClick={() => setGeofenceOverride(true)}
+                  className="text-xs text-teal-600 hover:text-teal-800 underline whitespace-nowrap">
+                  Override — show all
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
+            )}
+            {gpsReady && !gpsPermDenied && !geofenceOverride && nearbyProjects.length === 0 && (
+              <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-500">
+                No projects detected in your immediate area — showing all projects
+              </div>
+            )}
+            {geofenceOverride && (
+              <div className="flex items-center justify-between px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-500">
+                <span>Showing all projects (geofence bypassed)</span>
+                <button type="button" onClick={() => setGeofenceOverride(false)}
+                  className="text-teal-600 hover:text-teal-800 underline">Use GPS detection</button>
+              </div>
+            )}
 
-          <div className="flex justify-between pt-2">
-            <button type="button" onClick={() => setStep(0)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
-            <button type="button" disabled={!selectedProject} onClick={() => { setError(null); setStep(2); }}
-              className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
-              Next: Take Photo
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-            </button>
+            {projectsLoading ? (
+              <div className="py-8 text-center">
+                <div className="animate-spin mx-auto w-7 h-7 border-2 border-slate-300 border-t-emerald-600 rounded-full mb-2" />
+                <p className="text-sm text-slate-500">Loading projects…</p>
+              </div>
+            ) : displayList.length === 0 ? (
+              <div className="py-8 text-center bg-slate-50 border border-slate-200 rounded-xl">
+                <svg className="w-10 h-10 mx-auto text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" /></svg>
+                <p className="text-sm font-medium text-slate-900">No projects found</p>
+                <p className="text-xs text-slate-500 mt-1">No projects or FMR road projects are registered in this area yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {displayList.map((p) => {
+                  const mid = p._raw ? segmentMidpoint(p._raw) : null;
+                  const distM = mid && gps.lat
+                    ? haversineMeters(gps.lat, gps.lng, mid.lat, mid.lng)
+                    : null;
+                  return (
+                    <button type="button" key={p.id}
+                      onClick={() => {
+                        setSelectedProject(p);
+                        if (p.municipality && !municipality) setMunicipality(p.municipality);
+                        if (p.barangay && !barangay) setBarangay(p.barangay);
+                      }}
+                      className={`w-full text-left p-4 rounded-xl border-2 transition ${selectedProject?.id === p.id ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
+                      <p className="text-sm font-semibold text-slate-900">{p.projectName}</p>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'In Progress' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{p.status}</span>
+                        {p._source === 'FMR' && <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">FMR</span>}
+                        {distM !== null && (
+                          <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                            📍 {fmtDistance(distM)}
+                          </span>
+                        )}
+                        {p.latitude && p.longitude && !distM && <span>GPS: {Number(p.latitude).toFixed(4)}, {Number(p.longitude).toFixed(4)}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex justify-between pt-2">
+              <button type="button" onClick={() => setStep(0)} className="text-sm text-slate-600 hover:text-slate-900 font-medium transition">← Back</button>
+              <button type="button" disabled={!selectedProject} onClick={() => { setError(null); setStep(2); }}
+                className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-50 transition">
+                Next: Take Photo
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ──────────────── STEP 2: Photo ──────────────────── */}
       {step === 2 && (

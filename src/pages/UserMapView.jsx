@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+﻿import { useState, useEffect, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
 
 import Icons from '../components/Icons';
@@ -35,7 +35,42 @@ function getStatusBadge(status) {
     default:          return 'bg-slate-100 text-slate-700';
   }
 }
+/* ─── Geofencing helpers ─── */
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6_371_000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
+function segmentMidpoint(p) {
+  if (!p.start_latitude || !p.end_latitude) return null;
+  return { lat: (p.start_latitude + p.end_latitude) / 2, lng: (p.start_longitude + p.end_longitude) / 2 };
+}
+
+function geofenceRadius(p) {
+  if (!p.start_latitude || !p.end_latitude) return 500;
+  const segLen = haversineMeters(p.start_latitude, p.start_longitude, p.end_latitude, p.end_longitude);
+  return Math.max(500, (segLen / 2) + 300);
+}
+
+function isProjectNearby(userLat, userLng, p) {
+  const radius = geofenceRadius(p);
+  const mid = segmentMidpoint(p);
+  const nearMid = mid ? haversineMeters(userLat, userLng, mid.lat, mid.lng) <= radius : false;
+  const nearStart = p.start_latitude ? haversineMeters(userLat, userLng, p.start_latitude, p.start_longitude) <= 400 : false;
+  const nearEnd = p.end_latitude ? haversineMeters(userLat, userLng, p.end_latitude, p.end_longitude) <= 400 : false;
+  return nearMid || nearStart || nearEnd;
+}
+
+function fmtDistance(m) {
+  if (m < 1000) return `~${Math.round(m)}m`;
+  return `~${(m / 1000).toFixed(1)}km`;
+}
 /* â”€â”€â”€ Map bounds fitter â”€â”€â”€ */
 function FitBounds({ projects }) {
   const map = useMap();
@@ -77,6 +112,43 @@ export default function UserMapView() {
   const [yearFilter, setYearFilter] = useState('All');
   const [selectedProject, setSelectedProject] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
+
+  // Geofencing state
+  const [userLocation, setUserLocation] = useState(null); // { lat, lng, accuracy }
+  const [nearbyProjects, setNearbyProjects] = useState(new Set());
+  const gpsWatchRef = useRef(null);
+
+  // Start GPS watcher for geofencing
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      () => { /* permission denied or unavailable — silently skip */ },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+    return () => {
+      if (gpsWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchRef.current);
+      }
+    };
+  }, []);
+
+  // Recompute nearby projects whenever location or mappable projects change
+  useEffect(() => {
+    if (!userLocation) return;
+    const ids = new Set(
+      mappable
+        .filter((p) => isProjectNearby(userLocation.lat, userLocation.lng, p))
+        .map((p) => p.id)
+    );
+    setNearbyProjects(ids);
+  }, [userLocation, mappable]);
 
   // Fetch data
   useEffect(() => {
@@ -224,6 +296,19 @@ export default function UserMapView() {
           </div>
         </div>
 
+        {/* GPS / Nearby banner */}
+        {userLocation && nearbyProjects.size > 0 && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500" />
+            </span>
+            <span className="font-medium">
+              📍 {nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
+            </span>
+          </div>
+        )}
+
         {/* Stats row */}
         <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
           <span>{stats.mapped} pins on map</span>
@@ -260,21 +345,58 @@ export default function UserMapView() {
                 />
                 <FitBounds projects={mappable} />
 
+                {/* User location: geofence zone + pulsing marker */}
+                {userLocation && (() => {
+                  const nearbyList = mappable.filter(p => nearbyProjects.has(p.id));
+                  const smallestRadius = nearbyList.length > 0
+                    ? Math.min(...nearbyList.map(geofenceRadius))
+                    : 500;
+                  return (
+                    <>
+                      <Circle
+                        center={[userLocation.lat, userLocation.lng]}
+                        radius={smallestRadius}
+                        pathOptions={{ color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.07, weight: 1.5, dashArray: '5 4' }}
+                      />
+                      {/* Outer pulsing ring */}
+                      <CircleMarker
+                        center={[userLocation.lat, userLocation.lng]}
+                        radius={16}
+                        pathOptions={{ color: '#0d9488', fillColor: '#0d9488', fillOpacity: 0.15, weight: 1 }}
+                      />
+                      {/* Inner solid dot */}
+                      <CircleMarker
+                        center={[userLocation.lat, userLocation.lng]}
+                        radius={7}
+                        pathOptions={{ color: '#fff', fillColor: '#0d9488', fillOpacity: 1, weight: 2 }}
+                      >
+                        <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+                          <span style={{ fontSize: '11px', fontWeight: 600 }}>You are here</span>
+                          {userLocation.accuracy && (
+                            <><br /><span style={{ fontSize: '10px', color: '#6b7280' }}>±{Math.round(userLocation.accuracy)}m accuracy</span></>
+                          )}
+                        </Tooltip>
+                      </CircleMarker>
+                    </>
+                  );
+                })()}
+
                 {mappable.map(project => {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
+                  const isNearby = nearbyProjects.has(project.id);
 
                   return (
                     <CircleMarker
                       key={project.id}
                       center={[project.start_latitude, project.start_longitude]}
-                      radius={isSelected ? 10 : 7}
+                      radius={isSelected ? 12 : isNearby ? 10 : 7}
                       pathOptions={{
-                        fillColor: color.fill,
-                        color: isSelected ? '#000' : color.stroke,
-                        weight: isSelected ? 3 : 2,
+                        fillColor: isNearby ? '#0d9488' : color.fill,
+                        color: isSelected ? '#000' : isNearby ? '#0f766e' : color.stroke,
+                        weight: isSelected ? 3 : isNearby ? 2.5 : 2,
                         opacity: 1,
-                        fillOpacity: 0.85,
+                        fillOpacity: isNearby ? 0.95 : 0.85,
                       }}
                       eventHandlers={{
                         click: () => {
@@ -373,28 +495,42 @@ export default function UserMapView() {
                   const isActive = selectedProject?.id === p.id;
                   const hasPins = p.start_latitude && p.start_longitude;
                   const color = getStatusColor(p.status);
+                  const isNearby = nearbyProjects.has(p.id);
+                  const mid = segmentMidpoint(p);
+                  const distM = mid && userLocation
+                    ? haversineMeters(userLocation.lat, userLocation.lng, mid.lat, mid.lng)
+                    : null;
 
                   return (
                     <button
                       key={p.id}
                       onClick={() => setSelectedProject(p)}
                       className={`w-full text-left px-4 py-3 transition-colors text-sm ${
-                        isActive ? 'bg-emerald-50 border-l-2 border-emerald-500' : 'hover:bg-slate-50 border-l-2 border-transparent'
+                        isActive
+                          ? 'bg-emerald-50 border-l-2 border-emerald-500'
+                          : isNearby
+                          ? 'bg-teal-50/60 border-l-2 border-teal-400 hover:bg-teal-50'
+                          : 'hover:bg-slate-50 border-l-2 border-transparent'
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <span
                           className="size-2.5 rounded-full mt-1.5 shrink-0"
-                          style={{ backgroundColor: color.fill }}
+                          style={{ backgroundColor: isNearby ? '#0d9488' : color.fill }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className={`font-medium line-clamp-2 leading-snug ${isActive ? 'text-emerald-800' : 'text-slate-800'}`}>
+                          <p className={`font-medium line-clamp-2 leading-snug ${isActive ? 'text-emerald-800' : isNearby ? 'text-teal-800' : 'text-slate-800'}`}>
                             {p.project_name}
                           </p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-400 flex-wrap">
                             {p.municipality && <span>{p.municipality}</span>}
                             {p.year_funded && <span>FY {p.year_funded}</span>}
                             {p.project_length_km > 0 && <span>{p.project_length_km} km</span>}
+                            {distM !== null && (
+                              <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-medium">
+                                📍 {fmtDistance(distM)}
+                              </span>
+                            )}
                           </div>
                           {!hasPins && (
                             <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
