@@ -257,7 +257,7 @@ function FMRProjectDetail({ project, onBack }) {
       <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
         <p className="font-medium text-sky-900 mb-1">Data Source</p>
         <p className="text-sm text-sky-700 leading-relaxed">
-          Department of Agriculture â€” Regional Agricultural Engineering Division (RAED), Regional Field Office VI - Western Visayas.
+          Department of Agriculture - Regional Agricultural Engineering Division (RAED), Regional Field Office VI - Western Visayas.
           Farm-to-Market Road Development Program (FMRDP).
         </p>
       </div>
@@ -277,10 +277,43 @@ export default function UserFMRProjects() {
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('On-Going');
+  const [yearFilter, setYearFilter] = useState('All');
+  const [municipalityFilter, setMunicipalityFilter] = useState('All');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sortBy, setSortBy] = useState('latest');
   const [selectedProject, setSelectedProject] = useState(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const projectsPerPage = 8;
+
+  const getProjectDate = (project) => {
+    const candidates = [
+      project.updated_at,
+      project.created_at,
+      project.date_completed,
+      project.target_completion_date,
+    ];
+    for (const value of candidates) {
+      if (!value) continue;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return null;
+  };
+
+  const inDateRange = (projectDate, from, to) => {
+    if (!projectDate) return !from && !to;
+    if (from) {
+      const fromDate = new Date(`${from}T00:00:00`);
+      if (projectDate < fromDate) return false;
+    }
+    if (to) {
+      const toDate = new Date(`${to}T23:59:59`);
+      if (projectDate > toDate) return false;
+    }
+    return true;
+  };
 
   // Fetch FMR projects from Supabase
   useEffect(() => {
@@ -300,7 +333,7 @@ export default function UserFMRProjects() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, yearFilter, municipalityFilter, dateFrom, dateTo, sortBy]);
 
   async function fetchFMRProjects() {
     try {
@@ -333,6 +366,9 @@ export default function UserFMRProjects() {
     totalKm: projects.reduce((sum, p) => sum + (p.project_length_km || 0), 0).toFixed(2),
   };
 
+  const yearOptions = [...new Set(projects.map((p) => Number(p.year_funded)).filter((y) => y && !Number.isNaN(y)))].sort((a, b) => b - a);
+  const municipalityOptions = [...new Set(projects.map((p) => p.municipality).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
   // Filter logic
   const filtered = projects.filter(p => {
     const name = (p.project_name || '').toLowerCase();
@@ -342,7 +378,26 @@ export default function UserFMRProjects() {
 
     const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
     const matchesStatus = normalizeUserProjectStatus(p.status) === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
+    const matchesMunicipality = municipalityFilter === 'All' || p.municipality === municipalityFilter;
+    const matchesDate = inDateRange(getProjectDate(p), dateFrom, dateTo);
+    return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesDate;
+  }).sort((a, b) => {
+    if (sortBy === 'name-asc') {
+      return (a.project_name || '').localeCompare(b.project_name || '');
+    }
+    if (sortBy === 'name-desc') {
+      return (b.project_name || '').localeCompare(a.project_name || '');
+    }
+    if (sortBy === 'progress-desc') {
+      return (Number(b.accomplishment) || 0) - (Number(a.accomplishment) || 0);
+    }
+    if (sortBy === 'progress-asc') {
+      return (Number(a.accomplishment) || 0) - (Number(b.accomplishment) || 0);
+    }
+    const aDate = getProjectDate(a)?.getTime() || 0;
+    const bDate = getProjectDate(b)?.getTime() || 0;
+    return bDate - aDate;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / projectsPerPage));
@@ -372,7 +427,7 @@ export default function UserFMRProjects() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-slate-900">FMR Projects</h1>
-              <p className="text-slate-500 text-sm">Farm-to-Market Road Development Program â€” DA RAED Region VI</p>
+              <p className="text-slate-500 text-sm">Farm-to-Market Road Development Program - DA RAED Region VI</p>
             </div>
           </div>
         </section>
@@ -414,7 +469,8 @@ export default function UserFMRProjects() {
         )}
 
         {/* Search & Filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -427,6 +483,68 @@ export default function UserFMRProjects() {
               placeholder="Search by name, municipality, location..."
               className="w-full pl-10 pr-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-shadow"
             />
+          </div>
+
+          <select
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[140px]"
+          >
+            <option value="All">All Years</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={String(year)}>FY {year}</option>
+            ))}
+          </select>
+
+          <select
+            value={municipalityFilter}
+            onChange={(e) => setMunicipalityFilter(e.target.value)}
+            className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]"
+          >
+            <option value="All">All Municipalities</option>
+            {municipalityOptions.map((municipality) => (
+              <option key={municipality} value={municipality}>{municipality}</option>
+            ))}
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]"
+          >
+            <option value="latest">Sort: Latest</option>
+            <option value="name-asc">Sort: Name A-Z</option>
+            <option value="name-desc">Sort: Name Z-A</option>
+            <option value="progress-desc">Sort: Progress High-Low</option>
+            <option value="progress-asc">Sort: Progress Low-High</option>
+          </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                aria-label="Start Date"
+                title="Start Date"
+                className="w-full px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                aria-label="End Date"
+                title="End Date"
+                className="w-full px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+              />
+            </div>
           </div>
 
           {/* Status filter pills */}
@@ -448,6 +566,26 @@ export default function UserFMRProjects() {
               );
             })}
           </div>
+
+          {(search || statusFilter !== 'On-Going' || yearFilter !== 'All' || municipalityFilter !== 'All' || dateFrom || dateTo || sortBy !== 'latest') && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setSearch('');
+                  setStatusFilter('On-Going');
+                  setYearFilter('All');
+                  setMunicipalityFilter('All');
+                  setDateFrom('');
+                  setDateTo('');
+                  setSortBy('latest');
+                  setCurrentPage(1);
+                }}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-teal-700 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-100 transition-colors"
+              >
+                Clear all filters
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Results count */}
@@ -519,7 +657,7 @@ export default function UserFMRProjects() {
         {!loading && projects.length > 0 && (
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
             <p className="text-xs text-slate-400">
-              Data from Department of Agriculture â€” RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
+              Data from Department of Agriculture - RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
             </p>
           </div>
         )}

@@ -147,7 +147,7 @@ function FeedbackCard({ feedback }) {
       {feedback.latitude && feedback.longitude && (
         <div className="flex items-center gap-1.5 mt-2 text-xs text-slate-500">
           <Icons.MapPin />
-          <span>ðŸ“ {Number(feedback.latitude).toFixed(4)}, {Number(feedback.longitude).toFixed(4)}</span>
+          <span>GPS: {Number(feedback.latitude).toFixed(4)}, {Number(feedback.longitude).toFixed(4)}</span>
         </div>
       )}
 
@@ -161,7 +161,7 @@ function FeedbackCard({ feedback }) {
         </div>
       )}
 
-      <p className="text-xs text-slate-400 mt-2">â€” {feedback.user_email || 'Anonymous'}</p>
+      <p className="text-xs text-slate-400 mt-2">By {feedback.user_email || 'Anonymous'}</p>
     </div>
   );
 }
@@ -508,7 +508,7 @@ function ProjectDetail({ project, onBack }) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-emerald-800">Live GPS Active</p>
-                    <p className="text-xs text-teal-600">{geoLocation.lat.toFixed(6)}, {geoLocation.lng.toFixed(6)}{geoLocation.accuracy && ` (Â±${Math.round(geoLocation.accuracy)}m)`}</p>
+                    <p className="text-xs text-teal-600">{geoLocation.lat.toFixed(6)}, {geoLocation.lng.toFixed(6)}{geoLocation.accuracy && ` (+/-${Math.round(geoLocation.accuracy)}m)`}</p>
                   </div>
                   <button type="button" onClick={() => { setGeoLocation(null); if (geoWatchRef.current !== null) { navigator.geolocation.clearWatch(geoWatchRef.current); geoWatchRef.current = null; } }} className="text-emerald-500 hover:text-teal-700 text-xs font-medium">Remove</button>
                 </div>
@@ -662,7 +662,7 @@ function UserProjects() {
         {/* Header */}
         <section>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Projects</h1>
-          <p className="mt-1 text-slate-500">Browse all FMR projects â€” click any project to view details & give feedback</p>
+          <p className="mt-1 text-slate-500">Browse all FMR projects - click any project to view details and give feedback</p>
         </section>
 
         {/* Error banner */}

@@ -23,7 +23,7 @@ function StatusBadge({ status }) {
 
 /* â”€â”€â”€ Format date â”€â”€â”€ */
 function fmtDate(iso) {
-  if (!iso) return 'â€”';
+  if (!iso) return 'N/A';
   return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
@@ -322,7 +322,7 @@ function UserReports() {
 
               <div className="bg-slate-50 rounded-xl p-4 space-y-3">
                 {[
-                  { label: 'Location', value: `${selected.barangay}, ${selected.municipality}${selected.street ? ` â€” ${selected.street}` : ''}` },
+                  { label: 'Location', value: `${selected.barangay}, ${selected.municipality}${selected.street ? ` - ${selected.street}` : ''}` },
                   selected.project_name && { label: 'Project', value: selected.project_name },
                   { label: 'Date Reported', value: fmtDate(selected.created_at) },
                   { label: 'Status', value: selected.status?.charAt(0).toUpperCase() + selected.status?.slice(1) },

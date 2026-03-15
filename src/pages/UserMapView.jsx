@@ -640,7 +640,7 @@ export default function UserMapView() {
         {!loading && projects.length > 0 && (
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
             <p className="text-xs text-slate-400">
-              Data from Department of Agriculture â€” RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
+              Data from Department of Agriculture - RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
             </p>
           </div>
         )}

@@ -181,7 +181,7 @@ export default function Dashboard() {
   // Public reports state (admin view)
   const [publicReports, setPublicReports] = useState([]);
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
-  const [publicReportFilter, setPublicReportFilter] = useState('all');
+  const [publicReportFilter, setPublicReportFilter] = useState('pending');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportSearch, setPublicReportSearch] = useState('');
   const [publicReportDateFrom, setPublicReportDateFrom] = useState('');
@@ -190,6 +190,10 @@ export default function Dashboard() {
   const [publicReportMunicipalityFilter, setPublicReportMunicipalityFilter] = useState('all');
   const [publicReportBarangayFilter, setPublicReportBarangayFilter] = useState('all');
   const [publicReportStreetFilter, setPublicReportStreetFilter] = useState('all');
+  const [publicReportProjectFilter, setPublicReportProjectFilter] = useState('');
+  const [publicReportsAnalyticsOpen, setPublicReportsAnalyticsOpen] = useState(true);
+  const [publicReportsTrendView, setPublicReportsTrendView] = useState('weekly');
+  const [publicReportsLocationSort, setPublicReportsLocationSort] = useState({ key: 'total', direction: 'desc' });
 
   // Field engineer state
   const [fieldEngineers, setFieldEngineers] = useState([]);
@@ -219,6 +223,9 @@ export default function Dashboard() {
   const [fmrProjectSearch, setFmrProjectSearch] = useState('');
   const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('On-Going');
   const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
+  const [fmrProjectDateFrom, setFmrProjectDateFrom] = useState('');
+  const [fmrProjectDateTo, setFmrProjectDateTo] = useState('');
+  const [fmrProjectSortBy, setFmrProjectSortBy] = useState('latest');
   const [fmrProjectCurrentPage, setFmrProjectCurrentPage] = useState(1);
   const fmrProjectsPerPage = 9;
 
@@ -820,7 +827,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     setFmrProjectCurrentPage(1);
-  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter]);
+  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter, fmrProjectDateFrom, fmrProjectDateTo, fmrProjectSortBy]);
 
   const unifiedProjects = useMemo(() => {
     const mappedFmr = fmrProjects.map((p) => {
@@ -1970,7 +1977,17 @@ export default function Dashboard() {
                   ? isPendingStatus
                   : normalizedStatus === fmrProjectStatusFilter;
               const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
-              return matchesSearch && matchesStatus && matchesYear;
+              const candidateDate = p.updated_at || p.created_at || p.date_completed || p.target_completion_date;
+              const matchesDate = inDateRange(candidateDate, fmrProjectDateFrom, fmrProjectDateTo);
+              return matchesSearch && matchesStatus && matchesYear && matchesDate;
+            }).sort((a, b) => {
+              if (fmrProjectSortBy === 'name-asc') return (a.project_name || '').localeCompare(b.project_name || '');
+              if (fmrProjectSortBy === 'name-desc') return (b.project_name || '').localeCompare(a.project_name || '');
+              if (fmrProjectSortBy === 'progress-desc') return (Number(b.accomplishment) || 0) - (Number(a.accomplishment) || 0);
+              if (fmrProjectSortBy === 'progress-asc') return (Number(a.accomplishment) || 0) - (Number(b.accomplishment) || 0);
+              const aTime = new Date(a.updated_at || a.created_at || a.date_completed || a.target_completion_date || 0).getTime() || 0;
+              const bTime = new Date(b.updated_at || b.created_at || b.date_completed || b.target_completion_date || 0).getTime() || 0;
+              return bTime - aTime;
             });
             const fmrCounts = {
               all: fmrProjects.length,
@@ -2074,9 +2091,9 @@ export default function Dashboard() {
 
               {/* Filters Bar */}
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-5">
-                <div className="flex flex-col lg:flex-row gap-4">
+                <div className="grid gap-4 xl:grid-cols-12">
                   {/* Search */}
-                  <div className="relative flex-1">
+                  <div className="relative xl:col-span-4">
                     <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                     </svg>
@@ -2085,37 +2102,71 @@ export default function Dashboard() {
                   </div>
                   {/* Year Filter */}
                   <select value={fmrProjectYearFilter} onChange={e => setFmrProjectYearFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none min-w-[130px]">
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none md:col-span-1 xl:col-span-2">
                     <option value="All">All Years</option>
                     {fmrYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
                   </select>
-                  {/* Status Tabs */}
-                  <div className="flex gap-1.5 overflow-x-auto">
-                    {['On-Going', 'Pending', 'Completed'].map(s => (
-                      <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
-                        className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                          fmrProjectStatusFilter === s
-                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm shadow-teal-500/25'
-                            : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}>
-                        {s}
-                      </button>
-                    ))}
+                  <select
+                    value={fmrProjectSortBy}
+                    onChange={(e) => setFmrProjectSortBy(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none md:col-span-1 xl:col-span-2"
+                  >
+                    <option value="latest">Sort: Latest</option>
+                    <option value="name-asc">Sort: Name A-Z</option>
+                    <option value="name-desc">Sort: Name Z-A</option>
+                    <option value="progress-desc">Sort: Progress High-Low</option>
+                    <option value="progress-asc">Sort: Progress Low-High</option>
+                  </select>
+                  <div className="w-full md:col-span-1 xl:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={fmrProjectDateFrom}
+                      onChange={(e) => setFmrProjectDateFrom(e.target.value)}
+                      max={fmrProjectDateTo || undefined}
+                      aria-label="Start date"
+                      title="Start date"
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                    />
+                  </div>
+                  <div className="w-full md:col-span-1 xl:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={fmrProjectDateTo}
+                      onChange={(e) => setFmrProjectDateTo(e.target.value)}
+                      min={fmrProjectDateFrom || undefined}
+                      aria-label="End date"
+                      title="End date"
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                    />
                   </div>
                   <button
                     onClick={exportFilteredFmr}
-                    className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors md:col-span-2 xl:col-span-12 xl:w-auto xl:justify-self-end"
                   >
                     Export CSV
                   </button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {['On-Going', 'Pending', 'Completed'].map(s => (
+                    <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
+                      className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                        fmrProjectStatusFilter === s
+                          ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm shadow-teal-500/25'
+                          : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}>
+                      {s}
+                    </button>
+                  ))}
                 </div>
                 {/* Results count */}
                 <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
                   <p className="text-sm text-slate-500">
                     Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of {fmrProjects.length} projects
                   </p>
-                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All') && (
-                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectCurrentPage(1); }}
+                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
+                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
                       className="text-sm text-teal-600 hover:text-teal-700 font-medium">
                       Clear filters
                     </button>
@@ -3002,12 +3053,14 @@ export default function Dashboard() {
             })();
 
             const filteredPublicReports = publicReports.filter(rpt => {
-              const matchesStatus = publicReportFilter === 'all' || rpt.status === publicReportFilter;
+              const matchesStatus = rpt.status === publicReportFilter;
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
               const matchesDate = inDateRange(rpt.created_at, publicReportDateFrom, publicReportDateTo);
               const matchesMunicipality = publicReportMunicipalityFilter === 'all' || rpt.municipality === publicReportMunicipalityFilter;
               const matchesBarangay = publicReportBarangayFilter === 'all' || rpt.barangay === publicReportBarangayFilter;
               const matchesStreet = publicReportStreetFilter === 'all' || (rpt.street || '') === publicReportStreetFilter;
+              const normalizedProject = (rpt.project_name || 'Unlinked Project').trim();
+              const matchesProject = !publicReportProjectFilter || normalizedProject === publicReportProjectFilter;
               const q = publicReportSearch.toLowerCase();
               const matchesSearch = !q ||
                 (rpt.full_name || '').toLowerCase().includes(q) ||
@@ -3016,18 +3069,195 @@ export default function Dashboard() {
                 (rpt.street || '').toLowerCase().includes(q) ||
                 (rpt.project_name || '').toLowerCase().includes(q) ||
                 (rpt.description || '').toLowerCase().includes(q);
-              return matchesStatus && matchesVerification && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesSearch;
+              return matchesStatus && matchesVerification && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesProject && matchesSearch;
+            });
+            const sortedFilteredPublicReports = [...filteredPublicReports].sort((a, b) => {
+              const aTime = new Date(a.updated_at || a.created_at || 0).getTime() || 0;
+              const bTime = new Date(b.updated_at || b.created_at || 0).getTime() || 0;
+              return bTime - aTime;
             });
             const pendingCount = publicReports.filter(r => r.status === 'pending').length;
             const reviewedCount = publicReports.filter(r => r.status === 'reviewed').length;
             const resolvedCount = publicReports.filter(r => r.status === 'resolved').length;
             const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
 
-            const groupedPublicReports = {
-              pending: filteredPublicReports.filter(r => r.status === 'pending'),
-              reviewed: filteredPublicReports.filter(r => r.status === 'reviewed'),
-              resolved: filteredPublicReports.filter(r => r.status === 'resolved'),
+            const startOfDay = (value) => {
+              const d = new Date(value);
+              if (Number.isNaN(d.getTime())) return null;
+              d.setHours(0, 0, 0, 0);
+              return d;
             };
+
+            const formatDateInput = (dateObj) => {
+              const y = dateObj.getFullYear();
+              const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const d = String(dateObj.getDate()).padStart(2, '0');
+              return `${y}-${m}-${d}`;
+            };
+
+            const getResolutionDays = (report) => {
+              if (report.status !== 'resolved') return null;
+              const created = new Date(report.created_at || 0);
+              const resolved = new Date(report.reviewed_at || report.updated_at || 0);
+              if (Number.isNaN(created.getTime()) || Number.isNaN(resolved.getTime())) return null;
+              const diff = (resolved.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+              return diff >= 0 ? diff : null;
+            };
+
+            const topProjectMap = publicReports.reduce((acc, report) => {
+              const key = (report.project_name || 'Unlinked Project').trim();
+              if (!acc[key]) {
+                acc[key] = { project_name: key, count: 0, pending: 0, reviewed: 0, resolved: 0 };
+              }
+              acc[key].count += 1;
+              if (report.status === 'pending') acc[key].pending += 1;
+              if (report.status === 'reviewed') acc[key].reviewed += 1;
+              if (report.status === 'resolved') acc[key].resolved += 1;
+              return acc;
+            }, {});
+
+            const truncateProjectName = (name) => (name.length > 28 ? `${name.slice(0, 28)}...` : name);
+            const topProjectsData = Object.values(topProjectMap)
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 10)
+              .map((item) => {
+                let fill = '#10b981';
+                if (item.pending > 0) {
+                  fill = '#f59e0b';
+                } else if (item.reviewed > 0 || item.resolved < item.count) {
+                  fill = '#ef4444';
+                }
+                return {
+                  ...item,
+                  project_label: truncateProjectName(item.project_name),
+                  fill,
+                };
+              });
+
+            const trendMap = publicReports.reduce((acc, report) => {
+              const created = new Date(report.created_at || 0);
+              if (Number.isNaN(created.getTime())) return acc;
+
+              let key = '';
+              let label = '';
+              let sortTime = 0;
+
+              if (publicReportsTrendView === 'monthly') {
+                const y = created.getFullYear();
+                const m = created.getMonth();
+                key = `${y}-${String(m + 1).padStart(2, '0')}`;
+                label = created.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                sortTime = new Date(y, m, 1).getTime();
+              } else {
+                const day = new Date(created);
+                const weekday = day.getDay();
+                const offset = weekday === 0 ? 6 : weekday - 1;
+                day.setDate(day.getDate() - offset);
+                day.setHours(0, 0, 0, 0);
+                const y = day.getFullYear();
+                const m = String(day.getMonth() + 1).padStart(2, '0');
+                const d = String(day.getDate()).padStart(2, '0');
+                key = `${y}-${m}-${d}`;
+                label = `Wk ${day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+                sortTime = day.getTime();
+              }
+
+              if (!acc[key]) acc[key] = { key, label, sortTime, total: 0, resolved: 0 };
+              acc[key].total += 1;
+              if (report.status === 'resolved') acc[key].resolved += 1;
+              return acc;
+            }, {});
+
+            const trendData = Object.values(trendMap)
+              .sort((a, b) => a.sortTime - b.sortTime)
+              .slice(-16);
+
+            const resolvedReports = publicReports.filter((report) => report.status === 'resolved');
+            const resolvedDays = resolvedReports.map(getResolutionDays).filter((days) => typeof days === 'number');
+            const avgResolutionDays = resolvedDays.length
+              ? resolvedDays.reduce((sum, value) => sum + value, 0) / resolvedDays.length
+              : null;
+            const resolvedWithinSeven = resolvedDays.filter((days) => days <= 7).length;
+            const resolvedWithinSevenPct = resolvedDays.length ? (resolvedWithinSeven / resolvedDays.length) * 100 : 0;
+            const onsitePct = publicReports.length ? (verifiedCount / publicReports.length) * 100 : 0;
+
+            const municipalityMap = publicReports.reduce((acc, report) => {
+              const municipality = (report.municipality || 'Unknown').trim();
+              if (!acc[municipality]) {
+                acc[municipality] = {
+                  municipality,
+                  total: 0,
+                  pending: 0,
+                  resolved: 0,
+                  avgResolveDays: null,
+                  _resolveDays: [],
+                };
+              }
+
+              acc[municipality].total += 1;
+              if (report.status === 'pending') acc[municipality].pending += 1;
+              if (report.status === 'resolved') {
+                acc[municipality].resolved += 1;
+                const days = getResolutionDays(report);
+                if (typeof days === 'number') acc[municipality]._resolveDays.push(days);
+              }
+              return acc;
+            }, {});
+
+            const municipalityRows = Object.values(municipalityMap).map((row) => {
+              const avgDays = row._resolveDays.length
+                ? row._resolveDays.reduce((sum, value) => sum + value, 0) / row._resolveDays.length
+                : null;
+              return {
+                municipality: row.municipality,
+                total: row.total,
+                pending: row.pending,
+                resolved: row.resolved,
+                avgResolveDays: avgDays,
+              };
+            });
+
+            const sortedMunicipalityRows = [...municipalityRows].sort((a, b) => {
+              const { key, direction } = publicReportsLocationSort;
+              const mult = direction === 'asc' ? 1 : -1;
+              const av = a[key];
+              const bv = b[key];
+
+              if (typeof av === 'string' || typeof bv === 'string') {
+                return String(av || '').localeCompare(String(bv || '')) * mult;
+              }
+
+              const aNum = av == null ? -Infinity : av;
+              const bNum = bv == null ? -Infinity : bv;
+              return (aNum - bNum) * mult;
+            });
+
+            const toggleMunicipalitySort = (key) => {
+              setPublicReportsLocationSort((prev) => {
+                if (prev.key === key) {
+                  return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+                }
+                return { key, direction: key === 'municipality' ? 'asc' : 'desc' };
+              });
+            };
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const pending14 = publicReports.filter((report) => {
+              if (report.status !== 'pending') return false;
+              const created = startOfDay(report.created_at);
+              if (!created) return false;
+              const ageDays = Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+              return ageDays >= 14;
+            }).length;
+
+            const unresolved30 = publicReports.filter((report) => {
+              if (report.status === 'resolved') return false;
+              const created = startOfDay(report.created_at);
+              if (!created) return false;
+              const ageDays = Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+              return ageDays >= 30;
+            }).length;
 
             const verifyBadge = (v) => {
               const map = {
@@ -3046,6 +3276,19 @@ export default function Dashboard() {
             const renderPublicReportItem = (rpt) => (
               <button key={rpt.id} onClick={() => setSelectedPublicReport(rpt)}
                 className="w-full text-left px-4 py-4 hover:bg-slate-50 transition-colors group">
+                {(() => {
+                  const reportDate = rpt.updated_at || rpt.created_at;
+                  const formattedReportDate = reportDate
+                    ? new Date(reportDate).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })
+                    : 'No date';
+
+                  return (
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
@@ -3064,7 +3307,7 @@ export default function Dashboard() {
                     <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
                     <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} · {new Date(rpt.created_at).toLocaleDateString()}</p>
+                      <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} · {formattedReportDate}</p>
                       {rpt.assigned_engineer_name && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
@@ -3082,6 +3325,8 @@ export default function Dashboard() {
                     <img src={rpt.photo_url} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0" />
                   )}
                 </div>
+                  );
+                })()}
               </button>
             );
 
@@ -3111,75 +3356,382 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Filters */}
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                  <div className="flex flex-col gap-4">
-                    {/* Row 1: Search + Status + Verification */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="relative flex-1">
-                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-                        <input type="text" value={publicReportSearch} onChange={e => setPublicReportSearch(e.target.value)} placeholder="Search by name, location, project, or description..."
-                          className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                {/* Reports Analytics */}
+                <section className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Reports Analytics</h3>
+                      <p className="text-xs text-slate-500 mt-1">Operational signals for report concentration, trend, and resolution performance.</p>
+                    </div>
+                    <button
+                      onClick={() => setPublicReportsAnalyticsOpen((prev) => !prev)}
+                      className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      {publicReportsAnalyticsOpen ? 'Hide Analytics' : 'Show Analytics'}
+                      <svg className={`w-4 h-4 transition-transform ${publicReportsAnalyticsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {publicReportsAnalyticsOpen && (
+                    <div className="mt-4 space-y-5">
+                      {(pending14 > 0 || unresolved30 > 0) && (
+                        <div className="space-y-2">
+                          {pending14 > 0 && (
+                            <button
+                              onClick={() => {
+                                const cutoff = new Date(today);
+                                cutoff.setDate(cutoff.getDate() - 14);
+                                setPublicReportFilter('pending');
+                                setPublicReportDateTo(formatDateInput(cutoff));
+                              }}
+                              className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
+                            >
+                              <strong>{pending14}</strong> reports have been pending for 14+ days.
+                            </button>
+                          )}
+                          {unresolved30 > 0 && (
+                            <button
+                              onClick={() => {
+                                const cutoff = new Date(today);
+                                cutoff.setDate(cutoff.getDate() - 30);
+                                setPublicReportFilter('pending');
+                                setPublicReportDateTo(formatDateInput(cutoff));
+                              }}
+                              className="w-full text-left rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 transition-colors"
+                            >
+                              <strong>{unresolved30}</strong> reports have been unresolved for 30+ days.
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                        <div className="xl:col-span-6 rounded-2xl border border-slate-200 p-4 bg-white">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-slate-800">Top 10 Most Reported Projects</h4>
+                            {publicReportProjectFilter && (
+                              <button
+                                onClick={() => setPublicReportProjectFilter('')}
+                                className="text-xs font-medium text-teal-700 hover:text-teal-800"
+                              >
+                                Clear project filter
+                              </button>
+                            )}
+                          </div>
+                          {topProjectsData.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-12 text-center">No project report data yet.</p>
+                          ) : (
+                            <div className="h-80">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={topProjectsData} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
+                                  <YAxis type="category" dataKey="project_label" width={150} tick={{ fontSize: 11, fill: '#475569' }} />
+                                  <RechartsTooltip
+                                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                                    formatter={(value) => [`${value} reports`, 'Count']}
+                                    labelFormatter={(label, payload) => payload?.[0]?.payload?.project_name || label}
+                                  />
+                                  <Bar dataKey="count" radius={[0, 8, 8, 0]}>
+                                    {topProjectsData.map((entry) => (
+                                      <Cell
+                                        key={entry.project_name}
+                                        fill={entry.fill}
+                                        cursor="pointer"
+                                        stroke={publicReportProjectFilter === entry.project_name ? '#0f172a' : 'none'}
+                                        strokeWidth={publicReportProjectFilter === entry.project_name ? 1.5 : 0}
+                                        onClick={() => {
+                                          setPublicReportProjectFilter(entry.project_name);
+                                          setPublicReportFilter('pending');
+                                        }}
+                                      />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="xl:col-span-6 rounded-2xl border border-slate-200 p-4 bg-white">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-slate-800">Report Volume Trend</h4>
+                            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                              <button
+                                onClick={() => setPublicReportsTrendView('weekly')}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                                  publicReportsTrendView === 'weekly' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                                }`}
+                              >
+                                Weekly
+                              </button>
+                              <button
+                                onClick={() => setPublicReportsTrendView('monthly')}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                                  publicReportsTrendView === 'monthly' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                                }`}
+                              >
+                                Monthly
+                              </button>
+                            </div>
+                          </div>
+                          {trendData.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-12 text-center">No time-series data available.</p>
+                          ) : (
+                            <div className="h-80">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={trendData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                                  <defs>
+                                    <linearGradient id="reportsTotalFill" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
+                                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0.02} />
+                                    </linearGradient>
+                                  </defs>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} />
+                                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                                  <RechartsTooltip />
+                                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                                  <Area type="monotone" dataKey="total" name="Total Reports" stroke="#0f766e" fill="url(#reportsTotalFill)" strokeWidth={2} />
+                                  <Line type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" strokeWidth={2.5} dot={{ r: 2 }} />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <select value={publicReportFilter} onChange={e => setPublicReportFilter(e.target.value)}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                        <option value="all">All Status</option>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Avg. Resolution Time</p>
+                          <p className="text-2xl font-bold text-slate-900 mt-1">
+                            {avgResolutionDays == null ? 'N/A' : `${avgResolutionDays.toFixed(1)} days`}
+                          </p>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Resolved Within 7 Days</p>
+                          <p className="text-2xl font-bold text-emerald-700 mt-1">{resolvedWithinSevenPct.toFixed(1)}%</p>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">On-Site Verification</p>
+                          <p className="text-2xl font-bold text-teal-700 mt-1">{onsitePct.toFixed(1)}%</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100">
+                          <h4 className="text-sm font-semibold text-slate-800">Location Heatmap Summary</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[760px]">
+                            <thead className="bg-slate-50/70">
+                              <tr>
+                                {[
+                                  { key: 'municipality', label: 'Municipality' },
+                                  { key: 'total', label: 'Total Reports' },
+                                  { key: 'pending', label: 'Pending' },
+                                  { key: 'resolved', label: 'Resolved' },
+                                  { key: 'avgResolveDays', label: 'Avg. Days to Resolve' },
+                                ].map((col) => (
+                                  <th key={col.key} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                    <button
+                                      onClick={() => toggleMunicipalitySort(col.key)}
+                                      className="inline-flex items-center gap-1 hover:text-slate-700"
+                                    >
+                                      {col.label}
+                                      {publicReportsLocationSort.key === col.key && (
+                                        <span className="text-teal-600">{publicReportsLocationSort.direction === 'asc' ? '↑' : '↓'}</span>
+                                      )}
+                                    </button>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {sortedMunicipalityRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No municipality data to display.</td>
+                                </tr>
+                              ) : (
+                                sortedMunicipalityRows.map((row) => (
+                                  <tr
+                                    key={row.municipality}
+                                    className={`${row.pending > row.resolved ? 'bg-amber-50/45' : 'bg-white'} hover:bg-slate-50 transition-colors`}
+                                  >
+                                    <td className="px-4 py-3 text-sm font-medium text-slate-800">{row.municipality}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600">{row.total}</td>
+                                    <td className="px-4 py-3 text-sm text-amber-700 font-semibold">{row.pending}</td>
+                                    <td className="px-4 py-3 text-sm text-emerald-700 font-semibold">{row.resolved}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600">{row.avgResolveDays == null ? 'N/A' : row.avgResolveDays.toFixed(1)}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                {/* Filters */}
+                <div className="bg-white border border-slate-200/70 rounded-2xl p-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.3)]">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold tracking-tight text-slate-900">Filter Public Reports</h3>
+                        <span className="inline-flex h-6 items-center rounded-full bg-indigo-50 px-2.5 text-[11px] font-semibold text-indigo-700">
+                          {filteredPublicReports.length} result{filteredPublicReports.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">Search, narrow by status and verification, then refine the location below.</p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                        <span className="inline-block h-2 w-2 rounded-full bg-indigo-500" />
+                        {publicReports.length} total reports
+                      </div>
+                      {(publicReportSearch || publicReportFilter !== 'pending' || publicReportCategoryFilter !== 'all' || publicReportDateFrom || publicReportDateTo || publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all' || publicReportProjectFilter) && (
+                        <button
+                          onClick={() => {
+                            setPublicReportSearch('');
+                            setPublicReportFilter('pending');
+                            setPublicReportCategoryFilter('all');
+                            setPublicReportDateFrom('');
+                            setPublicReportDateTo('');
+                            setPublicReportMunicipalityFilter('all');
+                            setPublicReportBarangayFilter('all');
+                            setPublicReportStreetFilter('all');
+                            setPublicReportProjectFilter('');
+                          }}
+                          className="h-9 rounded-lg border border-indigo-200 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-50"
+                        >
+                          Reset All
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 xl:grid-cols-12">
+                    <div className="relative xl:col-span-4">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Search</label>
+                      <svg className="absolute left-3.5 top-[calc(50%+11px)] -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+                      <input
+                        type="text"
+                        value={publicReportSearch}
+                        onChange={e => setPublicReportSearch(e.target.value)}
+                        placeholder="Reporter, project, location, or description"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                      />
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Status</label>
+                      <select
+                        value={publicReportFilter}
+                        onChange={e => setPublicReportFilter(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                      >
                         <option value="pending">Pending</option>
                         <option value="reviewed">Reviewed</option>
                         <option value="resolved">Resolved</option>
                       </select>
-                      <select value={publicReportCategoryFilter} onChange={e => setPublicReportCategoryFilter(e.target.value)}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Verification</label>
+                      <select
+                        value={publicReportCategoryFilter}
+                        onChange={e => setPublicReportCategoryFilter(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                      >
                         <option value="all">All Verification</option>
-                        <option value="Verified On-Site">✔ Verified On-Site</option>
-                        <option value="Needs Review">⚠ Needs Review</option>
-                        <option value="Location Mismatch">✖ Location Mismatch</option>
+                        <option value="Verified On-Site">Verified On-Site</option>
+                        <option value="Needs Review">Needs Review</option>
+                        <option value="Location Mismatch">Location Mismatch</option>
                       </select>
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Start Date</label>
                       <input
                         type="date"
                         value={publicReportDateFrom}
                         onChange={(e) => setPublicReportDateFrom(e.target.value)}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                        max={publicReportDateTo || undefined}
+                        aria-label="Start date"
+                        title="Start date"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
                       />
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">End Date</label>
                       <input
                         type="date"
                         value={publicReportDateTo}
                         onChange={(e) => setPublicReportDateTo(e.target.value)}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                        min={publicReportDateFrom || undefined}
+                        aria-label="End date"
+                        title="End date"
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
                       />
                     </div>
-                    {/* Row 2: Location Filters (Municipality → Barangay → Street) */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Municipality</label>
-                        <select value={publicReportMunicipalityFilter} onChange={e => { setPublicReportMunicipalityFilter(e.target.value); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
-                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                          <option value="all">All Municipalities</option>
-                          {allMunicipalities.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
+
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 xl:col-span-12">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Location Filters</p>
+                          <p className="mt-1 text-xs text-slate-500">Use location only when you need to narrow a specific area.</p>
+                        </div>
+                        {(publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all') && (
+                          <button
+                            onClick={() => { setPublicReportMunicipalityFilter('all'); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
+                            className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                          >
+                            Clear Location
+                          </button>
+                        )}
                       </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Barangay</label>
-                        <select value={publicReportBarangayFilter} onChange={e => { setPublicReportBarangayFilter(e.target.value); setPublicReportStreetFilter('all'); }}
-                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                          <option value="all">All Barangays</option>
-                          {filteredBarangayOptions.map(b => <option key={b} value={b}>{b}</option>)}
-                        </select>
+
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Municipality</label>
+                          <select
+                            value={publicReportMunicipalityFilter}
+                            onChange={e => { setPublicReportMunicipalityFilter(e.target.value); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
+                            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                          >
+                            <option value="all">All Municipalities</option>
+                            {allMunicipalities.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Barangay</label>
+                          <select
+                            value={publicReportBarangayFilter}
+                            onChange={e => { setPublicReportBarangayFilter(e.target.value); setPublicReportStreetFilter('all'); }}
+                            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                          >
+                            <option value="all">All Barangays</option>
+                            {filteredBarangayOptions.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Street / Sitio</label>
+                          <select
+                            value={publicReportStreetFilter}
+                            onChange={e => setPublicReportStreetFilter(e.target.value)}
+                            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                          >
+                            <option value="all">All Streets</option>
+                            {filteredStreetOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Street / Sitio</label>
-                        <select value={publicReportStreetFilter} onChange={e => setPublicReportStreetFilter(e.target.value)}
-                          className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                          <option value="all">All Streets</option>
-                          {filteredStreetOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                      {(publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all') && (
-                        <button onClick={() => { setPublicReportMunicipalityFilter('all'); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); }}
-                          className="self-end px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors whitespace-nowrap">
-                          Clear Location
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -3357,8 +3909,29 @@ export default function Dashboard() {
                 {/* Reports List */}
                 <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                    <p className="text-sm font-semibold text-slate-700">{filteredPublicReports.length} public report{filteredPublicReports.length !== 1 ? 's' : ''} (divided into 3 sections)</p>
-                    <p className="text-xs text-slate-500 mt-1">Tip: Swipe sideways on smaller screens to switch between sections.</p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-base font-semibold text-slate-800">Public Reports</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Newest reports appear first to keep review flow up to date.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {[
+                          { key: 'pending', label: 'Pending', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+                          { key: 'reviewed', label: 'Reviewed', tone: 'bg-blue-50 text-blue-700 border-blue-200' },
+                          { key: 'resolved', label: 'Resolved', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                        ].map((option) => (
+                          <button
+                            key={option.key}
+                            onClick={() => setPublicReportFilter(option.key)}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                              publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   {publicReportsLoading ? (
                     <div className="p-8 text-center text-slate-400">
@@ -3371,7 +3944,7 @@ export default function Dashboard() {
                       description="No records match your current report and location filters."
                       buttonLabel="Clear Filters"
                       onButtonClick={() => {
-                        setPublicReportFilter('all');
+                        setPublicReportFilter('pending');
                         setPublicReportCategoryFilter('all');
                         setPublicReportSearch('');
                         setPublicReportMunicipalityFilter('all');
@@ -3379,32 +3952,20 @@ export default function Dashboard() {
                         setPublicReportStreetFilter('all');
                         setPublicReportDateFrom('');
                         setPublicReportDateTo('');
+                        setPublicReportProjectFilter('');
                       }}
                     />
                   ) : (
-                    <div className="flex gap-4 p-4 overflow-x-auto snap-x snap-mandatory lg:grid lg:grid-cols-3 lg:overflow-visible">
-                      {[
-                        { key: 'pending', title: 'Pending', tone: 'text-amber-700 bg-amber-50 border-amber-200' },
-                        { key: 'reviewed', title: 'Reviewed', tone: 'text-blue-700 bg-blue-50 border-blue-200' },
-                        { key: 'resolved', title: 'Resolved', tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-                      ].map((section) => (
-                        <div key={section.key} className="min-w-[88%] sm:min-w-[60%] lg:min-w-0 snap-start border border-slate-200 rounded-2xl overflow-hidden bg-white">
-                          <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${section.tone}`}>{section.title}</span>
-                            <span className="text-xs font-semibold text-slate-500">{groupedPublicReports[section.key].length}</span>
-                          </div>
-                          <div className="max-h-[360px] lg:max-h-[420px] overflow-y-auto divide-y divide-slate-100">
-                            {groupedPublicReports[section.key].length === 0 ? (
-                              <div className="px-4 py-8 text-center">
-                                <p className="text-sm font-medium text-slate-700">No {section.title.toLowerCase()} reports</p>
-                                <p className="text-xs text-slate-500 mt-1">Reports matching your filters will appear here.</p>
-                              </div>
-                            ) : (
-                              groupedPublicReports[section.key].map(renderPublicReportItem)
-                            )}
-                          </div>
+                    <div className="p-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">{publicReportFilter}</span>
+                          <span className="text-xs font-semibold text-slate-500">{sortedFilteredPublicReports.length}</span>
                         </div>
-                      ))}
+                        <div className="max-h-[460px] overflow-y-auto divide-y divide-slate-100">
+                          {sortedFilteredPublicReports.map(renderPublicReportItem)}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

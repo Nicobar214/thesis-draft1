@@ -5,7 +5,6 @@ import Icons from './Icons';
 
 const navItems = [
   { to: '/user', label: 'Dashboard', icon: Icons.Dashboard },
-  { to: '/user/projects', label: 'Projects', icon: Icons.Folder },
   { to: '/user/fmr-projects', label: 'FMR Projects', icon: Icons.Road },
   { to: '/user/map', label: 'Map View', icon: Icons.MapPin },
   { to: '/user/reports', label: 'Reports', icon: Icons.Document },
