@@ -1,9 +1,20 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import L from 'leaflet';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
-import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import 'leaflet.heat';
+import {
+  buildRoutePoints,
+  boundsFromPoints,
+  fetchRoadAlignedPolyline,
+  getProjectBarangay,
+  getRouteStatusTheme,
+  getTargetDateChip,
+  isOverdueProject,
+} from '../lib/mapRouteUtils';
 import {
   ResponsiveContainer,
   BarChart,
@@ -105,19 +116,50 @@ function parseCoordinate(value) {
 }
 
 /* ─── Map bounds fitter for admin ─── */
-function AdminFitBounds({ projects }) {
+function AdminFitBounds({ points }) {
   const map = useMap();
   useEffect(() => {
-    if (projects.length === 0) return;
-    const lats = projects.map(p => p.start_latitude).filter(Boolean);
-    const lngs = projects.map(p => p.start_longitude).filter(Boolean);
-    if (lats.length === 0) return;
-    const bounds = [
-      [Math.min(...lats) - 0.05, Math.min(...lngs) - 0.05],
-      [Math.max(...lats) + 0.05, Math.max(...lngs) + 0.05],
-    ];
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }, [projects, map]);
+    if (!points || points.length === 0) return;
+    const bounds = boundsFromPoints(points);
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [30, 30] });
+    }
+  }, [points, map]);
+  return null;
+}
+
+function ReportHeatmapLayer({ visible, points }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!visible || !Array.isArray(points) || points.length === 0) return undefined;
+
+    const layer = L.heatLayer(points, {
+      radius: 22,
+      blur: 18,
+      maxZoom: 15,
+      gradient: {
+        0.2: '#2563eb',
+        0.55: '#facc15',
+        1.0: '#ef4444',
+      },
+    }).addTo(map);
+
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [visible, points, map]);
+
+  return null;
+}
+
+function RouteEditorMapClick({ onPickPoint }) {
+  useMapEvents({
+    click(event) {
+      onPickPoint(event.latlng);
+    },
+  });
+
   return null;
 }
 
@@ -206,7 +248,15 @@ export default function Dashboard() {
   const [adminMapSearch, setAdminMapSearch] = useState('');
   const [adminMapStatusFilter, setAdminMapStatusFilter] = useState('All');
   const [adminMapYearFilter, setAdminMapYearFilter] = useState('All');
+  const [adminMapMunicipalityFilter, setAdminMapMunicipalityFilter] = useState('All');
+  const [adminMapShowOverdueOnly, setAdminMapShowOverdueOnly] = useState(false);
+  const [adminMapShowHeatmap, setAdminMapShowHeatmap] = useState(false);
   const [adminMapSelectedProject, setAdminMapSelectedProject] = useState(null);
+  const [adminMapProgressEdit, setAdminMapProgressEdit] = useState(null);
+  const [routeByProjectId, setRouteByProjectId] = useState({});
+  const [reportCountByProjectId, setReportCountByProjectId] = useState({});
+  const [reportHeatPoints, setReportHeatPoints] = useState([]);
+  const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
 
   // FMR CRUD state (edit / delete)
   const [showFmrEditModal, setShowFmrEditModal] = useState(false);
@@ -218,6 +268,11 @@ export default function Dashboard() {
     end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', location: '', remarks: ''
   };
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
+  const [fmrRouteMode, setFmrRouteMode] = useState('waypoint');
+  const [fmrRouteWaypoints, setFmrRouteWaypoints] = useState([]);
+
+  const [newProjectRouteMode, setNewProjectRouteMode] = useState('waypoint');
+  const [newProjectRouteWaypoints, setNewProjectRouteWaypoints] = useState([]);
 
   // FMR projects-tab filter state
   const [fmrProjectSearch, setFmrProjectSearch] = useState('');
@@ -505,6 +560,99 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchProjectRoutes = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('project_routes').select('*');
+      if (error) {
+        setRouteByProjectId({});
+        return;
+      }
+
+      const next = {};
+      (data || []).forEach((route) => {
+        if (!route?.project_id) return;
+        next[route.project_id] = route;
+      });
+      setRouteByProjectId(next);
+    } catch {
+      setRouteByProjectId({});
+    }
+  }, []);
+
+  const fetchMapReportData = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('public_reports')
+        .select('project_id, project_name, latitude, longitude, status');
+      if (error) return;
+
+      const byName = {};
+      fmrProjects.forEach((p) => {
+        const nameKey = String(p.project_name || '').trim().toLowerCase();
+        if (nameKey) byName[nameKey] = p.id;
+      });
+
+      const counts = {};
+      const unresolvedByLocation = {};
+      (data || []).forEach((report) => {
+        let projectId = report.project_id;
+        if (!projectId && report.project_name) {
+          projectId = byName[String(report.project_name).trim().toLowerCase()] || null;
+        }
+
+        if (projectId) {
+          counts[projectId] = (counts[projectId] || 0) + 1;
+        }
+
+        if (report.status === 'resolved') return;
+        const lat = Number(report.latitude);
+        const lng = Number(report.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+        const key = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
+        unresolvedByLocation[key] = unresolvedByLocation[key] || { lat, lng, count: 0 };
+        unresolvedByLocation[key].count += 1;
+      });
+
+      const maxCount = Math.max(1, ...Object.values(unresolvedByLocation).map((item) => item.count));
+      const heat = Object.values(unresolvedByLocation).map((item) => [item.lat, item.lng, Math.min(1, item.count / maxCount)]);
+
+      setReportCountByProjectId(counts);
+      setReportHeatPoints(heat);
+    } catch {
+      setReportCountByProjectId({});
+      setReportHeatPoints([]);
+    }
+  }, [fmrProjects]);
+
+  const upsertProjectRoute = useCallback(async (projectId, startLat, startLng, endLat, endLng, waypoints) => {
+    if (!projectId) return;
+
+    const cleanedWaypoints = (waypoints || [])
+      .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+      .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+    const payload = {
+      project_id: projectId,
+      start_latitude: Number(startLat),
+      start_longitude: Number(startLng),
+      end_latitude: Number(endLat),
+      end_longitude: Number(endLng),
+      route_points: cleanedWaypoints,
+      updated_at: new Date().toISOString(),
+    };
+
+    const hasCoordinates =
+      Number.isFinite(payload.start_latitude) &&
+      Number.isFinite(payload.start_longitude) &&
+      Number.isFinite(payload.end_latitude) &&
+      Number.isFinite(payload.end_longitude);
+
+    if (!hasCoordinates) return;
+
+    await supabase.from('project_routes').upsert(payload, { onConflict: 'project_id' });
+  }, []);
+
   // Fetch contractor profiles
   const fetchContractors = useCallback(async () => {
     try {
@@ -774,6 +922,8 @@ export default function Dashboard() {
       fetchFeedbacks();
       fetchPublicReports();
       fetchFmrProjects();
+      fetchProjectRoutes();
+      fetchMapReportData();
       fetchFieldEngineers();
       fetchContractors();
       fetchProgressUpdates();
@@ -794,13 +944,14 @@ export default function Dashboard() {
     // Real-time subscription for public reports
     const publicReportsChannel = supabase
       .channel('admin-public-reports-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchPublicReports())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => { fetchPublicReports(); fetchMapReportData(); })
       .subscribe();
 
     // Real-time subscription for FMR projects
     const fmrChannel = supabase
       .channel('admin-fmr-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchFmrProjects())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => { fetchFmrProjects(); fetchMapReportData(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, () => fetchProjectRoutes())
       .subscribe();
 
     // Real-time subscription for profiles (field engineers + contractors)
@@ -823,7 +974,11 @@ export default function Dashboard() {
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchFieldEngineers, fetchContractors, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+
+  useEffect(() => {
+    fetchMapReportData();
+  }, [fmrProjects, fetchMapReportData]);
 
   useEffect(() => {
     setFmrProjectCurrentPage(1);
@@ -1214,12 +1369,22 @@ export default function Dashboard() {
     };
 
     try {
-      const { error } = await supabase.from('fmr_projects').insert([fmrPayload]);
+      const { data: inserted, error } = await supabase.from('fmr_projects').insert([fmrPayload]).select('id').single();
       if (error) throw error;
+      await upsertProjectRoute(
+        inserted?.id,
+        startLat,
+        startLng,
+        endLat,
+        endLng,
+        newProjectRouteWaypoints
+      );
       await fetchFmrProjects();
+      await fetchProjectRoutes();
       setShowAddModal(false);
       setFormData(emptyForm);
       setNewProjectContractorId('');
+      setNewProjectRouteWaypoints([]);
       showNotification('FMR project created successfully!');
     } catch (err) {
       console.error('Failed to create project:', err.message);
@@ -1315,8 +1480,45 @@ export default function Dashboard() {
     setFmrFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleNewProjectRoutePick = ({ lat, lng }) => {
+    if (newProjectRouteMode === 'start') {
+      setFormData((prev) => ({ ...prev, startLatitude: lat.toFixed(6), startLongitude: lng.toFixed(6) }));
+      return;
+    }
+    if (newProjectRouteMode === 'end') {
+      setFormData((prev) => ({ ...prev, endLatitude: lat.toFixed(6), endLongitude: lng.toFixed(6) }));
+      return;
+    }
+    setNewProjectRouteWaypoints((prev) => [...prev, { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) }]);
+  };
+
+  const handleFmrRoutePick = ({ lat, lng }) => {
+    if (fmrRouteMode === 'start') {
+      setFmrFormData((prev) => ({ ...prev, start_latitude: lat.toFixed(6), start_longitude: lng.toFixed(6) }));
+      return;
+    }
+    if (fmrRouteMode === 'end') {
+      setFmrFormData((prev) => ({ ...prev, end_latitude: lat.toFixed(6), end_longitude: lng.toFixed(6) }));
+      return;
+    }
+    setFmrRouteWaypoints((prev) => [...prev, { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) }]);
+  };
+
   const openFmrEditModal = (project) => {
     setSelectedFmrProject(project);
+    const route = routeByProjectId[project.id] || null;
+    const waypointsRaw = route?.route_points || route?.waypoints || route?.points || [];
+    const waypoints = Array.isArray(waypointsRaw)
+      ? waypointsRaw
+          .map((point) => {
+            const lat = Number(point?.lat ?? point?.latitude ?? point?.[0]);
+            const lng = Number(point?.lng ?? point?.longitude ?? point?.[1]);
+            return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+          })
+          .filter(Boolean)
+      : [];
+    setFmrRouteWaypoints(waypoints);
+
     setFmrFormData({
       project_name: project.project_name || '',
       status: normalizeFmrStatus(project.status) || 'Proposed',
@@ -1364,10 +1566,22 @@ export default function Dashboard() {
     try {
       const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
       if (error) throw error;
+
+      await upsertProjectRoute(
+        selectedFmrProject.id,
+        fmrFormData.start_latitude,
+        fmrFormData.start_longitude,
+        fmrFormData.end_latitude,
+        fmrFormData.end_longitude,
+        fmrRouteWaypoints
+      );
+
       await fetchFmrProjects();
+      await fetchProjectRoutes();
       setShowFmrEditModal(false);
       setSelectedFmrProject(null);
       setFmrFormData(emptyFmrForm);
+      setFmrRouteWaypoints([]);
       showNotification('FMR project updated successfully!');
     } catch (err) {
       console.error('Failed to update FMR project:', err.message);
@@ -1389,6 +1603,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleSaveAdminMapProgress = async () => {
+    if (!adminMapProgressEdit?.id) return;
+    const nextProgress = Number(adminMapProgressEdit.accomplishment);
+    if (!Number.isFinite(nextProgress) || nextProgress < 0 || nextProgress > 100) {
+      showNotification('Progress must be between 0 and 100.', 'error');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('fmr_projects')
+        .update({ accomplishment: nextProgress })
+        .eq('id', adminMapProgressEdit.id);
+      if (error) throw error;
+
+      await fetchFmrProjects();
+      setAdminMapProgressEdit(null);
+      showNotification('Project progress updated successfully.');
+    } catch (err) {
+      showNotification(`Failed to update progress: ${err.message}`, 'error');
+    }
+  };
+
   // Format currency
   const formatCurrency = (amount) => {
     if (!amount) return '₱0';
@@ -1397,6 +1634,38 @@ export default function Dashboard() {
     }
     return `₱${amount.toLocaleString()}`;
   };
+
+  const newProjectRoutePreview = useMemo(() => {
+    const points = [];
+    const sLat = parseCoordinate(formData.startLatitude);
+    const sLng = parseCoordinate(formData.startLongitude);
+    const eLat = parseCoordinate(formData.endLatitude);
+    const eLng = parseCoordinate(formData.endLongitude);
+    if (!Number.isNaN(sLat) && !Number.isNaN(sLng)) points.push([sLat, sLng]);
+    newProjectRouteWaypoints.forEach((point) => {
+      const lat = Number(point.lat);
+      const lng = Number(point.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) points.push([lat, lng]);
+    });
+    if (!Number.isNaN(eLat) && !Number.isNaN(eLng)) points.push([eLat, eLng]);
+    return points;
+  }, [formData.startLatitude, formData.startLongitude, formData.endLatitude, formData.endLongitude, newProjectRouteWaypoints]);
+
+  const fmrRoutePreview = useMemo(() => {
+    const points = [];
+    const sLat = Number(fmrFormData.start_latitude);
+    const sLng = Number(fmrFormData.start_longitude);
+    const eLat = Number(fmrFormData.end_latitude);
+    const eLng = Number(fmrFormData.end_longitude);
+    if (Number.isFinite(sLat) && Number.isFinite(sLng)) points.push([sLat, sLng]);
+    fmrRouteWaypoints.forEach((point) => {
+      const lat = Number(point.lat);
+      const lng = Number(point.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) points.push([lat, lng]);
+    });
+    if (Number.isFinite(eLat) && Number.isFinite(eLng)) points.push([eLat, eLng]);
+    return points;
+  }, [fmrFormData.start_latitude, fmrFormData.start_longitude, fmrFormData.end_latitude, fmrFormData.end_longitude, fmrRouteWaypoints]);
 
   const navItems = [
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -1599,6 +1868,8 @@ export default function Dashboard() {
               <button
                 onClick={() => {
                   setFormData({ ...emptyForm, projectCode: '' });
+                  setNewProjectRouteWaypoints([]);
+                  setNewProjectRouteMode('waypoint');
                   setShowAddModal(true);
                 }}
                 className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm flex items-center gap-2.5 transition-all duration-200 shadow-lg shadow-teal-500/25 hover:shadow-xl hover:shadow-teal-500/30"
@@ -2335,10 +2606,22 @@ export default function Dashboard() {
               const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
               const matchesStatus = adminMapStatusFilter === 'All' || normalizeFmrStatus(p.status) === adminMapStatusFilter;
               const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
-              return matchesSearch && matchesStatus && matchesYear;
+              const matchesMunicipality = adminMapMunicipalityFilter === 'All' || (p.municipality || '') === adminMapMunicipalityFilter;
+              const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
+              return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesOverdue;
             });
-            const mapMappable = mapFiltered.filter(p => p.start_latitude && p.start_longitude);
+            const mapEntities = mapFiltered.map((project) => {
+              const route = buildRoutePoints(project, routeByProjectId[project.id]);
+              return {
+                project,
+                route,
+                hasFallbackPin: !route.hasPolyline && Boolean(project.start_latitude && project.start_longitude),
+              };
+            });
+            const mapMappable = mapEntities.filter((entity) => entity.route.hasPolyline || entity.hasFallbackPin);
+            const mapBoundsPoints = mapMappable.flatMap((entity) => entity.route.points);
             const mapYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
+            const mapMunicipalityOptions = [...new Set(fmrProjects.map((p) => p.municipality).filter(Boolean))].sort();
             const mapStats = {
               total: mapFiltered.length,
               mapped: mapMappable.length,
@@ -2363,6 +2646,21 @@ export default function Dashboard() {
                     <option value="All">All Years</option>
                     {mapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
                   </select>
+                  <select value={adminMapMunicipalityFilter} onChange={e => setAdminMapMunicipalityFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                    <option value="All">All Municipalities</option>
+                    {mapMunicipalityOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <button
+                    onClick={() => setAdminMapShowOverdueOnly((prev) => !prev)}
+                    className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                      adminMapShowOverdueOnly
+                        ? 'bg-red-600 border-red-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Show Overdue Only
+                  </button>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {['All', 'Completed', 'On-Going', 'Proposed'].map(s => (
                       <button key={s} onClick={() => setAdminMapStatusFilter(s)}
@@ -2379,7 +2677,7 @@ export default function Dashboard() {
 
                 {/* Stats row */}
                 <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-                  <span>{mapStats.mapped} pins on map</span>
+                  <span>{mapStats.mapped} projects on map</span>
                   <span className="text-slate-300">|</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
@@ -2387,7 +2685,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Map */}
-                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '500px' }}>
+                <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '500px' }}>
                   {fmrLoading ? (
                     <div className="h-full flex items-center justify-center bg-slate-50">
                       <div className="text-center">
@@ -2401,57 +2699,149 @@ export default function Dashboard() {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <AdminFitBounds projects={mapMappable} />
-                      {mapMappable.map(project => {
-                        const color = getFmrStatusColor(project.status);
+                      <AdminFitBounds points={mapBoundsPoints} />
+                      <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
+                      {mapMappable.map(({ project, route, hasFallbackPin }) => {
+                        const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
+                        const progress = Number(project.accomplishment || 0);
+                        const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
+                        const reportCount = reportCountByProjectId[project.id] || 0;
+
                         return (
-                          <CircleMarker
-                            key={project.id}
-                            center={[project.start_latitude, project.start_longitude]}
-                            radius={isSelected ? 10 : 7}
-                            pathOptions={{
-                              fillColor: color.fill,
-                              color: isSelected ? '#000' : color.stroke,
-                              weight: isSelected ? 3 : 2,
-                              opacity: 1,
-                              fillOpacity: 0.85,
-                            }}
-                            eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
-                          >
-                            <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                              <span style={{ fontWeight: 600, fontSize: '12px' }}>{project.project_name}</span>
-                              <br />
-                              <span style={{ fontSize: '11px', color: '#6b7280' }}>{normalizeFmrStatus(project.status)} &middot; {project.municipality || 'N/A'}</span>
-                            </Tooltip>
-                            <Popup maxWidth={320}>
-                              <div className="p-1">
-                                <h3 className="font-semibold text-slate-900 text-sm leading-snug mb-2">{project.project_name}</h3>
-                                <div className="space-y-1.5 text-xs text-slate-600">
-                                  <p><span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                                    normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  }`}>{normalizeFmrStatus(project.status)}</span></p>
-                                  {project.municipality && <p>&#128205; {project.municipality}, {project.province || 'Iloilo'}</p>}
-                                  {project.year_funded && <p>&#128197; FY {project.year_funded}</p>}
-                                  {project.project_length_km > 0 && <p>&#128207; {project.project_length_km} km</p>}
-                                  {project.date_completed && <p className="text-emerald-600">&#9989; Completed: {project.date_completed}</p>}
-                                  {project.start_latitude && project.end_latitude && (
-                                    <a href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude},${project.end_longitude}`}
-                                      target="_blank" rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 mt-1 text-teal-600 hover:text-teal-700 font-medium">
-                                      View route on Google Maps &#8599;
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            </Popup>
-                          </CircleMarker>
+                          <div key={project.id}>
+                            {route.hasPolyline && (
+                              <>
+                                <Polyline positions={route.points} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }} />
+                                <Polyline
+                                  positions={route.points}
+                                  pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
+                                  eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
+                                >
+                                  <Tooltip sticky>
+                                    {project.project_name} - {normalizeFmrStatus(project.status)}
+                                  </Tooltip>
+                                  <Popup maxWidth={380}>
+                                    <div className="space-y-3 min-w-[280px]">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
+                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                          normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                                          normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                          'bg-sky-100 text-sky-700'
+                                        }`}>{normalizeFmrStatus(project.status)}</span>
+                                      </div>
+
+                                      <div>
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                                          <span>Progress</span>
+                                          <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                        </div>
+                                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                          <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
+                                        </div>
+                                      </div>
+
+                                      <div className="text-xs text-slate-600 space-y-1">
+                                        <p>{project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
+                                        <p>FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                        {targetChip && (
+                                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${targetChip.className}`}>
+                                            {targetChip.text}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          onClick={() => {
+                                            setActiveTab('public-reports');
+                                            setPublicReportProjectFilter(project.project_name || '');
+                                          }}
+                                          className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
+                                        >
+                                          {reportCount} public reports
+                                        </button>
+                                        <a
+                                          href={`/projects/${project.id}`}
+                                          className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white hover:bg-slate-800"
+                                        >
+                                          View Details
+                                        </a>
+                                        <button
+                                          onClick={() => setAdminMapProgressEdit({ id: project.id, project_name: project.project_name, accomplishment: progress })}
+                                          className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                        >
+                                          Update Progress
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </Popup>
+                                </Polyline>
+
+                                {route.startPoint && (
+                                  <CircleMarker
+                                    center={route.startPoint}
+                                    radius={8}
+                                    pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
+                                  >
+                                    <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
+                                  </CircleMarker>
+                                )}
+
+                                {route.endPoint && (
+                                  <Marker
+                                    position={route.endPoint}
+                                    icon={L.divIcon({
+                                      className: 'route-end-marker-admin',
+                                      html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
+                                      iconSize: [16, 16],
+                                      iconAnchor: [8, 8],
+                                    })}
+                                  />
+                                )}
+                              </>
+                            )}
+
+                            {hasFallbackPin && (
+                              <CircleMarker
+                                center={[project.start_latitude, project.start_longitude]}
+                                radius={isSelected ? 10 : 7}
+                                pathOptions={{ fillColor: theme.line, color: theme.stroke, weight: isSelected ? 3 : 2, fillOpacity: 0.9 }}
+                                eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
+                              >
+                                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>⚠️ Route data missing</Tooltip>
+                              </CircleMarker>
+                            )}
+                          </div>
                         );
                       })}
                     </MapContainer>
                   )}
+
+                  <div className="absolute bottom-4 left-4 z-[500]">
+                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[220px]">
+                      <p className="font-semibold text-slate-900">Map Legend</p>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500" /> Completed</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500" /> On-Going</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500" /> Proposed</div>
+                      </div>
+                      <div className="pt-1 border-t border-slate-200 space-y-1">
+                        <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-full bg-green-500 text-white items-center justify-center text-[10px] font-bold">S</span> Start</div>
+                        <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-sm bg-red-500 text-white items-center justify-center text-[10px] font-bold">E</span> End</div>
+                      </div>
+                      <label className="pt-1 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={adminMapShowHeatmap}
+                          onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Report Heatmap
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Selected project detail */}
@@ -4480,7 +4870,7 @@ export default function Dashboard() {
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Road Project</h2>
                 <p className="text-sm text-slate-500 mt-1">Create a new farm-to-market road project</p>
               </div>
-              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -4533,6 +4923,105 @@ export default function Dashboard() {
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">End Longitude *</label>
                   <input type="text" inputMode="decimal" name="endLongitude" value={formData.endLongitude} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="123.891000 or 123.891000E" />
+                </div>
+                <div className="md:col-span-2 border border-slate-200 rounded-2xl p-4 bg-slate-50/40 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Project Route</h3>
+                      <p className="text-xs text-slate-500">Use map click modes to set Start, End, and intermediate waypoints.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['start', 'Set Start'],
+                        ['end', 'Set End'],
+                        ['waypoint', 'Add Waypoint'],
+                      ].map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setNewProjectRouteMode(mode)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${newProjectRouteMode === mode ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setNewProjectRouteWaypoints([])}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200">
+                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <RouteEditorMapClick onPickPoint={handleNewProjectRoutePick} />
+                      {newProjectRoutePreview.length >= 2 && (
+                        <>
+                          <Polyline positions={newProjectRoutePreview} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
+                          <Polyline positions={newProjectRoutePreview} pathOptions={{ color: '#0d9488', weight: 5, opacity: 0.95 }} />
+                        </>
+                      )}
+                      {newProjectRoutePreview[0] && (
+                        <CircleMarker center={newProjectRoutePreview[0]} radius={7} pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }} />
+                      )}
+                      {newProjectRoutePreview.length > 1 && (
+                        <Marker
+                          position={newProjectRoutePreview[newProjectRoutePreview.length - 1]}
+                          icon={L.divIcon({
+                            className: 'add-route-end',
+                            html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;"></div>',
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8],
+                          })}
+                        />
+                      )}
+                    </MapContainer>
+                  </div>
+
+                  {newProjectRouteWaypoints.length > 0 && (
+                    <div className="space-y-2">
+                      {newProjectRouteWaypoints.map((point, idx) => (
+                        <div key={`new-waypoint-${idx}`} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                          <input
+                            type="number"
+                            step="any"
+                            value={point.lat}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setNewProjectRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lat: value } : p));
+                            }}
+                            className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                            placeholder="Latitude"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={point.lng}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setNewProjectRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lng: value } : p));
+                            }}
+                            className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                            placeholder="Longitude"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setNewProjectRouteWaypoints((prev) => prev.filter((_, i) => i !== idx))}
+                            className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-semibold border border-red-200 hover:bg-red-100"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km) *</label>
@@ -4618,7 +5107,7 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
               <button type="submit" onClick={handleAddProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Create Project</button>
             </div>
           </div>
@@ -4816,6 +5305,46 @@ export default function Dashboard() {
         </div>
       )}
 
+      {adminMapProgressEdit && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="px-6 py-5 border-b border-slate-200/60 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Update Progress</h3>
+                <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">{adminMapProgressEdit.project_name}</p>
+              </div>
+              <button onClick={() => setAdminMapProgressEdit(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Accomplishment (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={adminMapProgressEdit.accomplishment}
+                  onChange={(e) => setAdminMapProgressEdit((prev) => ({ ...prev, accomplishment: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button onClick={() => setAdminMapProgressEdit(null)} className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button onClick={handleSaveAdminMapProgress} className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium">
+                  Save Progress
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FMR Edit Modal */}
       {showFmrEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -4887,6 +5416,105 @@ export default function Dashboard() {
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">End Longitude</label>
                   <input type="number" step="any" name="end_longitude" value={fmrFormData.end_longitude} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div className="md:col-span-2 border border-slate-200 rounded-2xl p-4 bg-slate-50/40 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Project Route</h3>
+                      <p className="text-xs text-slate-500">Set route start/end and add waypoints directly on the map.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['start', 'Set Start'],
+                        ['end', 'Set End'],
+                        ['waypoint', 'Add Waypoint'],
+                      ].map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setFmrRouteMode(mode)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${fmrRouteMode === mode ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setFmrRouteWaypoints([])}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200">
+                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <RouteEditorMapClick onPickPoint={handleFmrRoutePick} />
+                      {fmrRoutePreview.length >= 2 && (
+                        <>
+                          <Polyline positions={fmrRoutePreview} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
+                          <Polyline positions={fmrRoutePreview} pathOptions={{ color: '#0d9488', weight: 5, opacity: 0.95 }} />
+                        </>
+                      )}
+                      {fmrRoutePreview[0] && (
+                        <CircleMarker center={fmrRoutePreview[0]} radius={7} pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }} />
+                      )}
+                      {fmrRoutePreview.length > 1 && (
+                        <Marker
+                          position={fmrRoutePreview[fmrRoutePreview.length - 1]}
+                          icon={L.divIcon({
+                            className: 'edit-route-end',
+                            html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;"></div>',
+                            iconSize: [16, 16],
+                            iconAnchor: [8, 8],
+                          })}
+                        />
+                      )}
+                    </MapContainer>
+                  </div>
+
+                  {fmrRouteWaypoints.length > 0 && (
+                    <div className="space-y-2">
+                      {fmrRouteWaypoints.map((point, idx) => (
+                        <div key={`edit-waypoint-${idx}`} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                          <input
+                            type="number"
+                            step="any"
+                            value={point.lat}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setFmrRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lat: value } : p));
+                            }}
+                            className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                            placeholder="Latitude"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={point.lng}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setFmrRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lng: value } : p));
+                            }}
+                            className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                            placeholder="Longitude"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setFmrRouteWaypoints((prev) => prev.filter((_, i) => i !== idx))}
+                            className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-semibold border border-red-200 hover:bg-red-100"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Date Completed</label>

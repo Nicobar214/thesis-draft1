@@ -4,7 +4,7 @@
  * Uses the same light zinc/emerald palette as UserDashboard.
  */
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PublicReportForm from '../components/PublicReportForm';
 
@@ -102,11 +102,12 @@ const categoryColor = {
 
 // ════════════════════════════════════════════════════════════
 export default function PublicReportsPage() {
+  const [searchParams] = useSearchParams();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('search') || searchParams.get('project') || '');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -140,6 +141,11 @@ export default function PublicReportsPage() {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('project') || '';
+    setSearch(q);
+  }, [searchParams]);
 
   /* ── Derived location options ── */
   const allMunicipalities = useMemo(() => [...new Set(reports.map(r => r.municipality).filter(Boolean))].sort(), [reports]);

@@ -1,6 +1,17 @@
 ﻿import { useState, useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Circle, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import { MapContainer, TileLayer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
+import {
+  buildRoutePoints,
+  boundsFromPoints,
+  fetchRoadAlignedPolyline,
+  getProjectBarangay,
+  getRouteStatusTheme,
+  getTargetDateChip,
+  isOverdueProject,
+  normalizeRouteStatus,
+} from '../lib/mapRouteUtils';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -9,22 +20,13 @@ import 'leaflet/dist/leaflet.css';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Normalize status for consistent filtering â”€â”€â”€ */
 function normalizeStatus(s) {
-  if (!s) return '';
-  const lower = s.toLowerCase().replace(/[-\s]/g, '');
-  if (lower === 'ongoing') return 'On-Going';
-  if (lower === 'completed') return 'Completed';
-  if (lower === 'proposed') return 'Proposed';
-  return s;
+  return normalizeRouteStatus(s);
 }
 
 /* â”€â”€â”€ Status color helpers â”€â”€â”€ */
 function getStatusColor(status) {
-  switch (normalizeStatus(status)) {
-    case 'Completed': return { fill: '#10b981', stroke: '#059669', bg: 'bg-emerald-500' };
-    case 'On-Going':  return { fill: '#f59e0b', stroke: '#d97706', bg: 'bg-amber-500' };
-    case 'Proposed':  return { fill: '#3b82f6', stroke: '#2563eb', bg: 'bg-blue-500' };
-    default:          return { fill: '#6b7280', stroke: '#4b5563', bg: 'bg-slate-500' };
-  }
+  const theme = getRouteStatusTheme(status);
+  return { fill: theme.line, stroke: theme.stroke, bg: 'bg-slate-500' };
 }
 
 function getStatusBadge(status) {
@@ -72,27 +74,22 @@ function fmtDistance(m) {
   return `~${(m / 1000).toFixed(1)}km`;
 }
 /* â”€â”€â”€ Map bounds fitter â”€â”€â”€ */
-function FitBounds({ projects }) {
+function FitBounds({ points }) {
   const map = useMap();
 
   useEffect(() => {
-    if (projects.length === 0) return;
-    const lats = projects.map(p => p.start_latitude).filter(Boolean);
-    const lngs = projects.map(p => p.start_longitude).filter(Boolean);
-    if (lats.length === 0) return;
-
-    const bounds = [
-      [Math.min(...lats) - 0.05, Math.min(...lngs) - 0.05],
-      [Math.max(...lats) + 0.05, Math.max(...lngs) + 0.05],
-    ];
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }, [projects, map]);
+    if (!points || points.length === 0) return;
+    const bounds = boundsFromPoints(points);
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [30, 30] });
+    }
+  }, [points, map]);
 
   return null;
 }
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['All', 'Completed', 'On-Going', 'Proposed'];
+const statusFilters = ['On-Going', 'Proposed', 'Completed', 'All'];
 
 /* â”€â”€â”€ Year options from data â”€â”€â”€ */
 function getYearOptions(projects) {
@@ -110,8 +107,13 @@ export default function UserMapView() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
+  const [municipalityFilter, setMunicipalityFilter] = useState('All');
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [routeByProjectId, setRouteByProjectId] = useState({});
+  const [reportCountByProjectId, setReportCountByProjectId] = useState({});
+  const [snappedRouteByProjectId, setSnappedRouteByProjectId] = useState({});
 
   // Geofencing state
   const [userLocation, setUserLocation] = useState(null); // { lat, lng, accuracy }
@@ -142,9 +144,14 @@ export default function UserMapView() {
   // Fetch data
   useEffect(() => {
     fetchProjects();
+    fetchProjectRoutes();
+    fetchProjectReportCounts();
+
     const channel = supabase
       .channel('map-view-fmr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchProjects)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, fetchProjectRoutes)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchProjectReportCounts)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
@@ -169,6 +176,56 @@ export default function UserMapView() {
     }
   }
 
+  async function fetchProjectRoutes() {
+    try {
+      const { data, error } = await supabase.from('project_routes').select('*');
+      if (error) {
+        // Keep map functional when project_routes does not exist yet in a deployment.
+        setRouteByProjectId({});
+        return;
+      }
+
+      const next = {};
+      (data || []).forEach((route) => {
+        if (!route?.project_id) return;
+        next[route.project_id] = route;
+      });
+      setRouteByProjectId(next);
+    } catch {
+      setRouteByProjectId({});
+    }
+  }
+
+  async function fetchProjectReportCounts() {
+    try {
+      const { data, error } = await supabase
+        .from('public_reports')
+        .select('project_id, project_name');
+
+      if (error) return;
+
+      const counts = {};
+      const byName = {};
+      projects.forEach((p) => {
+        const name = String(p.project_name || '').trim().toLowerCase();
+        if (name) byName[name] = p.id;
+      });
+
+      (data || []).forEach((row) => {
+        let key = row.project_id;
+        if (!key && row.project_name) {
+          key = byName[String(row.project_name).trim().toLowerCase()] || null;
+        }
+        if (!key) return;
+        counts[key] = (counts[key] || 0) + 1;
+      });
+
+      setReportCountByProjectId(counts);
+    } catch {
+      setReportCountByProjectId({});
+    }
+  }
+
   // Filter logic
   const filtered = useMemo(() => {
     return projects.filter(p => {
@@ -180,25 +237,81 @@ export default function UserMapView() {
       const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
       const matchesStatus = statusFilter === 'All' || normalizeStatus(p.status) === statusFilter;
       const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
-      return matchesSearch && matchesStatus && matchesYear;
+      const matchesMunicipality = municipalityFilter === 'All' || (p.municipality || '') === municipalityFilter;
+      const matchesOverdue = !showOverdueOnly || isOverdueProject(p);
+      return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesOverdue;
     });
-  }, [projects, search, statusFilter, yearFilter]);
+  }, [projects, search, statusFilter, yearFilter, municipalityFilter, showOverdueOnly]);
 
-  // Only show projects that have valid coordinates on the map
+  const mapEntities = useMemo(() => {
+    return filtered.map((project) => {
+      const route = buildRoutePoints(project, routeByProjectId[project.id]);
+      return {
+        project,
+        route,
+        hasFallbackPin: !route.hasPolyline && Boolean(project.start_latitude && project.start_longitude),
+      };
+    });
+  }, [filtered, routeByProjectId]);
+
   const mappable = useMemo(() => {
-    return filtered.filter(p => p.start_latitude && p.start_longitude);
-  }, [filtered]);
+    return mapEntities.filter((entity) => entity.route.hasPolyline || entity.hasFallbackPin);
+  }, [mapEntities]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function snapRoutes() {
+      const candidates = mappable.filter((entity) => entity.route.hasPolyline).slice(0, 50);
+      const snappedEntries = await Promise.all(
+        candidates.map(async (entity) => {
+          const snapped = await fetchRoadAlignedPolyline(entity.route.points);
+          return [entity.project.id, snapped];
+        })
+      );
+
+      if (cancelled) return;
+      setSnappedRouteByProjectId((prev) => {
+        const next = { ...prev };
+        snappedEntries.forEach(([projectId, points]) => {
+          next[projectId] = points;
+        });
+        return next;
+      });
+    }
+
+    snapRoutes();
+    return () => {
+      cancelled = true;
+    };
+  }, [mappable]);
+
+  const mapBoundsPoints = useMemo(() => {
+    const pts = [];
+    mappable.forEach((entity) => {
+      const routePoints = snappedRouteByProjectId[entity.project.id] || entity.route.points;
+      pts.push(...routePoints);
+      if (entity.hasFallbackPin && entity.project.start_latitude && entity.project.start_longitude) {
+        pts.push([Number(entity.project.start_latitude), Number(entity.project.start_longitude)]);
+      }
+    });
+    return pts;
+  }, [mappable, snappedRouteByProjectId]);
 
   // Recompute nearby projects whenever location or mappable projects change
   useEffect(() => {
     if (!userLocation) return;
     const ids = new Set(
       mappable
-        .filter((p) => isProjectNearby(userLocation.lat, userLocation.lng, p))
-        .map((p) => p.id)
+        .filter((entity) => isProjectNearby(userLocation.lat, userLocation.lng, entity.project))
+        .map((entity) => entity.project.id)
     );
     setNearbyProjects(ids);
   }, [userLocation, mappable]);
+
+  useEffect(() => {
+    fetchProjectReportCounts();
+  }, [projects]);
 
   // Stats
   const stats = useMemo(() => ({
@@ -211,6 +324,10 @@ export default function UserMapView() {
   }), [filtered, mappable]);
 
   const yearOptions = useMemo(() => getYearOptions(projects), [projects]);
+  const municipalityOptions = useMemo(
+    () => [...new Set(projects.map((p) => p.municipality).filter(Boolean))].sort(),
+    [projects]
+  );
 
   // Iloilo center
   const center = [10.89, 122.45];
@@ -278,6 +395,28 @@ export default function UserMapView() {
             ))}
           </select>
 
+          <select
+            value={municipalityFilter}
+            onChange={e => setMunicipalityFilter(e.target.value)}
+            className="px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+          >
+            <option value="All">All Municipalities</option>
+            {municipalityOptions.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setShowOverdueOnly((prev) => !prev)}
+            className={`px-3.5 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap border transition-all ${
+              showOverdueOnly
+                ? 'bg-red-600 border-red-600 text-white'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Show Overdue Only
+          </button>
+
           {/* Status pills */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {statusFilters.map(s => (
@@ -311,7 +450,7 @@ export default function UserMapView() {
 
         {/* Stats row */}
         <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-          <span>{stats.mapped} pins on map</span>
+          <span>{stats.mapped} projects on map</span>
           <span className="text-slate-300">|</span>
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-500 inline-block" /> {stats.completed} Completed</span>
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-500 inline-block" /> {stats.ongoing} On-Going</span>
@@ -323,7 +462,7 @@ export default function UserMapView() {
         {/* Main content: Map + sidebar */}
         <div className="flex gap-4 relative z-10">
           {/* Map */}
-          <div className="flex-1 bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: '450px' }}>
+          <div className="flex-1 relative bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: '450px' }}>
             {loading ? (
               <div className="h-full flex items-center justify-center bg-slate-50">
                 <div className="text-center">
@@ -343,11 +482,13 @@ export default function UserMapView() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <FitBounds projects={mappable} />
+                <FitBounds points={mapBoundsPoints} />
 
                 {/* User location: geofence zone + pulsing marker */}
                 {userLocation && (() => {
-                  const nearbyList = mappable.filter(p => nearbyProjects.has(p.id));
+                  const nearbyList = mappable
+                    .filter(entity => nearbyProjects.has(entity.project.id))
+                    .map(entity => entity.project);
                   const smallestRadius = nearbyList.length > 0
                     ? Math.min(...nearbyList.map(geofenceRadius))
                     : 500;
@@ -381,84 +522,154 @@ export default function UserMapView() {
                   );
                 })()}
 
-                {mappable.map(project => {
+                {mappable.map(({ project, route, hasFallbackPin }) => {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
                   const isNearby = nearbyProjects.has(project.id);
+                  const normalizedStatus = normalizeStatus(project.status);
+                  const progress = Number(project.accomplishment || 0);
+                  const reportsCount = reportCountByProjectId[project.id] || 0;
+                  const targetChip = getTargetDateChip(project.target_completion_date, normalizedStatus === 'Completed');
+                  const routePoints = snappedRouteByProjectId[project.id] || route.points;
+                  const routeStart = routePoints[0] || route.startPoint;
+                  const routeEnd = routePoints[routePoints.length - 1] || route.endPoint;
 
                   return (
-                    <CircleMarker
-                      key={project.id}
-                      center={[project.start_latitude, project.start_longitude]}
-                      radius={isSelected ? 12 : isNearby ? 10 : 7}
-                      pathOptions={{
-                        fillColor: isNearby ? '#0d9488' : color.fill,
-                        color: isSelected ? '#000' : isNearby ? '#0f766e' : color.stroke,
-                        weight: isSelected ? 3 : isNearby ? 2.5 : 2,
-                        opacity: 1,
-                        fillOpacity: isNearby ? 0.95 : 0.85,
-                      }}
-                      eventHandlers={{
-                        click: () => {
-                          setSelectedProject(project);
-                          setShowSidebar(true);
-                        },
-                      }}
-                    >
-                      <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                        <span style={{ fontWeight: 600, fontSize: '12px' }}>{project.project_name}</span>
-                        <br />
-                        <span style={{ fontSize: '11px', color: '#6b7280' }}>{normalizeStatus(project.status)} Â· {project.municipality || 'N/A'}</span>
-                      </Tooltip>
-                      <Popup maxWidth={320} className="custom-popup">
-                        <div className="p-1">
-                          <h3 className="font-semibold text-slate-900 text-sm leading-snug mb-2">
-                            {project.project_name}
-                          </h3>
-                          <div className="space-y-1.5 text-xs text-slate-600">
-                            <p className="flex items-center gap-1.5">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(project.status)}`}>
-                                {project.status}
-                              </span>
-                            </p>
-                            {project.municipality && (
-                              <p className="flex items-center gap-1">
-                                ðŸ“ {project.municipality}, {project.province || 'Iloilo'}
-                              </p>
-                            )}
-                            {project.year_funded && (
-                              <p className="flex items-center gap-1">
-                                ðŸ“… FY {project.year_funded}
-                              </p>
-                            )}
-                            {project.project_length_km > 0 && (
-                              <p className="flex items-center gap-1">
-                                ðŸ“ {project.project_length_km} km
-                              </p>
-                            )}
-                            {project.date_completed && (
-                              <p className="flex items-center gap-1 text-teal-600">
-                                âœ… Completed: {project.date_completed}
-                              </p>
-                            )}
-                            {project.start_latitude && project.end_latitude && (
-                              <a
-                                href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude},${project.end_longitude}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 mt-1 text-teal-600 hover:text-teal-700 font-medium"
-                              >
-                                View route on Google Maps â†—
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </Popup>
-                    </CircleMarker>
+                    <div key={project.id}>
+                      {route.hasPolyline && (
+                        <>
+                          <Polyline
+                            positions={routePoints}
+                            pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
+                          />
+                          <Polyline
+                            positions={routePoints}
+                            pathOptions={{ color: isNearby ? '#0d9488' : color.fill, weight: 5, opacity: 0.95 }}
+                            eventHandlers={{
+                              click: () => {
+                                setSelectedProject(project);
+                                setShowSidebar(true);
+                              },
+                            }}
+                          >
+                            <Tooltip sticky direction="top" offset={[0, -12]} opacity={0.97}>
+                              <div className="min-w-[180px]">
+                                <p className="text-xs font-semibold text-slate-900">{project.project_name}</p>
+                                <p className="text-[11px] text-slate-600 mt-0.5">{normalizedStatus} • {project.municipality || 'N/A'}</p>
+                              </div>
+                            </Tooltip>
+                            <Popup maxWidth={360} className="custom-popup">
+                              <div className="space-y-3 min-w-[260px]">
+                                <div className="flex items-start justify-between gap-3">
+                                  <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
+                                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusBadge(project.status)}`}>
+                                    {normalizedStatus}
+                                  </span>
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                                    <span>Progress</span>
+                                    <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                  </div>
+                                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
+                                  </div>
+                                </div>
+
+                                <div className="text-xs text-slate-600 space-y-1">
+                                  <p>{project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
+                                  <p>FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                  {targetChip && (
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${targetChip.className}`}>
+                                      {targetChip.text}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <a
+                                    href={`/reports?search=${encodeURIComponent(project.project_name || '')}`}
+                                    className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
+                                  >
+                                    {reportsCount} public reports
+                                  </a>
+                                  <a
+                                    href={`/projects/${project.id}`}
+                                    className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white hover:bg-slate-800"
+                                  >
+                                    View Details
+                                  </a>
+                                </div>
+                              </div>
+                            </Popup>
+                          </Polyline>
+
+                          {routeStart && (
+                            <CircleMarker
+                              center={routeStart}
+                              radius={8}
+                              pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
+                            >
+                              <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
+                            </CircleMarker>
+                          )}
+
+                          {routeEnd && (
+                            <Marker
+                              position={routeEnd}
+                              icon={L.divIcon({
+                                className: 'route-end-marker',
+                                html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
+                                iconSize: [16, 16],
+                                iconAnchor: [8, 8],
+                              })}
+                            />
+                          )}
+                        </>
+                      )}
+
+                      {hasFallbackPin && (
+                        <CircleMarker
+                          center={[project.start_latitude, project.start_longitude]}
+                          radius={isSelected ? 11 : 8}
+                          pathOptions={{
+                            fillColor: color.fill,
+                            color: color.stroke,
+                            weight: isSelected ? 3 : 2,
+                            fillOpacity: 0.9,
+                          }}
+                          eventHandlers={{
+                            click: () => {
+                              setSelectedProject(project);
+                              setShowSidebar(true);
+                            },
+                          }}
+                        >
+                          <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>⚠️ Route data missing</Tooltip>
+                        </CircleMarker>
+                      )}
+                    </div>
                   );
                 })}
               </MapContainer>
             )}
+
+            <div className="pointer-events-none absolute bottom-4 left-4 z-[500]">
+              <div className="pointer-events-auto bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2">
+                <p className="font-semibold text-slate-900">Map Legend</p>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500" /> Completed</div>
+                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500" /> On-Going</div>
+                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500" /> Proposed</div>
+                </div>
+                <div className="pt-1 border-t border-slate-200 space-y-1">
+                  <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-full bg-green-500 text-white items-center justify-center text-[10px] font-bold">S</span> Start</div>
+                  <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-sm bg-red-500 text-white items-center justify-center text-[10px] font-bold">E</span> End</div>
+                  <div className="flex items-center gap-2"><span>⚠️</span> Pin fallback (no route)</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Sidebar project list (desktop always visible, mobile toggled) */}
