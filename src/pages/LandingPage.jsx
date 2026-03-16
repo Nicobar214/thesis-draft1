@@ -318,6 +318,8 @@ export default function LandingPage() {
                 <li><Link to="/signin" className="hover:text-white transition">User Sign In</Link></li>
                 <li><Link to="/admin" className="hover:text-white transition">Admin Login</Link></li>
                 <li><Link to="/field-engineer/login" className="hover:text-white transition">Field Engineer Login</Link></li>
+                <li><Link to="/contractor/login" className="hover:text-white transition">Contractor Login</Link></li>
+                <li><Link to="/lgu/login" className="hover:text-white transition">LGU Login</Link></li>
               </ul>
             </div>
 

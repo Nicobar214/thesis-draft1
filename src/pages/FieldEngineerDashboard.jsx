@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 
 /* ─── Engineer Status Helpers ─── */
 const engineerStatusStyles = {
@@ -397,6 +398,15 @@ export default function FieldEngineerDashboard() {
                 <ReportStatusBadge status={selectedReport.status} />
               </div>
 
+              <FieldEngineerWorkflowPanel
+                report={selectedReport}
+                currentUser={user}
+                onSaved={(message, type = 'success') => {
+                  showNotification(message, type);
+                  fetchReports();
+                }}
+              />
+
               {/* Photo */}
               {selectedReport.photo_url && (
                 <div>
@@ -467,24 +477,6 @@ export default function FieldEngineerDashboard() {
               <div>
                 <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Issue Description</p>
                 <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedReport.description}</p>
-              </div>
-
-              {/* Engineer Notes */}
-              <div>
-                <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Your Field Notes</p>
-                <textarea
-                  value={engineerNotes}
-                  onChange={e => setEngineerNotes(e.target.value)}
-                  placeholder="Add your inspection notes, observations, or findings here..."
-                  rows={4}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none transition"
-                />
-                <button
-                  onClick={() => saveNotes(selectedReport.id)}
-                  className="mt-2 px-4 py-2 text-xs font-medium text-teal-700 border border-teal-200 rounded-lg hover:bg-teal-50 transition-colors"
-                >
-                  Save Notes
-                </button>
               </div>
 
               {/* Status Update Actions */}

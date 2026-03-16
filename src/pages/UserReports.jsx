@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import Icons from '../components/Icons';
 import PublicReportForm from '../components/PublicReportForm';
 import UserLayout from '../components/UserLayout';
+import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
+import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Status badge â”€â”€â”€ */
@@ -50,6 +52,10 @@ function UserReports() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [selectedResolutionSummary, setSelectedResolutionSummary] = useState('');
+  const [selectedLguDecision, setSelectedLguDecision] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [userId, setUserId] = useState(null);
   const [showReportForm, setShowReportForm] = useState(false);
 
@@ -114,6 +120,74 @@ function UserReports() {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [selected, showReportForm]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadSelectedContext = async () => {
+      if (!selected?.id) {
+        if (alive) {
+          setSelectedResolutionSummary('');
+          setSelectedLguDecision(null);
+          setSelectedProject(null);
+          setSelectedProjectRoute(null);
+        }
+        return;
+      }
+
+      try {
+        const [resolutionRes, lguDecisionRes, projectRes] = await Promise.all([
+          supabase
+            .from('public_report_resolutions')
+            .select('summary, resolved_at')
+            .eq('report_id', selected.id)
+            .order('resolved_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('public_report_lgu_decisions')
+            .select('decision, remarks, created_at')
+            .eq('report_id', selected.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          selected.project_id
+            ? supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle()
+            : supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name || '')).limit(1).maybeSingle(),
+        ]);
+
+        if (!alive) return;
+
+        const projectRow = projectRes?.data || null;
+        setSelectedResolutionSummary(resolutionRes?.data?.summary || '');
+        setSelectedLguDecision(lguDecisionRes?.data || null);
+        setSelectedProject(projectRow);
+
+        if (projectRow?.id) {
+          const { data: routeRow } = await supabase
+            .from('project_routes')
+            .select('*')
+            .eq('project_id', projectRow.id)
+            .maybeSingle();
+          if (alive) setSelectedProjectRoute(routeRow || null);
+        } else {
+          setSelectedProjectRoute(null);
+        }
+      } catch {
+        if (!alive) return;
+        setSelectedResolutionSummary('');
+        setSelectedLguDecision(null);
+        setSelectedProject(null);
+        setSelectedProjectRoute(null);
+      }
+    };
+
+    loadSelectedContext();
+
+    return () => {
+      alive = false;
+    };
+  }, [selected]);
 
   /* â”€â”€ Filter â”€â”€ */
   const filtered = useMemo(() => {
@@ -315,6 +389,26 @@ function UserReports() {
             </div>
 
             <div className="p-6 space-y-5">
+              {selected?.status === 'resolved' && selectedLguDecision?.decision === 'endorsed' && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
+                  Endorsed by LGU
+                </div>
+              )}
+
+              <CitizenReportTimeline
+                report={selected}
+                resolutionSummary={selectedResolutionSummary}
+              />
+
+              <PublicReportRouteMapPanel
+                project={selectedProject}
+                routeRecord={selectedProjectRoute}
+                reportLatitude={selected.latitude}
+                reportLongitude={selected.longitude}
+                heightClass="h-64"
+                title="Project Route Context"
+              />
+
               <div>
                 <h3 className="text-base font-semibold text-slate-900 mb-1">Issue Description</h3>
                 <p className="text-sm text-slate-600 leading-relaxed">{selected.description}</p>

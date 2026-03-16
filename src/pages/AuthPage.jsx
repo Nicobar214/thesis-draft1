@@ -3,6 +3,22 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 
+function normalizeRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function resolveEffectiveRole(profileRole, metadataRole) {
+  const normalizedProfileRole = normalizeRole(profileRole);
+  const normalizedMetadataRole = normalizeRole(metadataRole);
+
+  if (normalizedProfileRole && normalizedProfileRole !== "user") return normalizedProfileRole;
+  if (normalizedMetadataRole && normalizedMetadataRole !== "user") return normalizedMetadataRole;
+  return normalizedProfileRole || normalizedMetadataRole || "user";
+}
+
 export default function AuthPage({ mode = "signin" }) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -78,9 +94,23 @@ export default function AuthPage({ mode = "signin" }) {
       setSuccess(`${mode === "signin" ? "Signed in" : "Account created"} successfully!`);
       setEmail("");
       setPassword("");
-      
-      // User side always goes to user dashboard
-      setTimeout(() => navigate("/user"), 1500);
+
+      let targetRoute = '/user';
+      if (mode === 'signin' && user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        const role = resolveEffectiveRole(profile?.role, user.user_metadata?.role);
+        if (role === 'admin') targetRoute = '/dashboard';
+        else if (role === 'field_engineer') targetRoute = '/field-engineer';
+        else if (role === 'contractor') targetRoute = '/contractor';
+        else if (role === 'lgu') targetRoute = '/lgu';
+      }
+
+      setTimeout(() => navigate(targetRoute), 1500);
     } catch (err) {
       setError(err.message || "An error occurred. Please try again.");
     } finally {

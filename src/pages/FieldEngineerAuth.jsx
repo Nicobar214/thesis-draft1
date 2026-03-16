@@ -3,6 +3,13 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 
+function normalizeRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
 export default function FieldEngineerAuth() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -43,10 +50,10 @@ export default function FieldEngineerAuth() {
       }
 
       if (profile) {
-        userRole = profile.role;
+        userRole = normalizeRole(profile.role);
       } else {
         // No profile row found or query failed – use auth metadata as fallback
-        userRole = data.user.user_metadata?.role || null;
+        userRole = normalizeRole(data.user.user_metadata?.role || null);
         console.log("Using user_metadata role:", userRole);
 
         // Try to create the missing profile row in the background

@@ -89,7 +89,7 @@ function FitBounds({ points }) {
 }
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['On-Going', 'Proposed', 'Completed', 'All'];
+const statusFilters = ['On-Going', 'Pending', 'Completed', 'All'];
 
 /* â”€â”€â”€ Year options from data â”€â”€â”€ */
 function getYearOptions(projects) {
@@ -105,7 +105,7 @@ export default function UserMapView() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('On-Going');
   const [yearFilter, setYearFilter] = useState('All');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
@@ -235,7 +235,9 @@ export default function UserMapView() {
       const muni = (p.municipality || '').toLowerCase();
 
       const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-      const matchesStatus = statusFilter === 'All' || normalizeStatus(p.status) === statusFilter;
+      const normalizedStatus = normalizeStatus(p.status);
+      const matchesStatus = statusFilter === 'All' ||
+        (statusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === statusFilter);
       const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
       const matchesMunicipality = municipalityFilter === 'All' || (p.municipality || '') === municipalityFilter;
       const matchesOverdue = !showOverdueOnly || isOverdueProject(p);

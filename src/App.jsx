@@ -18,6 +18,8 @@ import ContractorAuth from "./pages/ContractorAuth";
 import ContractorDashboard from "./pages/ContractorDashboard";
 import ContractorProjects from "./pages/ContractorProjects";
 import ContractorReports from "./pages/ContractorReports";
+import LguAuth from "./pages/LguAuth";
+import LguDashboard from "./pages/LguDashboard";
 import PWAInstallBanner from "./components/PWAInstallBanner";
 
 function App() {
@@ -92,13 +94,17 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* ===== ADMIN SIDE (no landing page, direct login) ===== */}
-        <Route path="/admin" element={<AdminAuthPage />} />
-        <Route path="/dashboard" element={
-          <ProtectedRoute requiredRole="admin">
-            <Dashboard />
+        {/* ===== LGU SIDE ===== */}
+        <Route path="/lgu/login" element={<LguAuth />} />
+        <Route path="/lgu" element={
+          <ProtectedRoute requiredRole="lgu">
+            <LguDashboard />
           </ProtectedRoute>
         } />
+
+        {/* ===== ADMIN SIDE (no landing page, direct login) ===== */}
+        <Route path="/admin" element={<AdminAuthPage />} />
+        <Route path="/dashboard" element={<Dashboard />} />
       </Routes>
     </Router>
   );

@@ -2,6 +2,22 @@ import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
+function normalizeRole(role) {
+  return String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+function resolveEffectiveRole(profileRole, metadataRole) {
+  const normalizedProfileRole = normalizeRole(profileRole);
+  const normalizedMetadataRole = normalizeRole(metadataRole);
+
+  if (normalizedProfileRole && normalizedProfileRole !== 'user') return normalizedProfileRole;
+  if (normalizedMetadataRole && normalizedMetadataRole !== 'user') return normalizedMetadataRole;
+  return normalizedProfileRole || normalizedMetadataRole || 'user';
+}
+
 /**
  * ProtectedRoute - Guards routes based on authentication and role
  * @param {string} requiredRole - 'admin' or 'user' (optional, if not set any authenticated user can access)
@@ -33,15 +49,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
           if (profileError) {
             console.warn('Profile query error, using metadata fallback:', profileError);
-            setRole(currentUser.user_metadata?.role || 'user');
+            setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
           } else if (profile) {
-            setRole(profile.role || 'user');
+            setRole(resolveEffectiveRole(profile.role, currentUser.user_metadata?.role));
           } else {
             // No profile row – use metadata role
-            setRole(currentUser.user_metadata?.role || 'user');
+            setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
           }
         } catch {
-          setRole(currentUser.user_metadata?.role || 'user');
+          setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
         }
       } catch (err) {
         console.error('Auth check error:', err);
@@ -70,7 +86,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
   }
 
   // Role check: if a specific role is required and user doesn't have it
-  if (requiredRole && role !== requiredRole) {
+  if (requiredRole && role !== normalizeRole(requiredRole)) {
     // Admin trying to access other pages → send to dashboard
     if (role === 'admin') {
       return <Navigate to="/dashboard" replace />;
@@ -82,6 +98,10 @@ export default function ProtectedRoute({ children, requiredRole }) {
     // Contractor trying to access other pages → send to contractor dashboard
     if (role === 'contractor') {
       return <Navigate to="/contractor" replace />;
+    }
+    // LGU trying to access other pages → send to LGU dashboard
+    if (role === 'lgu') {
+      return <Navigate to="/lgu" replace />;
     }
     // User trying to access admin/engineer pages → send to user dashboard
     return <Navigate to="/user" replace />;

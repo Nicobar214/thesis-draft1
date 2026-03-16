@@ -33,6 +33,9 @@ import {
   Legend,
 } from 'recharts';
 import 'leaflet/dist/leaflet.css';
+import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
+import AdminWorkflowControls from '../components/publicReports/AdminWorkflowControls';
+import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -113,6 +116,117 @@ function parseCoordinate(value) {
   const dir = match[2] || '';
   if (dir === 'S' || dir === 'W') num = -Math.abs(num);
   return num;
+}
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getDistanceBand(distanceMeters) {
+  if (!Number.isFinite(distanceMeters)) {
+    return { tone: 'text-slate-600 bg-slate-100 border-slate-200', label: 'Distance unavailable', emoji: '⚪' };
+  }
+
+  if (distanceMeters <= 50) {
+    return { tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'within 50m', emoji: '🟢' };
+  }
+
+  if (distanceMeters <= 200) {
+    return { tone: 'text-amber-700 bg-amber-50 border-amber-200', label: '50-200m', emoji: '🟡' };
+  }
+
+  return { tone: 'text-red-700 bg-red-50 border-red-200', label: 'over 200m', emoji: '🔴' };
+}
+
+function formatDistance(distanceMeters) {
+  if (!Number.isFinite(distanceMeters)) return 'N/A';
+  if (distanceMeters < 1000) return `${Math.round(distanceMeters)}m`;
+  return `${(distanceMeters / 1000).toFixed(2)}km`;
+}
+
+function calculateCredibilityScore({ accuracy, distanceMeters, isVerifiedUser, photoGpsMatch }) {
+  let accuracyScore = 5;
+  if (Number.isFinite(accuracy)) {
+    if (accuracy <= 10) accuracyScore = 30;
+    else if (accuracy <= 25) accuracyScore = 26;
+    else if (accuracy <= 50) accuracyScore = 22;
+    else if (accuracy <= 100) accuracyScore = 14;
+    else accuracyScore = 8;
+  }
+
+  let distanceScore = 8;
+  if (Number.isFinite(distanceMeters)) {
+    if (distanceMeters <= 50) distanceScore = 35;
+    else if (distanceMeters <= 200) distanceScore = 22;
+    else distanceScore = 10;
+  }
+
+  const identityScore = isVerifiedUser ? 20 : 10;
+  const photoMatchScore = photoGpsMatch ? 15 : 3;
+
+  const score = Math.max(0, Math.min(100, accuracyScore + distanceScore + identityScore + photoMatchScore));
+  let label = 'Low';
+  let tone = 'bg-red-500';
+
+  if (score >= 70) {
+    label = 'High';
+    tone = 'bg-emerald-500';
+  } else if (score >= 40) {
+    label = 'Medium';
+    tone = 'bg-amber-500';
+  }
+
+  return { score, label, tone };
+}
+
+function PublicReportLocationComparisonMap({ officialPoint, reportPoint }) {
+  const points = [];
+  if (officialPoint) points.push([officialPoint.lat, officialPoint.lng]);
+  if (reportPoint) points.push([reportPoint.lat, reportPoint.lng]);
+
+  if (points.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+        Location comparison is unavailable because one or both points are missing.
+      </div>
+    );
+  }
+
+  const center = points.length === 2
+    ? [(points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2]
+    : points[0];
+
+  return (
+    <div className="h-64 overflow-hidden rounded-xl border border-slate-200">
+      <MapContainer center={center} zoom={15} style={{ height: '100%', width: '100%' }} scrollWheelZoom className="z-0">
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {officialPoint && (
+          <CircleMarker center={[officialPoint.lat, officialPoint.lng]} radius={8} pathOptions={{ color: '#059669', weight: 2, fillOpacity: 0.9 }}>
+            <Popup>Official project location</Popup>
+          </CircleMarker>
+        )}
+        {reportPoint && (
+          <CircleMarker center={[reportPoint.lat, reportPoint.lng]} radius={8} pathOptions={{ color: '#dc2626', weight: 2, fillOpacity: 0.9 }}>
+            <Popup>Citizen photo/report location</Popup>
+          </CircleMarker>
+        )}
+        {officialPoint && reportPoint && (
+          <Polyline positions={[[officialPoint.lat, officialPoint.lng], [reportPoint.lat, reportPoint.lng]]} pathOptions={{ color: '#334155', dashArray: '6 6', weight: 2 }} />
+        )}
+        <AdminFitBounds points={points} />
+      </MapContainer>
+    </div>
+  );
 }
 
 /* ─── Map bounds fitter for admin ─── */
@@ -236,6 +350,14 @@ export default function Dashboard() {
   const [publicReportsAnalyticsOpen, setPublicReportsAnalyticsOpen] = useState(true);
   const [publicReportsTrendView, setPublicReportsTrendView] = useState('weekly');
   const [publicReportsLocationSort, setPublicReportsLocationSort] = useState({ key: 'total', direction: 'desc' });
+  const [publicReportActivityLogs, setPublicReportActivityLogs] = useState([]);
+  const [publicReportActivityLoading, setPublicReportActivityLoading] = useState(false);
+  const [similarNearbyReports, setSimilarNearbyReports] = useState([]);
+  const [similarReportsLoading, setSimilarReportsLoading] = useState(false);
+  const [adminPrivateNote, setAdminPrivateNote] = useState('');
+  const [adminPrivateNoteSaving, setAdminPrivateNoteSaving] = useState(false);
+  const [adminUserId, setAdminUserId] = useState('');
+  const [selectedReportLguDecision, setSelectedReportLguDecision] = useState(null);
 
   // Field engineer state
   const [fieldEngineers, setFieldEngineers] = useState([]);
@@ -246,7 +368,7 @@ export default function Dashboard() {
   const [fmrProjects, setFmrProjects] = useState([]);
   const [fmrLoading, setFmrLoading] = useState(false);
   const [adminMapSearch, setAdminMapSearch] = useState('');
-  const [adminMapStatusFilter, setAdminMapStatusFilter] = useState('All');
+  const [adminMapStatusFilter, setAdminMapStatusFilter] = useState('On-Going');
   const [adminMapYearFilter, setAdminMapYearFilter] = useState('All');
   const [adminMapMunicipalityFilter, setAdminMapMunicipalityFilter] = useState('All');
   const [adminMapShowOverdueOnly, setAdminMapShowOverdueOnly] = useState(false);
@@ -287,6 +409,7 @@ export default function Dashboard() {
 
   // Contractor state
   const [contractors, setContractors] = useState([]);
+  const [lgus, setLgus] = useState([]);
   const [progressUpdates, setProgressUpdates] = useState([]);
   const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
   const [progressUpdatesLastSyncedAt, setProgressUpdatesLastSyncedAt] = useState(null);
@@ -387,6 +510,59 @@ export default function Dashboard() {
         .order('created_at', { ascending: false });
       if (fetchErr) throw fetchErr;
       setPublicReports(data || []);
+
+      // Notify LGU for critical unresolved threshold (>=5) per project per day.
+      const unresolvedCounts = {};
+      (data || []).forEach((row) => {
+        if (row.status === 'resolved') return;
+        const key = row.project_id || row.project_name || `${row.municipality || 'unknown'}::${row.barangay || 'unknown'}`;
+        unresolvedCounts[key] = unresolvedCounts[key] || {
+          project_key: key,
+          municipality: row.municipality || null,
+          label: row.project_name || row.project_id || 'project',
+          count: 0,
+        };
+        unresolvedCounts[key].count += 1;
+      });
+
+      const criticalEntries = Object.values(unresolvedCounts).filter((entry) => entry.count >= 5);
+      await Promise.all(
+        criticalEntries.map(async (entry) => {
+          try {
+            const { error: logErr } = await supabase
+              .from('lgu_project_alert_logs')
+              .insert({
+                project_key: entry.project_key,
+                municipality: entry.municipality,
+                threshold_value: 5,
+                alert_date: new Date().toISOString().slice(0, 10),
+              });
+
+            if (logErr) return;
+
+            const { data: lguUsers } = await supabase
+              .from('profiles')
+              .select('id, municipality')
+              .eq('role', 'lgu');
+
+            const recipients = (lguUsers || []).filter((u) => !entry.municipality || !u.municipality || u.municipality === entry.municipality);
+            if (recipients.length === 0) return;
+
+            await supabase.from('notifications').insert(
+              recipients.map((u) => ({
+                user_id: u.id,
+                type: 'lgu_threshold_alert',
+                title: 'Critical unresolved reports',
+                message: `${entry.label} has ${entry.count} unresolved reports in your jurisdiction.`,
+                is_read: false,
+                created_at: new Date().toISOString(),
+              }))
+            );
+          } catch {
+            // Non-blocking alert path.
+          }
+        })
+      );
     } catch (err) {
       console.error('Error fetching public reports:', err.message);
     } finally {
@@ -513,6 +689,17 @@ export default function Dashboard() {
       }
       await fetchPublicReports();
       showNotification(`Report assigned to ${engineer.full_name || engineer.email}`);
+      const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
+      await addPublicReportActivity(
+        reportId,
+        'engineer_assigned',
+        `Assigned field engineer: ${engineer.full_name || engineer.email || 'Engineer'}`,
+        { engineer_id: engineerId }
+      );
+      if (report) {
+        await createReportNotification(report, 'public_report_assignment', 'A field engineer has been assigned to your report.');
+        await createEngineerAssignmentNotification(reportId, engineerId, report.project_name || report.municipality || 'Public report');
+      }
       setSelectedEngineerId('');
     } catch (err) {
       console.error('Failed to assign engineer:', err.message);
@@ -538,6 +725,11 @@ export default function Dashboard() {
       if (error) throw error;
       await fetchPublicReports();
       showNotification('Engineer unassigned from report');
+      const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
+      await addPublicReportActivity(reportId, 'engineer_unassigned', 'Unassigned field engineer from report');
+      if (report) {
+        await createReportNotification(report, 'public_report_assignment', 'The assigned field engineer for your report was removed.');
+      }
     } catch (err) {
       console.error('Failed to unassign engineer:', err.message);
       showNotification(`Failed to unassign: ${err.message}`, 'error');
@@ -666,6 +858,21 @@ export default function Dashboard() {
       setContractors(data || []);
     } catch (err) {
       console.error('Error fetching contractors:', err.message);
+    }
+  }, []);
+
+  // Fetch LGU profiles
+  const fetchLgus = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, phone, municipality, created_at')
+        .eq('role', 'lgu')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setLgus(data || []);
+    } catch (err) {
+      console.error('Error fetching LGUs:', err.message);
     }
   }, []);
 
@@ -802,6 +1009,19 @@ export default function Dashboard() {
       await fetchPublicReports();
       await fetchFeedbacks();
       showNotification(`Public report marked as ${newStatus}`);
+      await addPublicReportActivity(reportId, 'status_updated', `Status changed to ${newStatus}`);
+      if (report) {
+        await createReportNotification(report, 'public_report_status', `Your public report status is now ${newStatus}.`);
+        if (newStatus === 'resolved') {
+          await createLguNotification(
+            report.municipality,
+            'lgu_resolution_summary',
+            'Project report resolved',
+            `Report ${String(report.id).slice(0, 8)} in ${report.municipality || 'your jurisdiction'} has been marked resolved.`,
+            report.id
+          );
+        }
+      }
     } catch (err) {
       console.error('Failed to update public report:', err.message);
       showNotification(`Failed to update: ${err.message}`, 'error');
@@ -906,6 +1126,7 @@ export default function Dashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setAdminUserId(user.id || '');
       setAdminIdentity({
         full_name: user.user_metadata?.full_name || user.user_metadata?.name || 'Administrator',
         email: user.email || '',
@@ -915,6 +1136,286 @@ export default function Dashboard() {
       console.error('Failed to fetch admin identity:', err);
     }
   }, []);
+
+  const loadPublicReportActivity = useCallback(async (reportId) => {
+    if (!reportId) {
+      setPublicReportActivityLogs([]);
+      return;
+    }
+
+    setPublicReportActivityLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('public_report_activity_logs')
+        .select('*')
+        .eq('report_id', reportId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        setPublicReportActivityLogs([]);
+        return;
+      }
+
+      setPublicReportActivityLogs(data || []);
+    } catch {
+      setPublicReportActivityLogs([]);
+    } finally {
+      setPublicReportActivityLoading(false);
+    }
+  }, []);
+
+  const addPublicReportActivity = useCallback(async (reportId, actionType, description, metadata = {}) => {
+    if (!reportId) return;
+
+    try {
+      await supabase
+        .from('public_report_activity_logs')
+        .insert({
+          report_id: reportId,
+          action_type: actionType,
+          description,
+          metadata,
+          actor_name: adminIdentity.full_name || 'Administrator',
+          actor_email: adminIdentity.email || null,
+          created_at: new Date().toISOString(),
+        });
+      await loadPublicReportActivity(reportId);
+    } catch {
+      // Keep existing admin actions working even when the log table is missing.
+    }
+  }, [adminIdentity.email, adminIdentity.full_name, loadPublicReportActivity]);
+
+  const createReportNotification = useCallback(async (report, eventType, message) => {
+    if (!report?.user_id) return;
+
+    try {
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: report.user_id,
+          type: eventType,
+          title: 'Public report update',
+          message,
+          report_id: report.id,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+    } catch {
+      // Notification table may not exist in some deployments.
+    }
+  }, []);
+
+  const createEngineerAssignmentNotification = useCallback(async (reportId, engineerId, contextLabel) => {
+    if (!reportId || !engineerId) return;
+
+    try {
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: engineerId,
+          type: 'field_engineer_assignment',
+          title: 'New field assignment',
+          message: `You have been assigned to inspect ${contextLabel || 'a public report'}.`,
+          report_id: reportId,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+    } catch {
+      // Notification table may not exist in some deployments.
+    }
+  }, []);
+
+  const createLguNotification = useCallback(async (municipality, type, title, message, reportId = null) => {
+    try {
+      const { data: lguUsers } = await supabase
+        .from('profiles')
+        .select('id, municipality')
+        .eq('role', 'lgu');
+
+      const recipients = (lguUsers || []).filter((user) => !municipality || !user.municipality || user.municipality === municipality);
+      if (recipients.length === 0) return;
+
+      await supabase.from('notifications').insert(
+        recipients.map((recipient) => ({
+          user_id: recipient.id,
+          type,
+          title,
+          message,
+          report_id: reportId,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }))
+      );
+    } catch {
+      // Keep admin workflows running if LGU notification path is unavailable.
+    }
+  }, []);
+
+  const loadLatestLguDecision = useCallback(async (reportId) => {
+    if (!reportId) {
+      setSelectedReportLguDecision(null);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('public_report_lgu_decisions')
+        .select('*')
+        .eq('report_id', reportId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setSelectedReportLguDecision(data || null);
+    } catch {
+      setSelectedReportLguDecision(null);
+    }
+  }, []);
+
+  const escalateReportToLgu = useCallback(async (report, reason) => {
+    if (!report?.id || !reason) return;
+
+    const payload = {
+      report_id: report.id,
+      municipality: report.municipality || null,
+      barangay: report.barangay || null,
+      project_id: report.project_id || null,
+      project_name: report.project_name || null,
+      escalation_reason: reason,
+      escalation_status: 'for_action',
+      escalated_by: adminUserId || null,
+      escalated_by_name: adminIdentity.full_name || 'Administrator',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('public_report_lgu_escalations').insert(payload);
+    if (error) throw error;
+
+    await addPublicReportActivity(report.id, 'escalated_to_lgu', `Escalated to LGU: ${reason}`);
+    await createLguNotification(
+      report.municipality,
+      'lgu_escalation',
+      'Report escalated for LGU action',
+      `Admin escalated report ${String(report.id).slice(0, 8)} for endorsement/review.`,
+      report.id
+    );
+  }, [adminIdentity.full_name, adminUserId, addPublicReportActivity, createLguNotification]);
+
+  const loadAdminPrivateNote = useCallback(async (reportId) => {
+    if (!reportId) {
+      setAdminPrivateNote('');
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('public_report_admin_notes')
+        .select('note')
+        .eq('report_id', reportId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        setAdminPrivateNote('');
+        return;
+      }
+
+      setAdminPrivateNote(data?.note || '');
+    } catch {
+      setAdminPrivateNote('');
+    }
+  }, []);
+
+  const saveAdminPrivateNote = useCallback(async () => {
+    if (!selectedPublicReport?.id || !adminUserId) return;
+
+    setAdminPrivateNoteSaving(true);
+    try {
+      const tag = `[${new Date().toLocaleString()}] ${adminIdentity.full_name || 'Administrator'}:`;
+      const taggedNote = `${tag}\n${adminPrivateNote}`.trim();
+      const payload = {
+        report_id: selectedPublicReport.id,
+        admin_user_id: adminUserId,
+        note: taggedNote,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('public_report_admin_notes')
+        .upsert(payload, { onConflict: 'report_id,admin_user_id' });
+
+      if (error) throw error;
+      showNotification('Private note saved', 'success');
+      await addPublicReportActivity(selectedPublicReport.id, 'admin_note', 'Updated internal admin notes');
+    } catch (err) {
+      showNotification(`Failed to save note: ${err.message}`, 'error');
+    } finally {
+      setAdminPrivateNoteSaving(false);
+    }
+  }, [selectedPublicReport, adminUserId, adminPrivateNote, addPublicReportActivity, adminIdentity.full_name]);
+
+  const loadSimilarNearbyReports = useCallback(async (report) => {
+    if (!report?.id || !Number.isFinite(Number(report.latitude)) || !Number.isFinite(Number(report.longitude))) {
+      setSimilarNearbyReports([]);
+      return;
+    }
+
+    setSimilarReportsLoading(true);
+    try {
+      let query = supabase
+        .from('public_reports')
+        .select('id, project_name, full_name, status, created_at, latitude, longitude')
+        .neq('id', report.id);
+
+      if (report.project_id) {
+        query = query.eq('project_id', report.project_id);
+      } else if (report.project_name) {
+        query = query.ilike('project_name', report.project_name);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
+      if (error) {
+        setSimilarNearbyReports([]);
+        return;
+      }
+
+      const reportLat = Number(report.latitude);
+      const reportLng = Number(report.longitude);
+      const nearby = (data || [])
+        .map((row) => {
+          const lat = Number(row.latitude);
+          const lng = Number(row.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          const distanceMeters = haversineMeters(reportLat, reportLng, lat, lng);
+          return distanceMeters <= 100 ? { ...row, distanceMeters } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+      setSimilarNearbyReports(nearby);
+    } catch {
+      setSimilarNearbyReports([]);
+    } finally {
+      setSimilarReportsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPublicReport?.id) {
+      setPublicReportActivityLogs([]);
+      setSimilarNearbyReports([]);
+      setAdminPrivateNote('');
+      setSelectedReportLguDecision(null);
+      return;
+    }
+
+    loadPublicReportActivity(selectedPublicReport.id);
+    loadAdminPrivateNote(selectedPublicReport.id);
+    loadSimilarNearbyReports(selectedPublicReport);
+    loadLatestLguDecision(selectedPublicReport.id);
+  }, [selectedPublicReport, loadPublicReportActivity, loadAdminPrivateNote, loadSimilarNearbyReports, loadLatestLguDecision]);
 
   useEffect(() => {
     fmrProjectsRef.current = fmrProjects;
@@ -931,6 +1432,7 @@ export default function Dashboard() {
       fetchMapReportData();
       fetchFieldEngineers();
       fetchContractors();
+      fetchLgus();
       fetchProgressUpdates();
     });
 
@@ -962,7 +1464,7 @@ export default function Dashboard() {
     // Real-time subscription for profiles (field engineers + contractors)
     const profilesChannel = supabase
       .channel('admin-profiles-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { fetchFieldEngineers(); fetchContractors(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { fetchFieldEngineers(); fetchContractors(); fetchLgus(); })
       .subscribe();
 
     // Real-time subscription for progress updates
@@ -979,7 +1481,7 @@ export default function Dashboard() {
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2366,26 +2868,26 @@ export default function Dashboard() {
               </div>
 
               {/* Filters Bar */}
-              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-5">
-                <div className="grid gap-4 xl:grid-cols-12">
+              <div className="bg-white border border-slate-200/70 rounded-3xl shadow-sm p-4 sm:p-5 lg:p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 lg:gap-4 items-end">
                   {/* Search */}
-                  <div className="relative xl:col-span-4">
-                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="relative md:col-span-2 xl:col-span-4">
+                    <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                     </svg>
                     <input type="text" value={fmrProjectSearch} onChange={e => setFmrProjectSearch(e.target.value)} placeholder="Search by name, location, municipality..."
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all" />
+                      className="h-12 w-full pl-11 pr-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm transition-all" />
                   </div>
                   {/* Year Filter */}
                   <select value={fmrProjectYearFilter} onChange={e => setFmrProjectYearFilter(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none md:col-span-1 xl:col-span-2">
+                    className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2">
                     <option value="All">All Years</option>
                     {fmrYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
                   </select>
                   <select
                     value={fmrProjectSortBy}
                     onChange={(e) => setFmrProjectSortBy(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none md:col-span-1 xl:col-span-2"
+                    className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
                   >
                     <option value="latest">Sort: Latest</option>
                     <option value="name-asc">Sort: Name A-Z</option>
@@ -2393,8 +2895,8 @@ export default function Dashboard() {
                     <option value="progress-desc">Sort: Progress High-Low</option>
                     <option value="progress-asc">Sort: Progress Low-High</option>
                   </select>
-                  <div className="w-full md:col-span-1 xl:col-span-2">
-                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Start Date</label>
+                  <div className="w-full xl:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
                     <input
                       type="date"
                       value={fmrProjectDateFrom}
@@ -2402,11 +2904,11 @@ export default function Dashboard() {
                       max={fmrProjectDateTo || undefined}
                       aria-label="Start date"
                       title="Start date"
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
                     />
                   </div>
-                  <div className="w-full md:col-span-1 xl:col-span-2">
-                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">End Date</label>
+                  <div className="w-full xl:col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
                     <input
                       type="date"
                       value={fmrProjectDateTo}
@@ -2414,39 +2916,44 @@ export default function Dashboard() {
                       min={fmrProjectDateFrom || undefined}
                       aria-label="End date"
                       title="End date"
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
                     />
                   </div>
-                  <button
-                    onClick={exportFilteredFmr}
-                    className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors md:col-span-2 xl:col-span-12 xl:w-auto xl:justify-self-end"
-                  >
-                    Export CSV
-                  </button>
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {['On-Going', 'Pending', 'Completed'].map(s => (
-                    <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                        fmrProjectStatusFilter === s
-                          ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm shadow-teal-500/25'
-                          : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-                      }`}>
-                      {s}
+                <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                  <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
+                    {['On-Going', 'Pending', 'Completed'].map(s => (
+                      <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
+                        className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
+                          fmrProjectStatusFilter === s
+                            ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
+                            : 'text-slate-600 hover:text-slate-800'
+                        }`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="lg:col-span-4 flex items-center justify-between lg:justify-end gap-4">
+                    {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
+                      <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
+                        className="text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors">
+                        Clear filters
+                      </button>
+                    )}
+                    <button
+                      onClick={exportFilteredFmr}
+                      className="h-12 px-5 rounded-2xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/25 transition-all"
+                    >
+                      Export CSV
                     </button>
-                  ))}
+                  </div>
                 </div>
                 {/* Results count */}
-                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <p className="text-sm text-slate-500">
-                    Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of {fmrProjects.length} projects
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-xs sm:text-sm text-slate-500 tracking-tight">
+                    Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of <span className="font-semibold text-slate-700">{fmrProjects.length}</span> projects
                   </p>
-                  {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
-                    <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
-                      className="text-sm text-teal-600 hover:text-teal-700 font-medium">
-                      Clear filters
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -2609,7 +3116,9 @@ export default function Dashboard() {
               const loc = (p.location || '').toLowerCase();
               const muni = (p.municipality || '').toLowerCase();
               const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-              const matchesStatus = adminMapStatusFilter === 'All' || normalizeFmrStatus(p.status) === adminMapStatusFilter;
+              const normalizedStatus = normalizeFmrStatus(p.status);
+              const matchesStatus = adminMapStatusFilter === 'All' ||
+                (adminMapStatusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === adminMapStatusFilter);
               const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
               const matchesMunicipality = adminMapMunicipalityFilter === 'All' || (p.municipality || '') === adminMapMunicipalityFilter;
               const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
@@ -2667,7 +3176,7 @@ export default function Dashboard() {
                     Show Overdue Only
                   </button>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {['All', 'Completed', 'On-Going', 'Proposed'].map(s => (
+                    {['On-Going', 'Pending', 'Completed', 'All'].map(s => (
                       <button key={s} onClick={() => setAdminMapStatusFilter(s)}
                         className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                           adminMapStatusFilter === s
@@ -3668,6 +4177,109 @@ export default function Dashboard() {
               return renderStatusPill(status, status?.charAt(0).toUpperCase() + status?.slice(1));
             };
 
+            const selectedReportProject = (() => {
+              if (!selectedPublicReport) return null;
+              if (selectedPublicReport.project_id) {
+                const byId = fmrProjects.find((p) => p.id === selectedPublicReport.project_id);
+                if (byId) return byId;
+              }
+
+              const reportName = String(selectedPublicReport.project_name || '').trim().toLowerCase();
+              if (!reportName) return null;
+              return fmrProjects.find((p) => String(p.project_name || '').trim().toLowerCase() === reportName) || null;
+            })();
+
+            const officialPoint = (() => {
+              if (!selectedReportProject) return null;
+              const route = routeByProjectId[selectedReportProject.id];
+              if (route && Number.isFinite(Number(route.start_latitude)) && Number.isFinite(Number(route.start_longitude))) {
+                const hasEnd = Number.isFinite(Number(route.end_latitude)) && Number.isFinite(Number(route.end_longitude));
+                if (hasEnd) {
+                  return {
+                    lat: (Number(route.start_latitude) + Number(route.end_latitude)) / 2,
+                    lng: (Number(route.start_longitude) + Number(route.end_longitude)) / 2,
+                  };
+                }
+
+                return {
+                  lat: Number(route.start_latitude),
+                  lng: Number(route.start_longitude),
+                };
+              }
+
+              const startLat = Number(selectedReportProject.start_latitude);
+              const startLng = Number(selectedReportProject.start_longitude);
+              if (Number.isFinite(startLat) && Number.isFinite(startLng)) {
+                return { lat: startLat, lng: startLng };
+              }
+              return null;
+            })();
+
+            const reportPoint = (() => {
+              if (!selectedPublicReport) return null;
+              const lat = Number(selectedPublicReport.latitude);
+              const lng = Number(selectedPublicReport.longitude);
+              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+              return { lat, lng };
+            })();
+
+            const photoPoint = (() => {
+              if (!selectedPublicReport) return null;
+              const lat = Number(selectedPublicReport.photo_latitude ?? selectedPublicReport.latitude);
+              const lng = Number(selectedPublicReport.photo_longitude ?? selectedPublicReport.longitude);
+              if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+              return { lat, lng };
+            })();
+
+            const photoGpsMatchesReport = (() => {
+              if (!reportPoint || !photoPoint) return false;
+              return haversineMeters(reportPoint.lat, reportPoint.lng, photoPoint.lat, photoPoint.lng) <= 20;
+            })();
+
+            const distanceFromProjectMeters = (() => {
+              if (!officialPoint || !reportPoint) return NaN;
+              return haversineMeters(officialPoint.lat, officialPoint.lng, reportPoint.lat, reportPoint.lng);
+            })();
+
+            const distanceBand = getDistanceBand(distanceFromProjectMeters);
+
+            const credibility = calculateCredibilityScore({
+              accuracy: Number(selectedPublicReport?.geo_accuracy),
+              distanceMeters: distanceFromProjectMeters,
+              isVerifiedUser: Boolean(selectedPublicReport?.user_id),
+              photoGpsMatch: photoGpsMatchesReport,
+            });
+
+            const timelineEntries = (() => {
+              const baseEntries = [];
+              if (selectedPublicReport?.created_at) {
+                baseEntries.push({
+                  id: `created-${selectedPublicReport.id}`,
+                  created_at: selectedPublicReport.created_at,
+                  description: 'Report submitted by citizen',
+                  actor_name: selectedPublicReport.full_name || 'Anonymous',
+                });
+              }
+
+              if (selectedPublicReport?.assigned_at && selectedPublicReport?.assigned_engineer_name) {
+                baseEntries.push({
+                  id: `assigned-${selectedPublicReport.id}`,
+                  created_at: selectedPublicReport.assigned_at,
+                  description: `Assigned field engineer: ${selectedPublicReport.assigned_engineer_name}`,
+                  actor_name: 'Admin action',
+                });
+              }
+
+              const dbEntries = (publicReportActivityLogs || []).map((entry) => ({
+                id: entry.id || `${entry.created_at}-${entry.description}`,
+                created_at: entry.created_at,
+                description: entry.description || entry.action_type || 'Activity recorded',
+                actor_name: entry.actor_name || 'Administrator',
+              }));
+
+              return [...baseEntries, ...dbEntries].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            })();
+
             const renderPublicReportItem = (rpt) => (
               <button key={rpt.id} onClick={() => setSelectedPublicReport(rpt)}
                 className="w-full text-left px-4 py-4 hover:bg-slate-50 transition-colors group">
@@ -4134,7 +4746,7 @@ export default function Dashboard() {
                 {/* Detail Modal */}
                 {selectedPublicReport && (
                   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedPublicReport(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-[95vw] lg:w-[75vw] max-w-6xl max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                       <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between">
                         <div>
                           <h3 className="text-lg font-bold text-slate-900">Public Report Detail</h3>
@@ -4152,15 +4764,114 @@ export default function Dashboard() {
                           <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
                             {selectedPublicReport.source || 'Anonymous'}
                           </span>
+                          <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${distanceBand.tone}`}>
+                            {distanceBand.emoji} {distanceBand.label}
+                          </span>
                         </div>
+
+                        {/* Credibility score */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Credibility Score</p>
+                            <span className="text-sm font-bold text-slate-800">{credibility.score}/100</span>
+                          </div>
+                          <div className="mt-2 h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${credibility.tone}`}
+                              style={{ width: `${credibility.score}%` }}
+                            />
+                          </div>
+                          <p className="mt-2 text-xs text-slate-600">{credibility.label}</p>
+                        </div>
+
+                        {/* Potential duplicates */}
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs text-amber-700 uppercase font-semibold tracking-wide">Duplicate Check (100m)</p>
+                              {similarReportsLoading ? (
+                                <p className="text-sm text-amber-700 mt-1">Scanning nearby reports...</p>
+                              ) : similarNearbyReports.length > 0 ? (
+                                <p className="text-sm text-amber-800 mt-1">{similarNearbyReports.length} nearby report(s) found in the same vicinity.</p>
+                              ) : (
+                                <p className="text-sm text-emerald-700 mt-1">No nearby potential duplicate reports detected.</p>
+                              )}
+                            </div>
+                          </div>
+                          {!similarReportsLoading && similarNearbyReports.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              {similarNearbyReports.slice(0, 5).map((similar) => (
+                                <button
+                                  key={similar.id}
+                                  onClick={() => {
+                                    const fullReport = publicReports.find((row) => row.id === similar.id);
+                                    if (fullReport) {
+                                      setSelectedPublicReport(fullReport);
+                                    }
+                                  }}
+                                  className="w-full text-left rounded-lg border border-amber-200 bg-white px-3 py-2 hover:bg-amber-50 transition"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-slate-800">{similar.project_name || 'Unlinked project'}</p>
+                                    <span className="text-xs font-medium text-amber-700">{formatDistance(similar.distanceMeters)}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    {similar.full_name || 'Anonymous'} • {new Date(similar.created_at).toLocaleString()}
+                                  </p>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <PublicReportRouteMapPanel
+                          project={selectedReportProject}
+                          routeRecord={selectedReportProject ? routeByProjectId[selectedReportProject.id] : null}
+                          reportLatitude={selectedPublicReport.latitude}
+                          reportLongitude={selectedPublicReport.longitude}
+                          heightClass="h-64 sm:h-72"
+                          title="Project Route Map"
+                        />
+
+                        <AdminWorkflowControls
+                          report={selectedPublicReport}
+                          adminIdentity={adminIdentity}
+                          onNotify={showNotification}
+                          onResolve={async () => {
+                            await updatePublicReportStatus(selectedPublicReport.id, 'resolved');
+                            setSelectedPublicReport(null);
+                          }}
+                        />
+
+                        <LguEscalationPanel
+                          report={selectedPublicReport}
+                          decision={selectedReportLguDecision}
+                          onEscalate={async (reason) => {
+                            try {
+                              await escalateReportToLgu(selectedPublicReport, reason);
+                              showNotification('Report escalated to LGU', 'success');
+                              await loadLatestLguDecision(selectedPublicReport.id);
+                            } catch (err) {
+                              showNotification(`Failed to escalate: ${err.message}`, 'error');
+                            }
+                          }}
+                        />
 
                         {/* Captured photo */}
                         {selectedPublicReport.photo_url && (
                           <div>
                             <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Site Photo</p>
-                            <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
-                              <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-56 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition" />
-                            </a>
+                            <div className="relative">
+                              <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
+                                <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-72 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition" />
+                              </a>
+                              <div className="absolute left-3 top-3 rounded-lg bg-black/65 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
+                                Geotag {photoPoint ? 'Verified' : 'Unavailable'}
+                              </div>
+                              <div className="absolute right-3 top-3 rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-800 border border-slate-200">
+                                {photoGpsMatchesReport ? 'Photo GPS matches report' : 'Photo GPS mismatch'}
+                              </div>
+                            </div>
                           </div>
                         )}
 
@@ -4206,7 +4917,25 @@ export default function Dashboard() {
                               <span><strong>Lat:</strong> {Number(selectedPublicReport.latitude).toFixed(6)}</span>
                               <span><strong>Lng:</strong> {Number(selectedPublicReport.longitude).toFixed(6)}</span>
                               {selectedPublicReport.geo_accuracy && <span><strong>Accuracy:</strong> ±{Math.round(selectedPublicReport.geo_accuracy)}m</span>}
+                              {officialPoint && <span><strong>Project Offset:</strong> {formatDistance(distanceFromProjectMeters)}</span>}
                             </div>
+                            {officialPoint && reportPoint && (
+                              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+                                  <p className="font-semibold">Official Project Point</p>
+                                  <p>{officialPoint.lat.toFixed(6)}, {officialPoint.lng.toFixed(6)}</p>
+                                </div>
+                                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-800">
+                                  <p className="font-semibold">Reported Point</p>
+                                  <p>{reportPoint.lat.toFixed(6)}, {reportPoint.lng.toFixed(6)}</p>
+                                </div>
+                              </div>
+                            )}
+                            {(officialPoint || reportPoint) && (
+                              <div className="mt-4 rounded-xl overflow-hidden border border-slate-200">
+                                <PublicReportLocationComparisonMap officialPoint={officialPoint} reportPoint={reportPoint} />
+                              </div>
+                            )}
                             {selectedPublicReport.latitude && selectedPublicReport.longitude && (
                               <a href={`https://www.google.com/maps?q=${selectedPublicReport.latitude},${selectedPublicReport.longitude}`} target="_blank" rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-teal-600 hover:text-teal-700 transition">
@@ -4221,6 +4950,54 @@ export default function Dashboard() {
                         <div>
                           <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Description</p>
                           <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedPublicReport.description}</p>
+                        </div>
+
+                        {/* Activity timeline */}
+                        <div className="pt-4 border-t border-slate-100">
+                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Activity Timeline</p>
+                          {publicReportActivityLoading ? (
+                            <p className="text-sm text-slate-500">Loading activity...</p>
+                          ) : timelineEntries.length === 0 ? (
+                            <p className="text-sm text-slate-500">No activity entries yet.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {timelineEntries.map((entry) => (
+                                <div key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="text-sm font-medium text-slate-800">{entry.description}</p>
+                                      <p className="text-xs text-slate-500 mt-0.5">{entry.actor_name || 'Administrator'}</p>
+                                    </div>
+                                    <p className="text-xs text-slate-500 whitespace-nowrap">{new Date(entry.created_at).toLocaleString()}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Internal notes */}
+                        <div className="pt-4 border-t border-slate-100">
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <p className="text-xs text-slate-400 uppercase font-semibold">Private Admin Notes</p>
+                            {!adminUserId && <span className="text-[11px] text-amber-700">Admin identity unavailable</span>}
+                          </div>
+                          <textarea
+                            value={adminPrivateNote}
+                            onChange={(e) => setAdminPrivateNote(e.target.value)}
+                            placeholder="Add internal context, verification findings, and follow-up reminders..."
+                            rows={4}
+                            className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                          />
+                          <div className="mt-3 flex justify-end">
+                            <button
+                              onClick={saveAdminPrivateNote}
+                              disabled={adminPrivateNoteSaving || !adminUserId}
+                              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
+                            >
+                              {adminPrivateNoteSaving ? 'Saving...' : 'Save Note'}
+                            </button>
+                          </div>
                         </div>
 
                         {/* Admin Actions */}
@@ -4850,6 +5627,185 @@ export default function Dashboard() {
                       </div>
                       <button type="submit" className="bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-amber-500/25">
                         Register Contractor
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* LGU Management */}
+                <div className="pt-8 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-lg text-slate-900">LGUs</h3>
+                    <button onClick={fetchLgus} className="px-3 py-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
+                      Refresh List
+                    </button>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-5">Manage LGU accounts. LGUs log in at <code className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-xs">/signin</code> and will be redirected to <code className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-xs">/lgu</code>.</p>
+
+                  {/* Existing LGU Users */}
+                  {lgus.length > 0 && (
+                    <div className="mb-6 space-y-3">
+                      {lgus.map((lgu) => (
+                        <div key={lgu.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
+                              {(lgu.full_name || lgu.email || 'L').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{lgu.full_name || '—'}</p>
+                              <p className="text-xs text-slate-500">
+                                {lgu.email}
+                                {lgu.phone ? ` · ${lgu.phone}` : ''}
+                                {lgu.municipality ? ` · ${lgu.municipality}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold">LGU</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add LGU Form */}
+                  <div className="bg-indigo-50/50 border border-indigo-200/60 rounded-xl p-5">
+                    <p className="text-sm font-semibold text-indigo-900 mb-4">Register New LGU</p>
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const fd = new FormData(e.target);
+                        const lguEmail = fd.get('lgu_email')?.toString().trim();
+                        const lguName = fd.get('lgu_name')?.toString().trim();
+                        const lguPhone = fd.get('lgu_phone')?.toString().trim();
+                        const lguMunicipality = fd.get('lgu_municipality')?.toString().trim();
+                        const lguPassword = fd.get('lgu_password')?.toString().trim();
+
+                        if (!lguEmail || !lguPassword) {
+                          showNotification('Email and password are required', 'error');
+                          return;
+                        }
+
+                        try {
+                          const { data: signUpData, error: signUpErr } = await supabaseAdmin.auth.signUp({
+                            email: lguEmail,
+                            password: lguPassword,
+                            options: {
+                              data: {
+                                role: 'lgu',
+                                full_name: lguName || '',
+                                municipality: lguMunicipality || '',
+                              },
+                              emailRedirectTo: `${window.location.origin}/signin`,
+                            },
+                          });
+
+                          if (signUpErr) {
+                            if (signUpErr.message?.toLowerCase().includes('rate') || signUpErr.status === 429) {
+                              showNotification('Email rate limit exceeded. Disable "Confirm email" in Supabase Auth settings, or wait and try again.', 'error');
+                              return;
+                            }
+                            throw signUpErr;
+                          }
+
+                          if (signUpData?.user?.identities?.length === 0) {
+                            showNotification('A user with this email already exists.', 'error');
+                            return;
+                          }
+
+                          if (signUpData?.user) {
+                            const baseProfile = {
+                              id: signUpData.user.id,
+                              email: lguEmail,
+                              full_name: lguName || '',
+                              phone: lguPhone || '',
+                              role: 'lgu',
+                            };
+
+                            const withMunicipality = lguMunicipality
+                              ? { ...baseProfile, municipality: lguMunicipality }
+                              : baseProfile;
+
+                            let profileCreated = false;
+
+                            // Try 1: SECURITY DEFINER RPC (bypasses RLS)
+                            const { error: rpcErr } = await supabase.rpc('create_lgu_profile', {
+                              user_id: signUpData.user.id,
+                              user_email: lguEmail,
+                              user_name: lguName || '',
+                              user_phone: lguPhone || '',
+                              user_municipality: lguMunicipality || null,
+                            });
+
+                            if (!rpcErr) {
+                              profileCreated = true;
+                            } else {
+                              console.warn('RPC create_lgu_profile failed:', rpcErr);
+
+                              // Try 2: direct insert
+                              const { error: insertErr } = await supabase.from('profiles').insert(withMunicipality);
+                              if (!insertErr) {
+                                profileCreated = true;
+                              } else {
+                                const insertMsg = String(insertErr?.message || '').toLowerCase();
+                                const retryPayload = insertMsg.includes('municipality') ? baseProfile : withMunicipality;
+
+                                // Try 3: upsert
+                                const { error: upsertErr } = await supabase
+                                  .from('profiles')
+                                  .upsert(retryPayload, { onConflict: 'id' });
+
+                                if (!upsertErr) {
+                                  profileCreated = true;
+                                } else {
+                                  console.error('Failed to create LGU profile:', upsertErr);
+                                }
+                              }
+                            }
+
+                            if (!profileCreated) {
+                              showNotification('Account created but profile failed. Run supabase_create_lgu_profile_fn.sql in SQL Editor, then refresh.', 'error');
+                            } else {
+                              await fetchLgus();
+                              showNotification(`LGU ${lguName || lguEmail} registered successfully!`);
+                              e.target.reset();
+                            }
+                          }
+                        } catch (err) {
+                          showNotification(`Failed: ${err.message}`, 'error');
+                        }
+                      }}
+                      className="space-y-4"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
+                          <input type="text" name="lgu_name" placeholder="Municipal LGU Officer" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone</label>
+                          <input type="tel" name="lgu_phone" placeholder="09XX-XXX-XXXX" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Municipality</label>
+                          <select name="lgu_municipality" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white">
+                            <option value="">Select municipality</option>
+                            {getMunicipalities().map((mun) => (
+                              <option key={mun} value={mun}>{mun}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Email *</label>
+                          <input type="email" name="lgu_email" required placeholder="lgu@email.com" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1.5">Password *</label>
+                          <input type="password" name="lgu_password" required minLength={6} placeholder="Min 6 characters" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                        </div>
+                      </div>
+                      <button type="submit" className="bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25">
+                        Register LGU
                       </button>
                     </form>
                   </div>
