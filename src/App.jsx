@@ -18,10 +18,12 @@ import ContractorAuth from "./pages/ContractorAuth";
 import ContractorDashboard from "./pages/ContractorDashboard";
 import ContractorProjects from "./pages/ContractorProjects";
 import ContractorReports from "./pages/ContractorReports";
+import PWAInstallBanner from "./components/PWAInstallBanner";
 
 function App() {
   return (
     <Router>
+      <PWAInstallBanner />
       <Routes>
         {/* ===== USER SIDE (with landing page) ===== */}
         <Route path="/" element={<LandingPage />} />
