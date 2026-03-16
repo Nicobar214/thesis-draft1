@@ -1,6 +1,6 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
@@ -257,6 +257,7 @@ export default function Dashboard() {
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
   const [reportHeatPoints, setReportHeatPoints] = useState([]);
   const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
+  const fmrProjectsRef = useRef([]);
 
   // FMR CRUD state (edit / delete)
   const [showFmrEditModal, setShowFmrEditModal] = useState(false);
@@ -587,7 +588,7 @@ export default function Dashboard() {
       if (error) return;
 
       const byName = {};
-      fmrProjects.forEach((p) => {
+      fmrProjectsRef.current.forEach((p) => {
         const nameKey = String(p.project_name || '').trim().toLowerCase();
         if (nameKey) byName[nameKey] = p.id;
       });
@@ -623,7 +624,7 @@ export default function Dashboard() {
       setReportCountByProjectId({});
       setReportHeatPoints([]);
     }
-  }, [fmrProjects]);
+  }, []);
 
   const upsertProjectRoute = useCallback(async (projectId, startLat, startLng, endLat, endLng, waypoints) => {
     if (!projectId) return;
@@ -914,6 +915,10 @@ export default function Dashboard() {
       console.error('Failed to fetch admin identity:', err);
     }
   }, []);
+
+  useEffect(() => {
+    fmrProjectsRef.current = fmrProjects;
+  }, [fmrProjects]);
 
   useEffect(() => {
     fetchAdminIdentity();

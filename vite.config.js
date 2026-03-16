@@ -3,14 +3,14 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+    command === 'build' && VitePWA({
+      registerType: 'prompt',
+      includeAssets: ['apple-touch-icon.png'],
       devOptions: {
-        enabled: true,
+        enabled: false,
         navigateFallback: 'index.html',
         suppressWarnings: true,
         type: 'module'
@@ -48,9 +48,9 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        clientsClaim: false,
+        skipWaiting: false,
+        globPatterns: ['**/*.{js,css,html,ico,woff2}'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/rest\/v1\//],
         runtimeCaching: [
@@ -97,7 +97,11 @@ export default defineConfig({
             }
           },
           {
-            urlPattern: ({ request }) => request.destination === 'image' || request.destination === 'style' || request.destination === 'script',
+            urlPattern: ({ request, url }) => {
+              const isRuntimeAsset = request.destination === 'image' || request.destination === 'style' || request.destination === 'script'
+
+              return isRuntimeAsset && !url.pathname.startsWith('/assets/')
+            },
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'static-runtime-assets',
@@ -113,5 +117,10 @@ export default defineConfig({
         ]
       }
     })
-  ],
-})
+  ].filter(Boolean),
+  server: {
+    watch: {
+      ignored: ['**/dist/**', '**/dev-dist/**', '**/vite.config.js', '**/vite.config.ts']
+    }
+  }
+}))
