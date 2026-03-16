@@ -14,6 +14,38 @@ function normalizeUserProjectStatus(status) {
   return status || 'Pending';
 }
 
+function parseDateOnly(value) {
+  if (!value) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    return new Date(y, mo, d);
+  }
+  const parsed = new Date(str);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function getDaysDeltaFromToday(targetDateValue) {
+  const targetDate = parseDateOnly(targetDateValue);
+  if (!targetDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function isProjectOverdue(project) {
+  const status = normalizeUserProjectStatus(project?.status);
+  if (status === 'Completed') return false;
+  const delta = getDaysDeltaFromToday(project?.target_completion_date);
+  return typeof delta === 'number' && delta < 0;
+}
+
 /* â”€â”€â”€ Status Style Helper â”€â”€â”€ */
 function getStatusStyle(status) {
   const styles = {
@@ -50,6 +82,9 @@ function FMRProjectCard({ project, onClick }) {
   const normalizedStatus = normalizeUserProjectStatus(project.status);
   const style = getStatusStyle(normalizedStatus);
   const name = normalizeProjectName(project);
+  const contractorName = String(project.contractor || project.contractor_name || '').trim();
+  const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
+  const overdue = isProjectOverdue(project);
 
   return (
     <button
@@ -70,6 +105,10 @@ function FMRProjectCard({ project, onClick }) {
           {normalizedStatus}
         </span>
       </div>
+
+      {contractorName && (
+        <p className="mb-2 text-xs text-slate-500">Contractor: {contractorName}</p>
+      )}
 
       {/* Progress bar (only for On-Going) */}
       {normalizedStatus === 'On-Going' && (
@@ -97,6 +136,20 @@ function FMRProjectCard({ project, onClick }) {
         {project.year_funded && (
           <span className="flex items-center gap-1">
             <Icons.Calendar /> FY {project.year_funded}
+          </span>
+        )}
+        {overdue && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700 border border-red-200">
+            Overdue
+          </span>
+        )}
+        {normalizedStatus !== 'Completed' && typeof daysDelta === 'number' && (
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium border ${
+            daysDelta < 0
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>
+            {daysDelta < 0 ? `${Math.abs(daysDelta)} days overdue` : `${daysDelta} days remaining`}
           </span>
         )}
         {project.project_length_km > 0 && (
@@ -266,7 +319,7 @@ function FMRProjectDetail({ project, onBack }) {
 }
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['On-Going', 'Pending', 'Completed'];
+const statusFilters = ['On-Going', 'Pending', 'Completed', 'Overdue'];
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN FMR PROJECTS PAGE
@@ -285,6 +338,7 @@ export default function UserFMRProjects() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [reportCountByProject, setReportCountByProject] = useState({});
   const projectsPerPage = 8;
 
   const getProjectDate = (project) => {
@@ -338,15 +392,30 @@ export default function UserFMRProjects() {
   async function fetchFMRProjects() {
     try {
       setFetchError(null);
-      const { data, error } = await supabase
-        .from('fmr_projects')
-        .select('*')
-        .order('status', { ascending: true })
-        .order('accomplishment', { ascending: false });
+      const [{ data, error }, { data: reportsData, error: reportsError }] = await Promise.all([
+        supabase
+          .from('fmr_projects')
+          .select('*')
+          .order('status', { ascending: true })
+          .order('accomplishment', { ascending: false }),
+        supabase
+          .from('public_reports')
+          .select('project_name'),
+      ]);
 
       if (error) {
         setFetchError(error.message);
         throw error;
+      }
+
+      if (!reportsError && Array.isArray(reportsData)) {
+        const counts = reportsData.reduce((acc, row) => {
+          const key = normalizeProjectName({ project_name: row?.project_name || '' }).toLowerCase().trim();
+          if (!key) return acc;
+          acc[key] = (acc[key] || 0) + 1;
+          return acc;
+        }, {});
+        setReportCountByProject(counts);
       }
 
       setProjects(data || []);
@@ -363,7 +432,15 @@ export default function UserFMRProjects() {
     ongoing: projects.filter(p => normalizeUserProjectStatus(p.status) === 'On-Going').length,
     pending: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Pending').length,
     completed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Completed').length,
+    overdue: projects.filter((p) => isProjectOverdue(p)).length,
     totalKm: projects.reduce((sum, p) => sum + (p.project_length_km || 0), 0).toFixed(2),
+  };
+
+  const completionRate = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+  const getReportedCount = (project) => {
+    const key = normalizeProjectName(project).toLowerCase().trim();
+    return reportCountByProject[key] || 0;
   };
 
   const yearOptions = [...new Set(projects.map((p) => Number(p.year_funded)).filter((y) => y && !Number.isNaN(y)))].sort((a, b) => b - a);
@@ -377,7 +454,9 @@ export default function UserFMRProjects() {
     const q = search.toLowerCase();
 
     const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-    const matchesStatus = normalizeUserProjectStatus(p.status) === statusFilter;
+    const matchesStatus = statusFilter === 'Overdue'
+      ? isProjectOverdue(p)
+      : normalizeUserProjectStatus(p.status) === statusFilter;
     const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
     const matchesMunicipality = municipalityFilter === 'All' || p.municipality === municipalityFilter;
     const matchesDate = inDateRange(getProjectDate(p), dateFrom, dateTo);
@@ -395,6 +474,9 @@ export default function UserFMRProjects() {
     if (sortBy === 'progress-asc') {
       return (Number(a.accomplishment) || 0) - (Number(b.accomplishment) || 0);
     }
+    if (sortBy === 'reported-desc') {
+      return getReportedCount(b) - getReportedCount(a);
+    }
     const aDate = getProjectDate(a)?.getTime() || 0;
     const bDate = getProjectDate(b)?.getTime() || 0;
     return bDate - aDate;
@@ -406,6 +488,61 @@ export default function UserFMRProjects() {
     (safeCurrentPage - 1) * projectsPerPage,
     safeCurrentPage * projectsPerPage
   );
+
+  const handleExportCsv = () => {
+    const rows = filtered.map((p) => {
+      const status = normalizeUserProjectStatus(p.status);
+      const reportedCount = getReportedCount(p);
+      const daysDelta = getDaysDeltaFromToday(p.target_completion_date);
+      const timeline =
+        status !== 'Completed' && typeof daysDelta === 'number'
+          ? (daysDelta < 0 ? `${Math.abs(daysDelta)} days overdue` : `${daysDelta} days remaining`)
+          : '';
+
+      return {
+        project_name: normalizeProjectName(p),
+        municipality: p.municipality || '',
+        province: p.province || '',
+        status,
+        fiscal_year: p.year_funded || '',
+        accomplishment: Number(p.accomplishment) || 0,
+        contractor: p.contractor || p.contractor_name || '',
+        target_completion_date: p.target_completion_date || '',
+        overdue: isProjectOverdue(p) ? 'Yes' : 'No',
+        countdown: timeline,
+        most_reported_count: reportedCount,
+      };
+    });
+
+    const headers = Object.keys(rows[0] || {
+      project_name: '', municipality: '', province: '', status: '', fiscal_year: '', accomplishment: '',
+      contractor: '', target_completion_date: '', overdue: '', countdown: '', most_reported_count: ''
+    });
+
+    const escapeCsv = (value) => {
+      const str = String(value ?? '');
+      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const csv = [
+      headers.join(','),
+      ...rows.map((row) => headers.map((h) => escapeCsv(row[h])).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `fmr-projects-${statusFilter.toLowerCase()}-${ts}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // If a project is selected, show detail view
   if (selectedProject) {
@@ -452,6 +589,41 @@ export default function UserFMRProjects() {
             </>
           )}
         </section>
+
+        {!loading && (
+          <section className="bg-white rounded-2xl border border-slate-200/60 p-5">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
+              <div className="flex-1">
+                <div className="h-7 w-full rounded-xl overflow-hidden border border-slate-100 flex bg-slate-100">
+                  <div
+                    className="h-full bg-teal-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
+                    style={{ width: `${stats.total ? (stats.completed / stats.total) * 100 : 0}%` }}
+                  >
+                    {stats.total ? `${Math.round((stats.completed / stats.total) * 100)}%` : '0%'}
+                  </div>
+                  <div
+                    className="h-full bg-amber-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
+                    style={{ width: `${stats.total ? (stats.ongoing / stats.total) * 100 : 0}%` }}
+                  >
+                    {stats.total ? `${Math.round((stats.ongoing / stats.total) * 100)}%` : '0%'}
+                  </div>
+                  <div
+                    className="h-full bg-slate-400 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
+                    style={{ width: `${stats.total ? (stats.pending / stats.total) * 100 : 0}%` }}
+                  >
+                    {stats.total ? `${Math.round((stats.pending / stats.total) * 100)}%` : '0%'}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-teal-500" />Completed</span>
+                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber-500" />On-Going</span>
+                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-slate-400" />Pending</span>
+                </div>
+              </div>
+              <p className="text-sm font-bold text-slate-800 whitespace-nowrap">Overall Completion Rate: {completionRate}%</p>
+            </div>
+          </section>
+        )}
 
         {/* Error banner */}
         {fetchError && (
@@ -515,9 +687,18 @@ export default function UserFMRProjects() {
             <option value="latest">Sort: Latest</option>
             <option value="name-asc">Sort: Name A-Z</option>
             <option value="name-desc">Sort: Name Z-A</option>
-            <option value="progress-desc">Sort: Progress High-Low</option>
-            <option value="progress-asc">Sort: Progress Low-High</option>
+            <option value="progress-desc">Sort: Progress High to Low</option>
+            <option value="progress-asc">Sort: Progress: Low to High</option>
+            <option value="reported-desc">Sort: Most Reported</option>
           </select>
+
+          <button
+            onClick={handleExportCsv}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white shadow-sm whitespace-nowrap"
+            title="Export currently visible list"
+          >
+            Export CSV
+          </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -550,14 +731,25 @@ export default function UserFMRProjects() {
           {/* Status filter pills */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
             {statusFilters.map(s => {
-              const count = s === 'On-Going' ? stats.ongoing : s === 'Pending' ? stats.pending : stats.completed;
+              const count =
+                s === 'On-Going'
+                  ? stats.ongoing
+                  : s === 'Pending'
+                  ? stats.pending
+                  : s === 'Completed'
+                  ? stats.completed
+                  : stats.overdue;
               return (
                 <button
                   key={s}
                   onClick={() => { setStatusFilter(s); setCurrentPage(1); }}
                   className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                     statusFilter === s
-                      ? 'bg-teal-600 text-white shadow-sm'
+                      ? s === 'Overdue'
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'bg-teal-600 text-white shadow-sm'
+                      : s === 'Overdue'
+                      ? 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
                       : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                   }`}
                 >

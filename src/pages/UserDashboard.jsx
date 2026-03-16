@@ -117,6 +117,8 @@ export default function UserDashboard() {
   const [submissions, setSubmissions] = useState({ reportsSubmitted: 0, reportsResolved: 0, reportsPending: 0, feedbackSubmitted: 0 });
   const [municipalityTableCollapsed, setMunicipalityTableCollapsed] = useState(false);
   const [dismissedStatusAlert, setDismissedStatusAlert] = useState(false);
+  const [showAllRecentProjects, setShowAllRecentProjects] = useState(false);
+  const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
 
   const statusAlias = {
     completed: 'Completed',
@@ -237,7 +239,8 @@ export default function UserDashboard() {
         const fmrProjectNameSet = new Set(normalizedProjects.map((project) => String(project.projectName || '').trim().toLowerCase()));
 
         setAllProjects(normalizedProjects);
-        setProjects(recentProjects.slice(0, 5));
+        // Keep a larger local list so UI can collapse/expand without extra fetches.
+        setProjects(recentProjects.slice(0, 12));
         setStats({
           total: normalizedProjects.length,
           completed: normalizedProjects.filter((p) => p.status === 'Completed').length,
@@ -370,6 +373,10 @@ export default function UserDashboard() {
   }, [nearbyProjects, userMunicipality, dismissedStatusAlert]);
 
   const hasSubmissions = submissions.reportsSubmitted > 0 || submissions.feedbackSubmitted > 0;
+  const recentProjectsLimit = 3;
+  const recentActivityLimit = 4;
+  const visibleRecentProjects = showAllRecentProjects ? projects : projects.slice(0, recentProjectsLimit);
+  const visibleRecentActivity = showAllRecentActivity ? activityFeed : activityFeed.slice(0, recentActivityLimit);
 
   const formatActivityTime = (value) => {
     const parsed = new Date(value);
@@ -386,9 +393,33 @@ export default function UserDashboard() {
     <UserLayout>
       <div className="space-y-8">
         {/* Page Title */}
-        <section>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
-          <p className="mt-1 text-slate-500">Welcome back, {userLabel}. Track FMR projects in your community.</p>
+        <section className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
+            <p className="mt-1 text-slate-500">Welcome back, {userLabel}. Track FMR projects in your community.</p>
+          </div>
+
+          <div className="w-full lg:w-auto grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] lg:min-w-[540px]">
+            <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
+              <p className="font-medium text-sky-900 mb-1">Your voice matters</p>
+              <p className="text-sm text-sky-700 leading-relaxed">
+                Help improve transparency by reporting project updates and issues.
+              </p>
+            </div>
+
+            <Link
+              to="/user/feedback"
+              className="sm:w-64 flex items-center gap-4 p-5 bg-teal-600 hover:bg-teal-700 rounded-2xl transition-colors text-white"
+            >
+              <div className="size-11 bg-white/15 rounded-xl grid place-items-center shrink-0">
+                <Icons.Plus />
+              </div>
+              <div>
+                <p className="font-semibold">Give Feedback</p>
+                <p className="text-sm text-emerald-100">Share photos & concerns</p>
+              </div>
+            </Link>
+          </div>
         </section>
 
         {/* Stats Grid */}
@@ -516,17 +547,27 @@ export default function UserDashboard() {
         </section>
 
         {/* Content Grid */}
-        <section className="grid lg:grid-cols-3 gap-6">
+        <section className="grid grid-cols-1 gap-6">
           {/* Projects List */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
-            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+            <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-semibold text-slate-900">Recent Projects</h2>
                 <p className="text-sm text-slate-500">Latest FMR projects by recent activity</p>
               </div>
-              <Link to="/user/fmr-projects" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700">
-                View all <Icons.ArrowRight />
-              </Link>
+              <div className="flex items-center gap-4 shrink-0">
+                {projects.length > recentProjectsLimit && (
+                  <button
+                    onClick={() => setShowAllRecentProjects((prev) => !prev)}
+                    className="text-sm font-medium text-teal-600 hover:text-teal-700"
+                  >
+                    {showAllRecentProjects ? 'Show less' : `Show more (${projects.length - recentProjectsLimit})`}
+                  </button>
+                )}
+                <Link to="/user/fmr-projects" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700">
+                  View all <Icons.ArrowRight />
+                </Link>
+              </div>
             </header>
 
             <div className="divide-y divide-zinc-100">
@@ -541,7 +582,7 @@ export default function UserDashboard() {
                   <p className="text-sm text-slate-500">Projects will appear here</p>
                 </div>
               ) : (
-                projects.map((p) => (
+                visibleRecentProjects.map((p) => (
                   <div key={p.id}>
                     <ProjectCard project={p} />
                     <p className="px-4 pb-4 text-xs text-slate-500">Project date: {formatProjectDate(p)}</p>
@@ -550,79 +591,33 @@ export default function UserDashboard() {
               )}
             </div>
           </div>
-
-          {/* Dashboard Sidebar Cards */}
-          <aside className="space-y-4">
-            {/* Submit Feedback CTA */}
-            <Link
-              to="/user/feedback"
-              className="flex items-center gap-4 p-5 bg-teal-600 hover:bg-teal-700 rounded-2xl transition-colors text-white"
-            >
-              <div className="size-11 bg-white/15 rounded-xl grid place-items-center">
-                <Icons.Plus />
-              </div>
-              <div>
-                <p className="font-semibold">Give Feedback</p>
-                <p className="text-sm text-emerald-100">Share photos & concerns</p>
-              </div>
-            </Link>
-
-            {/* Submit Report CTA */}
-            <Link
-              to="/user/reports"
-              className="flex items-center gap-4 p-5 bg-white hover:bg-slate-50 rounded-2xl border border-slate-200/60 transition-colors"
-            >
-              <div className="size-11 bg-slate-100 rounded-xl grid place-items-center text-slate-500">
-                <Icons.Document />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">Submit Report</p>
-                <p className="text-sm text-slate-500">Report issues or updates</p>
-              </div>
-            </Link>
-
-            {/* Map View CTA */}
-            <Link
-              to="/user/map"
-              className="flex items-center gap-4 p-5 bg-white hover:bg-slate-50 rounded-2xl border border-slate-200/60 transition-colors"
-            >
-              <div className="size-11 bg-sky-100 rounded-xl grid place-items-center text-sky-600 shrink-0">
-                <svg className="size-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                </svg>
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">Map View</p>
-                <p className="text-sm text-slate-500">See project locations on map</p>
-              </div>
-            </Link>
-
-            {/* Info Card */}
-            <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
-              <p className="font-medium text-sky-900 mb-1">Your voice matters</p>
-              <p className="text-sm text-sky-700 leading-relaxed">
-                Help improve transparency by reporting project updates and issues in your community.
-              </p>
-            </div>
-          </aside>
         </section>
 
         <section className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
-            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-semibold text-slate-900">Recent Activity</h2>
                 <p className="text-sm text-slate-500">Latest reports, updates, and feedback across the system</p>
               </div>
-              <Link to="/user/reports" className="text-sm font-medium text-teal-600 hover:text-teal-700">View all activity</Link>
+              <div className="flex items-center gap-4 shrink-0">
+                {activityFeed.length > recentActivityLimit && (
+                  <button
+                    onClick={() => setShowAllRecentActivity((prev) => !prev)}
+                    className="text-sm font-medium text-teal-600 hover:text-teal-700"
+                  >
+                    {showAllRecentActivity ? 'Show less' : `Show more (${activityFeed.length - recentActivityLimit})`}
+                  </button>
+                )}
+                <Link to="/user/reports" className="text-sm font-medium text-teal-600 hover:text-teal-700">View all activity</Link>
+              </div>
             </header>
 
             <div className="divide-y divide-slate-100">
               {activityFeed.length === 0 ? (
                 <div className="p-6 text-sm text-slate-500">No recent activity yet.</div>
               ) : (
-                activityFeed.slice(0, 7).map((item) => (
+                visibleRecentActivity.map((item) => (
                   <div key={item.id} className="px-5 py-4 flex items-start gap-3">
                     <span className="text-lg leading-none mt-0.5">
                       {item.type === 'report' ? '📋' : item.type === 'update' ? '🔄' : '💬'}

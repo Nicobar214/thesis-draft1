@@ -139,17 +139,6 @@ export default function UserMapView() {
     };
   }, []);
 
-  // Recompute nearby projects whenever location or mappable projects change
-  useEffect(() => {
-    if (!userLocation) return;
-    const ids = new Set(
-      mappable
-        .filter((p) => isProjectNearby(userLocation.lat, userLocation.lng, p))
-        .map((p) => p.id)
-    );
-    setNearbyProjects(ids);
-  }, [userLocation, mappable]);
-
   // Fetch data
   useEffect(() => {
     fetchProjects();
@@ -199,6 +188,17 @@ export default function UserMapView() {
   const mappable = useMemo(() => {
     return filtered.filter(p => p.start_latitude && p.start_longitude);
   }, [filtered]);
+
+  // Recompute nearby projects whenever location or mappable projects change
+  useEffect(() => {
+    if (!userLocation) return;
+    const ids = new Set(
+      mappable
+        .filter((p) => isProjectNearby(userLocation.lat, userLocation.lng, p))
+        .map((p) => p.id)
+    );
+    setNearbyProjects(ids);
+  }, [userLocation, mappable]);
 
   // Stats
   const stats = useMemo(() => ({
@@ -469,8 +469,8 @@ export default function UserMapView() {
               bg-white lg:rounded-2xl border border-slate-200/60 
               transition-transform duration-300 lg:transition-none
               flex flex-col overflow-hidden
+              h-screen lg:h-[calc(100vh-320px)] lg:min-h-[450px]
             `}
-            style={{ height: 'calc(100vh - 320px)', minHeight: '450px' }}
           >
             {/* Sidebar header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
