@@ -7,39 +7,77 @@ function fmtDateTime(value) {
   return d.toLocaleString();
 }
 
-const stages = [
-  { key: 'submitted', label: 'Submitted', applies: () => true },
-  { key: 'under_review', label: 'Under Review', applies: (status) => ['reviewed', 'resolved'].includes(status) },
-  { key: 'dispatched', label: 'Field Engineer Dispatched', applies: (_, report) => Boolean(report?.assigned_engineer_id) },
-  { key: 'resolved', label: 'Resolved', applies: (status) => status === 'resolved' },
-];
-
 export default function CitizenReportTimeline({ report, resolutionSummary }) {
   const timeline = useMemo(() => {
     if (!report) return [];
 
     const status = String(report.status || '').toLowerCase();
+    const engineerStatus = String(report.engineer_status || '').toLowerCase();
     const createdAt = report.created_at || null;
     const reviewedAt = report.reviewed_at || report.updated_at || null;
     const dispatchedAt = report.assigned_at || null;
+    const inspectionStartedAt = ['in_progress', 'inspected', 'validated', 'rejected'].includes(engineerStatus)
+      ? (report.updated_at || null)
+      : null;
+    const inspectionDoneAt = ['inspected', 'validated', 'rejected'].includes(engineerStatus)
+      ? (report.updated_at || null)
+      : null;
+    const forAdminDecisionAt = ['validated', 'rejected'].includes(engineerStatus) && status !== 'resolved'
+      ? (report.updated_at || null)
+      : null;
     const resolvedAt = status === 'resolved' ? (report.updated_at || report.reviewed_at || null) : null;
 
-    const ts = {
-      submitted: createdAt,
-      under_review: reviewedAt,
-      dispatched: dispatchedAt,
-      resolved: resolvedAt,
-    };
+    const dynamicAssessmentLabel = engineerStatus === 'rejected'
+      ? 'Field Assessment: Rejected'
+      : engineerStatus === 'validated'
+        ? 'Field Assessment: Validated'
+        : 'Field Assessment';
 
-    return stages.map((stage, index) => {
-      const done = stage.applies(status, report);
-      return {
-        ...stage,
-        done,
-        timestamp: done ? ts[stage.key] : null,
-        isLast: index === stages.length - 1,
-      };
-    });
+    const stages = [
+      { key: 'submitted', label: 'Submitted', done: true, timestamp: createdAt },
+      {
+        key: 'under_review',
+        label: 'Under Review',
+        done: ['reviewed', 'resolved'].includes(status) || Boolean(report.assigned_engineer_id),
+        timestamp: reviewedAt,
+      },
+      {
+        key: 'dispatched',
+        label: 'Field Engineer Dispatched',
+        done: Boolean(report.assigned_engineer_id),
+        timestamp: dispatchedAt,
+      },
+      {
+        key: 'inspection_started',
+        label: 'Inspection In Progress',
+        done: ['in_progress', 'inspected', 'validated', 'rejected'].includes(engineerStatus),
+        timestamp: inspectionStartedAt,
+      },
+      {
+        key: 'assessment_done',
+        label: dynamicAssessmentLabel,
+        done: ['inspected', 'validated', 'rejected'].includes(engineerStatus),
+        timestamp: inspectionDoneAt,
+      },
+      {
+        key: 'admin_decision',
+        label: 'Admin Final Review',
+        done: ['validated', 'rejected'].includes(engineerStatus) || status === 'resolved',
+        timestamp: status === 'resolved' ? (resolvedAt || forAdminDecisionAt) : forAdminDecisionAt,
+      },
+      {
+        key: 'resolved',
+        label: 'Resolved',
+        done: status === 'resolved',
+        timestamp: resolvedAt,
+      },
+    ];
+
+    return stages.map((stage, index) => ({
+      ...stage,
+      timestamp: stage.done ? stage.timestamp : null,
+      isLast: index === stages.length - 1,
+    }));
   }, [report]);
 
   if (!report) return null;

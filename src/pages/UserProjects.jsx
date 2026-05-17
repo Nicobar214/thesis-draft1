@@ -9,10 +9,10 @@ import { normalizeProjectName } from '../lib/projectHelpers';
 const statusFilters = ['All', 'In Progress', 'Completed', 'Planning', 'On Hold'];
 
 const feedbackTypes = [
-  { value: 'issue', label: 'Report an Issue', color: 'text-red-600 bg-red-50 border-red-200' },
-  { value: 'suggestion', label: 'Suggestion', color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  { value: 'compliment', label: 'Compliment', color: 'text-teal-600 bg-emerald-50 border-emerald-200' },
-  { value: 'concern', label: 'Safety Concern', color: 'text-violet-600 bg-violet-50 border-violet-200' },
+  { value: 'issue', label: 'Road Condition', color: 'text-red-600 bg-red-50 border-red-200' },
+  { value: 'suggestion', label: 'Maintenance Request', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+  { value: 'compliment', label: 'Project Appreciation', color: 'text-teal-600 bg-emerald-50 border-emerald-200' },
+  { value: 'concern', label: 'Safety Hazard', color: 'text-violet-600 bg-violet-50 border-violet-200' },
 ];
 
 /* â”€â”€â”€ Helpers â”€â”€â”€ */
@@ -416,29 +416,26 @@ function ProjectDetail({ project, onBack }) {
       <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="font-semibold text-slate-900 flex items-center gap-2">
-              <Icons.Feedback /> Community Feedback
-            </h2>
+            <h2 className="font-semibold text-slate-900">Community Feedback</h2>
             <p className="text-sm text-slate-500 mt-0.5">Share your thoughts, report issues, or give suggestions about this project</p>
           </div>
           <button
             onClick={() => setShowFeedbackForm(!showFeedbackForm)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm shrink-0"
+            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm shrink-0"
           >
-            {showFeedbackForm ? <Icons.X /> : <Icons.Camera />}
             {showFeedbackForm ? 'Cancel' : 'Give Feedback'}
           </button>
         </div>
 
         {/* Alerts */}
         {success && (
-          <div className="mx-6 mt-4 flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
-            <Icons.CheckCircle /><span>{success}</span>
+          <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
+            <span>{success}</span>
           </div>
         )}
         {error && (
-          <div className="mx-6 mt-4 flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-            <Icons.Warning /><span>{error}</span>
+          <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <span>{error}</span>
           </div>
         )}
 

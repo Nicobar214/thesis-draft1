@@ -1,6 +1,8 @@
-/* LandingPage.jsx - Professional Redesign */
+/* LandingPage.jsx - Professional Redesign with FMR Projects & Map Preview */
 import { Link } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
+import UserFMRProjects from './UserFMRProjects';
+import UserMapView from './UserMapView';
 
 export default function LandingPage() {
   const observerRef = useRef(null);
@@ -52,9 +54,10 @@ export default function LandingPage() {
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-8">
               <a href="#features" className="text-slate-600 hover:text-slate-900 transition text-sm">Features</a>
+              <a href="#projects" className="text-slate-600 hover:text-slate-900 transition text-sm">Projects</a>
+              <a href="#map-view" className="text-slate-600 hover:text-slate-900 transition text-sm">Map View</a>
               <a href="#how-it-works" className="text-slate-600 hover:text-slate-900 transition text-sm">How It Works</a>
-              <a href="#impact" className="text-slate-600 hover:text-slate-900 transition text-sm">Impact</a>
-              <Link to="/reports" className="text-slate-600 hover:text-slate-900 transition text-sm">Report</Link>
+              <Link to="/report-portal" className="text-slate-600 hover:text-slate-900 transition text-sm font-medium text-emerald-600">Quick Report</Link>
             </div>
 
             <div className="flex items-center gap-3">
@@ -114,13 +117,13 @@ export default function LandingPage() {
                   </svg>
                 </Link>
                 <Link
-                  to="/reports"
-                  className="inline-flex items-center justify-center border-2 border-white/30 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/10 transition group"
+                  to="/report-portal"
+                  className="inline-flex items-center justify-center border-2 border-white/50 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/15 hover:border-white transition group bg-white/5 backdrop-blur-sm"
                 >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Submit a Report
+                  Report Without Login
                 </Link>
               </div>
 
@@ -128,6 +131,16 @@ export default function LandingPage() {
           </div>
         </div>
       </header>
+
+      {/* Embedded FMR Projects (public landing) */}
+      <section id="projects" className="py-16 sm:py-20 px-6 sm:px-8 lg:px-10 bg-white border-b border-slate-100">
+        <UserFMRProjects embedded />
+      </section>
+
+      {/* Embedded Map View (public landing) */}
+      <section id="map-view" className="py-16 sm:py-20 px-6 sm:px-8 lg:px-10 bg-slate-50 border-b border-slate-100">
+        <UserMapView embedded />
+      </section>
 
       {/* Key Features */}
       <section id="features" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-white">
@@ -189,12 +202,12 @@ export default function LandingPage() {
       <section id="how-it-works" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-slate-50 border-t border-slate-100">
         <div className="max-w-5xl mx-auto">
           <div className="flex flex-col items-center mb-16">
-            <p className="text-sm font-medium text-teal-600 uppercase tracking-wider mb-4">How It Works</p>
+            <p className="text-sm font-medium text-teal-600 uppercase tracking-wider mb-4">Getting Started</p>
             <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4 text-center">
-              Get started in minutes
+              Start tracking today in three steps
             </h2>
             <p className="text-lg text-slate-600 max-w-lg text-center">
-              Three simple steps to start tracking farm-to-market road projects
+              Three simple steps to start tracking farm-to-market road projects or reporting issues
             </p>
           </div>
           
@@ -230,56 +243,32 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Statistics */}
-      <section id="impact" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-slate-950">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <p className="text-sm font-medium text-emerald-400 uppercase tracking-wider mb-4">Platform Impact</p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-white">
-              Driving transparency nationwide
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-10 text-center">
-            <div>
-              <div className="text-4xl sm:text-5xl font-extrabold text-emerald-400 mb-1 tracking-tight">500+</div>
-              <p className="text-slate-400 text-sm font-medium">Active Projects</p>
-            </div>
-            <div>
-              <div className="text-4xl sm:text-5xl font-extrabold text-teal-400 mb-1 tracking-tight">10K+</div>
-              <p className="text-slate-400 text-sm font-medium">Community Members</p>
-            </div>
-            <div>
-              <div className="text-4xl sm:text-5xl font-extrabold text-cyan-400 mb-1 tracking-tight">95%</div>
-              <p className="text-slate-400 text-sm font-medium">Data Accuracy</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* CTA Section */}
       <section className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-slate-50 border-t border-slate-100">
         <div className="max-w-2xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-            Ready to get started?
+            Ready to make an impact?
           </h2>
           
           <p className="text-lg text-slate-600 mb-8 max-w-xl mx-auto">
-            Join communities across the Philippines in building transparent infrastructure.
+            Join communities across the Philippines in building transparent infrastructure. Start tracking projects or report issues today — no registration required to report.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/signup"
-              className="inline-flex items-center justify-center bg-emerald-600 text-white px-8 py-3.5 rounded-lg font-semibold hover:bg-emerald-700 transition"
+              className="inline-flex items-center justify-center bg-emerald-600 text-white px-8 py-3.5 rounded-lg font-semibold hover:bg-emerald-700 transition group"
             >
               Create Free Account
+              <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+              </svg>
             </Link>
             <Link
-              to="/signin"
+              to="/report-portal"
               className="inline-flex items-center justify-center border border-slate-300 text-slate-700 px-8 py-3.5 rounded-lg font-semibold hover:bg-slate-50 transition"
             >
-              Sign In
+              Report an Issue
             </Link>
           </div>
 
@@ -307,19 +296,17 @@ export default function LandingPage() {
               <h4 className="font-semibold text-white mb-4">Platform</h4>
               <ul className="space-y-2 text-sm">
                 <li><a href="#features" className="hover:text-white transition">Features</a></li>
+                <li><a href="#projects" className="hover:text-white transition">Live Projects</a></li>
                 <li><a href="#how-it-works" className="hover:text-white transition">How It Works</a></li>
-                <li><a href="#impact" className="hover:text-white transition">Impact</a></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-semibold text-white mb-4">Portals</h4>
+              <h4 className="font-semibold text-white mb-4">Quick Access</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link to="/signin" className="hover:text-white transition">User Sign In</Link></li>
-                <li><Link to="/admin" className="hover:text-white transition">Admin Login</Link></li>
-                <li><Link to="/field-engineer/login" className="hover:text-white transition">Field Engineer Login</Link></li>
-                <li><Link to="/contractor/login" className="hover:text-white transition">Contractor Login</Link></li>
-                <li><Link to="/lgu/login" className="hover:text-white transition">LGU Login</Link></li>
+                <li><Link to="/report-portal" className="hover:text-white transition">Report Issue</Link></li>
+                <li><Link to="/signin" className="hover:text-white transition">Sign In</Link></li>
+                <li><Link to="/signup" className="hover:text-white transition">Create Account</Link></li>
               </ul>
             </div>
 

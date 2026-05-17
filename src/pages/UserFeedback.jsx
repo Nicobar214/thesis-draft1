@@ -1,17 +1,16 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-import Icons from '../components/Icons';
 import PublicReportForm from '../components/PublicReportForm';
 import UserLayout from '../components/UserLayout';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Feedback Type Options â”€â”€â”€ */
 const feedbackTypes = [
-  { value: 'issue', label: 'Report an Issue', color: 'text-red-600 bg-red-50 border-red-200' },
-  { value: 'suggestion', label: 'Suggestion', color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  { value: 'compliment', label: 'Compliment', color: 'text-teal-600 bg-emerald-50 border-emerald-200' },
-  { value: 'concern', label: 'Safety Concern', color: 'text-violet-600 bg-violet-50 border-violet-200' },
+  { value: 'issue', label: 'Road Condition', color: 'text-red-600 bg-red-50 border-red-200' },
+  { value: 'suggestion', label: 'Maintenance Request', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+  { value: 'compliment', label: 'Project Appreciation', color: 'text-teal-600 bg-emerald-50 border-emerald-200' },
+  { value: 'concern', label: 'Safety Hazard', color: 'text-violet-600 bg-violet-50 border-violet-200' },
 ];
 
 /* â”€â”€â”€ Status Badge â”€â”€â”€ */
@@ -65,7 +64,6 @@ function FeedbackCard({ feedback }) {
             )}
           </div>
           <div className="flex items-center gap-1 text-xs text-slate-400 shrink-0">
-            <Icons.Clock />
             <span>{new Date(feedback.created_at).toLocaleDateString()}</span>
           </div>
         </div>
@@ -81,9 +79,8 @@ function FeedbackCard({ feedback }) {
 
         {/* Geotagged location */}
         {feedback.latitude && feedback.longitude && (
-          <div className="flex items-center gap-1.5 mt-3 text-xs text-slate-500">
-            <Icons.MapPin />
-            <span>ðŸ“ {Number(feedback.latitude).toFixed(4)}, {Number(feedback.longitude).toFixed(4)}</span>
+          <div className="mt-3 text-xs text-slate-500">
+            <span>{Number(feedback.latitude).toFixed(4)}, {Number(feedback.longitude).toFixed(4)}</span>
           </div>
         )}
       </div>
@@ -245,23 +242,20 @@ export default function UserFeedback() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
+            className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm"
           >
-            {showForm ? <Icons.X /> : <Icons.Camera />}
             {showForm ? 'Cancel' : 'Submit Feedback'}
           </button>
         </section>
 
         {/* Success / Error Alerts */}
         {success && (
-          <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
-            <Icons.CheckCircle />
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
             <span>{success}</span>
           </div>
         )}
         {error && (
-          <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-            <Icons.Warning />
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
             <span>{error}</span>
           </div>
         )}
@@ -282,17 +276,12 @@ export default function UserFeedback() {
 
         {/* â”€â”€â”€ Info Banner â”€â”€â”€ */}
         {!showForm && (
-          <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100 flex items-start gap-4">
-            <div className="size-10 bg-sky-100 rounded-xl grid place-items-center text-sky-600 shrink-0 mt-0.5">
-              <Icons.Camera />
-            </div>
-            <div>
-              <p className="font-medium text-sky-900 mb-1">Your voice matters</p>
-              <p className="text-sm text-sky-700 leading-relaxed">
-                Take a photo and geo-tag your location to report issues, share suggestions, or give feedback on road projects
-                in your community. Your input helps ensure transparency and accountability.
-              </p>
-            </div>
+          <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
+            <p className="font-medium text-sky-900 mb-1">Your voice matters</p>
+            <p className="text-sm text-sky-700 leading-relaxed">
+              Take a photo and geo-tag your location to report road conditions, request maintenance, flag safety hazards,
+              or share project appreciation in your community.
+            </p>
           </div>
         )}
 
@@ -308,9 +297,6 @@ export default function UserFeedback() {
               Array.from({ length: 3 }).map((_, i) => <FeedbackSkeleton key={i} />)
             ) : combinedItems.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
-                <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-400 mb-3">
-                  <Icons.Camera />
-                </div>
                 <p className="font-medium text-slate-900">No feedback yet</p>
                 <p className="text-sm text-slate-500 mt-1">Be the first to share your thoughts!</p>
               </div>

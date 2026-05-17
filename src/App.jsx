@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
+import LandingPage from "./pages/landingPage";
 import AuthPage from "./pages/AuthPage";
 import AdminAuthPage from "./pages/AdminAuthPage";
 import Dashboard from "./pages/Dashboard";
@@ -11,6 +11,7 @@ import UserMapView from "./pages/UserMapView";
 import UserProfile from "./pages/UserProfile";
 import UserProjects from "./pages/UserProjects";
 import PublicReportsPage from "./pages/PublicReportsPage";
+import PublicReportPortalPage from "./pages/PublicReportPortalPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import FieldEngineerAuth from "./pages/FieldEngineerAuth";
 import FieldEngineerDashboard from "./pages/FieldEngineerDashboard";
@@ -31,6 +32,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/signin" element={<AuthPage mode="signin" />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
+        <Route path="/report-portal" element={<PublicReportPortalPage />} />
         <Route path="/reports" element={<PublicReportsPage />} />
         <Route path="/user" element={
           <ProtectedRoute requiredRole="user">

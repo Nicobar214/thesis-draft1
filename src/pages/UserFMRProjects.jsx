@@ -324,7 +324,7 @@ const statusFilters = ['On-Going', 'Pending', 'Completed', 'Overdue'];
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN FMR PROJECTS PAGE
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-export default function UserFMRProjects() {
+export default function UserFMRProjects({ embedded = false } = {}) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -380,10 +380,22 @@ export default function UserFMRProjects() {
   }, []);
 
   useEffect(() => {
+    if (embedded) return undefined;
     const onScroll = () => setShowBackToTop(window.scrollY > 400);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [embedded]);
+
+  const layoutProps = embedded
+    ? {
+        requireAuth: false,
+        showSidebar: false,
+        showHeader: false,
+        rootClassName: 'bg-transparent',
+        mainClassName: 'min-h-0',
+        contentClassName: 'px-0 py-0 pt-0',
+      }
+    : {};
 
   useEffect(() => {
     setCurrentPage(1);
@@ -547,14 +559,14 @@ export default function UserFMRProjects() {
   // If a project is selected, show detail view
   if (selectedProject) {
     return (
-      <UserLayout>
+      <UserLayout {...layoutProps}>
         <FMRProjectDetail project={selectedProject} onBack={() => setSelectedProject(null)} />
       </UserLayout>
     );
   }
 
   return (
-    <UserLayout>
+    <UserLayout {...layoutProps}>
       <div className="space-y-6">
         {/* Header */}
         <section>
@@ -854,7 +866,7 @@ export default function UserFMRProjects() {
           </div>
         )}
 
-        {showBackToTop && (
+        {!embedded && showBackToTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="fixed bottom-6 right-6 z-20 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium shadow-lg"

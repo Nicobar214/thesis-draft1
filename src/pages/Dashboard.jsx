@@ -4837,9 +4837,13 @@ export default function Dashboard() {
                           report={selectedPublicReport}
                           adminIdentity={adminIdentity}
                           onNotify={showNotification}
+                          onUpdateStatus={async (reportId, newStatus) => {
+                            await updatePublicReportStatus(reportId, newStatus);
+                            setSelectedPublicReport(prev => prev ? { ...prev, status: newStatus, updated_at: new Date().toISOString() } : null);
+                          }}
                           onResolve={async () => {
                             await updatePublicReportStatus(selectedPublicReport.id, 'resolved');
-                            setSelectedPublicReport(null);
+                            setSelectedPublicReport(prev => prev ? { ...prev, status: 'resolved', updated_at: new Date().toISOString() } : null);
                           }}
                         />
 
@@ -5000,7 +5004,7 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        {/* Admin Actions */}
+                                                {/* Admin Actions */}
                         <div className="pt-4 border-t border-slate-100">
                           <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
                           <div className="flex gap-3 flex-wrap">
@@ -5018,8 +5022,6 @@ export default function Dashboard() {
                             </button>
                           </div>
                         </div>
-
-                        {/* Assign Field Engineer */}
                         <div className="pt-4 border-t border-slate-100">
                           <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Assign Field Engineer</p>
                           {selectedPublicReport.assigned_engineer_id ? (
@@ -6013,44 +6015,38 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Contractor</label>
-                  {contractors.length > 0 && (
-                    <select
-                      value={newProjectContractorId}
-                      onChange={(e) => {
-                        const id = e.target.value;
-                        setNewProjectContractorId(id);
-                        if (id) {
-                          const c = contractors.find(c => c.id === id);
-                          if (c) handleInputChange({ target: { name: 'contractor', value: c.full_name || c.email } });
-                        } else {
-                          handleInputChange({ target: { name: 'contractor', value: '' } });
-                        }
-                      }}
-                      className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 mb-2"
-                    >
-                      <option value="">— Select a registered contractor —</option>
-                      {contractors.map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
-                      ))}
-                    </select>
-                  )}
-                  <input
-                    type="text"
-                    name="contractor"
-                    value={formData.contractor}
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Contractor</label>
+                  <select
+                    value={newProjectContractorId}
                     onChange={(e) => {
-                      handleInputChange(e);
-                      if (newProjectContractorId) setNewProjectContractorId('');
+                      const id = e.target.value;
+                      setNewProjectContractorId(id);
+                      if (id) {
+                        const c = contractors.find((item) => item.id === id);
+                        if (c) handleInputChange({ target: { name: 'contractor', value: c.full_name || c.email } });
+                      } else {
+                        handleInputChange({ target: { name: 'contractor', value: '' } });
+                      }
                     }}
-                    className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200"
-                    placeholder={contractors.length > 0 ? 'Or type a contractor name manually' : 'e.g., ABC Construction Inc.'}
-                  />
-                  {newProjectContractorId && (
+                    disabled={contractors.length === 0}
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{contractors.length > 0 ? '— Select a registered contractor —' : 'No contractors registered yet'}</option>
+                    {contractors.map((c) => (
+                      <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
+                    ))}
+                  </select>
+                  {contractors.length === 0 ? (
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Register contractors first in Settings → Contractors so you can distribute this project.
+                    </p>
+                  ) : newProjectContractorId ? (
                     <p className="text-xs text-amber-700 mt-1.5 flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
-                      Registered contractor selected — they will see this project in their portal.
+                      Assigned contractor will see this project in their portal.
                     </p>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-1.5">You can leave this unassigned and assign later.</p>
                   )}
                 </div>
                 <div>

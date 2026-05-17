@@ -122,6 +122,21 @@ function UserReports() {
   }, [selected, showReportForm]);
 
   useEffect(() => {
+    if (!selected?.id) return;
+    const latest = reports.find((row) => row.id === selected.id);
+    if (!latest) return;
+
+    if (
+      latest.updated_at !== selected.updated_at ||
+      latest.status !== selected.status ||
+      latest.engineer_status !== selected.engineer_status ||
+      latest.verification !== selected.verification
+    ) {
+      setSelected(latest);
+    }
+  }, [reports, selected]);
+
+  useEffect(() => {
     let alive = true;
 
     const loadSelectedContext = async () => {
@@ -420,6 +435,16 @@ function UserReports() {
                   selected.project_name && { label: 'Project', value: selected.project_name },
                   { label: 'Date Reported', value: fmtDate(selected.created_at) },
                   { label: 'Status', value: selected.status?.charAt(0).toUpperCase() + selected.status?.slice(1) },
+                  {
+                    label: 'Field Engineer Status',
+                    value: selected.engineer_status
+                      ? selected.engineer_status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+                      : 'Waiting for assignment',
+                  },
+                  {
+                    label: 'Assigned Engineer',
+                    value: selected.assigned_engineer_name || 'Not assigned yet',
+                  },
                   { label: 'Verification', value: selected.verification },
                 ].filter(Boolean).map((item) => (
                   <div key={item.label} className="flex items-start gap-3 text-sm">

@@ -100,7 +100,7 @@ function getYearOptions(projects) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN MAP VIEW PAGE
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-export default function UserMapView() {
+export default function UserMapView({ embedded = false } = {}) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -334,8 +334,19 @@ export default function UserMapView() {
   // Iloilo center
   const center = [10.89, 122.45];
 
+  const layoutProps = embedded
+    ? {
+        requireAuth: false,
+        showSidebar: false,
+        showHeader: false,
+        rootClassName: 'bg-transparent',
+        mainClassName: 'min-h-0',
+        contentClassName: 'px-0 py-0 pt-0',
+      }
+    : {};
+
   return (
-    <UserLayout>
+    <UserLayout {...layoutProps}>
       <div className="space-y-4">
         {/* Header */}
         <section>

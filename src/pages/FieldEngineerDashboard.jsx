@@ -22,6 +22,33 @@ const reportStatusStyles = {
   resolved: 'bg-emerald-100 text-emerald-700',
 };
 
+const engineerStatusFlow = {
+  in_progress: {
+    label: 'In Progress',
+    verification: 'Needs Review',
+    userMessage: 'Field inspection has started for your report.',
+    adminMessage: 'Field inspection is now in progress.',
+  },
+  inspected: {
+    label: 'Inspected',
+    verification: 'Needs Review',
+    userMessage: 'Field inspection was completed and is now awaiting admin review.',
+    adminMessage: 'Field inspection has been completed and is ready for admin review.',
+  },
+  validated: {
+    label: 'Validated',
+    verification: 'Verified On-Site',
+    userMessage: 'Field findings validated your report. Admin review is in progress.',
+    adminMessage: 'Field findings validated this report. Please proceed with admin action.',
+  },
+  rejected: {
+    label: 'Rejected',
+    verification: 'Location Mismatch',
+    userMessage: 'Field findings flagged this report for additional admin review.',
+    adminMessage: 'Field findings rejected this report. Please review and decide next action.',
+  },
+};
+
 function EngineerStatusBadge({ status }) {
   const s = engineerStatusStyles[status] || { label: status || 'Unknown', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   return <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${s.cls}`}>{s.label}</span>;
@@ -117,6 +144,74 @@ export default function FieldEngineerDashboard() {
     }
   }, [user]);
 
+  const createReportNotification = useCallback(async (report, type, message) => {
+    if (!report?.user_id) return;
+
+    try {
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: report.user_id,
+          type,
+          title: 'Public report update',
+          message,
+          report_id: report.id,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+    } catch {
+      // Keep status updates working if notifications table is unavailable.
+    }
+  }, []);
+
+  const createAdminNotification = useCallback(async (reportId, message) => {
+    if (!reportId) return;
+
+    try {
+      const { data: admins } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'admin')
+        .limit(10);
+
+      if (!Array.isArray(admins) || admins.length === 0) return;
+
+      await supabase.from('notifications').insert(
+        admins.map((admin) => ({
+          user_id: admin.id,
+          type: 'public_report_field_update',
+          title: 'Field engineer update',
+          message,
+          report_id: reportId,
+          is_read: false,
+          created_at: new Date().toISOString(),
+        }))
+      );
+    } catch {
+      // Keep status updates working if notifications table is unavailable.
+    }
+  }, []);
+
+  const addPublicReportActivity = useCallback(async (reportId, statusLabel, note = '') => {
+    if (!reportId) return;
+
+    try {
+      const actorName = profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Field Engineer';
+      const noteText = note?.trim() ? ` Notes: ${note.trim()}` : '';
+      await supabase.from('public_report_activity_logs').insert({
+        report_id: reportId,
+        action_type: 'engineer_status_updated',
+        description: `Field engineer marked the report as ${statusLabel}.${noteText}`,
+        metadata: { engineer_status: statusLabel.toLowerCase().replace(/\s+/g, '_') },
+        actor_name: actorName,
+        actor_email: user?.email || null,
+        created_at: new Date().toISOString(),
+      });
+    } catch {
+      // Keep status updates working if activity logs table is unavailable.
+    }
+  }, [profile?.full_name, user]);
+
   useEffect(() => {
     if (user) {
       fetchReports();
@@ -133,20 +228,49 @@ export default function FieldEngineerDashboard() {
   const updateReportStatus = async (reportId, newStatus) => {
     setUpdatingStatus(true);
     try {
+      const flow = engineerStatusFlow[newStatus];
+      const activeReport = reports.find((row) => row.id === reportId) || selectedReport;
+
+      if (!flow) {
+        throw new Error('Unsupported status transition');
+      }
+      if (!activeReport) {
+        throw new Error('Report not found. Refresh and try again.');
+      }
+      if (String(activeReport.status || '').toLowerCase() === 'resolved') {
+        throw new Error('Resolved reports can no longer be edited by field engineers.');
+      }
+
+      const normalizedStatus = String(activeReport.status || '').toLowerCase();
+      const nextReportStatus = normalizedStatus === 'pending' ? 'reviewed' : activeReport.status;
       const { error } = await supabase
         .from('public_reports')
         .update({
           engineer_status: newStatus,
+          verification: flow.verification,
+          status: nextReportStatus,
           engineer_notes: engineerNotes,
           updated_at: new Date().toISOString()
         })
         .eq('id', reportId)
         .eq('assigned_engineer_id', user.id);
       if (error) throw error;
+
+      await addPublicReportActivity(reportId, flow.label, engineerNotes);
+      await createReportNotification(activeReport, 'public_report_field_update', flow.userMessage);
+      await createAdminNotification(reportId, flow.adminMessage);
+
       await fetchReports();
       showNotification(`Report marked as ${newStatus.replace('_', ' ')}`);
       if (selectedReport) {
-        setSelectedReport(prev => ({ ...prev, engineer_status: newStatus, engineer_notes: engineerNotes }));
+        setSelectedReport(prev => ({
+          ...prev,
+          engineer_status: newStatus,
+          verification: flow.verification,
+          status: nextReportStatus,
+          engineer_notes: engineerNotes,
+          updated_at: new Date().toISOString(),
+        }));
       }
     } catch (err) {
       console.error('Failed to update report:', err.message);
