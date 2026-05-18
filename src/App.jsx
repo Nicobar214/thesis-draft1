@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
+import LandingPage from "./pages/landingPage";
 import AuthPage from "./pages/AuthPage";
 import AdminAuthPage from "./pages/AdminAuthPage";
 import Dashboard from "./pages/Dashboard";
@@ -22,8 +23,31 @@ import ContractorReports from "./pages/ContractorReports";
 import LguAuth from "./pages/LguAuth";
 import LguDashboard from "./pages/LguDashboard";
 import PWAInstallBanner from "./components/PWAInstallBanner";
+import { triggerQueuedSync } from "./lib/offlineSync";
 
 function App() {
+  useEffect(() => {
+    const handleOnline = () => {
+      console.info('[offline-sync] Online event');
+      triggerQueuedSync();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        console.info('[offline-sync] Visible while online');
+        triggerQueuedSync();
+      }
+    };
+    if (navigator.onLine) {
+      handleOnline();
+    }
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
   return (
     <Router>
       <PWAInstallBanner />

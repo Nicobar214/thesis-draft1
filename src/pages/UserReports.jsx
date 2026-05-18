@@ -7,6 +7,64 @@ import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 
+export const SEVERITY_TAXONOMY = {
+  safety: {
+    label: 'Safety Hazard',
+    color: 'bg-red-100 text-red-700 border-red-200',
+    icon: '🔴',
+    description: 'Risk to life or physical harm',
+    problems: [
+      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
+      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
+      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
+      { value: 'accident_site', label: 'Active accident site' },
+      { value: 'sharp_debris', label: 'Sharp debris / broken glass on road' },
+      { value: 'unsafe_bridge', label: 'Unsafe or damaged bridge' },
+    ],
+  },
+  flood: {
+    label: 'Flood / Drainage',
+    color: 'bg-sky-100 text-sky-700 border-sky-200',
+    icon: '🌊',
+    description: 'Water-related road obstruction',
+    problems: [
+      { value: 'road_flooded', label: 'Road completely flooded' },
+      { value: 'partial_flood', label: 'Partial flooding — passable with care' },
+      { value: 'blocked_drainage', label: 'Blocked or clogged drainage' },
+      { value: 'erosion', label: 'Soil erosion along road edge' },
+      { value: 'landslide', label: 'Landslide / mudflow on road' },
+    ],
+  },
+  issue: {
+    label: 'Road Condition Issue',
+    color: 'bg-amber-100 text-amber-700 border-amber-200',
+    icon: '🔧',
+    description: 'Physical damage to road surface',
+    problems: [
+      { value: 'pothole', label: 'Potholes / lubak' },
+      { value: 'crack', label: 'Surface cracks' },
+      { value: 'missing_pavement', label: 'Missing pavement / unpaved section' },
+      { value: 'broken_curb', label: 'Broken curb or road edge' },
+      { value: 'uneven_surface', label: 'Severely uneven / bumpy surface' },
+      { value: 'dust_gravel', label: 'Excessive dust / loose gravel' },
+    ],
+  },
+  general: {
+    label: 'General Concern',
+    color: 'bg-slate-100 text-slate-600 border-slate-200',
+    icon: '💬',
+    description: 'Other observations or suggestions',
+    problems: [
+      { value: 'no_signage', label: 'Missing road signs' },
+      { value: 'poor_lighting', label: 'No or poor streetlighting' },
+      { value: 'vegetation', label: 'Overgrown vegetation blocking view' },
+      { value: 'project_delay', label: 'Project seems delayed / stalled' },
+      { value: 'quality_concern', label: 'Construction quality concern' },
+      { value: 'other', label: 'Other concern' },
+    ],
+  },
+};
+
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Status badge â”€â”€â”€ */
 function StatusBadge({ status }) {
@@ -32,18 +90,128 @@ function fmtDate(iso) {
 /* â”€â”€â”€ Classify report â”€â”€â”€ */
 function classifyReport(desc = '') {
   const d = desc.toLowerCase();
-  if (d.includes('lubak') || d.includes('sira') || d.includes('infrastructure') || d.includes('road') || d.includes('daan')) return 'Infrastructure';
-  if (d.includes('safety') || d.includes('aksidente') || d.includes('peligro') || d.includes('danger')) return 'Safety Concern';
-  if (d.includes('flood') || d.includes('baha') || d.includes('tubig') || d.includes('drainage')) return 'Flood / Drainage';
-  return 'General';
+  if (/safety|aksidente|peligro|danger|hazard/.test(d)) return 'safety';
+  if (/flood|baha|tubig|drainage|water|inundated/.test(d)) return 'flood';
+  if (/lubak|sira|pothole|road|daan|crack|damage|broken/.test(d)) return 'issue';
+  return 'general';
 }
 
-const categoryColor = {
-  'Infrastructure':   'bg-violet-100 text-violet-700',
-  'Safety Concern':   'bg-red-100 text-red-700',
-  'Flood / Drainage': 'bg-sky-100 text-sky-700',
-  'General':          'bg-slate-100 text-slate-600',
-};
+function resolveCategory(report) {
+  return report.severity_category || classifyReport(report.description);
+}
+
+function resolveSpecificProblem(report) {
+  if (!report.specific_problem || !report.severity_category) return null;
+  const cat = SEVERITY_TAXONOMY[report.severity_category];
+  if (!cat) return null;
+  return cat.problems.find((p) => p.value === report.specific_problem) || null;
+}
+
+function SeverityBadge({ category }) {
+  const meta = SEVERITY_TAXONOMY[category];
+  if (!meta) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border ${meta.color}`}>
+      {meta.icon} {meta.label}
+    </span>
+  );
+}
+
+function ReportClassificationStep({ onConfirm, onCancel }) {
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedProblem, setSelectedProblem] = useState('');
+
+  const categoryMeta = selectedCategory ? SEVERITY_TAXONOMY[selectedCategory] : null;
+  const problemOptions = categoryMeta?.problems || [];
+  const canProceed = selectedCategory && selectedProblem;
+
+  const handleCategoryChange = (val) => {
+    setSelectedCategory(val);
+    setSelectedProblem('');
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
+        <p className="text-sm font-medium text-teal-800 mb-0.5">Step 1 of 2 — Classify your report</p>
+        <p className="text-xs text-teal-600">
+          Select the severity and specific problem so your report reaches the right team immediately.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
+          What type of issue is this?
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {Object.entries(SEVERITY_TAXONOMY).map(([key, meta]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleCategoryChange(key)}
+              className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
+                selectedCategory === key
+                  ? `${meta.color} ring-2 ring-offset-1 ring-current`
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-lg leading-none mt-0.5">{meta.icon}</span>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedCategory && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            What specifically is the problem?
+          </label>
+          <select
+            value={selectedProblem}
+            onChange={(e) => setSelectedProblem(e.target.value)}
+            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"
+          >
+            <option value="">— Select specific problem —</option>
+            {problemOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+
+          {selectedProblem && (
+            <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${categoryMeta.color}`}>
+              <span>{categoryMeta.icon}</span>
+              <span>
+                {categoryMeta.label} → {problemOptions.find((p) => p.value === selectedProblem)?.label}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!canProceed}
+          onClick={() => onConfirm({ category: selectedCategory, problem: selectedProblem })}
+          className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Continue to Report →
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function UserReports() {
   const [reports, setReports] = useState([]);
@@ -57,7 +225,10 @@ function UserReports() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [userId, setUserId] = useState(null);
-  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportStep, setReportStep] = useState('idle');
+  const [pendingClassification, setPendingClassification] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [problemFilter, setProblemFilter] = useState('all');
 
   /* â”€â”€ Get current user & fetch their reports â”€â”€ */
   useEffect(() => {
@@ -112,14 +283,14 @@ function UserReports() {
 
       if (selected) {
         setSelected(null);
-      } else if (showReportForm) {
-        setShowReportForm(false);
+      } else if (reportStep !== 'idle') {
+        setReportStep('idle');
       }
     };
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [selected, showReportForm]);
+  }, [selected, reportStep]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -213,9 +384,15 @@ function UserReports() {
         if (!hay.includes(q)) return false;
       }
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (categoryFilter !== 'all') {
+        if (resolveCategory(r) !== categoryFilter) return false;
+      }
+      if (problemFilter !== 'all') {
+        if (r.specific_problem !== problemFilter) return false;
+      }
       return true;
     });
-  }, [reports, search, statusFilter]);
+  }, [reports, search, statusFilter, categoryFilter, problemFilter]);
 
   /* â”€â”€ Stat counts â”€â”€ */
   const counts = useMemo(() => ({
@@ -235,7 +412,7 @@ function UserReports() {
             <p className="mt-1 text-slate-500">Track the status of your submitted reports</p>
           </section>
           <button
-            onClick={() => setShowReportForm(true)}
+            onClick={() => setReportStep('classify')}
             className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-teal-700 transition text-sm shrink-0 self-start sm:self-auto"
           >
             <Icons.Plus />
@@ -289,7 +466,63 @@ function UserReports() {
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
           </div>
+          <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
+            <span className="text-xs text-slate-400 font-medium w-24 shrink-0 flex items-center">
+              Filter by type
+            </span>
+            <div className="relative flex-1">
+              <select
+                value={categoryFilter}
+                onChange={(e) => { setCategoryFilter(e.target.value); setProblemFilter('all'); }}
+                className="appearance-none w-full px-4 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
+              >
+                <option value="all">All Severity Types</option>
+                {Object.entries(SEVERITY_TAXONOMY).map(([key, meta]) => (
+                  <option key={key} value={key}>{meta.icon} {meta.label}</option>
+                ))}
+              </select>
+            </div>
+            {categoryFilter !== 'all' && (
+              <div className="relative flex-1">
+                <select
+                  value={problemFilter}
+                  onChange={(e) => setProblemFilter(e.target.value)}
+                  className="appearance-none w-full px-4 pr-9 py-2.5 border border-teal-200 bg-teal-50 rounded-xl text-sm text-teal-800 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
+                >
+                  <option value="all">All — {SEVERITY_TAXONOMY[categoryFilter]?.label}</option>
+                  {(SEVERITY_TAXONOMY[categoryFilter]?.problems || []).map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {(categoryFilter !== 'all' || statusFilter !== 'all' || search) && (
+              <button
+                onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); setStatusFilter('all'); setSearch(''); }}
+                className="shrink-0 text-xs text-slate-400 hover:text-red-500 transition font-medium px-2"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
         </div>
+
+        {(categoryFilter !== 'all' || problemFilter !== 'all') && (
+          <div className="flex flex-wrap gap-2">
+            {categoryFilter !== 'all' && (
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${SEVERITY_TAXONOMY[categoryFilter]?.color}`}>
+                {SEVERITY_TAXONOMY[categoryFilter]?.icon} {SEVERITY_TAXONOMY[categoryFilter]?.label}
+                <button onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); }} className="ml-1 hover:opacity-70">×</button>
+              </span>
+            )}
+            {problemFilter !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border bg-teal-50 text-teal-700 border-teal-200">
+                {SEVERITY_TAXONOMY[categoryFilter]?.problems.find((p) => p.value === problemFilter)?.label}
+                <button onClick={() => setProblemFilter('all')} className="ml-1 hover:opacity-70">×</button>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Reports list */}
         {loading && (
@@ -318,7 +551,7 @@ function UserReports() {
             </p>
             {reports.length === 0 && (
               <button
-                onClick={() => setShowReportForm(true)}
+                onClick={() => setReportStep('classify')}
                 className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-teal-600 hover:text-teal-700"
               >
                 Submit a Report
@@ -331,7 +564,8 @@ function UserReports() {
         {!loading && filtered.length > 0 && (
           <div className="space-y-3">
             {filtered.map((r) => {
-              const cat = classifyReport(r.description);
+              const cat = resolveCategory(r);
+              const problem = resolveSpecificProblem(r);
               return (
                 <article
                   key={r.id}
@@ -341,7 +575,12 @@ function UserReports() {
                     <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                       <div className="flex flex-wrap items-center gap-2 sm:w-48 shrink-0">
                         <StatusBadge status={r.status} />
-                        <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${categoryColor[cat]}`}>{cat}</span>
+                        <SeverityBadge category={cat} />
+                        {problem && (
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-600">
+                            {problem.label}
+                          </span>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-900 leading-snug line-clamp-2 mb-1.5">{r.description}</p>
@@ -392,11 +631,14 @@ function UserReports() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between p-6 pb-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={selected.status} />
-                <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${categoryColor[classifyReport(selected.description)]}`}>
-                  {classifyReport(selected.description)}
-                </span>
+                <SeverityBadge category={resolveCategory(selected)} />
+                {resolveSpecificProblem(selected) && (
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-600">
+                    {resolveSpecificProblem(selected).label}
+                  </span>
+                )}
               </div>
               <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 transition p-1 -mr-1">
                 <Icons.X />
@@ -446,6 +688,15 @@ function UserReports() {
                     value: selected.assigned_engineer_name || 'Not assigned yet',
                   },
                   { label: 'Verification', value: selected.verification },
+                  selected.severity_category && {
+                    label: 'Severity',
+                    value: `${SEVERITY_TAXONOMY[selected.severity_category]?.icon} ${SEVERITY_TAXONOMY[selected.severity_category]?.label}`,
+                  },
+                  selected.specific_problem && {
+                    label: 'Problem',
+                    value: SEVERITY_TAXONOMY[selected.severity_category]?.problems
+                      .find((p) => p.value === selected.specific_problem)?.label || selected.specific_problem,
+                  },
                 ].filter(Boolean).map((item) => (
                   <div key={item.label} className="flex items-start gap-3 text-sm">
                     <span className="text-slate-400 w-28 shrink-0 font-medium">{item.label}</span>
@@ -464,24 +715,80 @@ function UserReports() {
           </div>
         </div>
       )}
-      {/* Report form modal */}
-      {showReportForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowReportForm(false)}>
+      {reportStep === 'classify' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => setReportStep('idle')}
+        >
+          <div
+            className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100">
+              <div>
+                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report</p>
+                <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Classify Your Issue</h3>
+              </div>
+              <button onClick={() => setReportStep('idle')} className="text-slate-400 hover:text-slate-700 transition p-1">
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <ReportClassificationStep
+                onConfirm={({ category, problem }) => {
+                  setPendingClassification({ category, problem });
+                  setReportStep('form');
+                }}
+                onCancel={() => setReportStep('idle')}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reportStep === 'form' && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={() => setReportStep('idle')}
+        >
           <div
             className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 pb-0">
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100">
               <div>
-                <p className="text-sm font-medium text-teal-600 uppercase tracking-wider">Location-Verified Feedback</p>
-                <h3 className="text-lg font-semibold text-slate-900 mt-1">Submit a Report</h3>
+                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report — Step 2 of 2</p>
+                <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Location-Verified Report</h3>
               </div>
-              <button onClick={() => setShowReportForm(false)} className="text-slate-400 hover:text-slate-700 transition p-1 -mr-1">
-                <Icons.X />
+              <button onClick={() => setReportStep('idle')} className="text-slate-400 hover:text-slate-700 transition p-1">
+                ✕
               </button>
             </div>
+
+            {pendingClassification && (
+              <div className="px-6 pt-4">
+                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${SEVERITY_TAXONOMY[pendingClassification.category]?.color}`}>
+                  {SEVERITY_TAXONOMY[pendingClassification.category]?.icon}
+                  {' '}{SEVERITY_TAXONOMY[pendingClassification.category]?.label}
+                  {' → '}
+                  {SEVERITY_TAXONOMY[pendingClassification.category]?.problems.find(
+                    (p) => p.value === pendingClassification.problem
+                  )?.label}
+                  <button
+                    onClick={() => setReportStep('classify')}
+                    className="ml-2 underline underline-offset-2 opacity-60 hover:opacity-100"
+                  >
+                    change
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="p-6">
-              <PublicReportForm />
+              <PublicReportForm
+                prefillCategory={pendingClassification?.category}
+                prefillProblem={pendingClassification?.problem}
+              />
             </div>
           </div>
         </div>

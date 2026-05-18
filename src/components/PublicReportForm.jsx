@@ -4,6 +4,8 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
+import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 
 // ── Constants ──────────────────────────────────────────────
 const REGION          = 'Region VI – Western Visayas';
@@ -121,11 +123,31 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState(null);
+  const [isOffline,   setIsOffline]   = useState(!navigator.onLine);
+  const [cachedProjectsMeta, setCachedProjectsMeta] = useState(null);
+  const [queuedOffline, setQueuedOffline] = useState(false);
 
   // ── Auth check ───────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user); });
   }, []);
+
+  useEffect(() => {
+    const updateStatus = () => setIsOffline(!navigator.onLine);
+    updateStatus();
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    return () => {
+      window.removeEventListener('online', updateStatus);
+      window.removeEventListener('offline', updateStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isOffline) return;
+    console.info('[offline-sync] Online in PublicReportForm');
+    triggerQueuedSync();
+  }, [isOffline]);
 
   // ── Acquire GPS ──────────────────────────────────────────────
   const acquireGps = useCallback(() => {
@@ -177,12 +199,39 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── Load all FMR projects once GPS resolves ──────────────────
   useEffect(() => {
     if (!gps || projReady) return;
-    supabase
-      .from('fmr_projects')
-      .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status, project_length_km')
-      .then(({ data }) => {
-        if (data) { setAllProjects(data); setProjReady(true); }
-      });
+    let alive = true;
+
+    const loadProjects = async () => {
+      try {
+        const { data, error: fetchErr } = await supabase
+          .from('fmr_projects')
+          .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status, project_length_km');
+
+        if (fetchErr) throw fetchErr;
+        if (!alive) return;
+        setAllProjects(data || []);
+        setProjReady(true);
+        const cached = await saveCachedProjects(data || []);
+        if (alive) setCachedProjectsMeta(cached);
+      } catch {
+        const cached = await loadCachedProjects();
+        if (!alive) return;
+        if (cached?.data?.length) {
+          setAllProjects(cached.data);
+          setProjReady(true);
+          setCachedProjectsMeta(cached);
+        } else {
+          setAllProjects([]);
+          setProjReady(true);
+          setCachedProjectsMeta(null);
+        }
+      }
+    };
+
+    loadProjects();
+    return () => {
+      alive = false;
+    };
   }, [gps, projReady]);
 
   // ── Recompute nearby when GPS or projects change ─────────────
@@ -273,12 +322,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     if (!gps)                 { setError('GPS coordinates are required.'); return; }
     setSubmitting(true);
     try {
-      const path = `reports/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-      const { error: upErr } = await supabase.storage.from('public-report-photos').upload(path, photoBlob, { contentType: 'image/jpeg' });
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from('public-report-photos').getPublicUrl(path);
       const verification = computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude);
-      const payload = {
+      const payloadBase = {
         full_name:       fullName.trim() || 'Anonymous',
         contact_info:    contact.trim(),
         region:          REGION,
@@ -288,7 +333,6 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         street:          '',
         project_id:      `fmr-${selProject.id}`,
         project_name:    selProject.project_name,
-        photo_url:       urlData.publicUrl,
         latitude:        gps.lat,
         longitude:       gps.lng,
         geo_accuracy:    gps.accuracy,
@@ -300,12 +344,64 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         specific_problem: prefillProblem || null,
         source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
       };
-      if (currentUser) payload.user_id = currentUser.id;
+      if (currentUser) payloadBase.user_id = currentUser.id;
+
+      const session = await supabase.auth.getSession();
+      const authToken = session?.data?.session?.access_token || null;
+      const photoPath = `reports/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+
+      if (isOffline) {
+        const queued = await enqueueReport(payloadBase, photoBlob, { photoPath, authToken });
+        console.info('[offline-report] Saved offline report', queued.id);
+        await requestBackgroundSync();
+        setQueuedOffline(true);
+        setStep('success');
+        return;
+      }
+
+      const { error: upErr } = await supabase.storage.from('public-report-photos').upload(photoPath, photoBlob, { contentType: 'image/jpeg' });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from('public-report-photos').getPublicUrl(photoPath);
+      const payload = { ...payloadBase, photo_url: urlData.publicUrl };
+
       const { error: insErr } = await supabase.from('public_reports').insert(payload);
       if (insErr) throw insErr;
+      setQueuedOffline(false);
       setStep('success');
     } catch (err) {
       console.error('Submit error:', err);
+      if (!navigator.onLine || err?.message?.toLowerCase().includes('failed to fetch')) {
+        const session = await supabase.auth.getSession();
+        const authToken = session?.data?.session?.access_token || null;
+        const photoPath = `reports/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+        const queued = await enqueueReport({
+          full_name:       fullName.trim() || 'Anonymous',
+          contact_info:    contact.trim(),
+          region:          REGION,
+          province:        PROVINCE,
+          municipality:    selProject.municipality || '',
+          barangay:        selProject.location     || '',
+          street:          '',
+          project_id:      `fmr-${selProject.id}`,
+          project_name:    selProject.project_name,
+          latitude:        gps.lat,
+          longitude:       gps.lng,
+          geo_accuracy:    gps.accuracy,
+          photo_timestamp: photoTs || new Date().toISOString(),
+          verification: computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude),
+          description:     description.trim(),
+          category,
+          severity_category: prefillCategory || null,
+          specific_problem: prefillProblem || null,
+          source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
+          ...(currentUser ? { user_id: currentUser.id } : {}),
+        }, photoBlob, { photoPath, authToken });
+        console.info('[offline-report] Saved offline report after failure', queued?.id);
+        await requestBackgroundSync();
+        setQueuedOffline(true);
+        setStep('success');
+        return;
+      }
       if (err.message?.includes("Could not find the 'category' column")) {
         setError('The database schema is outdated. Run supabase_fix_public_reports_schema.sql in Supabase SQL Editor, then submit again.');
       } else if (err.message?.toLowerCase().includes('project_id') && err.message?.toLowerCase().includes('integer')) {
@@ -344,6 +440,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     setFullName('');
     setContact('');
     setError(null);
+    setQueuedOffline(false);
     setTimeout(acquireGps, 80);
   };
   // ════════════════════════════════════════════════════════
@@ -361,7 +458,9 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         </div>
         <h3 className="text-xl font-bold text-slate-900 mb-2">Report Submitted!</h3>
         <p className="text-slate-600 max-w-md mx-auto mb-6">
-          Your report has been recorded and location-verified. The photo and GPS coordinates confirm your on-site presence. Thank you for helping monitor community infrastructure.
+          {queuedOffline
+            ? 'Your report was saved offline and will sync automatically when you are back online.'
+            : 'Your report has been recorded and location-verified. The photo and GPS coordinates confirm your on-site presence. Thank you for helping monitor community infrastructure.'}
         </p>
         <button onClick={resetAll} className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-semibold text-sm transition">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,6 +567,15 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
             {lowAcc && <span className="ml-1 font-medium">— move to open sky for better results</span>}
           </p>
         </div>
+
+        {isOffline && (
+          <div className="px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-800">
+            Offline mode: using the last cached project list.
+            {cachedProjectsMeta?.updatedAt && (
+              <span className="ml-1">Last synced {new Date(cachedProjectsMeta.updatedAt).toLocaleString()}.</span>
+            )}
+          </div>
+        )}
 
         {/* Zero results state */}
         {!browseAll && displayList.length === 0 && (
