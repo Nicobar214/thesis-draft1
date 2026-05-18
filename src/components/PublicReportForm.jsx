@@ -83,7 +83,7 @@ const inputCls =
 // ═══════════════════════════════════════════════════════════
 //  COMPONENT
 // ═══════════════════════════════════════════════════════════
-export default function PublicReportForm() {
+export default function PublicReportForm({ prefillCategory = null, prefillProblem = null }) {
   // ── Step: 'locating' | 'picking' | 'reporting' | 'success' ──
   const [step, setStep] = useState('locating');
 
@@ -296,6 +296,8 @@ export default function PublicReportForm() {
         verification,
         description:     description.trim(),
         category,
+        severity_category: prefillCategory || null,
+        specific_problem: prefillProblem || null,
         source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
       };
       if (currentUser) payload.user_id = currentUser.id;

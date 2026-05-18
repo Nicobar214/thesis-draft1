@@ -36,6 +36,7 @@ import 'leaflet/dist/leaflet.css';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import AdminWorkflowControls from '../components/publicReports/AdminWorkflowControls';
 import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
+import PriorityTab from '../components/admin/PriorityTab';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -358,6 +359,7 @@ export default function Dashboard() {
   const [adminPrivateNoteSaving, setAdminPrivateNoteSaving] = useState(false);
   const [adminUserId, setAdminUserId] = useState('');
   const [selectedReportLguDecision, setSelectedReportLguDecision] = useState(null);
+  const [escalations, setEscalations] = useState([]);
 
   // Field engineer state
   const [fieldEngineers, setFieldEngineers] = useState([]);
@@ -567,6 +569,20 @@ export default function Dashboard() {
       console.error('Error fetching public reports:', err.message);
     } finally {
       setPublicReportsLoading(false);
+    }
+  }, []);
+
+  const fetchEscalations = useCallback(async () => {
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('public_report_lgu_escalations')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (fetchErr) throw fetchErr;
+      setEscalations(data || []);
+    } catch (err) {
+      console.error('Error fetching escalations:', err.message);
+      setEscalations([]);
     }
   }, []);
 
@@ -1427,6 +1443,7 @@ export default function Dashboard() {
       fetchProjects();
       fetchFeedbacks();
       fetchPublicReports();
+      fetchEscalations();
       fetchFmrProjects();
       fetchProjectRoutes();
       fetchMapReportData();
@@ -1454,6 +1471,11 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => { fetchPublicReports(); fetchMapReportData(); })
       .subscribe();
 
+    const escalationsChannel = supabase
+      .channel('admin-escalations-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_lgu_escalations' }, () => fetchEscalations())
+      .subscribe();
+
     // Real-time subscription for FMR projects
     const fmrChannel = supabase
       .channel('admin-fmr-realtime')
@@ -1477,11 +1499,12 @@ export default function Dashboard() {
       supabase.removeChannel(projectChannel);
       supabase.removeChannel(feedbackChannel);
       supabase.removeChannel(publicReportsChannel);
+      supabase.removeChannel(escalationsChannel);
       supabase.removeChannel(fmrChannel);
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2178,6 +2201,7 @@ export default function Dashboard() {
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z', badgeCount: pendingFeedbackCount },
     { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
@@ -2354,6 +2378,7 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'FMR Projects'}
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
+                {activeTab === 'priorities' && 'Priorities'}
                 {activeTab === 'reports' && 'Reports'}
                 {activeTab === 'feedback' && 'Community Feedback'}
                 {activeTab === 'public-reports' && 'Public Reports'}
@@ -2364,6 +2389,7 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
+                {activeTab === 'priorities' && 'Weighted ranking of FMR project urgency'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
                 {activeTab === 'feedback' && 'View and manage citizen feedback on projects'}
                 {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
@@ -3524,6 +3550,23 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Priorities Tab */}
+          {activeTab === 'priorities' && (
+            <PriorityTab
+              projects={fmrProjects}
+              reports={publicReports}
+              escalations={escalations}
+              onViewReports={(project) => {
+                openProjectFeedbackModal({
+                  projectName: project.project_name,
+                  barangay: project.barangay,
+                  municipality: project.municipality,
+                  id: project.id,
+                });
+              }}
+            />
           )}
 
           {/* Reports Tab */}
@@ -4837,13 +4880,9 @@ export default function Dashboard() {
                           report={selectedPublicReport}
                           adminIdentity={adminIdentity}
                           onNotify={showNotification}
-                          onUpdateStatus={async (reportId, newStatus) => {
-                            await updatePublicReportStatus(reportId, newStatus);
-                            setSelectedPublicReport(prev => prev ? { ...prev, status: newStatus, updated_at: new Date().toISOString() } : null);
-                          }}
                           onResolve={async () => {
                             await updatePublicReportStatus(selectedPublicReport.id, 'resolved');
-                            setSelectedPublicReport(prev => prev ? { ...prev, status: 'resolved', updated_at: new Date().toISOString() } : null);
+                            setSelectedPublicReport(null);
                           }}
                         />
 
@@ -5004,7 +5043,7 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                                                {/* Admin Actions */}
+                        {/* Admin Actions */}
                         <div className="pt-4 border-t border-slate-100">
                           <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
                           <div className="flex gap-3 flex-wrap">
@@ -5022,6 +5061,8 @@ export default function Dashboard() {
                             </button>
                           </div>
                         </div>
+
+                        {/* Assign Field Engineer */}
                         <div className="pt-4 border-t border-slate-100">
                           <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Assign Field Engineer</p>
                           {selectedPublicReport.assigned_engineer_id ? (
