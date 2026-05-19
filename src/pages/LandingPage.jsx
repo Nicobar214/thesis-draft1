@@ -304,9 +304,13 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-white mb-4">Quick Access</h4>
               <ul className="space-y-2 text-sm">
-                <li><Link to="/report-portal" className="hover:text-white transition">Report Issue</Link></li>
                 <li><Link to="/signin" className="hover:text-white transition">Sign In</Link></li>
                 <li><Link to="/signup" className="hover:text-white transition">Create Account</Link></li>
+                <li><Link to="/admin" className="hover:text-white transition">Admin Sign In</Link></li>
+                <li><Link to="/signin" className="hover:text-white transition">User Sign In</Link></li>
+                <li><Link to="/field-engineer/login" className="hover:text-white transition">Field Engineer Sign In</Link></li>
+                <li><Link to="/contractor/login" className="hover:text-white transition">Contractor Sign In</Link></li>
+                <li><Link to="/lgu/login" className="hover:text-white transition">LGU Sign In</Link></li>
               </ul>
             </div>
 

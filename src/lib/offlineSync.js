@@ -1,10 +1,18 @@
 import { supabase } from './supabase';
-import { getQueuedReports, removeQueuedReport, updateQueuedReport } from './offlineReports';
+import {
+  getQueuedReports,
+  getQueuedEngineerUpdates,
+  removeQueuedReport,
+  removeQueuedEngineerUpdate,
+  updateQueuedReport,
+  updateQueuedEngineerUpdate,
+} from './offlineReports';
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 5000;
 const MAX_DELAY_MS = 5 * 60 * 1000;
 let syncInFlight = null;
+let feSyncInFlight = null;
 const SW_READY_TIMEOUT_MS = 1500;
 
 function buildPhotoPath(id) {
@@ -39,6 +47,34 @@ function canAttemptSync(item) {
     if (Number.isFinite(nextTs) && nextTs > Date.now()) return false;
   }
   return true;
+}
+
+async function notifyAdmins(reportId, message) {
+  if (!reportId || !message) return;
+
+  try {
+    const { data: admins } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(10);
+
+    if (!Array.isArray(admins) || admins.length === 0) return;
+
+    await supabase.from('notifications').insert(
+      admins.map((admin) => ({
+        user_id: admin.id,
+        type: 'public_report_field_update',
+        title: 'Field engineer update',
+        message,
+        report_id: reportId,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      }))
+    );
+  } catch {
+    // Notifications are best-effort.
+  }
 }
 
 export async function syncQueuedReports() {
@@ -120,6 +156,102 @@ export async function syncQueuedReports() {
   return syncInFlight;
 }
 
+export async function syncQueuedEngineerUpdates() {
+  if (feSyncInFlight) return feSyncInFlight;
+  feSyncInFlight = (async () => {
+    console.info('[fe-sync] syncQueuedEngineerUpdates invoked');
+    let queued = [];
+    try {
+      const result = await getQueuedEngineerUpdates();
+      queued = Array.isArray(result) ? result : [];
+    } catch (err) {
+      console.warn('[fe-sync] Failed to read queue', err);
+      queued = [];
+    }
+
+    console.info(`[fe-sync] Queue size: ${queued.length}`);
+    const pending = queued.filter(canAttemptSync);
+    if (pending.length === 0) {
+      console.info('[fe-sync] No pending items');
+      return { processed: 0, success: 0, failed: 0 };
+    }
+
+    console.info(`[fe-sync] Sync start: ${pending.length} queued`);
+    let success = 0;
+    let failed = 0;
+
+    for (const item of pending) {
+      try {
+        await updateQueuedEngineerUpdate(item.id, { isSyncing: true, status: 'pending' });
+        console.info(`[fe-sync] Sending update ${item.id}`);
+
+        const updatePayload = item.payload || {};
+        const { error: updateError } = await supabase
+          .from('public_reports')
+          .update(updatePayload)
+          .eq('id', item.reportId)
+          .eq('assigned_engineer_id', item.engineerId);
+
+        if (updateError) throw updateError;
+
+        if (item.activity) {
+          try {
+            await supabase.from('public_report_activity_logs').insert(item.activity);
+          } catch {
+            // Best-effort activity logging.
+          }
+        }
+
+        if (item.notifications?.userId && item.notifications?.userMessage) {
+          try {
+            await supabase.from('notifications').insert({
+              user_id: item.notifications.userId,
+              type: 'public_report_field_update',
+              title: 'Public report update',
+              message: item.notifications.userMessage,
+              report_id: item.reportId,
+              is_read: false,
+              created_at: new Date().toISOString(),
+            });
+          } catch {
+            // Best-effort notifications.
+          }
+        }
+
+        if (item.notifications?.adminMessage) {
+          await notifyAdmins(item.reportId, item.notifications.adminMessage);
+        }
+
+        await updateQueuedEngineerUpdate(item.id, { status: 'synced', isSyncing: false, lastError: null });
+        await removeQueuedEngineerUpdate(item.id);
+        success += 1;
+      } catch (err) {
+        const nextAttempts = (item.attempts || 0) + 1;
+        const shouldRetry = nextAttempts < MAX_ATTEMPTS;
+        const nextAttemptAt = shouldRetry ? new Date(computeNextAttemptMs(nextAttempts)).toISOString() : null;
+        failed += 1;
+        await updateQueuedEngineerUpdate(item.id, {
+          attempts: nextAttempts,
+          status: 'failed',
+          isSyncing: false,
+          lastError: err?.message || 'Sync failed',
+          nextAttemptAt,
+        });
+        if (!shouldRetry) {
+          console.warn(`[fe-sync] Max attempts reached for ${item.id}`);
+        }
+      }
+    }
+
+    console.info(`[fe-sync] Sync complete: ${success} success, ${failed} failed`);
+    return { processed: pending.length, success, failed };
+  })().finally(() => {
+    feSyncInFlight = null;
+  });
+
+  return feSyncInFlight;
+}
+
 export async function requestBackgroundSync() {
   if (!('serviceWorker' in navigator)) return false;
 
@@ -159,7 +291,9 @@ export async function triggerQueuedSync() {
   const scheduled = await requestBackgroundSync();
   if (scheduled) {
     console.info('[offline-sync] Background sync scheduled');
+    await syncQueuedEngineerUpdates();
     return { scheduled: true };
   }
+  await syncQueuedEngineerUpdates();
   return syncQueuedReports();
 }

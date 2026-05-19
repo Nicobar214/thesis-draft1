@@ -9,8 +9,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const DB_NAME = 'kalsatrack-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const REPORT_STORE = 'reportQueue';
+const ENGINEER_STORE = 'engineerQueue';
 
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 5000;
@@ -81,6 +82,9 @@ function openDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(REPORT_STORE)) {
         db.createObjectStore(REPORT_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(ENGINEER_STORE)) {
+        db.createObjectStore(ENGINEER_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);

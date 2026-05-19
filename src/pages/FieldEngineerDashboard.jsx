@@ -5,6 +5,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { enqueueEngineerUpdate } from '../lib/offlineReports';
+import { requestBackgroundSync } from '../lib/offlineSync';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 
 /* ─── Engineer Status Helpers ─── */
@@ -85,11 +87,23 @@ export default function FieldEngineerDashboard() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [notification, setNotification] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
+
+  useEffect(() => {
+    const updateStatus = () => setIsOffline(!navigator.onLine);
+    updateStatus();
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    return () => {
+      window.removeEventListener('online', updateStatus);
+      window.removeEventListener('offline', updateStatus);
+    };
+  }, []);
 
   // Auth check
   useEffect(() => {
@@ -243,6 +257,56 @@ export default function FieldEngineerDashboard() {
 
       const normalizedStatus = String(activeReport.status || '').toLowerCase();
       const nextReportStatus = normalizedStatus === 'pending' ? 'reviewed' : activeReport.status;
+
+      if (isOffline) {
+        const actorName = profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Field Engineer';
+        await enqueueEngineerUpdate({
+          type: 'status',
+          reportId,
+          engineerId: user.id,
+          payload: {
+            engineer_status: newStatus,
+            verification: flow.verification,
+            status: nextReportStatus,
+            engineer_notes: engineerNotes,
+            updated_at: new Date().toISOString(),
+          },
+          activity: {
+            report_id: reportId,
+            action_type: 'engineer_status_updated',
+            description: `Field engineer marked the report as ${flow.label}.${engineerNotes?.trim() ? ` Notes: ${engineerNotes.trim()}` : ''}`,
+            metadata: { engineer_status: newStatus },
+            actor_name: actorName,
+            actor_email: user?.email || null,
+            created_at: new Date().toISOString(),
+          },
+          notifications: {
+            userId: activeReport.user_id,
+            userMessage: flow.userMessage,
+            adminMessage: flow.adminMessage,
+          }
+        });
+        await requestBackgroundSync();
+
+        setReports((prev) => prev.map((row) => (
+          row.id === reportId
+            ? { ...row, engineer_status: newStatus, verification: flow.verification, status: nextReportStatus, engineer_notes: engineerNotes, updated_at: new Date().toISOString() }
+            : row
+        )));
+        if (selectedReport) {
+          setSelectedReport(prev => ({
+            ...prev,
+            engineer_status: newStatus,
+            verification: flow.verification,
+            status: nextReportStatus,
+            engineer_notes: engineerNotes,
+            updated_at: new Date().toISOString(),
+          }));
+        }
+        showNotification('Saved offline. Will sync when online.');
+        return;
+      }
+
       const { error } = await supabase
         .from('public_reports')
         .update({
@@ -283,6 +347,23 @@ export default function FieldEngineerDashboard() {
   // Save notes only
   const saveNotes = async (reportId) => {
     try {
+      if (isOffline) {
+        await enqueueEngineerUpdate({
+          type: 'notes',
+          reportId,
+          engineerId: user.id,
+          payload: {
+            engineer_notes: engineerNotes,
+            updated_at: new Date().toISOString(),
+          },
+        });
+        await requestBackgroundSync();
+        showNotification('Notes saved offline. Will sync when online.');
+        if (selectedReport) {
+          setSelectedReport(prev => ({ ...prev, engineer_notes: engineerNotes }));
+        }
+        return;
+      }
       const { error } = await supabase
         .from('public_reports')
         .update({ engineer_notes: engineerNotes, updated_at: new Date().toISOString() })

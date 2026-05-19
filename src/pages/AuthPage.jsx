@@ -1,7 +1,7 @@
 /* AuthPage.jsx */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useNavigate, Link } from "react-router-dom";
+import { useLocation, useNavigate, Link } from "react-router-dom";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -21,11 +21,19 @@ function resolveEffectiveRole(profileRole, metadataRole) {
 
 export default function AuthPage({ mode = "signin" }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const signupRole = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const roleParam = normalizeRole(params.get('role'));
+    const allowed = ['user', 'field_engineer', 'contractor', 'lgu', 'admin'];
+    return allowed.includes(roleParam) ? roleParam : 'user';
+  }, [location.search]);
 
   const handleGoogleSignIn = async () => {
     setError("");
@@ -74,7 +82,11 @@ export default function AuthPage({ mode = "signin" }) {
       if (mode === "signin") {
         response = await supabase.auth.signInWithPassword({ email, password });
       } else {
-        response = await supabase.auth.signUp({ email, password });
+        response = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { role: signupRole } },
+        });
       }
 
       if (response.error) throw response.error;
@@ -82,11 +94,11 @@ export default function AuthPage({ mode = "signin" }) {
       const user = response.data?.user;
 
       if (mode === "signup" && user) {
-        // Create profile with default 'user' role on signup
+        // Create profile with the selected role on signup
         await supabase.from('profiles').upsert({
           id: user.id,
           email: user.email,
-          role: 'user',
+          role: signupRole,
           created_at: new Date().toISOString()
         });
       }
@@ -96,7 +108,12 @@ export default function AuthPage({ mode = "signin" }) {
       setPassword("");
 
       let targetRoute = '/user';
-      if (mode === 'signin' && user) {
+      if (mode === 'signup') {
+        if (signupRole === 'admin') targetRoute = '/dashboard';
+        else if (signupRole === 'field_engineer') targetRoute = '/field-engineer';
+        else if (signupRole === 'contractor') targetRoute = '/contractor';
+        else if (signupRole === 'lgu') targetRoute = '/lgu';
+      } else if (mode === 'signin' && user) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
