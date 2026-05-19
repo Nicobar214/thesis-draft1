@@ -40,10 +40,13 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
 
   const [rankings, setRankings] = useState(computed);
   const [lastCalculated, setLastCalculated] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   useEffect(() => {
     setRankings(computed);
     setLastCalculated(new Date());
+    setCurrentPage(1);
   }, [computed]);
 
   const handleRecalculate = () => {
@@ -95,7 +98,14 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
       </div>
 
       <div className="space-y-4">
-        {rankings.map((entry) => {
+        {(() => {
+          const start = (currentPage - 1) * itemsPerPage;
+          const end = start + itemsPerPage;
+          return rankings.slice(start, end).map((entry) => {
+            return entry;
+          });
+        })() && null}
+        {rankings.slice((currentPage - 1) * itemsPerPage, (currentPage - 1) * itemsPerPage + itemsPerPage).map((entry) => {
           const { project, bySeverity, cropData, score, rank, reason, hasEscalation } = entry;
           const severityPills = [
             { key: 'safety', label: `Safety ×${bySeverity.safety}`, tone: 'bg-red-100 text-red-700' },
@@ -139,7 +149,7 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
 
                 <div className="lg:w-1/3 lg:pl-6 lg:border-l lg:border-slate-100 space-y-3">
                   <div className="flex items-end justify-between">
-                    <p className={`text-3xl font-bold ${scoreTone(score)}`}>{score}</p>
+                    <p className={`text-3xl font-bold ${scoreTone(score)}`}>{`${score}%`}</p>
                     <button
                       type="button"
                       onClick={() => onViewReports && onViewReports(project)}
@@ -165,7 +175,7 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
                             style={{ width: `${factor.value}%` }}
                           />
                         </div>
-                        <span className="text-xs text-slate-500 w-8 text-right">{factor.value}</span>
+                        <span className="text-xs text-slate-500 w-8 text-right">{`${factor.value}%`}</span>
                       </div>
                     ))}
                   </div>
@@ -174,6 +184,26 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
             </div>
           );
         })}
+        {/* Pagination controls */}
+        {rankings.length > itemsPerPage && (
+          <div className="flex items-center justify-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="px-3 py-1 rounded-md border border-slate-200 bg-white text-sm font-semibold hover:bg-slate-50"
+            >
+              Previous
+            </button>
+            <div className="text-sm text-slate-600">Page {currentPage} of {Math.ceil(rankings.length / itemsPerPage)}</div>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(Math.ceil(rankings.length / itemsPerPage), p + 1))}
+              className="px-3 py-1 rounded-md border border-slate-200 bg-white text-sm font-semibold hover:bg-slate-50"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

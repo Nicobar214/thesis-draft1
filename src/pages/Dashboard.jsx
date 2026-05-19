@@ -37,6 +37,7 @@ import PublicReportRouteMapPanel from '../components/publicReports/PublicReportR
 import AdminWorkflowControls from '../components/publicReports/AdminWorkflowControls';
 import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
 import PriorityTab from '../components/admin/PriorityTab';
+import { computePriorityScores } from '../lib/priorityScoring';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -280,6 +281,198 @@ function RouteEditorMapClick({ onPickPoint }) {
 
 const enterpriseCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
 
+const FARMER_CROPS = ['Rice', 'Corn', 'Sugarcane', 'Coconut', 'Vegetables', 'Banana'];
+const FARMER_STATUSES = ['Active', 'Pending', 'Verified', 'Inactive'];
+const FARMER_VERIFICATION_STATUSES = ['Verified', 'Pending', 'Unverified'];
+const FARMER_FIRST_NAMES = [
+  'Mark', 'Paolo', 'Joshua', 'Miguel', 'Angelo', 'Bryan', 'Noel', 'Ramon', 'Jose', 'Carlo',
+  'Mario', 'Ariel', 'Allan', 'Ronald', 'Jerome', 'Dante', 'Joven', 'Isidro', 'Benedict', 'Lester',
+  'Maria', 'Angela', 'Rosa', 'Liza', 'Catherine', 'Leah', 'Joy', 'Irene', 'Celia', 'Maricel',
+  'Grace', 'Ana', 'Jocelyn', 'Mylene', 'Rhea', 'Sheila', 'Kristine', 'Patricia', 'Donna', 'Cynthia',
+];
+const FARMER_LAST_NAMES = [
+  'Cruz', 'Garcia', 'Reyes', 'Santos', 'Torres', 'Flores', 'Ramos', 'Mendoza', 'Gonzales', 'Bautista',
+  'Delos Santos', 'Castillo', 'Rivera', 'Navarro', 'Domingo', 'Villanueva', 'Pascual', 'Dela Cruz',
+  'Salazar', 'Valdez', 'Luna', 'Fernandez', 'De Guzman', 'Alvarez', 'Aguilar', 'Castro', 'Pineda',
+  'Aquino', 'Morales', 'Ortiz', 'Mercado', 'Santiago', 'Marquez', 'Espino', 'Tolentino', 'Cabrera',
+];
+
+const FARMER_FALLBACK_PROJECTS = [
+  'Iloilo North Farm-to-Market Road Package',
+  'Barotac Nuevo Access Road Upgrade',
+  'Central Iloilo Produce Corridor',
+  'Passi Agro-Logistics Connector',
+  'Western Iloilo Link Road',
+  'Janiuay Mountain Barangay Connector',
+];
+
+const FUNDING_SOURCES = [
+  'Department of Agriculture (DA)',
+  'LGU Counterpart Fund',
+  'Provincial Government',
+  'National Infrastructure Program',
+  'Farm-to-Market Road Grant',
+  'Disaster Rehabilitation Fund',
+];
+
+const BUDGET_STATUSES = ['Pending', 'Approved', 'Released', 'Delayed', 'Completed'];
+const BUDGET_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
+const PROCUREMENT_PHASES = ['Planning', 'Bidding', 'Awarded', 'Mobilization', 'Execution', 'Closeout'];
+const RISK_LEVELS = ['Low', 'Moderate', 'Elevated', 'High'];
+
+const seededRandom = (seed) => {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
+
+const pickFrom = (list, seed) => list[Math.floor(seededRandom(seed) * list.length) % list.length];
+
+const makePhoneNumber = (seed) => {
+  const digits = Array.from({ length: 9 }, (_, idx) => Math.floor(seededRandom(seed + idx + 3) * 10));
+  return `09${digits.join('')}`;
+};
+
+const formatPeso = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
+
+const buildFarmerMockData = (fmrProjects, size = 80) => {
+  const municipalities = getMunicipalities();
+  const projectNames = (fmrProjects || [])
+    .map((p) => p.project_name)
+    .filter(Boolean);
+  const usableProjects = projectNames.length ? projectNames : FARMER_FALLBACK_PROJECTS;
+
+  return Array.from({ length: size }, (_, idx) => {
+    const seed = (idx + 3) * 37;
+    const firstName = pickFrom(FARMER_FIRST_NAMES, seed + 1);
+    const lastName = pickFrom(FARMER_LAST_NAMES, seed + 7);
+    const municipality = pickFrom(municipalities, seed + 11);
+    const barangays = getBarangays(municipality);
+    const barangay = barangays.length ? pickFrom(barangays, seed + 13) : 'Poblacion';
+    const crop = pickFrom(FARMER_CROPS, seed + 17);
+    const farmSize = Number((seededRandom(seed + 19) * 10 + 1.5).toFixed(1));
+    const yieldPerHectare = crop === 'Rice' ? 4.2
+      : crop === 'Corn' ? 3.6
+        : crop === 'Sugarcane' ? 65
+          : crop === 'Coconut' ? 8
+            : crop === 'Vegetables' ? 12
+              : 9;
+    const estimatedYield = Number((farmSize * yieldPerHectare).toFixed(1));
+    const status = pickFrom(FARMER_STATUSES, seed + 23);
+    const verification = pickFrom(FARMER_VERIFICATION_STATUSES, seed + 29);
+    const project = pickFrom(usableProjects, seed + 31);
+    const registrationYear = 2019 + Math.floor(seededRandom(seed + 37) * 7);
+    const registrationMonth = Math.floor(seededRandom(seed + 41) * 12);
+    const registrationDay = 1 + Math.floor(seededRandom(seed + 43) * 27);
+    const registeredDate = new Date(registrationYear, registrationMonth, registrationDay);
+    const productionHistory = Array.from({ length: 4 }, (_, i) => {
+      const year = registrationYear - 3 + i;
+      const yearlyYield = Math.max(0, estimatedYield * (0.7 + seededRandom(seed + 50 + i) * 0.6));
+      return { year, yield: Number(yearlyYield.toFixed(1)) };
+    });
+    const gpsLat = 10.6 + seededRandom(seed + 61) * 0.8;
+    const gpsLng = 122.2 + seededRandom(seed + 67) * 0.8;
+    const benefitScore = Math.floor(60 + seededRandom(seed + 73) * 35);
+
+    return {
+      id: `FMR-F${String(idx + 1).padStart(4, '0')}`,
+      fullName: `${firstName} ${lastName}`,
+      municipality,
+      barangay,
+      crop,
+      farmSize,
+      contactNumber: makePhoneNumber(seed + 79),
+      registeredDate,
+      linkedProject: project,
+      status,
+      estimatedYield,
+      verification,
+      gps: { lat: gpsLat, lng: gpsLng },
+      benefitScore,
+      subsidyEligibility: benefitScore > 82 ? 'High Priority' : benefitScore > 70 ? 'Eligible' : 'For Review',
+      productionHistory,
+      linkedProjects: [project],
+    };
+  });
+};
+
+const buildBudgetAllocations = (fmrProjects, size = 72) => {
+  const projectPool = (fmrProjects || []).map((p) => ({
+    id: p.id,
+    name: p.project_name || p.projectName || 'Unnamed FMR Project',
+    municipality: p.municipality || 'Iloilo City',
+    lengthKm: Number(p.project_length_km || p.roadLength || 0) || 6.5,
+  }));
+
+  const projects = projectPool.length
+    ? projectPool
+    : FARMER_FALLBACK_PROJECTS.map((name, idx) => ({
+      id: `fallback-${idx + 1}`,
+      name,
+      municipality: pickFrom(getMunicipalities(), idx + 11),
+      lengthKm: 5 + (idx % 5) * 1.2,
+    }));
+
+  return Array.from({ length: size }, (_, idx) => {
+    const seed = (idx + 5) * 41;
+    const project = projects[idx % projects.length];
+    const fundingSource = pickFrom(FUNDING_SOURCES, seed + 1);
+    const approvedBudget = Math.round((seededRandom(seed + 3) * 35 + 15) * 1000000);
+    const releasedAmount = Math.round(approvedBudget * (0.35 + seededRandom(seed + 7) * 0.55));
+    const remainingBalance = Math.max(approvedBudget - releasedAmount, 0);
+    const fiscalYear = 2018 + Math.floor(seededRandom(seed + 11) * 8);
+    const status = pickFrom(BUDGET_STATUSES, seed + 13);
+    const priority = pickFrom(BUDGET_PRIORITIES, seed + 17);
+    const approvedDate = new Date(fiscalYear, Math.floor(seededRandom(seed + 19) * 12), 1 + Math.floor(seededRandom(seed + 23) * 27));
+    const utilizationRate = approvedBudget ? Math.min(100, Math.round((releasedAmount / approvedBudget) * 100)) : 0;
+    const procurementPhase = pickFrom(PROCUREMENT_PHASES, seed + 29);
+    const risk = pickFrom(RISK_LEVELS, seed + 31);
+    const delayedRelease = status === 'Delayed' || seededRandom(seed + 37) > 0.86;
+    const costPerKm = approvedBudget / Math.max(project.lengthKm, 1);
+    const fundingHealthScore = Math.min(100, Math.round(60 + seededRandom(seed + 41) * 35 - (delayedRelease ? 15 : 0)));
+    const completionProbability = Math.min(98, Math.round(55 + seededRandom(seed + 43) * 40 + (utilizationRate / 10)));
+    const releaseHistory = Array.from({ length: 3 }, (_, step) => ({
+      tranche: `Tranche ${step + 1}`,
+      amount: Math.round(releasedAmount * (0.25 + seededRandom(seed + 50 + step) * 0.4)),
+      date: new Date(fiscalYear, Math.max(0, step * 3 + 1), 10 + step * 5),
+      status: step === 2 && delayedRelease ? 'Delayed' : 'Released',
+    }));
+
+    const contractorPayments = Array.from({ length: 3 }, (_, step) => ({
+      milestone: `Milestone ${step + 1}`,
+      paid: Math.round(releasedAmount * (0.2 + seededRandom(seed + 70 + step) * 0.35)),
+      date: new Date(fiscalYear, Math.min(11, step * 4 + 2), 12 + step * 4),
+      status: step === 2 && delayedRelease ? 'On Hold' : 'Paid',
+    }));
+
+    return {
+      allocation_id: `ALOC-${String(idx + 1).padStart(4, '0')}`,
+      project_id: project.id,
+      project_name: project.name,
+      municipality: project.municipality,
+      funding_source: fundingSource,
+      approved_budget: approvedBudget,
+      released_amount: releasedAmount,
+      remaining_balance: remainingBalance,
+      fiscal_year: fiscalYear,
+      allocation_status: status,
+      priority_level: priority,
+      date_approved: approvedDate,
+      utilization_rate: utilizationRate,
+      procurement_phase: procurementPhase,
+      delayed_release: delayedRelease,
+      cost_per_km: costPerKm,
+      funding_health_score: fundingHealthScore,
+      completion_probability: completionProbability,
+      release_history: releaseHistory,
+      contractor_payments: contractorPayments,
+      risk_level: risk,
+      disbursement_progress: Math.min(100, Math.round(utilizationRate + seededRandom(seed + 90) * 15)),
+      created_at: approvedDate.toISOString(),
+      updated_at: new Date(approvedDate.getTime() + 1000 * 60 * 60 * 24 * 90).toISOString(),
+    };
+  });
+};
+
 function EmptyState({ title, description, buttonLabel, onButtonClick }) {
   return (
     <div className="py-12 px-6 text-center flex flex-col items-center justify-center">
@@ -325,16 +518,6 @@ export default function Dashboard() {
   const [notification, setNotification] = useState(null);
   const projectsPerPage = 5;
   
-  // Feedback state (admin view)
-  const [feedbacks, setFeedbacks] = useState([]);
-  const [feedbacksLoading, setFeedbacksLoading] = useState(false);
-  const [feedbackFilter, setFeedbackFilter] = useState('all');
-  const [feedbackTypeFilter, setFeedbackTypeFilter] = useState('all');
-  const [feedbackSearch, setFeedbackSearch] = useState('');
-  const [feedbackDateFrom, setFeedbackDateFrom] = useState('');
-  const [feedbackDateTo, setFeedbackDateTo] = useState('');
-  const [selectedFeedback, setSelectedFeedback] = useState(null);
-
   // Public reports state (admin view)
   const [publicReports, setPublicReports] = useState([]);
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
@@ -383,6 +566,26 @@ export default function Dashboard() {
   const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
   const fmrProjectsRef = useRef([]);
 
+  // Farmer list state
+  const [farmerSearch, setFarmerSearch] = useState('');
+  const [farmerMunicipalityFilter, setFarmerMunicipalityFilter] = useState('All');
+  const [farmerCropFilter, setFarmerCropFilter] = useState('All');
+  const [farmerStatusFilter, setFarmerStatusFilter] = useState('All');
+  const [farmerVerificationFilter, setFarmerVerificationFilter] = useState('All');
+  const [farmerPage, setFarmerPage] = useState(1);
+  const [selectedFarmer, setSelectedFarmer] = useState(null);
+
+  // Budget allocation state
+  const [budgetSearchInput, setBudgetSearchInput] = useState('');
+  const [budgetSearch, setBudgetSearch] = useState('');
+  const [budgetStatusFilter, setBudgetStatusFilter] = useState('All');
+  const [budgetSourceFilter, setBudgetSourceFilter] = useState('All');
+  const [budgetPriorityFilter, setBudgetPriorityFilter] = useState('All');
+  const [budgetYearFilter, setBudgetYearFilter] = useState('All');
+  const [budgetPage, setBudgetPage] = useState(1);
+  const [budgetLoading, setBudgetLoading] = useState(true);
+  const [selectedBudgetAllocation, setSelectedBudgetAllocation] = useState(null);
+
   // FMR CRUD state (edit / delete)
   const [showFmrEditModal, setShowFmrEditModal] = useState(false);
   const [showFmrDeleteModal, setShowFmrDeleteModal] = useState(false);
@@ -422,12 +625,17 @@ export default function Dashboard() {
 
   // Reports tab state (split sections + per-section pagination)
   const [reportsSectionFilter, setReportsSectionFilter] = useState('ongoing');
-  const [reportsPageBySection, setReportsPageBySection] = useState({ completed: 1, delayed: 1, ongoing: 1 });
+  const [reportsPageBySection, setReportsPageBySection] = useState({ completed: 1, delayed: 1, ongoing: 1, pending: 1 });
   const reportsPerSectionPage = 8;
+  const [reportsSearch, setReportsSearch] = useState('');
+  const [reportsYearFilter, setReportsYearFilter] = useState('All');
+  const [reportsMunicipalityFilter, setReportsMunicipalityFilter] = useState('All');
+  const [reportsSortBy, setReportsSortBy] = useState('latest');
+  const [reportsDateFrom, setReportsDateFrom] = useState('');
+  const [reportsDateTo, setReportsDateTo] = useState('');
 
-  // Project feedback viewer state (admin: see all feedback linked to a project)
+  // Project reports viewer state (admin: see public reports linked to a project)
   const [projectFeedbackModal, setProjectFeedbackModal] = useState(null); // holds the project object
-  const [projectLinkedFeedbacks, setProjectLinkedFeedbacks] = useState([]);
   const [projectLinkedReports, setProjectLinkedReports] = useState([]);
   const [projectFeedbackLoading, setProjectFeedbackLoading] = useState(false);
 
@@ -482,23 +690,6 @@ export default function Dashboard() {
       setError(`Failed to load projects: ${err.message}`);
     } finally {
       setLoading(false);
-    }
-  }, []);
-
-  // Fetch feedbacks from Supabase
-  const fetchFeedbacks = useCallback(async () => {
-    setFeedbacksLoading(true);
-    try {
-      const { data, error: fetchErr } = await supabase
-        .from('feedbacks')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (fetchErr) throw fetchErr;
-      setFeedbacks(data || []);
-    } catch (err) {
-      console.error('Error fetching feedbacks:', err.message);
-    } finally {
-      setFeedbacksLoading(false);
     }
   }, []);
 
@@ -1023,7 +1214,6 @@ export default function Dashboard() {
       }
 
       await fetchPublicReports();
-      await fetchFeedbacks();
       showNotification(`Public report marked as ${newStatus}`);
       await addPublicReportActivity(reportId, 'status_updated', `Status changed to ${newStatus}`);
       if (report) {
@@ -1044,37 +1234,21 @@ export default function Dashboard() {
     }
   };
 
-  // Update feedback status (admin action)
-  const updateFeedbackStatus = async (feedbackId, newStatus) => {
-    try {
-      const { error } = await supabase
-        .from('feedbacks')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', feedbackId);
-      if (error) throw error;
-      await fetchFeedbacks();
-      showNotification(`Feedback marked as ${newStatus}`);
-    } catch (err) {
-      console.error('Failed to update feedback:', err.message);
-      showNotification(`Failed to update: ${err.message}`, 'error');
-    }
-  };
-
-  // Fetch all feedback linked to a specific project (both registered + anonymous)
+  // Fetch all public reports linked to a specific project
   const openProjectFeedbackModal = async (project) => {
     setProjectFeedbackModal(project);
     setProjectFeedbackLoading(true);
-    setProjectLinkedFeedbacks([]);
     setProjectLinkedReports([]);
     try {
-      const [fbRes, prRes] = await Promise.all([
-        supabase.from('feedbacks').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
-        supabase.from('public_reports').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
-      ]);
-      if (fbRes.data) setProjectLinkedFeedbacks(fbRes.data);
-      if (prRes.data) setProjectLinkedReports(prRes.data);
+      const { data, error } = await supabase
+        .from('public_reports')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) setProjectLinkedReports(data);
     } catch (err) {
-      console.error('Failed to fetch project feedback:', err);
+      console.error('Failed to fetch project reports:', err);
     } finally {
       setProjectFeedbackLoading(false);
     }
@@ -1441,7 +1615,6 @@ export default function Dashboard() {
     fetchAdminIdentity();
     ensureAdminProfile().then(() => {
       fetchProjects();
-      fetchFeedbacks();
       fetchPublicReports();
       fetchEscalations();
       fetchFmrProjects();
@@ -1457,12 +1630,6 @@ export default function Dashboard() {
     const projectChannel = supabase
       .channel('admin-projects-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => fetchProjects())
-      .subscribe();
-
-    // Real-time subscription for feedbacks
-    const feedbackChannel = supabase
-      .channel('admin-feedbacks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, () => fetchFeedbacks())
       .subscribe();
 
     // Real-time subscription for public reports
@@ -1497,14 +1664,13 @@ export default function Dashboard() {
 
     return () => {
       supabase.removeChannel(projectChannel);
-      supabase.removeChannel(feedbackChannel);
       supabase.removeChannel(publicReportsChannel);
       supabase.removeChannel(escalationsChannel);
       supabase.removeChannel(fmrChannel);
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchFeedbacks, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -1607,13 +1773,21 @@ export default function Dashboard() {
       ? Math.round(unifiedProjects.reduce((sum, p) => sum + (p.progress || 0), 0) / unifiedProjects.length)
       : 0;
     const totalReports = publicReports.length;
-    const totalFeedbacks = feedbacks.length;
-    
-    return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports, totalFeedbacks };
-  }, [unifiedProjects, publicReports, feedbacks]);
 
-  const pendingFeedbackCount = useMemo(() => feedbacks.filter(f => f.status === 'pending').length, [feedbacks]);
+    return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports };
+  }, [unifiedProjects, publicReports]);
   const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
+  const topPriorityProjects = useMemo(
+    () => computePriorityScores(fmrProjects, publicReports, escalations).slice(0, 3),
+    [fmrProjects, publicReports, escalations]
+  );
+  const priorityRankById = useMemo(() => {
+    const map = new Map();
+    topPriorityProjects.forEach((entry) => {
+      if (entry.project?.id) map.set(entry.project.id, entry.rank);
+    });
+    return map;
+  }, [topPriorityProjects]);
 
   const analyticsProjectsByMunicipality = useMemo(() => {
     const counts = fmrProjects.reduce((acc, p) => {
@@ -1685,6 +1859,18 @@ export default function Dashboard() {
       'On Hold': { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
       Completed: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
       Cancelled: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200' },
+      Active: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      Pending: { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+      Verified: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+      Inactive: { dot: 'bg-slate-500', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+      Unverified: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200' },
+      Approved: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+      Released: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+      Delayed: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200' },
+      Low: { dot: 'bg-slate-400', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+      Medium: { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+      High: { dot: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700 border-orange-200' },
+      Critical: { dot: 'bg-red-600', badge: 'bg-red-50 text-red-700 border-red-200' },
       pending: { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
       reviewed: { dot: 'bg-blue-500', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
       resolved: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -1753,6 +1939,257 @@ export default function Dashboard() {
     showNotification('CSV export complete.');
   };
 
+  const farmerRowsPerPage = 10;
+  const farmerDataset = useMemo(() => buildFarmerMockData(fmrProjects, 84), [fmrProjects]);
+
+  const budgetRowsPerPage = 8;
+  const budgetDataset = useMemo(() => buildBudgetAllocations(fmrProjects, 72), [fmrProjects]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setBudgetSearch(budgetSearchInput.trim()), 350);
+    return () => clearTimeout(handle);
+  }, [budgetSearchInput]);
+
+  useEffect(() => {
+    setBudgetLoading(true);
+    const handle = setTimeout(() => setBudgetLoading(false), 450);
+    return () => clearTimeout(handle);
+  }, [budgetDataset]);
+
+  const budgetYearOptions = useMemo(() => {
+    return [...new Set(budgetDataset.map((b) => b.fiscal_year))].sort((a, b) => b - a);
+  }, [budgetDataset]);
+
+  const filteredBudgetAllocations = useMemo(() => {
+    const q = budgetSearch.toLowerCase();
+    return budgetDataset.filter((allocation) => {
+      const matchesSearch = !q || [
+        allocation.allocation_id,
+        allocation.project_name,
+        allocation.municipality,
+        allocation.funding_source,
+      ].some((field) => String(field || '').toLowerCase().includes(q));
+
+      const matchesStatus = budgetStatusFilter === 'All' || allocation.allocation_status === budgetStatusFilter;
+      const matchesSource = budgetSourceFilter === 'All' || allocation.funding_source === budgetSourceFilter;
+      const matchesPriority = budgetPriorityFilter === 'All' || allocation.priority_level === budgetPriorityFilter;
+      const matchesYear = budgetYearFilter === 'All' || String(allocation.fiscal_year) === String(budgetYearFilter);
+
+      return matchesSearch && matchesStatus && matchesSource && matchesPriority && matchesYear;
+    });
+  }, [budgetDataset, budgetSearch, budgetStatusFilter, budgetSourceFilter, budgetPriorityFilter, budgetYearFilter]);
+
+  const budgetTotalPages = Math.max(1, Math.ceil(filteredBudgetAllocations.length / budgetRowsPerPage));
+  const safeBudgetPage = Math.min(budgetPage, budgetTotalPages);
+  const paginatedBudgetAllocations = filteredBudgetAllocations.slice(
+    (safeBudgetPage - 1) * budgetRowsPerPage,
+    safeBudgetPage * budgetRowsPerPage
+  );
+
+  const budgetKpis = useMemo(() => {
+    const totalBudget = filteredBudgetAllocations.reduce((sum, a) => sum + a.approved_budget, 0);
+    const allocatedBudget = filteredBudgetAllocations.reduce((sum, a) => sum + a.approved_budget, 0);
+    const releasedFunds = filteredBudgetAllocations.reduce((sum, a) => sum + a.released_amount, 0);
+    const remainingBalance = filteredBudgetAllocations.reduce((sum, a) => sum + a.remaining_balance, 0);
+    const utilizationRate = allocatedBudget ? Math.round((releasedFunds / allocatedBudget) * 100) : 0;
+    const activeFundingSources = new Set(filteredBudgetAllocations.map((a) => a.funding_source)).size;
+
+    return {
+      totalBudget,
+      allocatedBudget,
+      releasedFunds,
+      remainingBalance,
+      utilizationRate,
+      activeFundingSources,
+    };
+  }, [filteredBudgetAllocations]);
+
+  const budgetUtilizationTrend = useMemo(() => {
+    const byYear = filteredBudgetAllocations.reduce((acc, a) => {
+      const key = a.fiscal_year;
+      if (!acc[key]) acc[key] = { year: key, approved: 0, released: 0 };
+      acc[key].approved += a.approved_budget;
+      acc[key].released += a.released_amount;
+      return acc;
+    }, {});
+    return Object.values(byYear).sort((a, b) => a.year - b.year);
+  }, [filteredBudgetAllocations]);
+
+  const budgetByMunicipality = useMemo(() => {
+    const byMunicipality = filteredBudgetAllocations.reduce((acc, a) => {
+      acc[a.municipality] = (acc[a.municipality] || 0) + a.approved_budget;
+      return acc;
+    }, {});
+    return Object.entries(byMunicipality)
+      .map(([municipality, budget]) => ({ municipality, budget }))
+      .sort((a, b) => b.budget - a.budget)
+      .slice(0, 10);
+  }, [filteredBudgetAllocations]);
+
+  const budgetBySource = useMemo(() => {
+    return FUNDING_SOURCES.map((source) => ({
+      name: source,
+      value: filteredBudgetAllocations.filter((a) => a.funding_source === source).length,
+    }));
+  }, [filteredBudgetAllocations]);
+
+  const allocationGrowthByYear = useMemo(() => {
+    const byYear = filteredBudgetAllocations.reduce((acc, a) => {
+      acc[a.fiscal_year] = (acc[a.fiscal_year] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.keys(byYear)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((year) => ({ year, allocations: byYear[year] }));
+  }, [filteredBudgetAllocations]);
+
+  const projectCostEfficiency = useMemo(() => {
+    const grouped = filteredBudgetAllocations.reduce((acc, a) => {
+      if (!acc[a.project_name]) {
+        acc[a.project_name] = { project: a.project_name, costPerKm: a.cost_per_km };
+      }
+      return acc;
+    }, {});
+    return Object.values(grouped).sort((a, b) => a.costPerKm - b.costPerKm).slice(0, 8);
+  }, [filteredBudgetAllocations]);
+
+  const budgetReleaseProgress = useMemo(() => {
+    return filteredBudgetAllocations
+      .map((a) => ({ project: a.project_name, released: a.released_amount, approved: a.approved_budget }))
+      .slice(0, 8);
+  }, [filteredBudgetAllocations]);
+
+  const farmerMunicipalityOptions = useMemo(() => {
+    return [...new Set(farmerDataset.map((f) => f.municipality))].sort((a, b) => a.localeCompare(b));
+  }, [farmerDataset]);
+
+  const filteredFarmers = useMemo(() => {
+    const q = farmerSearch.trim().toLowerCase();
+    return farmerDataset.filter((farmer) => {
+      const matchesSearch = !q || [
+        farmer.id,
+        farmer.fullName,
+        farmer.municipality,
+        farmer.barangay,
+        farmer.crop,
+        farmer.linkedProject,
+        farmer.contactNumber,
+      ].some((field) => String(field || '').toLowerCase().includes(q));
+
+      const matchesMunicipality = farmerMunicipalityFilter === 'All' || farmer.municipality === farmerMunicipalityFilter;
+      const matchesCrop = farmerCropFilter === 'All' || farmer.crop === farmerCropFilter;
+      const matchesStatus = farmerStatusFilter === 'All' || farmer.status === farmerStatusFilter;
+      const matchesVerification = farmerVerificationFilter === 'All' || farmer.verification === farmerVerificationFilter;
+
+      return matchesSearch && matchesMunicipality && matchesCrop && matchesStatus && matchesVerification;
+    });
+  }, [farmerDataset, farmerSearch, farmerMunicipalityFilter, farmerCropFilter, farmerStatusFilter, farmerVerificationFilter]);
+
+  const farmerTotalPages = Math.max(1, Math.ceil(filteredFarmers.length / farmerRowsPerPage));
+  const safeFarmerPage = Math.min(farmerPage, farmerTotalPages);
+  const paginatedFarmers = filteredFarmers.slice(
+    (safeFarmerPage - 1) * farmerRowsPerPage,
+    safeFarmerPage * farmerRowsPerPage
+  );
+
+  const farmerKpis = useMemo(() => {
+    const totalFarmers = filteredFarmers.length;
+    const verifiedFarmers = filteredFarmers.filter((f) => f.verification === 'Verified').length;
+    const totalFarmArea = filteredFarmers.reduce((sum, f) => sum + Number(f.farmSize || 0), 0);
+    const avgFarmSize = totalFarmers ? totalFarmArea / totalFarmers : 0;
+    const totalEstimatedYield = filteredFarmers.reduce((sum, f) => sum + Number(f.estimatedYield || 0), 0);
+
+    const municipalityYield = filteredFarmers.reduce((acc, f) => {
+      acc[f.municipality] = (acc[f.municipality] || 0) + Number(f.estimatedYield || 0);
+      return acc;
+    }, {});
+    const topProducingMunicipality = Object.keys(municipalityYield).sort((a, b) => municipalityYield[b] - municipalityYield[a])[0];
+
+    return {
+      totalFarmers,
+      verifiedFarmers,
+      totalFarmArea,
+      avgFarmSize,
+      totalEstimatedYield,
+      topProducingMunicipality: topProducingMunicipality || 'N/A',
+    };
+  }, [filteredFarmers]);
+
+  const cropDistribution = useMemo(() => {
+    return FARMER_CROPS.map((crop) => ({
+      name: crop,
+      value: filteredFarmers.filter((f) => f.crop === crop).length,
+    }));
+  }, [filteredFarmers]);
+
+  const farmersPerMunicipality = useMemo(() => {
+    const counts = filteredFarmers.reduce((acc, f) => {
+      acc[f.municipality] = (acc[f.municipality] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts)
+      .map(([municipality, count]) => ({ municipality, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [filteredFarmers]);
+
+  const registrationsByYear = useMemo(() => {
+    const yearly = filteredFarmers.reduce((acc, f) => {
+      const year = f.registeredDate.getFullYear();
+      acc[year] = (acc[year] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.keys(yearly)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((year) => ({ year, farmers: yearly[year] }));
+  }, [filteredFarmers]);
+
+  const yieldTrendByYear = useMemo(() => {
+    const yearly = filteredFarmers.reduce((acc, f) => {
+      const year = f.registeredDate.getFullYear();
+      acc[year] = (acc[year] || 0) + Number(f.estimatedYield || 0);
+      return acc;
+    }, {});
+    return Object.keys(yearly)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((year) => ({ year, yield: Number(yearly[year].toFixed(1)) }));
+  }, [filteredFarmers]);
+
+  const exportFilteredFarmers = () => {
+    const rows = filteredFarmers.map((f) => ({
+      farmer_id: f.id,
+      full_name: f.fullName,
+      municipality: f.municipality,
+      barangay: f.barangay,
+      main_crop: f.crop,
+      farm_size_ha: f.farmSize,
+      contact_number: f.contactNumber,
+      registered_date: f.registeredDate.toLocaleDateString(),
+      linked_fmr_project: f.linkedProject,
+      farm_status: f.status,
+      estimated_yield: f.estimatedYield,
+      account_verification: f.verification,
+    }));
+    exportRowsToCsv(rows, 'farmer_list.csv');
+  };
+
+  const exportFilteredBudgets = () => {
+    const rows = filteredBudgetAllocations.map((a) => ({
+      allocation_id: a.allocation_id,
+      project_name: a.project_name,
+      municipality: a.municipality,
+      funding_source: a.funding_source,
+      approved_budget: a.approved_budget,
+      released_amount: a.released_amount,
+      remaining_balance: a.remaining_balance,
+      fiscal_year: a.fiscal_year,
+      allocation_status: a.allocation_status,
+      priority_level: a.priority_level,
+      date_approved: new Date(a.date_approved).toLocaleDateString(),
+    }));
+    exportRowsToCsv(rows, 'budget_allocations.csv');
+  };
+
   // Classify FMR projects for Reports tab: Completed, Delayed, Ongoing
   const classifiedFmrProjects = useMemo(() => {
     const today = new Date();
@@ -1760,12 +2197,18 @@ export default function Dashboard() {
     const completedProjects = [];
     const delayedProjects = [];
     const ongoingProjects = [];
+    const pendingProjects = [];
 
     fmrProjects.forEach(p => {
       const status = normalizeFmrStatus(p.status);
       const accomplishment = Number(p.accomplishment || 0);
       const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
       const isDelayed = !isCompleted && isPastDate(p.target_completion_date, today);
+
+      if (status === 'Proposed' && !isCompleted) {
+        pendingProjects.push(p);
+        return;
+      }
 
       if (isCompleted) {
         completedProjects.push(p);
@@ -1776,7 +2219,7 @@ export default function Dashboard() {
       }
     });
 
-    return { completedProjects, delayedProjects, ongoingProjects };
+    return { completedProjects, delayedProjects, ongoingProjects, pendingProjects };
   }, [fmrProjects]);
 
   useEffect(() => {
@@ -1784,6 +2227,7 @@ export default function Dashboard() {
       completed: classifiedFmrProjects.completedProjects.length,
       delayed: classifiedFmrProjects.delayedProjects.length,
       ongoing: classifiedFmrProjects.ongoingProjects.length,
+      pending: classifiedFmrProjects.pendingProjects.length,
     };
 
     setReportsPageBySection((prev) => {
@@ -1805,6 +2249,7 @@ export default function Dashboard() {
     classifiedFmrProjects.completedProjects.length,
     classifiedFmrProjects.delayedProjects.length,
     classifiedFmrProjects.ongoingProjects.length,
+    classifiedFmrProjects.pendingProjects.length,
     reportsPerSectionPage,
   ]);
 
@@ -2201,9 +2646,10 @@ export default function Dashboard() {
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+    { id: 'farmers', label: 'Farmer List', icon: 'M18 18.72a2.01 2.01 0 01-1.8 2.28H7.6a2.01 2.01 0 01-1.8-2.28l.75-5.4a3 3 0 012.97-2.58h4.96a3 3 0 012.97 2.58l.54 5.4zM12 13.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z' },
+    { id: 'budget', label: 'Budget Allocation', icon: 'M12 3.75c-2.65 0-5.2.34-7.5.98v11.04A42.22 42.22 0 0112 14.25c2.55 0 5.03.25 7.5.73V3.73A42.22 42.22 0 0112 3.75zM9 6h6m-6 4h6m-6 4h6' },
     { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-    { id: 'feedback', label: 'Feedback', icon: 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z', badgeCount: pendingFeedbackCount },
     { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
     { id: 'progress-updates', label: 'Progress Updates', icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', badgeCount: progressUpdates.filter(u => u.status === 'pending').length },
   ];
@@ -2378,9 +2824,10 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'FMR Projects'}
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
+                {activeTab === 'farmers' && 'Farmer List'}
+                {activeTab === 'budget' && 'Budget Allocation'}
                 {activeTab === 'priorities' && 'Priorities'}
                 {activeTab === 'reports' && 'Reports'}
-                {activeTab === 'feedback' && 'Community Feedback'}
                 {activeTab === 'public-reports' && 'Public Reports'}
                 {activeTab === 'progress-updates' && 'Progress Updates'}
                 {activeTab === 'settings' && 'Settings'}
@@ -2389,9 +2836,10 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
+                {activeTab === 'farmers' && 'Simulated farmer registry linked to FMR projects and yield analytics'}
+                {activeTab === 'budget' && 'Track allocations, releases, and funding health for FMR infrastructure'}
                 {activeTab === 'priorities' && 'Weighted ranking of FMR project urgency'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
-                {activeTab === 'feedback' && 'View and manage citizen feedback on projects'}
                 {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
                 {activeTab === 'progress-updates' && 'Review contractor-submitted progress updates for FMR projects'}
                 {activeTab === 'settings' && 'Configure system preferences'}
@@ -2494,7 +2942,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Reports & Feedback Summary */}
+              {/* Reports Summary */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-8 mb-10">
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
                   <div className="flex items-start justify-between mb-5">
@@ -2512,16 +2960,43 @@ export default function Dashboard() {
 
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-7 shadow-sm hover:shadow-md transition-shadow duration-300">
                   <div className="flex items-start justify-between mb-5">
-                    <div className="w-14 h-14 bg-gradient-to-br from-pink-50 to-pink-100 rounded-2xl flex items-center justify-center">
-                      <svg className="w-6 h-6 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                    <div className="w-14 h-14 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl flex items-center justify-center">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <span className="text-[10px] font-mono font-bold text-pink-700 bg-pink-50 px-2.5 py-1.5 rounded-lg tracking-wider">FEEDBACK</span>
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg tracking-wider">PRIORITY</span>
                   </div>
-                  <p className="text-4xl font-bold text-slate-900 tracking-tight">{metrics.totalFeedbacks}</p>
-                  <p className="text-sm text-slate-500 mt-2 font-medium">User Feedback Submitted</p>
-                  <p className="text-xs text-slate-400 mt-1">{feedbacks.filter(f => f.status === 'pending').length} pending review</p>
+                  <p className="text-lg font-semibold text-slate-900">Top 3 Prioritized Projects</p>
+                  {topPriorityProjects.length === 0 ? (
+                    <p className="text-xs text-slate-400 mt-2">Not enough data to rank projects yet.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {topPriorityProjects.map((entry) => {
+                        const scoreNum = Number(entry.score) || 0;
+                        const badgeClasses = `inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${
+                          scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                        }`;
+                        const scoreClasses = `${scoreNum >= 80 ? 'text-orange-700 font-bold' : scoreNum >= 60 ? 'text-amber-700 font-semibold' : 'text-slate-500 font-semibold'}`;
+                        const barColor = entry.rank === 1 ? 'bg-red-500' : entry.rank === 2 ? 'bg-orange-500' : 'bg-yellow-400';
+
+                        return (
+                          <li key={entry.project?.id || entry.rank} className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className={badgeClasses}>#{entry.rank}</span>
+                                <span className="text-slate-700">{entry.project?.project_name || 'Unnamed project'}</span>
+                              </div>
+                              <span className={`text-xs ${scoreClasses}`}>{`${entry.score}%`}</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`${barColor} h-full`} style={{ width: `${scoreNum}%` }} />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               </div>
 
@@ -2883,13 +3358,37 @@ export default function Dashboard() {
 
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-50 to-pink-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.076-4.076a1.526 1.526 0 011.037-.443 48.282 48.282 0 005.68-.494c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" /></svg>
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
                   </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{metrics.totalFeedbacks}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">User Feedback Submitted</p>
-                  <p className="text-xs text-slate-400 mt-1">{pendingFeedbackCount} pending review</p>
+                  <p className="text-xs text-slate-500 font-medium">Top 3 Prioritized Projects</p>
+                  {topPriorityProjects.length === 0 ? (
+                    <p className="text-xs text-slate-400 mt-2">Not enough data to rank projects yet.</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2 text-xs text-slate-600">
+                      {topPriorityProjects.map((entry) => {
+                        const scoreNum = Number(entry.score) || 0;
+                        const badgeClasses = `inline-flex items-center justify-center w-5 h-5 rounded-md text-xs font-bold ${
+                          scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                        }`;
+                        const scoreClasses = `${scoreNum >= 80 ? 'text-orange-700 font-bold' : scoreNum >= 60 ? 'text-amber-700 font-semibold' : 'text-slate-500 font-semibold'}`;
+                        const barColor = entry.rank === 1 ? 'bg-red-500' : entry.rank === 2 ? 'bg-orange-500' : 'bg-yellow-400';
+
+                        return (
+                          <li key={entry.project?.id || entry.rank} className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-2"><span className={badgeClasses}>#{entry.rank}</span> {entry.project?.project_name || 'Unnamed project'}</span>
+                              <span className={scoreClasses}>{`${entry.score}%`}</span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`${barColor} h-full`} style={{ width: `${scoreNum}%` }} />
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               </div>
 
@@ -3469,6 +3968,642 @@ export default function Dashboard() {
             );
           })()}
 
+          {/* Farmer List Tab */}
+          {activeTab === 'farmers' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Farmers</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalFarmers}</p>
+                  <p className="text-sm text-slate-500 mt-1">Registered farmer profiles</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Verified Farmers</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.verifiedFarmers}</p>
+                  <p className="text-sm text-slate-500 mt-1">Identity verified accounts</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Farm Area</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalFarmArea.toFixed(1)} ha</p>
+                  <p className="text-sm text-slate-500 mt-1">Aggregated farm size</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Average Farm Size</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.avgFarmSize.toFixed(1)} ha</p>
+                  <p className="text-sm text-slate-500 mt-1">Across active profiles</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Estimated Yield</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalEstimatedYield.toFixed(1)} t</p>
+                  <p className="text-sm text-slate-500 mt-1">Projected production volume</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Top Municipality</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-2">{farmerKpis.topProducingMunicipality}</p>
+                  <p className="text-sm text-slate-500 mt-1">Highest estimated yield</p>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm">
+                <div className="px-6 py-6 border-b border-slate-200/60">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">Farmer Accounts</h2>
+                      <p className="text-sm text-slate-500 mt-1">Simulated registered farmers linked to FMR projects</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={exportFilteredFarmers}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                </div>
+                <div className="px-6 py-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div className="lg:col-span-2">
+                      <input
+                        type="text"
+                        value={farmerSearch}
+                        onChange={(e) => { setFarmerSearch(e.target.value); setFarmerPage(1); }}
+                        placeholder="Search by name, ID, crop, project..."
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                      />
+                    </div>
+                    <select
+                      value={farmerMunicipalityFilter}
+                      onChange={(e) => { setFarmerMunicipalityFilter(e.target.value); setFarmerPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Municipalities</option>
+                      {farmerMunicipalityOptions.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={farmerCropFilter}
+                      onChange={(e) => { setFarmerCropFilter(e.target.value); setFarmerPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Crops</option>
+                      {FARMER_CROPS.map((crop) => (
+                        <option key={crop} value={crop}>{crop}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={farmerStatusFilter}
+                      onChange={(e) => { setFarmerStatusFilter(e.target.value); setFarmerPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Farm Status</option>
+                      {FARMER_STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={farmerVerificationFilter}
+                      onChange={(e) => { setFarmerVerificationFilter(e.target.value); setFarmerPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Verification</option>
+                      {FARMER_VERIFICATION_STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1200px]">
+                    <thead>
+                      <tr className="bg-slate-50/60">
+                        {[
+                          'Farmer ID',
+                          'Full Name',
+                          'Municipality',
+                          'Barangay',
+                          'Main Crop',
+                          'Farm Size',
+                          'Contact Number',
+                          'Registered Date',
+                          'Linked FMR Project',
+                          'Farm Status',
+                          'Estimated Yield',
+                          'Account Verification',
+                          'Actions',
+                        ].map((label, idx) => (
+                          <th key={label} className={`${idx === 0 ? 'px-8' : 'px-6'} py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider`}>
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedFarmers.map((farmer) => (
+                        <tr key={farmer.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="px-8 py-4 text-sm font-semibold text-slate-900">{farmer.id}</td>
+                          <td className="px-6 py-4">
+                            <p className="text-sm font-semibold text-slate-900">{farmer.fullName}</p>
+                            <p className="text-xs text-slate-400">{farmer.crop} producer</p>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.municipality}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.barangay}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.crop}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.farmSize.toFixed(1)} ha</td>
+                          <td className="px-6 py-4 text-sm text-slate-700 font-mono">{farmer.contactNumber}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.registeredDate.toLocaleDateString()}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700 max-w-[220px]">
+                            <span className="line-clamp-2">{farmer.linkedProject}</span>
+                          </td>
+                          <td className="px-6 py-4">{renderStatusPill(farmer.status)}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.estimatedYield.toFixed(1)} t</td>
+                          <td className="px-6 py-4">{renderStatusPill(farmer.verification)}</td>
+                          <td className="px-6 py-4">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFarmer(farmer)}
+                              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredFarmers.length === 0 && (
+                  <EmptyState
+                    title="No farmers found"
+                    description="Try adjusting the search or filter options to see more profiles."
+                    buttonLabel="Reset Filters"
+                    onButtonClick={() => {
+                      setFarmerSearch('');
+                      setFarmerMunicipalityFilter('All');
+                      setFarmerCropFilter('All');
+                      setFarmerStatusFilter('All');
+                      setFarmerVerificationFilter('All');
+                      setFarmerPage(1);
+                    }}
+                  />
+                )}
+
+                <div className="px-8 py-5 border-t border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row items-center justify-between gap-5">
+                  <p className="text-sm text-slate-500">
+                    Showing <span className="font-bold text-slate-700">{filteredFarmers.length ? (safeFarmerPage - 1) * farmerRowsPerPage + 1 : 0}</span> to{' '}
+                    <span className="font-bold text-slate-700">{Math.min(safeFarmerPage * farmerRowsPerPage, filteredFarmers.length)}</span> of{' '}
+                    <span className="font-bold text-slate-700">{filteredFarmers.length}</span> farmers
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setFarmerPage((p) => Math.max(1, p - 1))}
+                      disabled={safeFarmerPage === 1}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      Previous
+                    </button>
+                    {Array.from({ length: farmerTotalPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => setFarmerPage(page)}
+                        className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                          safeFarmerPage === page
+                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                            : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setFarmerPage((p) => Math.min(farmerTotalPages, p + 1))}
+                      disabled={safeFarmerPage === farmerTotalPages}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Crop Distribution</h3>
+                  <p className="text-sm text-slate-500 mb-4">Share of farmers per main crop</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={cropDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                          {cropDistribution.map((entry, index) => {
+                            const palette = ['#0d9488', '#22c55e', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444'];
+                            return <Cell key={`crop-${entry.name}`} fill={palette[index % palette.length]} />;
+                          })}
+                        </Pie>
+                        <Legend verticalAlign="bottom" height={36} />
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Farmers per Municipality</h3>
+                  <p className="text-sm text-slate-500 mb-4">Top municipalities by farmer count</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={farmersPerMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Yearly Registrations</h3>
+                  <p className="text-sm text-slate-500 mb-4">Farmer onboarding trend</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={registrationsByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                        <defs>
+                          <linearGradient id="farmerRegGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
+                            <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Area type="monotone" dataKey="farmers" stroke="#0d9488" fill="url(#farmerRegGradient)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Estimated Yield Trend</h3>
+                  <p className="text-sm text-slate-500 mb-4">Projected output by registration year</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={yieldTrendByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                        <RechartsTooltip formatter={(value) => [`${value} t`, 'Estimated Yield']} />
+                        <Line dataKey="yield" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Budget Allocation Tab */}
+          {activeTab === 'budget' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Budget</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.totalBudget)}</p>
+                  <p className="text-sm text-slate-500 mt-1">Across all allocations</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Allocated Budget</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.allocatedBudget)}</p>
+                  <p className="text-sm text-slate-500 mt-1">Approved amounts</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Released Funds</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.releasedFunds)}</p>
+                  <p className="text-sm text-slate-500 mt-1">Disbursed to projects</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Remaining Balance</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.remainingBalance)}</p>
+                  <p className="text-sm text-slate-500 mt-1">Pending releases</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Utilization Rate</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{budgetKpis.utilizationRate}%</p>
+                  <p className="text-sm text-slate-500 mt-1">Released vs approved</p>
+                </div>
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Active Funding Sources</p>
+                  <p className="text-3xl font-bold text-slate-900 mt-2">{budgetKpis.activeFundingSources}</p>
+                  <p className="text-sm text-slate-500 mt-1">Distinct sources in use</p>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm">
+                <div className="px-6 py-6 border-b border-slate-200/60">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-900">Budget Allocations</h2>
+                      <p className="text-sm text-slate-500 mt-1">Simulated agricultural infrastructure funding allocations</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={exportFilteredBudgets}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                </div>
+                <div className="px-6 py-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                    <div className="lg:col-span-2">
+                      <input
+                        type="text"
+                        value={budgetSearchInput}
+                        onChange={(e) => { setBudgetSearchInput(e.target.value); setBudgetPage(1); }}
+                        placeholder="Search allocation ID, project, municipality..."
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                      />
+                    </div>
+                    <select
+                      value={budgetStatusFilter}
+                      onChange={(e) => { setBudgetStatusFilter(e.target.value); setBudgetPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Status</option>
+                      {BUDGET_STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={budgetSourceFilter}
+                      onChange={(e) => { setBudgetSourceFilter(e.target.value); setBudgetPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Funding Sources</option>
+                      {FUNDING_SOURCES.map((source) => (
+                        <option key={source} value={source}>{source}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={budgetPriorityFilter}
+                      onChange={(e) => { setBudgetPriorityFilter(e.target.value); setBudgetPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Priority Levels</option>
+                      {BUDGET_PRIORITIES.map((priority) => (
+                        <option key={priority} value={priority}>{priority}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={budgetYearFilter}
+                      onChange={(e) => { setBudgetYearFilter(e.target.value); setBudgetPage(1); }}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                    >
+                      <option value="All">All Fiscal Years</option>
+                      {budgetYearOptions.map((year) => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {budgetLoading ? (
+                  <div className="p-12 text-center">
+                    <div className="w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <p className="text-slate-600 mt-4">Loading budget allocations...</p>
+                  </div>
+                ) : filteredBudgetAllocations.length === 0 ? (
+                  <EmptyState
+                    title="No allocations found"
+                    description="Try adjusting the filters or search query to see more allocations."
+                    buttonLabel="Reset Filters"
+                    onButtonClick={() => {
+                      setBudgetSearchInput('');
+                      setBudgetSearch('');
+                      setBudgetStatusFilter('All');
+                      setBudgetSourceFilter('All');
+                      setBudgetPriorityFilter('All');
+                      setBudgetYearFilter('All');
+                      setBudgetPage(1);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[1400px]">
+                        <thead>
+                          <tr className="bg-slate-50/60">
+                            {[
+                              'Allocation ID',
+                              'Project Name',
+                              'Municipality',
+                              'Funding Source',
+                              'Approved Budget',
+                              'Released Amount',
+                              'Remaining Balance',
+                              'Fiscal Year',
+                              'Allocation Status',
+                              'Priority Level',
+                              'Date Approved',
+                              'Actions',
+                            ].map((label, idx) => (
+                              <th key={label} className={`${idx === 0 ? 'px-8' : 'px-6'} py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider`}>
+                                {label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginatedBudgetAllocations.map((allocation) => (
+                            <tr key={allocation.allocation_id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="px-8 py-4 text-sm font-semibold text-slate-900">{allocation.allocation_id}</td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm font-semibold text-slate-900 line-clamp-2">{allocation.project_name}</p>
+                                <p className="text-xs text-slate-400">{allocation.procurement_phase}</p>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{allocation.municipality}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{allocation.funding_source}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700 font-semibold">{formatPeso(allocation.approved_budget)}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{formatPeso(allocation.released_amount)}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{formatPeso(allocation.remaining_balance)}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">FY {allocation.fiscal_year}</td>
+                              <td className="px-6 py-4">{renderStatusPill(allocation.allocation_status)}</td>
+                              <td className="px-6 py-4">{renderStatusPill(allocation.priority_level)}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{new Date(allocation.date_approved).toLocaleDateString()}</td>
+                              <td className="px-6 py-4">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedBudgetAllocation(allocation)}
+                                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="px-8 py-5 border-t border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row items-center justify-between gap-5">
+                      <p className="text-sm text-slate-500">
+                        Showing <span className="font-bold text-slate-700">{(safeBudgetPage - 1) * budgetRowsPerPage + 1}</span> to{' '}
+                        <span className="font-bold text-slate-700">{Math.min(safeBudgetPage * budgetRowsPerPage, filteredBudgetAllocations.length)}</span> of{' '}
+                        <span className="font-bold text-slate-700">{filteredBudgetAllocations.length}</span> allocations
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setBudgetPage((p) => Math.max(1, p - 1))}
+                          disabled={safeBudgetPage === 1}
+                          className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                          Previous
+                        </button>
+                        {Array.from({ length: budgetTotalPages }, (_, i) => i + 1).map((page) => (
+                          <button
+                            key={page}
+                            onClick={() => setBudgetPage(page)}
+                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                              safeBudgetPage === page
+                                ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                                : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setBudgetPage((p) => Math.min(budgetTotalPages, p + 1))}
+                          disabled={safeBudgetPage === budgetTotalPages}
+                          className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Budget Utilization Trend</h3>
+                  <p className="text-sm text-slate-500 mb-4">Approved vs released budget over time</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={budgetUtilizationTrend} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                        <defs>
+                          <linearGradient id="approvedBudgetGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0f172a" stopOpacity={0.35} />
+                            <stop offset="95%" stopColor="#0f172a" stopOpacity={0.05} />
+                          </linearGradient>
+                          <linearGradient id="releasedBudgetGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
+                            <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
+                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
+                        <Area type="monotone" dataKey="approved" stroke="#0f172a" fill="url(#approvedBudgetGradient)" strokeWidth={2} />
+                        <Area type="monotone" dataKey="released" stroke="#0d9488" fill="url(#releasedBudgetGradient)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Municipality Budget Comparison</h3>
+                  <p className="text-sm text-slate-500 mb-4">Top municipalities by approved budget</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={budgetByMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
+                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
+                        <Bar dataKey="budget" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Funding Source Distribution</h3>
+                  <p className="text-sm text-slate-500 mb-4">Allocations per funding stream</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={budgetBySource} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                          {budgetBySource.map((entry, index) => {
+                            const palette = ['#0d9488', '#0ea5e9', '#f59e0b', '#a855f7', '#ef4444', '#22c55e'];
+                            return <Cell key={`source-${entry.name}`} fill={palette[index % palette.length]} />;
+                          })}
+                        </Pie>
+                        <Legend verticalAlign="bottom" height={36} />
+                        <RechartsTooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Allocation Growth by Year</h3>
+                  <p className="text-sm text-slate-500 mb-4">Count of allocations approved yearly</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={allocationGrowthByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Line dataKey="allocations" stroke="#0d9488" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Project Cost Efficiency</h3>
+                  <p className="text-sm text-slate-500 mb-4">Cost per kilometer by project</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={projectCostEfficiency} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="project" tick={{ fill: '#64748b', fontSize: 10 }} angle={-20} textAnchor="end" height={70} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
+                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
+                        <Bar dataKey="costPerKm" fill="#f59e0b" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className={enterpriseCardClass}>
+                  <h3 className="text-lg font-bold text-slate-900">Budget Release Progress</h3>
+                  <p className="text-sm text-slate-500 mb-4">Released vs approved per project</p>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={budgetReleaseProgress} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="project" tick={{ fill: '#64748b', fontSize: 10 }} angle={-20} textAnchor="end" height={70} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
+                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
+                        <Bar dataKey="approved" fill="#0f172a" radius={[8, 8, 0, 0]} />
+                        <Bar dataKey="released" fill="#0d9488" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -3574,31 +4709,77 @@ export default function Dashboard() {
             const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const today = new Date(); today.setHours(0,0,0,0);
 
+            const reportsYearOptions = [...new Set((fmrProjects || [])
+              .map((p) => Number(p.year_funded))
+              .filter((y) => y && !Number.isNaN(y)))]
+              .sort((a, b) => b - a);
+
+            const reportsMunicipalityOptions = [...new Set((fmrProjects || [])
+              .map((p) => p.municipality)
+              .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+            const filterReportList = (list) => {
+              const q = reportsSearch.trim().toLowerCase();
+              const filtered = (list || []).filter((p) => {
+                if (q) {
+                  const hay = `${p.project_name || ''} ${p.location || ''} ${p.municipality || ''}`.toLowerCase();
+                  if (!hay.includes(q)) return false;
+                }
+                if (reportsYearFilter !== 'All' && String(p.year_funded || '') !== String(reportsYearFilter)) return false;
+                if (reportsMunicipalityFilter !== 'All' && String(p.municipality || '') !== String(reportsMunicipalityFilter)) return false;
+
+                const dateValue = p.target_completion_date || p.date_completed || p.created_at || p.updated_at;
+                if ((reportsDateFrom || reportsDateTo) && !inDateRange(dateValue, reportsDateFrom, reportsDateTo)) return false;
+                return true;
+              });
+
+              const getSortDate = (p) => {
+                const dt = parseDateOnly(p.target_completion_date || p.date_completed || p.created_at || p.updated_at);
+                return dt ? dt.getTime() : 0;
+              };
+
+              return filtered.sort((a, b) => {
+                if (reportsSortBy === 'latest') return getSortDate(b) - getSortDate(a);
+                if (reportsSortBy === 'name-asc') return String(a.project_name || '').localeCompare(String(b.project_name || ''));
+                if (reportsSortBy === 'name-desc') return String(b.project_name || '').localeCompare(String(a.project_name || ''));
+                if (reportsSortBy === 'progress-desc') return Number(b.accomplishment || 0) - Number(a.accomplishment || 0);
+                if (reportsSortBy === 'progress-asc') return Number(a.accomplishment || 0) - Number(b.accomplishment || 0);
+                return 0;
+              });
+            };
+
             const sectionMeta = {
               completed: {
                 key: 'completed',
                 title: 'Completed Projects',
                 emptyMsg: 'No completed projects yet.',
                 colorStyles: { gradient: 'from-emerald-50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600' },
-                list: classifiedFmrProjects.completedProjects,
+                list: filterReportList(classifiedFmrProjects.completedProjects),
               },
               delayed: {
                 key: 'delayed',
-                title: 'Delayed Projects',
-                emptyMsg: 'No delayed projects - all on schedule!',
+                title: 'Overdue Projects',
+                emptyMsg: 'No overdue projects - all on schedule!',
                 colorStyles: { gradient: 'from-red-50', iconBg: 'bg-red-100', iconText: 'text-red-600' },
-                list: classifiedFmrProjects.delayedProjects,
+                list: filterReportList(classifiedFmrProjects.delayedProjects),
               },
               ongoing: {
                 key: 'ongoing',
                 title: 'Ongoing Projects',
                 emptyMsg: 'No ongoing projects.',
                 colorStyles: { gradient: 'from-blue-50', iconBg: 'bg-blue-100', iconText: 'text-blue-600' },
-                list: classifiedFmrProjects.ongoingProjects,
+                list: filterReportList(classifiedFmrProjects.ongoingProjects),
+              },
+              pending: {
+                key: 'pending',
+                title: 'Pending Projects',
+                emptyMsg: 'No pending projects.',
+                colorStyles: { gradient: 'from-slate-50', iconBg: 'bg-slate-100', iconText: 'text-slate-600' },
+                list: filterReportList(classifiedFmrProjects.pendingProjects),
               },
             };
 
-            const sectionKeys = ['ongoing', 'delayed', 'completed'];
+            const sectionKeys = ['ongoing', 'pending', 'completed', 'delayed'];
 
             const renderProjectTable = (section) => {
               const { key, title, list, colorStyles, emptyMsg } = section;
@@ -3721,266 +4902,103 @@ export default function Dashboard() {
                 </div>
 
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-4 sm:p-5 shadow-sm">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Report Sections</p>
-                  <div className="flex flex-wrap gap-2">
-                    {sectionKeys.map((key) => {
-                      const section = sectionMeta[key];
-                      const isActive = reportsSectionFilter === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => {
-                            setReportsSectionFilter(key);
-                            setReportsPageBySection((prev) => ({ ...prev, [key]: 1 }));
-                          }}
-                          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
-                            isActive
-                              ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white border-transparent shadow-md shadow-teal-500/20'
-                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          {section.title} ({section.list.length})
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {renderProjectTable(sectionMeta[reportsSectionFilter])}
-              </div>
-            );
-          })()}
-
-          {/* Feedback Tab */}
-          {activeTab === 'feedback' && (() => {
-            const filteredFeedbacks = feedbacks.filter(fb => {
-              const matchesStatus = feedbackFilter === 'all' || fb.status === feedbackFilter;
-              const matchesType = feedbackTypeFilter === 'all' || fb.type === feedbackTypeFilter;
-              const matchesDate = inDateRange(fb.created_at, feedbackDateFrom, feedbackDateTo);
-              const q = feedbackSearch.toLowerCase();
-              const matchesSearch = !q ||
-                (fb.project_name || '').toLowerCase().includes(q) ||
-                (fb.user_email || '').toLowerCase().includes(q) ||
-                (fb.message || '').toLowerCase().includes(q);
-              return matchesStatus && matchesType && matchesDate && matchesSearch;
-            });
-            const pendingCount = feedbacks.filter(f => f.status === 'pending').length;
-            const reviewedCount = feedbacks.filter(f => f.status === 'reviewed').length;
-            const resolvedCount = feedbacks.filter(f => f.status === 'resolved').length;
-
-            return (
-              <div className="space-y-6">
-                {/* Feedback Stats */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                    <p className="text-3xl font-bold text-slate-900">{feedbacks.length}</p>
-                    <p className="text-sm text-slate-500 mt-1">Total Feedback</p>
-                  </div>
-                  <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-amber-700">{pendingCount}</p>
-                    <p className="text-sm text-amber-600 mt-1">Pending Review</p>
-                  </div>
-                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-blue-700">{reviewedCount}</p>
-                    <p className="text-sm text-blue-600 mt-1">Reviewed</p>
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-emerald-700">{resolvedCount}</p>
-                    <p className="text-sm text-emerald-600 mt-1">Resolved</p>
-                  </div>
-                </div>
-
-                {/* Filters */}
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="relative flex-1">
-                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-                      <input type="text" value={feedbackSearch} onChange={e => setFeedbackSearch(e.target.value)} placeholder="Search by project, user, or message..."
-                        className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 lg:gap-4 items-end">
+                    <div className="relative md:col-span-2 xl:col-span-4">
+                      <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                      </svg>
+                      <input
+                        type="text"
+                        value={reportsSearch}
+                        onChange={(e) => setReportsSearch(e.target.value)}
+                        placeholder="Search by name, municipality, location..."
+                        className="h-12 w-full pl-11 pr-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm transition-all"
+                      />
                     </div>
-                    <select value={feedbackFilter} onChange={e => setFeedbackFilter(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                      <option value="all">All Status</option>
-                      <option value="pending">Pending</option>
-                      <option value="reviewed">Reviewed</option>
-                      <option value="resolved">Resolved</option>
+                    <select
+                      value={reportsYearFilter}
+                      onChange={(e) => setReportsYearFilter(e.target.value)}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
+                    >
+                      <option value="All">All Years</option>
+                      {reportsYearOptions.map((y) => (
+                        <option key={y} value={String(y)}>FY {y}</option>
+                      ))}
                     </select>
-                    <select value={feedbackTypeFilter} onChange={e => setFeedbackTypeFilter(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                      <option value="all">All Types</option>
-                      <option value="issue">Issues</option>
-                      <option value="suggestion">Suggestions</option>
-                      <option value="compliment">Compliments</option>
-                      <option value="concern">Safety Concerns</option>
+                    <select
+                      value={reportsMunicipalityFilter}
+                      onChange={(e) => setReportsMunicipalityFilter(e.target.value)}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
+                    >
+                      <option value="All">All Municipalities</option>
+                      {reportsMunicipalityOptions.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
                     </select>
-                    <input
-                      type="date"
-                      value={feedbackDateFrom}
-                      onChange={(e) => setFeedbackDateFrom(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                    />
-                    <input
-                      type="date"
-                      value={feedbackDateTo}
-                      onChange={(e) => setFeedbackDateTo(e.target.value)}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Feedback Detail Modal */}
-                {selectedFeedback && (
-                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedFeedback(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                      <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900">Feedback Detail</h3>
-                          <p className="text-sm text-slate-500 mt-0.5">{selectedFeedback.project_name || 'General Feedback'}</p>
-                        </div>
-                        <button onClick={() => setSelectedFeedback(null)} className="p-2 hover:bg-slate-100 rounded-xl">
-                          <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                      </div>
-                      <div className="p-6 space-y-5">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
-                            { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' }[selectedFeedback.type] || 'text-slate-600 bg-slate-50 border-slate-200'
-                          }`}>
-                            {selectedFeedback.type === 'issue' ? 'Issue' : selectedFeedback.type === 'suggestion' ? 'Suggestion' : selectedFeedback.type === 'compliment' ? 'Compliment' : selectedFeedback.type === 'concern' ? 'Safety Concern' : selectedFeedback.type}
-                          </span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' }[selectedFeedback.status] || 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {selectedFeedback.status?.charAt(0).toUpperCase() + selectedFeedback.status?.slice(1)}
-                          </span>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">From</p>
-                          <p className="text-sm text-slate-700">{selectedFeedback.user_email || 'Anonymous'}</p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Date</p>
-                          <p className="text-sm text-slate-700">{new Date(selectedFeedback.created_at).toLocaleString()}</p>
-                        </div>
-
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Message</p>
-                          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedFeedback.message}</p>
-                        </div>
-
-                        {selectedFeedback.latitude && selectedFeedback.longitude && (
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Geo-Tagged Location</p>
-                            <div className="flex items-center gap-2 p-3 bg-teal-50 border border-teal-200 rounded-xl">
-                              <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
-                              <span className="text-sm font-medium text-teal-800">{Number(selectedFeedback.latitude).toFixed(6)}, {Number(selectedFeedback.longitude).toFixed(6)}</span>
-                              {selectedFeedback.geo_accuracy && <span className="text-xs text-teal-600">(±{Math.round(selectedFeedback.geo_accuracy)}m)</span>}
-                            </div>
-                          </div>
-                        )}
-
-                        {selectedFeedback.photo_urls?.length > 0 && (
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Photos ({selectedFeedback.photo_urls.length})</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              {selectedFeedback.photo_urls.map((url, i) => (
-                                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                                  <img src={url} alt={`Photo ${i + 1}`} className="w-full h-32 object-cover rounded-xl border border-slate-200 hover:opacity-80 transition-opacity" />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Admin Actions */}
-                        <div className="pt-4 border-t border-slate-100">
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
-                          <div className="flex gap-3 flex-wrap">
-                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'pending'); setSelectedFeedback(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50'}`}>
-                              Pending
-                            </button>
-                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'reviewed'); setSelectedFeedback(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'reviewed' ? 'bg-blue-100 text-blue-700 border-blue-300 ring-2 ring-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50'}`}>
-                              Reviewed
-                            </button>
-                            <button onClick={() => { updateFeedbackStatus(selectedFeedback.id, 'resolved'); setSelectedFeedback(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedFeedback.status === 'resolved' ? 'bg-emerald-100 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>
-                              Resolved
-                            </button>
-                          </div>
-                        </div>
-                      </div>
+                    <select
+                      value={reportsSortBy}
+                      onChange={(e) => setReportsSortBy(e.target.value)}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
+                    >
+                      <option value="latest">Sort: Latest</option>
+                      <option value="name-asc">Sort: Name A-Z</option>
+                      <option value="name-desc">Sort: Name Z-A</option>
+                      <option value="progress-desc">Sort: Progress High-Low</option>
+                      <option value="progress-asc">Sort: Progress Low-High</option>
+                    </select>
+                    <div className="w-full xl:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
+                      <input
+                        type="date"
+                        value={reportsDateFrom}
+                        onChange={(e) => setReportsDateFrom(e.target.value)}
+                        max={reportsDateTo || undefined}
+                        aria-label="Start date"
+                        title="Start date"
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
+                      />
+                    </div>
+                    <div className="w-full xl:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
+                      <input
+                        type="date"
+                        value={reportsDateTo}
+                        onChange={(e) => setReportsDateTo(e.target.value)}
+                        min={reportsDateFrom || undefined}
+                        aria-label="End date"
+                        title="End date"
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
+                      />
                     </div>
                   </div>
-                )}
 
-                {/* Feedback List */}
-                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                    <p className="text-sm font-semibold text-slate-700">{filteredFeedbacks.length} feedback{filteredFeedbacks.length !== 1 ? 's' : ''}</p>
-                  </div>
-                  {feedbacksLoading ? (
-                    <div className="p-8 text-center text-slate-400">
-                      <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
-                      <p className="text-sm">Loading feedbacks...</p>
-                    </div>
-                  ) : filteredFeedbacks.length === 0 ? (
-                    <EmptyState
-                      title="No feedback found"
-                      description="Citizen feedback matching your current filters will appear here."
-                      buttonLabel="Clear Filters"
-                      onButtonClick={() => {
-                        setFeedbackFilter('all');
-                        setFeedbackTypeFilter('all');
-                        setFeedbackSearch('');
-                        setFeedbackDateFrom('');
-                        setFeedbackDateTo('');
-                      }}
-                    />
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {filteredFeedbacks.map(fb => {
-                        const typeStyles = { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' };
-                        const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
-                        const typeLabel = { issue: 'Issue', suggestion: 'Suggestion', compliment: 'Compliment', concern: 'Concern' };
+                  <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                    <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
+                      {sectionKeys.map((key) => {
+                        const section = sectionMeta[key];
+                        const isActive = reportsSectionFilter === key;
                         return (
-                          <button key={fb.id} onClick={() => setSelectedFeedback(fb)}
-                            className="w-full text-left px-6 py-4 hover:bg-slate-50 transition-colors group">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                  <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeStyles[fb.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                    {typeLabel[fb.type] || fb.type}
-                                  </span>
-                                  {renderStatusPill(fb.status, fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1))}
-                                  {fb.photo_urls?.length > 0 && (
-                                    <span className="flex items-center gap-1 text-xs text-slate-400">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>
-                                      {fb.photo_urls.length}
-                                    </span>
-                                  )}
-                                  {fb.latitude && fb.longitude && (
-                                    <span className="flex items-center gap-1 text-xs text-slate-400">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
-                                      GPS
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">{fb.project_name || 'General Feedback'}</p>
-                                <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{fb.message}</p>
-                                <p className="text-xs text-slate-400 mt-1.5">{fb.user_email || 'Anonymous'} &middot; {new Date(fb.created_at).toLocaleDateString()}</p>
-                              </div>
-                              <svg className="w-5 h-5 text-slate-300 group-hover:text-teal-500 mt-1 shrink-0 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-                            </div>
+                          <button
+                            key={key}
+                            onClick={() => {
+                              setReportsSectionFilter(key);
+                              setReportsPageBySection((prev) => ({ ...prev, [key]: 1 }));
+                            }}
+                            className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
+                              isActive
+                                ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
+                                : 'text-slate-600 hover:text-slate-800'
+                            }`}
+                          >
+                            {section.title} ({section.list.length})
                           </button>
                         );
                       })}
                     </div>
-                  )}
+                  </div>
                 </div>
+
+                {renderProjectTable(sectionMeta[reportsSectionFilter])}
               </div>
             );
           })()}
@@ -6569,13 +7587,222 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Project Feedback Modal — shows all citizen feedback linked to a project */}
+      {/* Project Reports Modal — shows public reports linked to a project */}
       {projectFeedbackModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between bg-gradient-to-r from-slate-50 to-white">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Citizen Feedback</h3>
+                <h3 className="text-lg font-bold text-slate-900">Public Reports</h3>
+
+            {/* Farmer Detail Modal */}
+            {selectedFarmer && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedFarmer(null)}>
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  <div className="px-6 py-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-widest">Farmer Profile</p>
+
+                  {/* Budget Allocation Detail Modal */}
+                  {selectedBudgetAllocation && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedBudgetAllocation(null)}>
+                      <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-6 py-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Allocation</p>
+                            <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedBudgetAllocation.project_name}</h3>
+                            <p className="text-sm text-slate-500 mt-1">{selectedBudgetAllocation.allocation_id} • {selectedBudgetAllocation.municipality}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            {renderStatusPill(selectedBudgetAllocation.allocation_status)}
+                            {renderStatusPill(selectedBudgetAllocation.priority_level)}
+                          </div>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Funding Source</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.funding_source}</p>
+                              <p className="text-sm text-slate-500 mt-1">Fiscal Year {selectedBudgetAllocation.fiscal_year}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Breakdown</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{formatPeso(selectedBudgetAllocation.approved_budget)}</p>
+                              <p className="text-sm text-slate-500 mt-1">Released {formatPeso(selectedBudgetAllocation.released_amount)}</p>
+                            </div>
+                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Utilization</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.utilization_rate}%</p>
+                              <p className="text-sm text-slate-500 mt-1">Remaining {formatPeso(selectedBudgetAllocation.remaining_balance)}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                              <h4 className="text-lg font-bold text-slate-900">Release History</h4>
+                              <div className="mt-4 space-y-3">
+                                {selectedBudgetAllocation.release_history.map((entry) => (
+                                  <div key={entry.tranche} className="flex items-center justify-between text-sm">
+                                    <div>
+                                      <p className="font-semibold text-slate-900">{entry.tranche}</p>
+                                      <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-semibold text-slate-900">{formatPeso(entry.amount)}</p>
+                                      <p className="text-xs text-slate-500">{entry.status}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                              <h4 className="text-lg font-bold text-slate-900">Contractor Payment Tracking</h4>
+                              <div className="mt-4 space-y-3">
+                                {selectedBudgetAllocation.contractor_payments.map((entry) => (
+                                  <div key={entry.milestone} className="flex items-center justify-between text-sm">
+                                    <div>
+                                      <p className="font-semibold text-slate-900">{entry.milestone}</p>
+                                      <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-semibold text-slate-900">{formatPeso(entry.paid)}</p>
+                                      <p className="text-xs text-slate-500">{entry.status}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Procurement Phase</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.procurement_phase}</p>
+                              <p className="text-sm text-slate-500 mt-1">Cost per km {formatPeso(selectedBudgetAllocation.cost_per_km)}</p>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Risk Assessment</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.risk_level}</p>
+                              <p className="text-sm text-slate-500 mt-1">Funding health {selectedBudgetAllocation.funding_health_score}/100</p>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                              <p className="text-xs text-slate-500 uppercase tracking-widest">Completion Probability</p>
+                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.completion_probability}%</p>
+                              <p className="text-sm text-slate-500 mt-1">Disbursement {selectedBudgetAllocation.disbursement_progress}%</p>
+                            </div>
+                          </div>
+
+                          {selectedBudgetAllocation.delayed_release && (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                              Delayed release warning: One or more tranches are behind schedule. Review procurement and release schedule.
+                            </div>
+                          )}
+
+                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                            <h4 className="text-lg font-bold text-slate-900">Disbursement Progress</h4>
+                            <div className="mt-4">
+                              <div className="flex items-center justify-between text-sm text-slate-500">
+                                <span>Released</span>
+                                <span>{selectedBudgetAllocation.utilization_rate}%</span>
+                              </div>
+                              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mt-2">
+                                <div
+                                  className="h-3 bg-emerald-500"
+                                  style={{ width: `${selectedBudgetAllocation.utilization_rate}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBudgetAllocation(null)}
+                            className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                      <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedFarmer.fullName}</h3>
+                      <p className="text-sm text-slate-500 mt-1">{selectedFarmer.id} • {selectedFarmer.municipality}, {selectedFarmer.barangay}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {renderStatusPill(selectedFarmer.status, `Farm Status: ${selectedFarmer.status}`)}
+                      {renderStatusPill(selectedFarmer.verification, `Verification: ${selectedFarmer.verification}`)}
+                    </div>
+                  </div>
+
+                  <div className="p-6 space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest">Contact</p>
+                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.contactNumber}</p>
+                        <p className="text-sm text-slate-500 mt-1">Registered {selectedFarmer.registeredDate.toLocaleDateString()}</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest">Farm Information</p>
+                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.crop} • {selectedFarmer.farmSize.toFixed(1)} ha</p>
+                        <p className="text-sm text-slate-500 mt-1">Estimated yield {selectedFarmer.estimatedYield.toFixed(1)} t</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                        <p className="text-xs text-slate-500 uppercase tracking-widest">Subsidy Eligibility</p>
+                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.subsidyEligibility}</p>
+                        <p className="text-sm text-slate-500 mt-1">Benefit score {selectedFarmer.benefitScore}/100</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                        <h4 className="text-lg font-bold text-slate-900">Linked FMR Projects</h4>
+                        <ul className="mt-4 space-y-3">
+                          {selectedFarmer.linkedProjects.map((project) => (
+                            <li key={project} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-700">
+                              {project}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                        <h4 className="text-lg font-bold text-slate-900">Production History</h4>
+                        <div className="mt-4 space-y-3">
+                          {selectedFarmer.productionHistory.map((entry) => (
+                            <div key={entry.year} className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500">{entry.year}</span>
+                              <span className="font-semibold text-slate-900">{entry.yield.toFixed(1)} t</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                      <h4 className="text-lg font-bold text-slate-900">GPS Coordinates</h4>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                        <span className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100">Lat: {selectedFarmer.gps.lat.toFixed(5)}</span>
+                        <span className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100">Lng: {selectedFarmer.gps.lng.toFixed(5)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFarmer(null)}
+                      className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
                 <p className="text-sm text-slate-500 mt-0.5">{projectFeedbackModal.projectName} — {projectFeedbackModal.barangay}, {projectFeedbackModal.municipality}</p>
               </div>
               <button onClick={() => setProjectFeedbackModal(null)} className="p-2 hover:bg-slate-100 rounded-xl transition">
@@ -6587,64 +7814,21 @@ export default function Dashboard() {
               {projectFeedbackLoading ? (
                 <div className="py-12 text-center">
                   <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
-                  <p className="text-sm text-slate-400">Loading feedback…</p>
+                  <p className="text-sm text-slate-400">Loading reports…</p>
                 </div>
-              ) : (projectLinkedFeedbacks.length === 0 && projectLinkedReports.length === 0) ? (
+              ) : projectLinkedReports.length === 0 ? (
                 <EmptyState
-                  title="No feedback yet"
-                  description="No citizen feedback has been submitted for this project."
+                  title="No public reports yet"
+                  description="No public reports have been submitted for this project."
                 />
               ) : (
                 <>
                   {/* Summary chips */}
                   <div className="flex gap-3 flex-wrap">
-                    <span className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700">
-                      {projectLinkedFeedbacks.length} Registered User Feedback{projectLinkedFeedbacks.length !== 1 ? 's' : ''}
-                    </span>
                     <span className="px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-xs font-semibold text-violet-700">
                       {projectLinkedReports.length} Public Report{projectLinkedReports.length !== 1 ? 's' : ''}
                     </span>
                   </div>
-
-                  {/* Registered user feedbacks */}
-                  {projectLinkedFeedbacks.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
-                        Registered Users
-                      </h4>
-                      <div className="space-y-3">
-                        {projectLinkedFeedbacks.map(fb => {
-                          const typeStyles = { issue: 'text-red-700 bg-red-50 border-red-200', suggestion: 'text-amber-700 bg-amber-50 border-amber-200', compliment: 'text-emerald-700 bg-emerald-50 border-emerald-200', concern: 'text-violet-700 bg-violet-50 border-violet-200' };
-                          const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
-                          return (
-                            <div key={fb.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                              <div className="flex items-center gap-2 flex-wrap mb-2">
-                                <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${typeStyles[fb.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                  {fb.type?.charAt(0).toUpperCase() + fb.type?.slice(1)}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[fb.status] || 'bg-slate-100 text-slate-600'}`}>
-                                  {fb.status?.charAt(0).toUpperCase() + fb.status?.slice(1)}
-                                </span>
-                                <span className="text-xs text-slate-400 ml-auto">{new Date(fb.created_at).toLocaleDateString()}</span>
-                              </div>
-                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{fb.message}</p>
-                              {fb.photo_urls?.length > 0 && (
-                                <div className="flex gap-2 mt-2 overflow-x-auto">
-                                  {fb.photo_urls.map((url, i) => (
-                                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                                      <img src={url} alt="" className="h-14 w-14 object-cover rounded-lg border border-slate-200 hover:opacity-80 transition" />
-                                    </a>
-                                  ))}
-                                </div>
-                              )}
-                              <p className="text-xs text-slate-400 mt-2">— {fb.user_email || 'Unknown'}</p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Anonymous public reports */}
                   {projectLinkedReports.length > 0 && (
