@@ -1,5 +1,5 @@
 ﻿/* PublicReportForm.jsx — Location-First Public Report (Region VI — Iloilo)
- * Flow: locating → picking → reporting → success
+ * Flow: locating → picking → classify → reporting → success
  * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -70,13 +70,64 @@ function statusCls(status) {
   return 'bg-slate-100 text-slate-600';
 }
 
-// ── Categories ─────────────────────────────────────────────
-const CATS = [
-  { id: 'issue',   label: 'Issue',   icon: '⚠️' },
-  { id: 'safety',  label: 'Safety',  icon: '🦺' },
-  { id: 'flood',   label: 'Flood',   icon: '🌊' },
-  { id: 'general', label: 'General', icon: '📋' },
-];
+// ── Severity taxonomy ───────────────────────────────────────
+const SEVERITY_TAXONOMY = {
+  safety: {
+    label: 'Safety Hazard',
+    color: 'bg-red-100 text-red-700 border-red-200',
+    icon: '🔴',
+    description: 'Risk to life or physical harm',
+    problems: [
+      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
+      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
+      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
+      { value: 'accident_site', label: 'Active accident site' },
+      { value: 'sharp_debris', label: 'Sharp debris / broken glass on road' },
+      { value: 'unsafe_bridge', label: 'Unsafe or damaged bridge' },
+    ],
+  },
+  flood: {
+    label: 'Flood / Drainage',
+    color: 'bg-sky-100 text-sky-700 border-sky-200',
+    icon: '🌊',
+    description: 'Water-related road obstruction',
+    problems: [
+      { value: 'road_flooded', label: 'Road completely flooded' },
+      { value: 'partial_flood', label: 'Partial flooding — passable with care' },
+      { value: 'blocked_drainage', label: 'Blocked or clogged drainage' },
+      { value: 'erosion', label: 'Soil erosion along road edge' },
+      { value: 'landslide', label: 'Landslide / mudflow on road' },
+    ],
+  },
+  issue: {
+    label: 'Road Condition Issue',
+    color: 'bg-amber-100 text-amber-700 border-amber-200',
+    icon: '🔧',
+    description: 'Physical damage to road surface',
+    problems: [
+      { value: 'pothole', label: 'Potholes / lubak' },
+      { value: 'crack', label: 'Surface cracks' },
+      { value: 'missing_pavement', label: 'Missing pavement / unpaved section' },
+      { value: 'broken_curb', label: 'Broken curb or road edge' },
+      { value: 'uneven_surface', label: 'Severely uneven / bumpy surface' },
+      { value: 'dust_gravel', label: 'Excessive dust / loose gravel' },
+    ],
+  },
+  general: {
+    label: 'General Concern',
+    color: 'bg-slate-100 text-slate-600 border-slate-200',
+    icon: '💬',
+    description: 'Other observations or suggestions',
+    problems: [
+      { value: 'no_signage', label: 'Missing road signs' },
+      { value: 'poor_lighting', label: 'No or poor streetlighting' },
+      { value: 'vegetation', label: 'Overgrown vegetation blocking view' },
+      { value: 'project_delay', label: 'Project seems delayed / stalled' },
+      { value: 'quality_concern', label: 'Construction quality concern' },
+      { value: 'other', label: 'Other concern' },
+    ],
+  },
+};
 
 // ── Shared input style ──────────────────────────────────────
 const inputCls =
@@ -86,7 +137,7 @@ const inputCls =
 //  COMPONENT
 // ═══════════════════════════════════════════════════════════
 export default function PublicReportForm({ prefillCategory = null, prefillProblem = null }) {
-  // ── Step: 'locating' | 'picking' | 'reporting' | 'success' ──
+  // ── Step: 'locating' | 'picking' | 'classify' | 'reporting' | 'success' ──
   const [step, setStep] = useState('locating');
 
   // ── GPS ──
@@ -116,6 +167,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── Form fields ──
   const [description, setDescription] = useState('');
   const [category,    setCategory]    = useState('general');
+  const [severityCategory, setSeverityCategory] = useState(prefillCategory || '');
+  const [specificProblem, setSpecificProblem] = useState(prefillProblem || '');
   const [fullName,    setFullName]    = useState('');
   const [contact,     setContact]     = useState('');
 
@@ -316,6 +369,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── Submit ────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setError(null);
+    if (!severityCategory || !specificProblem) { setError('Please classify the report before submitting.'); return; }
     if (!description.trim()) { setError('Please enter a description.'); return; }
     if (!photoBlob)           { setError('A site photo is required.');   return; }
     if (!selProject)          { setError('No project selected.');        return; }
@@ -339,9 +393,9 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         photo_timestamp: photoTs || new Date().toISOString(),
         verification,
         description:     description.trim(),
-        category,
-        severity_category: prefillCategory || null,
-        specific_problem: prefillProblem || null,
+        category: severityCategory || category,
+        severity_category: severityCategory || null,
+        specific_problem: specificProblem || null,
         source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
       };
       if (currentUser) payloadBase.user_id = currentUser.id;
@@ -390,9 +444,9 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
           photo_timestamp: photoTs || new Date().toISOString(),
           verification: computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude),
           description:     description.trim(),
-          category,
-          severity_category: prefillCategory || null,
-          specific_problem: prefillProblem || null,
+          category: severityCategory || category,
+          severity_category: severityCategory || null,
+          specific_problem: specificProblem || null,
           source:          fullName.trim() ? 'Public Report' : 'Anonymous Public Report',
           ...(currentUser ? { user_id: currentUser.id } : {}),
         }, photoBlob, { photoPath, authToken });
@@ -437,6 +491,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     setPhotoTs(null);
     setDescription('');
     setCategory('general');
+    setSeverityCategory(prefillCategory || '');
+    setSpecificProblem(prefillProblem || '');
     setFullName('');
     setContact('');
     setError(null);
@@ -613,7 +669,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
               const isOngoing = /progress|going|ongoing/i.test(p.status || '');
               return (
                 <button type="button" key={p.id}
-                  onClick={() => { setSelProject(p); setStep('reporting'); }}
+                  onClick={() => { setSelProject(p); setStep('classify'); }}
                   className="w-full text-left p-5 rounded-2xl border-2 border-slate-200 bg-white hover:border-teal-400 hover:bg-teal-50/30 transition-all active:scale-[0.98] shadow-sm">
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <p className="text-sm font-semibold text-slate-900 leading-tight">{p.project_name}</p>
@@ -660,6 +716,103 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       </div>
     );
   }
+  // ── CLASSIFY ─────────────────────────────────────────────
+  if (step === 'classify') {
+    const categoryMeta = severityCategory ? SEVERITY_TAXONOMY[severityCategory] : null;
+    const problemOptions = categoryMeta?.problems || [];
+    const canProceed = severityCategory && specificProblem;
+
+    return (
+      <div className="space-y-5">
+        <button type="button"
+          onClick={() => { setSpecificProblem(''); setSeverityCategory(''); setStep('picking'); }}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to project list
+        </button>
+
+        <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
+          <p className="text-sm font-medium text-teal-800 mb-0.5">Step 1 of 2 — Classify your report</p>
+          <p className="text-xs text-teal-600">
+            Select the severity and specific problem so your report reaches the right team immediately.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            What type of issue is this?
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Object.entries(SEVERITY_TAXONOMY).map(([key, meta]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { setSeverityCategory(key); setSpecificProblem(''); setCategory(key); }}
+                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
+                  severityCategory === key
+                    ? `${meta.color} ring-2 ring-offset-1 ring-current`
+                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <span className="text-lg leading-none mt-0.5">{meta.icon}</span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {severityCategory && (
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">
+              What specifically is the problem?
+            </label>
+            <select
+              value={specificProblem}
+              onChange={(e) => setSpecificProblem(e.target.value)}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"
+            >
+              <option value="">— Select specific problem —</option>
+              {problemOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+
+            {specificProblem && (
+              <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${categoryMeta.color}`}>
+                <span>{categoryMeta.icon}</span>
+                <span>
+                  {categoryMeta.label} → {problemOptions.find((p) => p.value === specificProblem)?.label}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <button
+            type="button"
+            onClick={() => { setSeverityCategory(''); setSpecificProblem(''); setStep('picking'); }}
+            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canProceed}
+            onClick={() => setStep('reporting')}
+            className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Continue to Report →
+          </button>
+        </div>
+      </div>
+    );
+  }
   // ── REPORTING ────────────────────────────────────────────
   if (step === 'reporting') {
     const lowAcc = gps && gps.accuracy > 100;
@@ -667,7 +820,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       <div className="space-y-5">
         {/* Back */}
         <button type="button"
-          onClick={() => { stopCamera(); setSelProject(null); setStep('picking'); }}
+          onClick={() => { stopCamera(); setStep('classify'); }}
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -732,22 +885,22 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
           </div>
         )}
 
-        {/* Category pills */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Category</label>
-          <div className="flex flex-wrap gap-2">
-            {CATS.map((c) => (
-              <button key={c.id} type="button" onClick={() => setCategory(c.id)}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                  category === c.id
-                    ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-teal-300'
-                }`}>
-                <span>{c.icon}</span>{c.label}
-              </button>
-            ))}
+        {severityCategory && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium bg-slate-50 border-slate-200 text-slate-700">
+            <span>{SEVERITY_TAXONOMY[severityCategory]?.icon}</span>
+            <span>
+              {SEVERITY_TAXONOMY[severityCategory]?.label}
+              {specificProblem ? ` → ${SEVERITY_TAXONOMY[severityCategory]?.problems.find((p) => p.value === specificProblem)?.label}` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setStep('classify')}
+              className="ml-2 underline underline-offset-2 text-slate-500 hover:text-slate-700"
+            >
+              change
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Description */}
         <div>

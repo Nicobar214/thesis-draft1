@@ -117,102 +117,6 @@ function SeverityBadge({ category }) {
   );
 }
 
-function ReportClassificationStep({ onConfirm, onCancel }) {
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedProblem, setSelectedProblem] = useState('');
-
-  const categoryMeta = selectedCategory ? SEVERITY_TAXONOMY[selectedCategory] : null;
-  const problemOptions = categoryMeta?.problems || [];
-  const canProceed = selectedCategory && selectedProblem;
-
-  const handleCategoryChange = (val) => {
-    setSelectedCategory(val);
-    setSelectedProblem('');
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
-        <p className="text-sm font-medium text-teal-800 mb-0.5">Step 1 of 2 — Classify your report</p>
-        <p className="text-xs text-teal-600">
-          Select the severity and specific problem so your report reaches the right team immediately.
-        </p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          What type of issue is this?
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {Object.entries(SEVERITY_TAXONOMY).map(([key, meta]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => handleCategoryChange(key)}
-              className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
-                selectedCategory === key
-                  ? `${meta.color} ring-2 ring-offset-1 ring-current`
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <span className="text-lg leading-none mt-0.5">{meta.icon}</span>
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {selectedCategory && (
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-2">
-            What specifically is the problem?
-          </label>
-          <select
-            value={selectedProblem}
-            onChange={(e) => setSelectedProblem(e.target.value)}
-            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"
-          >
-            <option value="">— Select specific problem —</option>
-            {problemOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          {selectedProblem && (
-            <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${categoryMeta.color}`}>
-              <span>{categoryMeta.icon}</span>
-              <span>
-                {categoryMeta.label} → {problemOptions.find((p) => p.value === selectedProblem)?.label}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="flex gap-3 pt-1">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={!canProceed}
-          onClick={() => onConfirm({ category: selectedCategory, problem: selectedProblem })}
-          className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Continue to Report →
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function UserReports() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -226,7 +130,6 @@ function UserReports() {
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [userId, setUserId] = useState(null);
   const [reportStep, setReportStep] = useState('idle');
-  const [pendingClassification, setPendingClassification] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [problemFilter, setProblemFilter] = useState('all');
 
@@ -412,7 +315,7 @@ function UserReports() {
             <p className="mt-1 text-slate-500">Track the status of your submitted reports</p>
           </section>
           <button
-            onClick={() => setReportStep('classify')}
+            onClick={() => setReportStep('form')}
             className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-teal-700 transition text-sm shrink-0 self-start sm:self-auto"
           >
             <Icons.Plus />
@@ -551,7 +454,7 @@ function UserReports() {
             </p>
             {reports.length === 0 && (
               <button
-                onClick={() => setReportStep('classify')}
+                onClick={() => setReportStep('form')}
                 className="inline-flex items-center gap-2 mt-4 text-sm font-medium text-teal-600 hover:text-teal-700"
               >
                 Submit a Report
@@ -715,37 +618,6 @@ function UserReports() {
           </div>
         </div>
       )}
-      {reportStep === 'classify' && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          onClick={() => setReportStep('idle')}
-        >
-          <div
-            className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100">
-              <div>
-                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report</p>
-                <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Classify Your Issue</h3>
-              </div>
-              <button onClick={() => setReportStep('idle')} className="text-slate-400 hover:text-slate-700 transition p-1">
-                ✕
-              </button>
-            </div>
-            <div className="p-6">
-              <ReportClassificationStep
-                onConfirm={({ category, problem }) => {
-                  setPendingClassification({ category, problem });
-                  setReportStep('form');
-                }}
-                onCancel={() => setReportStep('idle')}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {reportStep === 'form' && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
@@ -757,7 +629,7 @@ function UserReports() {
           >
             <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100">
               <div>
-                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report — Step 2 of 2</p>
+                <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report</p>
                 <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Location-Verified Report</h3>
               </div>
               <button onClick={() => setReportStep('idle')} className="text-slate-400 hover:text-slate-700 transition p-1">
@@ -765,30 +637,8 @@ function UserReports() {
               </button>
             </div>
 
-            {pendingClassification && (
-              <div className="px-6 pt-4">
-                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${SEVERITY_TAXONOMY[pendingClassification.category]?.color}`}>
-                  {SEVERITY_TAXONOMY[pendingClassification.category]?.icon}
-                  {' '}{SEVERITY_TAXONOMY[pendingClassification.category]?.label}
-                  {' → '}
-                  {SEVERITY_TAXONOMY[pendingClassification.category]?.problems.find(
-                    (p) => p.value === pendingClassification.problem
-                  )?.label}
-                  <button
-                    onClick={() => setReportStep('classify')}
-                    className="ml-2 underline underline-offset-2 opacity-60 hover:opacity-100"
-                  >
-                    change
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="p-6">
-              <PublicReportForm
-                prefillCategory={pendingClassification?.category}
-                prefillProblem={pendingClassification?.problem}
-              />
+              <PublicReportForm />
             </div>
           </div>
         </div>
