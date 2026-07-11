@@ -81,57 +81,55 @@ export default function LguRouteMap({ projects, routesByProjectId, reports, show
   const heatPoints = reportPoints.map((row) => [row.lat, row.lng, row.status === 'resolved' ? 0.3 : 0.9]);
 
   return (
-    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
-      <div className="h-[420px] w-full">
-        <MapContainer center={[10.7, 122.56]} zoom={11} style={{ width: '100%', height: '100%' }} scrollWheelZoom>
-          <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+    <div className="h-[420px] w-full">
+      <MapContainer center={[10.7, 122.56]} zoom={11} style={{ width: '100%', height: '100%' }} scrollWheelZoom>
+        <TileLayer
+          attribution='&copy; OpenStreetMap contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
 
-          {routeLayers.map(({ project, routeData }) => (
-            <div key={project.id}>
-              {routeData.points?.length >= 2 && (
-                <Polyline positions={routeData.points} pathOptions={{ color: '#0f766e', weight: 4, opacity: 0.75 }} />
-              )}
-              {routeData.startPoint && (
-                <Marker position={routeData.startPoint} icon={startIcon}>
-                  <Popup>{project.project_name} (Start)</Popup>
-                </Marker>
-              )}
-              {routeData.endPoint && (
-                <Marker position={routeData.endPoint} icon={endIcon}>
-                  <Popup>{project.project_name} (End)</Popup>
-                </Marker>
-              )}
-            </div>
-          ))}
+        {routeLayers.map(({ project, routeData }) => (
+          <div key={project.id}>
+            {routeData.points?.length >= 2 && (
+              <Polyline positions={routeData.points} pathOptions={{ color: '#0f766e', weight: 4, opacity: 0.75 }} />
+            )}
+            {routeData.startPoint && (
+              <Marker position={routeData.startPoint} icon={startIcon}>
+                <Popup>{project.project_name} (Start)</Popup>
+              </Marker>
+            )}
+            {routeData.endPoint && (
+              <Marker position={routeData.endPoint} icon={endIcon}>
+                <Popup>{project.project_name} (End)</Popup>
+              </Marker>
+            )}
+          </div>
+        ))}
 
-          {reportPoints.map((row) => (
-            <CircleMarker
-              key={row.id}
-              center={[row.lat, row.lng]}
-              radius={6}
-              pathOptions={{
-                color: row.status === 'resolved' ? '#10b981' : row.status === 'reviewed' ? '#3b82f6' : '#f59e0b',
-                fillOpacity: 0.85,
-                weight: 1.5,
-              }}
-            >
-              <Popup>
-                <div className="text-xs">
-                  <p className="font-semibold">{row.project_name || 'Unlinked project'}</p>
-                  <p>{row.barangay || 'N/A'}, {row.municipality || 'N/A'}</p>
-                  <p>Status: {row.status || 'pending'}</p>
-                </div>
-              </Popup>
-            </CircleMarker>
-          ))}
+        {reportPoints.map((row) => (
+          <CircleMarker
+            key={row.id}
+            center={[row.lat, row.lng]}
+            radius={6}
+            pathOptions={{
+              color: row.status === 'resolved' ? '#10b981' : row.status === 'reviewed' ? '#3b82f6' : '#f59e0b',
+              fillOpacity: 0.85,
+              weight: 1.5,
+            }}
+          >
+            <Popup>
+              <div className="text-xs">
+                <p className="font-semibold">{row.project_name || 'Unlinked project'}</p>
+                <p>{row.barangay || 'N/A'}, {row.municipality || 'N/A'}</p>
+                <p>Status: {row.status || 'pending'}</p>
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
 
-          {showHeat && <HeatLayer points={heatPoints} />}
-          <FitToData points={fitPoints} />
-        </MapContainer>
-      </div>
+        {showHeat && <HeatLayer points={heatPoints} />}
+        <FitToData points={fitPoints} />
+      </MapContainer>
     </div>
   );
 }

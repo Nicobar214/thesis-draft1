@@ -1,0 +1,5293 @@
+[
+    {
+        "roadName":  "Agboy Norte-Siol Norte Rd",
+        "barangay":  "Agboy Norte",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.47,
+        "row":  6,
+        "yearConstructed":  2013,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.03 km (2%, Fair); Earth 1.44 km (98%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.03,
+                             "pct":  2,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.44,
+                             "pct":  98,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Agta Road",
+        "barangay":  "Agta",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.85,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.41 km (48%, Fair); Gravel 0.45 km (52%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.41,
+                             "pct":  48,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.45,
+                             "pct":  52,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Anonang-Sitio Bangalad",
+        "barangay":  "Anonang",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.62,
+        "row":  6,
+        "yearConstructed":  2013,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.05 km (8%, Fair); Gravel 0.41 km (66%, Fair); Earth 0.16 km (26%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.05,
+                             "pct":  8,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.41,
+                             "pct":  66,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.16,
+                             "pct":  26,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Apian Road",
+        "barangay":  "Apian",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.96,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.77 km (80%, Fair); Gravel 0.19 km (20%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.77,
+                             "pct":  80,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.19,
+                             "pct":  20,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Apian-Coyugan Norte Rd",
+        "barangay":  "Apian",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.78,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.08 km (10%, Fair); Gravel 0.7 km (90%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.08,
+                             "pct":  10,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.7,
+                             "pct":  90,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Avanzada-Baje Road",
+        "barangay":  "Avanzada",
+        "classification":  "Barangay Rd",
+        "lengthKm":  9.36,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 6.76 km (72%, Fair); Gravel 2.6 km (28%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  6.76,
+                             "pct":  72,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.6,
+                             "pct":  28,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Awis Road",
+        "barangay":  "Awis",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.18,
+        "row":  6,
+        "yearConstructed":  1997,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.01 km (8%, Fair); Gravel 0.17 km (92%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.01,
+                             "pct":  8,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.17,
+                             "pct":  92,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Ayabang Road",
+        "barangay":  "Ayabang",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.74,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 0.74 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.74,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Ayubo Road",
+        "barangay":  "Ayubo",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.13,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.13 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.13,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bacolod Road",
+        "barangay":  "Bacolod",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.05,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.05 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.05,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bacolod-Cabunga-an Rd.",
+        "barangay":  "Bacolod",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.26,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.26 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.26,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Banagan Road",
+        "barangay":  "Banagan",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.27,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.98 km (78%, Fair); Gravel 0.28 km (22%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.98,
+                             "pct":  78,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.28,
+                             "pct":  22,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Barangbang Road",
+        "barangay":  "Barangbang",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.55,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.88 km (57%, Fair); Earth 0.66 km (43%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.88,
+                             "pct":  57,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.66,
+                             "pct":  43,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Barasan Road",
+        "barangay":  "Barasan",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.55,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.55 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.55,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bayag Norte-Sitio Danao Rd",
+        "barangay":  "Bayag Norte",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.36,
+        "row":  6,
+        "yearConstructed":  2015,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.36 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.36,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bayag Norte-Sitio Raug Rd",
+        "barangay":  "Bayag Norte",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.53,
+        "row":  6,
+        "yearConstructed":  2015,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.53 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.53,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Binolbog Road",
+        "barangay":  "Binolbog",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.69,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.21 km (31%, Poor); Gravel 0.48 km (69%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.21,
+                             "pct":  31,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.48,
+                             "pct":  69,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Binolbog Road (new)",
+        "barangay":  "Binolbog Road (new)",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.48,
+        "row":  6,
+        "yearConstructed":  2020,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.48 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.48,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Binolbog-Ambulong Road",
+        "barangay":  "Binolbog",
+        "classification":  "Barangay Rd",
+        "lengthKm":  2.28,
+        "row":  6,
+        "yearConstructed":  2015,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 2.28 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.28,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Biri Norte-Isian Norte Road",
+        "barangay":  "Biri Norte",
+        "classification":  "Barangay Rd",
+        "lengthKm":  2.65,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.58 km (22%, Fair); Gravel 2.07 km (78%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.58,
+                             "pct":  22,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.07,
+                             "pct":  78,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Biri Norte-Tina-an Sur Road",
+        "barangay":  "Biri Norte",
+        "classification":  "Barangay Rd",
+        "lengthKm":  2.73,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 2.73 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.73,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Biri Sur Road",
+        "barangay":  "Biri Sur",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.78,
+        "row":  6,
+        "yearConstructed":  2010,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.45 km (58%, Fair); Earth 0.33 km (42%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.45,
+                             "pct":  58,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.33,
+                             "pct":  42,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Biri Sur-Sitio Dulaca Road",
+        "barangay":  "Biri Sur",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.21,
+        "row":  6,
+        "yearConstructed":  2019,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.21 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.21,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari Road",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.99,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.99 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.99,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari Road",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.09,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.09 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.09,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari-Cagay-Ingay Road",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  4.54,
+        "row":  10,
+        "yearConstructed":  2000,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 1.1 km (24%, Poor); Gravel 1.91 km (42%, Fair); Earth 1.53 km (34%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.1,
+                             "pct":  24,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.91,
+                             "pct":  42,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.53,
+                             "pct":  34,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari-Camandag Road",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  3.02,
+        "row":  10,
+        "yearConstructed":  1998,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 3.02 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  3.02,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari-Cumpan-Sibucao",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  2.11,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Earth",
+        "condition":  "Critical",
+        "surfaceSummary":  "Earth 2.11 km (100%, Critical)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.11,
+                             "pct":  100,
+                             "condition":  "Critical"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bucari-Tabionan Road",
+        "barangay":  "Bucari",
+        "classification":  "Barangay Rd",
+        "lengthKm":  0.44,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.44 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.44,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga Road",
+        "barangay":  "Buga",
+        "classification":  "Barangay Rd",
+        "lengthKm":  1.5,
+        "row":  10,
+        "yearConstructed":  1960,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.5 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.5,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Sitio Dao-Baong Rd.",
+        "barangay":  "Buga",
+        "classification":  "Barangay Rd",
+        "lengthKm":  2.46,
+        "row":  6,
+        "yearConstructed":  2014,
+        "surfaceType":  "Earth",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.39 km (16%, Fair); Earth 2.08 km (84%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.39,
+                             "pct":  16,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.08,
+                             "pct":  84,
+                             "condition":  "Fair"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Kananghan-Iguaras",
+        "barangay":  "Buga",
+        "classification":  "Barangay Rd",
+        "lengthKm":  3.82,
+        "row":  4,
+        "yearConstructed":  2009,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.14 km (4%, Fair); Gravel 3.24 km (85%, Poor); Earth 0.44 km (11%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.14,
+                             "pct":  4,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  3.24,
+                             "pct":  85,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.44,
+                             "pct":  11,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Jct-Kananghan Rd",
+        "barangay":  "Buga",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.29,
+        "row":  4,
+        "yearConstructed":  2009,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 0.29 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.29,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Jct-Lampigaw- Pinon-an Road",
+        "barangay":  "Buga",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.97,
+        "row":  4,
+        "yearConstructed":  2010,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 0.91 km (31%, Poor); Earth 2.06 km (69%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.91,
+                             "pct":  31,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.06,
+                             "pct":  69,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Sitio Bugtong Road",
+        "barangay":  "Buga",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.13,
+        "row":  4,
+        "yearConstructed":  2005,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.13 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.13,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Buga-Sitio Tibod-Lanag Rd",
+        "barangay":  "Buga",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.9,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.9 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.9,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Bulad Road",
+        "barangay":  "Bulad",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.87,
+        "row":  6,
+        "yearConstructed":  1997,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.8 km (92%, Fair); Gravel 0.07 km (8%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.8,
+                             "pct":  92,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.07,
+                             "pct":  8,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Cabunga-an-Caboloan Rd",
+        "barangay":  "Cabunga",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.87,
+        "row":  10,
+        "yearConstructed":  2001,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.87 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.87,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Cabutongan Road",
+        "barangay":  "Cabutongan",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.71,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.71 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.71,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Cagay Road",
+        "barangay":  "Cagay",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.3,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.3 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.3,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Camandag-Bobon Road",
+        "barangay":  "Camandag",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.75,
+        "row":  10,
+        "yearConstructed":  1999,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.75 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.75,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Camandag-Bulwang Rd",
+        "barangay":  "Camandag",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.8,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.8 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.8,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Cananaman Road",
+        "barangay":  "Cananaman",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.05,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 2.05 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  2.05,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Capt. Fernando-Paoy Rd",
+        "barangay":  "Capt. Fernando",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.75,
+        "row":  6,
+        "yearConstructed":  1997,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.75 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.75,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Capt. Fernando-Sitio",
+        "barangay":  "Capt. Fernando",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.68,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.68 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.68,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Limotan Road",
+        "barangay":  "Limotan",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.68,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.68 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.68,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Capt. Fernando-Lang-og Rd.",
+        "barangay":  "Capt. Fernando",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.51,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.51 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.51,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Carara-an-Sitio Talibong Rd",
+        "barangay":  "Carara",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.94,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.94 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.94,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Carolina Road",
+        "barangay":  "Carolina",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.8,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.8 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.8,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Carolina Rd. Jct Langog Rd",
+        "barangay":  "Carolina Rd. Jct Langog",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.83,
+        "row":  6,
+        "yearConstructed":  1992,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.43 km (51%, Fair); Earth 0.4 km (49%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.43,
+                             "pct":  51,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.4,
+                             "pct":  49,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Coyugan Norte Road",
+        "barangay":  "Coyugan Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.53,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.23 km (43%, Fair); Gravel 0.3 km (57%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.23,
+                             "pct":  43,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.3,
+                             "pct":  57,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Coyugan Sur Road",
+        "barangay":  "Coyugan Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.76,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.76 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.76,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Coyugan Sur Road New",
+        "barangay":  "Coyugan Sur Road New",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.39,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.39 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.39,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Danao Road",
+        "barangay":  "Danao",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.5,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.5 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.5,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dorog Road",
+        "barangay":  "Dorog",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.63,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.63 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.63,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dorog-Marirong Road",
+        "barangay":  "Dorog",
+        "classification":  "Barangay Road",
+        "lengthKm":  3.02,
+        "row":  6,
+        "yearConstructed":  2017,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 2.94 km (97%, Fair); Earth 0.08 km (3%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  2.94,
+                             "pct":  97,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.08,
+                             "pct":  3,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dorog-Carara-an Road",
+        "barangay":  "Dorog",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.92,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.22 km (64%, Fair); Gravel 0.7 km (36%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.22,
+                             "pct":  64,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.7,
+                             "pct":  36,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dorog-Cawilihan Road",
+        "barangay":  "Dorog",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.62,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.13 km (5%, Fair); Gravel 2.49 km (95%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.13,
+                             "pct":  5,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.49,
+                             "pct":  95,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dusacan Road (new)",
+        "barangay":  "Dusacan Road (new)",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.27,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 0.27 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.27,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gines Brgy. Proper New Rd",
+        "barangay":  "Gines Brgy. Proper New",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.39,
+        "row":  6,
+        "yearConstructed":  2021,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.39 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.39,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gines-Ayabang Road",
+        "barangay":  "Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.75,
+        "row":  6,
+        "yearConstructed":  2001,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.64 km (84%, Fair); Earth 0.12 km (16%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.64,
+                             "pct":  84,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.12,
+                             "pct":  16,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gines-Ticuan Road",
+        "barangay":  "Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.91,
+        "row":  6,
+        "yearConstructed":  2001,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.91 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.91,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gines-Tunguan Road",
+        "barangay":  "Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.1,
+        "row":  6,
+        "yearConstructed":  2001,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.34 km (64%, Fair); Gravel 0.76 km (36%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.34,
+                             "pct":  64,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.76,
+                             "pct":  36,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gines-Sitio Mayang",
+        "barangay":  "Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.49,
+        "row":  10,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.49 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.49,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gumboc-Awis-Paoy- Camando Road",
+        "barangay":  "Gumboc",
+        "classification":  "Barangay Road",
+        "lengthKm":  5.11,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.1 km (22%, Fair); Gravel 4.01 km (78%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.1,
+                             "pct":  22,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  4.01,
+                             "pct":  78,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gumboc-Jct Capt. Fernando Road",
+        "barangay":  "Gumboc",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.99,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.54 km (54%, Fair); Gravel 0.45 km (46%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.54,
+                             "pct":  54,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.45,
+                             "pct":  46,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gumboc-Sitio Biasong",
+        "barangay":  "Gumboc",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.57,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.57 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.57,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Gumboc-Sitio Taal",
+        "barangay":  "Gumboc",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.43,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.43 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.43,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Igcadios Road",
+        "barangay":  "Igcadios",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.85,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.33 km (39%, Fair); Gravel 0.52 km (61%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.33,
+                             "pct":  39,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.52,
+                             "pct":  61,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Igcadios-Ayabang Road",
+        "barangay":  "Igcadios",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.18,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.18 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.18,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Igcadios-Carara-an Road",
+        "barangay":  "Igcadios",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.96,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.96 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.96,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Norte-Casling Road",
+        "barangay":  "Isian Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.67,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.81 km (48%, Fair); Gravel 0.86 km (52%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.81,
+                             "pct":  48,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.86,
+                             "pct":  52,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Norte-Sitio Gaspangan",
+        "barangay":  "Isian Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.27,
+        "row":  6,
+        "yearConstructed":  2019,
+        "surfaceType":  "Earth",
+        "condition":  "Fair",
+        "surfaceSummary":  "Earth 0.27 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.27,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Norte-Sitio Lanag",
+        "barangay":  "Isian Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.58,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.58 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.58,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Norte-Sitio Lanag-",
+        "barangay":  "Isian Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.77,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.77 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.77,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Victoria Road",
+        "barangay":  "Isian Victoria",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.77,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.77 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.77,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Isian Victoria Road",
+        "barangay":  "Isian Victoria",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.89,
+        "row":  6,
+        "yearConstructed":  2002,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.49 km (17%, Fair); Earth 2.39 km (83%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.49,
+                             "pct":  17,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.39,
+                             "pct":  83,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Jamog Gines Road",
+        "barangay":  "Jamog Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.14,
+        "row":  6,
+        "yearConstructed":  2005,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.14 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.14,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Jamog Gines Road",
+        "barangay":  "Jamog Gines",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.3,
+        "row":  6,
+        "yearConstructed":  2017,
+        "surfaceType":  "Gravel",
+        "condition":  "Good",
+        "surfaceSummary":  "Concrete 0.15 km (50%, Fair); Gravel 0.15 km (50%, Good)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.15,
+                             "pct":  50,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.15,
+                             "pct":  50,
+                             "condition":  "Good"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag-ISAT U Demo Farm Rd",
+        "barangay":  "Lanag",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.19,
+        "row":  6,
+        "yearConstructed":  2021,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.19 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.19,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lang-og Road",
+        "barangay":  "Lang",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.98,
+        "row":  6,
+        "yearConstructed":  1982,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.98 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.98,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag Road",
+        "barangay":  "Lanag",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.18,
+        "row":  6,
+        "yearConstructed":  1982,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.97 km (82%, Fair); Gravel 0.21 km (18%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.97,
+                             "pct":  82,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.21,
+                             "pct":  18,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag-Nagbangi-Tuog",
+        "barangay":  "Lanag",
+        "classification":  "Barangay Road",
+        "lengthKm":  3.56,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.5 km (42%, Fair); Gravel 2.06 km (58%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.5,
+                             "pct":  42,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.06,
+                             "pct":  58,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag (going to Don Felimon Inland Resort",
+        "barangay":  "Lanag (going to Don Felimon Inland Resort",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.25,
+        "row":  6,
+        "yearConstructed":  2021,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 1.25 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.25,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag-Sitio Puro Gamay",
+        "barangay":  "Lanag",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.51,
+        "row":  6,
+        "yearConstructed":  2001,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.51 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.51,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Lanag-Tu-og Road",
+        "barangay":  "Lanag",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.93,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Gravel 0.18 km (19%, Fair); Earth 0.75 km (81%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.18,
+                             "pct":  19,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.75,
+                             "pct":  81,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Ligtos Road",
+        "barangay":  "Ligtos",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.47,
+        "row":  6,
+        "yearConstructed":  1984,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.43 km (91%, Fair); Gravel 0.04 km (9%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.43,
+                             "pct":  91,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.04,
+                             "pct":  9,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Ligtos-Gines Road",
+        "barangay":  "Ligtos",
+        "classification":  "Barangay Road",
+        "lengthKm":  5.49,
+        "row":  10,
+        "yearConstructed":  1984,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 2.35 km (43%, Fair); Gravel 3.14 km (57%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  2.35,
+                             "pct":  43,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  3.14,
+                             "pct":  57,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Magcapay-Sitio",
+        "barangay":  "Magcapay",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.55,
+        "row":  6,
+        "yearConstructed":  2018,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.55 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.55,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Kalapadan Road",
+        "barangay":  "Kalapadan",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.55,
+        "row":  6,
+        "yearConstructed":  2018,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.55 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.55,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Magcapay-Sitio Bungad Rd",
+        "barangay":  "Magcapay",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.48,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.48 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.48,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Magcapay Road",
+        "barangay":  "Magcapay",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.75,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 1.09 km (63%, Fair); Gravel 0.65 km (37%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.09,
+                             "pct":  63,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.65,
+                             "pct":  37,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Maliao Road",
+        "barangay":  "Maliao",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.28,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.28 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.28,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Maliao-Cabunga-an Rd",
+        "barangay":  "Maliao",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.65,
+        "row":  6,
+        "yearConstructed":  1997,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.56 km (21%, Fair); Gravel 2.09 km (79%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.56,
+                             "pct":  21,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.09,
+                             "pct":  79,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Maliao-Lampaya Road",
+        "barangay":  "Maliao",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.76,
+        "row":  6,
+        "yearConstructed":  2001,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.39 km (22%, Fair); Gravel 1.37 km (78%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.39,
+                             "pct":  22,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.37,
+                             "pct":  78,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Malublub Road",
+        "barangay":  "Malublub",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.87,
+        "row":  6,
+        "yearConstructed":  1998,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.29 km (69%, Fair); Gravel 0.59 km (31%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.29,
+                             "pct":  69,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.59,
+                             "pct":  31,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Malublub-Abang-Abang Rd",
+        "barangay":  "Malublub",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.24,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 2.24 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  2.24,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Malublub-Sitio Lintian Rd",
+        "barangay":  "Malublub",
+        "classification":  "Barangay Road",
+        "lengthKm":  2,
+        "row":  6,
+        "yearConstructed":  2017,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 2 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Malublub-Sitio Buyo",
+        "barangay":  "Malublub",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.89,
+        "row":  6,
+        "yearConstructed":  2018,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 0.89 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.89,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Malublub-Sitio Tumotob",
+        "barangay":  "Malublub",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.82,
+        "row":  6,
+        "yearConstructed":  2018,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.82 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.82,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Manampunay-Tac. Norte Rd",
+        "barangay":  "Manampunay",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.1,
+        "row":  10,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.23 km (58%, Fair); Gravel 0.87 km (42%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.23,
+                             "pct":  58,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.87,
+                             "pct":  42,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Marirong Road",
+        "barangay":  "Marirong",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.29,
+        "row":  6,
+        "yearConstructed":  2018,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.29 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.29,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Mina Road",
+        "barangay":  "Mina",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.84,
+        "row":  6,
+        "yearConstructed":  2005,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.29 km (35%, Fair); Gravel 0.55 km (65%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.29,
+                             "pct":  35,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.55,
+                             "pct":  65,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Mocol Road",
+        "barangay":  "Mocol",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.45,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.45 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.45,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Nagbangi Road",
+        "barangay":  "Nagbangi",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.32,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.32 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.32,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Nagbangi-Siol Norte-",
+        "barangay":  "Nagbangi",
+        "classification":  "Barangay Road",
+        "lengthKm":  3.8,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.36 km (36%, Fair); Gravel 2.45 km (64%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.36,
+                             "pct":  36,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.45,
+                             "pct":  64,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Agboy Sur Road",
+        "barangay":  "Agboy Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  3.8,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.36 km (36%, Fair); Gravel 2.45 km (64%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.36,
+                             "pct":  36,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  2.45,
+                             "pct":  64,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Nalbang Road",
+        "barangay":  "Nalbang",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.43,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.43 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.43,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Odong-Odong Road",
+        "barangay":  "Odong",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.01,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.52 km (51%, Fair); Gravel 0.5 km (49%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.52,
+                             "pct":  51,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.5,
+                             "pct":  49,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Oluangan Road",
+        "barangay":  "Oluangan",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.11,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.92 km (44%, Fair); Gravel 1.19 km (56%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.92,
+                             "pct":  44,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.19,
+                             "pct":  56,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Paga Road",
+        "barangay":  "Paga",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.51,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.51 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.51,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Pandan-Buenavista Rd.",
+        "barangay":  "Pandan",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.57,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.57 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.57,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Pandan-Barawbaraw Rd",
+        "barangay":  "Pandan",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.87,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.87 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.87,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Pandan-Composting",
+        "barangay":  "Pandan",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.45,
+        "row":  6,
+        "yearConstructed":  1994,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.45 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.45,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Center Road",
+        "barangay":  "Center",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.45,
+        "row":  6,
+        "yearConstructed":  1994,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.45 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.45,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Paoy Road",
+        "barangay":  "Paoy",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.6,
+        "row":  6,
+        "yearConstructed":  1997,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.11 km (18%, Fair); Earth 0.49 km (82%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.11,
+                             "pct":  18,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  0.49,
+                             "pct":  82,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Pepe-Binolbog Road",
+        "barangay":  "Pepe",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.16,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.04 km (3%, Poor); Gravel 0.04 km (3%, Poor); Earth 1.09 km (93%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.04,
+                             "pct":  3,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.04,
+                             "pct":  3,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.09,
+                             "pct":  93,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Poblacion-Sitio Buntalan",
+        "barangay":  "Poblacion",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.44,
+        "row":  10,
+        "yearConstructed":  2018,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.44 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.44,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Sitio Dugo Road",
+        "barangay":  "Sitio Dugo",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.44,
+        "row":  10,
+        "yearConstructed":  2018,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.44 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.44,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Poblacion-Sitio Dugo Rd",
+        "barangay":  "Poblacion",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.03,
+        "row":  10,
+        "yearConstructed":  2005,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.4 km (38%, Fair); Gravel 0.64 km (62%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.4,
+                             "pct":  38,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.64,
+                             "pct":  62,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Poblacion-Sitio Miac-ac",
+        "barangay":  "Poblacion",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.77,
+        "row":  6,
+        "yearConstructed":  2005,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.08 km (61%, Fair); Gravel 0.7 km (39%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.08,
+                             "pct":  61,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.7,
+                             "pct":  39,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Salngan Road",
+        "barangay":  "Salngan",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.12,
+        "row":  6,
+        "yearConstructed":  1986,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.46 km (41%, Fair); Gravel 0.66 km (59%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.46,
+                             "pct":  41,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.66,
+                             "pct":  59,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Salngan-Isian Victoria Rd",
+        "barangay":  "Salngan",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.01,
+        "row":  6,
+        "yearConstructed":  1986,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.87 km (86%, Fair); Gravel 0.14 km (14%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.87,
+                             "pct":  86,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.14,
+                             "pct":  14,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Samlague Road",
+        "barangay":  "Samlague",
+        "classification":  "Barangay Road",
+        "lengthKm":  1,
+        "row":  6,
+        "yearConstructed":  2010,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.86 km (86%, Fair); Gravel 0.14 km (14%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.86,
+                             "pct":  86,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.14,
+                             "pct":  14,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Siol Sur Road",
+        "barangay":  "Siol Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.36,
+        "row":  6,
+        "yearConstructed":  2005,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.36 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.36,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Siol Sur-Anonang Road",
+        "barangay":  "Siol Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.24,
+        "row":  6,
+        "yearConstructed":  2016,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 1.24 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.24,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tacuyong Norte Road",
+        "barangay":  "Tacuyong Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.57,
+        "row":  6,
+        "yearConstructed":  1999,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.57 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.57,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tac. Norte-Marirong Rd.",
+        "barangay":  "Tac. Norte",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.82,
+        "row":  6,
+        "yearConstructed":  1986,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.82 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.82,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tacuyong Sur Road",
+        "barangay":  "Tacuyong Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.59,
+        "row":  6,
+        "yearConstructed":  1982,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.59 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.59,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tac. Sur-Baje Road",
+        "barangay":  "Tac. Sur",
+        "classification":  "Barangay Road",
+        "lengthKm":  2.24,
+        "row":  6,
+        "yearConstructed":  2003,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 1.92 km (86%, Fair); Gravel 0.32 km (14%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  1.92,
+                             "pct":  86,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.32,
+                             "pct":  14,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tagsing Road",
+        "barangay":  "Tagsing",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.76,
+        "row":  6,
+        "yearConstructed":  1983,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.6 km (34%, Fair); Gravel 1.16 km (66%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.6,
+                             "pct":  34,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  1.16,
+                             "pct":  66,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Talacu-an-Takasi-",
+        "barangay":  "Talacu",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.81,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.51 km (63%, Fair); Gravel 0.3 km (37%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.51,
+                             "pct":  63,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.3,
+                             "pct":  37,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Panginman Road",
+        "barangay":  "Panginman",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.81,
+        "row":  6,
+        "yearConstructed":  2009,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.51 km (63%, Fair); Gravel 0.3 km (37%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.51,
+                             "pct":  63,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.3,
+                             "pct":  37,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Takasi-Bunga Road",
+        "barangay":  "Takasi",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.39,
+        "row":  6,
+        "yearConstructed":  2021,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Gravel 0.39 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.39,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tina-an Norte Road",
+        "barangay":  "Tina",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.73,
+        "row":  6,
+        "yearConstructed":  1961,
+        "surfaceType":  "Concrete",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.73 km (100%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.73,
+                             "pct":  100,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tina-an Norte-Sitio Bugo",
+        "barangay":  "Tina",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.47,
+        "row":  4,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Poor",
+        "surfaceSummary":  "Concrete 0.14 km (30%, Fair); Gravel 0.33 km (70%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.14,
+                             "pct":  30,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.33,
+                             "pct":  70,
+                             "condition":  "Poor"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tunguan-Lampaya Road",
+        "barangay":  "Tunguan",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.5,
+        "row":  6,
+        "yearConstructed":  2017,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.5 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.5,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tunguan-Banagan Road",
+        "barangay":  "Tunguan",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.51,
+        "row":  6,
+        "yearConstructed":  2005,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.51 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.51,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tu-og Road",
+        "barangay":  "Tu",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.41,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.07 km (17%, Fair); Gravel 0.34 km (83%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.07,
+                             "pct":  17,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.34,
+                             "pct":  83,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  0,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tu-og-Lanot Road",
+        "barangay":  "Tu",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.55,
+        "row":  6,
+        "yearConstructed":  2000,
+        "surfaceType":  "Gravel",
+        "condition":  "Fair",
+        "surfaceSummary":  "Concrete 0.19 km (35%, Fair); Gravel 0.36 km (65%, Fair)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.19,
+                             "pct":  35,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  0.36,
+                             "pct":  65,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Tu-og-Siol Norte Road",
+        "barangay":  "Tu",
+        "classification":  "Barangay Road",
+        "lengthKm":  1.44,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Earth",
+        "condition":  "Poor",
+        "surfaceSummary":  "Earth 1.44 km (100%, Poor)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  "Fair"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  1.44,
+                             "pct":  100,
+                             "condition":  "Poor"
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Dorog-Marirong-Dorog",
+        "barangay":  "Dorog",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.9,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Good",
+        "surfaceSummary":  "Concrete 0.9 km (100%, Good)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.9,
+                             "pct":  100,
+                             "condition":  "Good"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    },
+    {
+        "roadName":  "Cemetery Road.",
+        "barangay":  "Cemetery",
+        "classification":  "Barangay Road",
+        "lengthKm":  0.9,
+        "row":  6,
+        "yearConstructed":  2022,
+        "surfaceType":  "Concrete",
+        "condition":  "Good",
+        "surfaceSummary":  "Concrete 0.9 km (100%, Good)",
+        "surfaces":  [
+                         {
+                             "type":  "Concrete",
+                             "length":  0.9,
+                             "pct":  100,
+                             "condition":  "Good"
+                         },
+                         {
+                             "type":  "Asphalt",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Gravel",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         },
+                         {
+                             "type":  "Earth",
+                             "length":  null,
+                             "pct":  null,
+                             "condition":  null
+                         }
+                     ]
+    }
+]

@@ -611,6 +611,7 @@ export default function Dashboard() {
   const [fmrProjectSortBy, setFmrProjectSortBy] = useState('latest');
   const [fmrProjectCurrentPage, setFmrProjectCurrentPage] = useState(1);
   const fmrProjectsPerPage = 9;
+  const [selectedProjectDetail, setSelectedProjectDetail] = useState(null);
 
   // Contractor state
   const [contractors, setContractors] = useState([]);
@@ -2449,6 +2450,17 @@ export default function Dashboard() {
     setShowDeleteModal(true);
   };
 
+  const openProjectDetailModal = (project) => {
+    setSelectedProjectDetail(project);
+  };
+
+  const formatProjectDetailDate = (value) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
   // ─── FMR CRUD Handlers ───
   const handleFmrInputChange = (e) => {
     const { name, value } = e.target;
@@ -3124,7 +3136,19 @@ export default function Dashboard() {
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {paginatedProjects.map((project) => (
-                            <tr key={project.id} className="hover:bg-slate-50/50 transition-colors duration-150">
+                            <tr
+                              key={project.id}
+                              className="cursor-pointer hover:bg-slate-50/50 transition-colors duration-150"
+                              onClick={() => openProjectDetailModal(project)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  openProjectDetailModal(project);
+                                }
+                              }}
+                              tabIndex={0}
+                              title="Click to view project details"
+                            >
                               <td className="px-8 py-5">
                                 <p className="font-semibold text-sm text-slate-900">{project.projectName}</p>
                                 <p className="text-xs text-slate-400 font-mono mt-1">{project.projectCode} • {project.roadLength} km</p>
@@ -3159,8 +3183,20 @@ export default function Dashboard() {
                               </td>
                               <td className="px-8 py-5">
                                 <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openProjectDetailModal(project);
+                                    }}
+                                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors duration-150"
+                                    title="View details"
+                                  >
+                                    View
+                                  </button>
                                   <button 
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       if (project._source === 'fmr' && project._raw) {
                                         openFmrEditModal(project._raw);
                                       } else {
@@ -3175,7 +3211,8 @@ export default function Dashboard() {
                                     </svg>
                                   </button>
                                   <button 
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       if (project._source === 'fmr' && project._raw) {
                                         openFmrDeleteModal(project._raw);
                                       } else {
@@ -3509,7 +3546,20 @@ export default function Dashboard() {
                       ? { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' }
                       : { badge: 'bg-sky-50 text-sky-700 border-sky-200', bar: 'bg-sky-500', dot: 'bg-sky-500' };
                     return (
-                      <div key={project.id} className="group bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:shadow-lg hover:border-slate-300 transition-all duration-300 flex flex-col">
+                      <div
+                        key={project.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openProjectDetailModal(project)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            openProjectDetailModal(project);
+                          }
+                        }}
+                        className="group cursor-pointer bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:shadow-lg hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all duration-300 flex flex-col"
+                        title="Click to view project details"
+                      >
                         {/* Card Header Accent */}
                         <div className={`h-1 ${statusStyle.bar}`} />
                         <div className="p-6 flex-1 flex flex-col">
@@ -3565,21 +3615,31 @@ export default function Dashboard() {
                           {/* Action Buttons */}
                           <div className="flex gap-2 pt-4 border-t border-slate-100 flex-wrap">
                             <button
-                              onClick={() => openFmrEditModal(project)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openFmrEditModal(project);
+                              }}
                               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
                               Edit
                             </button>
                             <button
-                              onClick={() => { setAssignContractorModal(project); setSelectedContractorId(project.contractor_id || ''); }}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setAssignContractorModal(project);
+                                setSelectedContractorId(project.contractor_id || '');
+                              }}
                               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl text-sm font-semibold text-amber-700 transition-all duration-200"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
                               Assign
                             </button>
                             <button
-                              onClick={() => openFmrDeleteModal(project)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openFmrDeleteModal(project);
+                              }}
                               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200/60 rounded-xl text-sm font-semibold text-red-600 transition-all duration-200"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
@@ -4700,6 +4760,9 @@ export default function Dashboard() {
                   municipality: project.municipality,
                   id: project.id,
                 });
+              }}
+              onViewProjectDetail={(project) => {
+                openProjectDetailModal(project);
               }}
             />
           )}
@@ -7588,6 +7651,171 @@ export default function Dashboard() {
       )}
 
       {/* Project Reports Modal — shows public reports linked to a project */}
+      {selectedProjectDetail && (() => {
+        const project = selectedProjectDetail;
+        const rawProject = project._raw || project;
+        const detailValue = (...keys) => {
+          for (const key of keys) {
+            const value = project?.[key] ?? rawProject?.[key];
+            if (value !== undefined && value !== null && value !== '') return value;
+          }
+          return null;
+        };
+        const projectName = detailValue('projectName', 'project_name') || 'Unnamed Project';
+        const barangayLabel = detailValue('barangay', 'location');
+        const locationLabel = [barangayLabel, detailValue('municipality'), detailValue('province')].filter(Boolean).join(', ') || 'N/A';
+        const latitude = Number(detailValue('latitude', 'start_latitude'));
+        const longitude = Number(detailValue('longitude', 'start_longitude'));
+        const endLatitude = Number(detailValue('end_latitude', 'endLatitude'));
+        const endLongitude = Number(detailValue('end_longitude', 'endLongitude'));
+        const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+        const hasEndCoordinates = Number.isFinite(endLatitude) && Number.isFinite(endLongitude);
+        const budgetValue = detailValue('totalBudget', 'total_budget', 'budget', 'project_cost', 'cost', 'allocated_budget');
+        const contractorName = detailValue('contractor', 'contractor_name', 'contractor_id') || 'N/A';
+        const progressValue = Number(detailValue('progress', 'accomplishment') ?? 0);
+        const projectLength = Number(detailValue('roadLength', 'project_length_km') ?? 0);
+        const displayStatus = detailValue('status') || 'N/A';
+        const isFmrProject = project._source === 'fmr' || Boolean(rawProject.project_name || rawProject.project_length_km);
+        const sourceLabel = isFmrProject ? 'DA FMR Project' : 'Admin Project';
+        const projectCode = detailValue('projectCode', 'project_code') || (isFmrProject ? `FMR-${rawProject.id}` : 'N/A');
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setSelectedProjectDetail(null)}>
+            <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 bg-gradient-to-r from-slate-50 to-white">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Project Details</p>
+                  <h3 className="mt-1 text-2xl font-bold text-slate-900">{projectName}</h3>
+                  <p className="mt-1 text-sm text-slate-500">Detailed {sourceLabel.toLowerCase()} record for DA review.</p>
+                </div>
+                <button onClick={() => setSelectedProjectDetail(null)} className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Location</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{locationLabel}</p>
+                    <p className="mt-1 text-sm text-slate-500">{detailValue('municipality') || 'N/A'} {detailValue('province') ? `, ${detailValue('province')}` : ''}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Status</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{renderStatusPill(displayStatus, displayStatus)}</p>
+                    <p className="mt-1 text-sm text-slate-500">Progress {Number.isFinite(progressValue) ? `${progressValue}%` : 'N/A'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Budget / Contractor</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900">{formatCurrency(Number(budgetValue) || 0)}</p>
+                    <p className="mt-1 text-sm text-slate-500">Contractor: {contractorName}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h4 className="text-lg font-bold text-slate-900">Citizen-facing summary</h4>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Project Name</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{projectName}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Road Length</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{projectLength ? `${projectLength} km` : 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Municipality</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{detailValue('municipality') || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Province</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{detailValue('province') || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Year Funded</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{detailValue('year_funded', 'yearFunded') || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Road Type</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{detailValue('roadType', 'road_type') || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Target Completion</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{formatProjectDetailDate(detailValue('target_completion_date', 'targetCompletionDate'))}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Date Completed</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{formatProjectDetailDate(detailValue('date_completed', 'dateCompleted'))}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h4 className="text-lg font-bold text-slate-900">Location data</h4>
+                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Barangay</p>
+                        <p className="mt-1 font-semibold text-slate-900">{barangayLabel || 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Start Coordinates</p>
+                        <p className="mt-1 font-semibold text-slate-900">{hasCoordinates ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">End Coordinates</p>
+                        <p className="mt-1 font-semibold text-slate-900">{hasEndCoordinates ? `${endLatitude.toFixed(6)}, ${endLongitude.toFixed(6)}` : 'N/A'}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Project Code</p>
+                        <p className="mt-1 font-semibold text-slate-900">{projectCode}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 p-3">
+                        <p className="text-xs uppercase tracking-wider text-slate-500">Record Source</p>
+                        <p className="mt-1 font-semibold text-slate-900">{sourceLabel}</p>
+                      </div>
+                    </div>
+                    {hasCoordinates && (
+                      <a
+                        href={`https://www.google.com/maps?q=${latitude},${longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-4 inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                      >
+                        Open on Google Maps
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {(detailValue('description') || detailValue('remarks')) && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h4 className="text-lg font-bold text-slate-900">{detailValue('description') ? 'Description' : 'Remarks'}</h4>
+                    <p className="mt-3 text-sm leading-7 text-slate-600">{detailValue('description') || detailValue('remarks')}</p>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-800">
+                  DA staff can open this from All Projects by clicking the row or the View action.
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedProjectDetail(null)}
+                  className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {projectFeedbackModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>

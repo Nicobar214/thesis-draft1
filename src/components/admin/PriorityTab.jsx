@@ -32,7 +32,7 @@ function factorBarTone(key) {
   return 'bg-amber-500';
 }
 
-export default function PriorityTab({ projects, reports, escalations, onViewReports }) {
+export default function PriorityTab({ projects, reports, escalations, onViewReports, onViewProjectDetail }) {
   const computed = useMemo(
     () => computePriorityScores(projects, reports, escalations),
     [projects, reports, escalations]
@@ -115,7 +115,19 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
           ].filter((item) => bySeverity[item.key] > 0);
 
           return (
-            <div key={project.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div
+              key={project.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onViewProjectDetail && onViewProjectDetail(project)}
+              onKeyDown={(event) => {
+                if ((event.key === 'Enter' || event.key === ' ') && onViewProjectDetail) {
+                  event.preventDefault();
+                  onViewProjectDetail(project);
+                }
+              }}
+              className="rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
+            >
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                 <div className="flex items-start gap-4 lg:w-2/3">
                   <div className={`h-14 w-14 rounded-2xl flex items-center justify-center text-2xl font-bold ${rankTone(rank)}`}>
@@ -152,7 +164,10 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
                     <p className={`text-3xl font-bold ${scoreTone(score)}`}>{`${score}%`}</p>
                     <button
                       type="button"
-                      onClick={() => onViewReports && onViewReports(project)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onViewReports && onViewReports(project);
+                      }}
                       className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >
                       View Reports
