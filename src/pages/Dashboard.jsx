@@ -622,7 +622,7 @@ export default function Dashboard() {
     };
   }, []);
 
-  const loadFallbackFarmerBeneficiaries = useCallback(() => buildFarmerBeneficiaries(fmrProjects, 84), [fmrProjects]);
+  const loadFallbackFarmerBeneficiaries = useCallback(() => buildFarmerBeneficiaries(fmrProjectsRef.current, 84), []);
 
   const fetchFarmerBeneficiaries = useCallback(async () => {
     setFarmerBeneficiariesLoading(true);
@@ -923,7 +923,9 @@ export default function Dashboard() {
         .select('*')
         .order('year_funded', { ascending: false });
       if (fetchErr) throw fetchErr;
-      setFmrProjects(data || []);
+      const rows = data || [];
+      fmrProjectsRef.current = rows;
+      setFmrProjects(rows);
     } catch (err) {
       console.error('Error fetching FMR projects:', err.message);
     } finally {
