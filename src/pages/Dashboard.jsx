@@ -37,7 +37,9 @@ import PublicReportRouteMapPanel from '../components/publicReports/PublicReportR
 import AdminWorkflowControls from '../components/publicReports/AdminWorkflowControls';
 import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
 import PriorityTab from '../components/admin/PriorityTab';
+import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import { computePriorityScores } from '../lib/priorityScoring';
+import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -281,22 +283,6 @@ function RouteEditorMapClick({ onPickPoint }) {
 
 const enterpriseCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
 
-const FARMER_CROPS = ['Rice', 'Corn', 'Sugarcane', 'Coconut', 'Vegetables', 'Banana'];
-const FARMER_STATUSES = ['Active', 'Pending', 'Verified', 'Inactive'];
-const FARMER_VERIFICATION_STATUSES = ['Verified', 'Pending', 'Unverified'];
-const FARMER_FIRST_NAMES = [
-  'Mark', 'Paolo', 'Joshua', 'Miguel', 'Angelo', 'Bryan', 'Noel', 'Ramon', 'Jose', 'Carlo',
-  'Mario', 'Ariel', 'Allan', 'Ronald', 'Jerome', 'Dante', 'Joven', 'Isidro', 'Benedict', 'Lester',
-  'Maria', 'Angela', 'Rosa', 'Liza', 'Catherine', 'Leah', 'Joy', 'Irene', 'Celia', 'Maricel',
-  'Grace', 'Ana', 'Jocelyn', 'Mylene', 'Rhea', 'Sheila', 'Kristine', 'Patricia', 'Donna', 'Cynthia',
-];
-const FARMER_LAST_NAMES = [
-  'Cruz', 'Garcia', 'Reyes', 'Santos', 'Torres', 'Flores', 'Ramos', 'Mendoza', 'Gonzales', 'Bautista',
-  'Delos Santos', 'Castillo', 'Rivera', 'Navarro', 'Domingo', 'Villanueva', 'Pascual', 'Dela Cruz',
-  'Salazar', 'Valdez', 'Luna', 'Fernandez', 'De Guzman', 'Alvarez', 'Aguilar', 'Castro', 'Pineda',
-  'Aquino', 'Morales', 'Ortiz', 'Mercado', 'Santiago', 'Marquez', 'Espino', 'Tolentino', 'Cabrera',
-];
-
 const FARMER_FALLBACK_PROJECTS = [
   'Iloilo North Farm-to-Market Road Package',
   'Barotac Nuevo Access Road Upgrade',
@@ -327,73 +313,7 @@ const seededRandom = (seed) => {
 
 const pickFrom = (list, seed) => list[Math.floor(seededRandom(seed) * list.length) % list.length];
 
-const makePhoneNumber = (seed) => {
-  const digits = Array.from({ length: 9 }, (_, idx) => Math.floor(seededRandom(seed + idx + 3) * 10));
-  return `09${digits.join('')}`;
-};
-
 const formatPeso = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
-
-const buildFarmerMockData = (fmrProjects, size = 80) => {
-  const municipalities = getMunicipalities();
-  const projectNames = (fmrProjects || [])
-    .map((p) => p.project_name)
-    .filter(Boolean);
-  const usableProjects = projectNames.length ? projectNames : FARMER_FALLBACK_PROJECTS;
-
-  return Array.from({ length: size }, (_, idx) => {
-    const seed = (idx + 3) * 37;
-    const firstName = pickFrom(FARMER_FIRST_NAMES, seed + 1);
-    const lastName = pickFrom(FARMER_LAST_NAMES, seed + 7);
-    const municipality = pickFrom(municipalities, seed + 11);
-    const barangays = getBarangays(municipality);
-    const barangay = barangays.length ? pickFrom(barangays, seed + 13) : 'Poblacion';
-    const crop = pickFrom(FARMER_CROPS, seed + 17);
-    const farmSize = Number((seededRandom(seed + 19) * 10 + 1.5).toFixed(1));
-    const yieldPerHectare = crop === 'Rice' ? 4.2
-      : crop === 'Corn' ? 3.6
-        : crop === 'Sugarcane' ? 65
-          : crop === 'Coconut' ? 8
-            : crop === 'Vegetables' ? 12
-              : 9;
-    const estimatedYield = Number((farmSize * yieldPerHectare).toFixed(1));
-    const status = pickFrom(FARMER_STATUSES, seed + 23);
-    const verification = pickFrom(FARMER_VERIFICATION_STATUSES, seed + 29);
-    const project = pickFrom(usableProjects, seed + 31);
-    const registrationYear = 2019 + Math.floor(seededRandom(seed + 37) * 7);
-    const registrationMonth = Math.floor(seededRandom(seed + 41) * 12);
-    const registrationDay = 1 + Math.floor(seededRandom(seed + 43) * 27);
-    const registeredDate = new Date(registrationYear, registrationMonth, registrationDay);
-    const productionHistory = Array.from({ length: 4 }, (_, i) => {
-      const year = registrationYear - 3 + i;
-      const yearlyYield = Math.max(0, estimatedYield * (0.7 + seededRandom(seed + 50 + i) * 0.6));
-      return { year, yield: Number(yearlyYield.toFixed(1)) };
-    });
-    const gpsLat = 10.6 + seededRandom(seed + 61) * 0.8;
-    const gpsLng = 122.2 + seededRandom(seed + 67) * 0.8;
-    const benefitScore = Math.floor(60 + seededRandom(seed + 73) * 35);
-
-    return {
-      id: `FMR-F${String(idx + 1).padStart(4, '0')}`,
-      fullName: `${firstName} ${lastName}`,
-      municipality,
-      barangay,
-      crop,
-      farmSize,
-      contactNumber: makePhoneNumber(seed + 79),
-      registeredDate,
-      linkedProject: project,
-      status,
-      estimatedYield,
-      verification,
-      gps: { lat: gpsLat, lng: gpsLng },
-      benefitScore,
-      subsidyEligibility: benefitScore > 82 ? 'High Priority' : benefitScore > 70 ? 'Eligible' : 'For Review',
-      productionHistory,
-      linkedProjects: [project],
-    };
-  });
-};
 
 const buildBudgetAllocations = (fmrProjects, size = 72) => {
   const projectPool = (fmrProjects || []).map((p) => ({
@@ -566,14 +486,9 @@ export default function Dashboard() {
   const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
   const fmrProjectsRef = useRef([]);
 
-  // Farmer list state
-  const [farmerSearch, setFarmerSearch] = useState('');
-  const [farmerMunicipalityFilter, setFarmerMunicipalityFilter] = useState('All');
-  const [farmerCropFilter, setFarmerCropFilter] = useState('All');
-  const [farmerStatusFilter, setFarmerStatusFilter] = useState('All');
-  const [farmerVerificationFilter, setFarmerVerificationFilter] = useState('All');
-  const [farmerPage, setFarmerPage] = useState(1);
-  const [selectedFarmer, setSelectedFarmer] = useState(null);
+  // Farmer beneficiaries state
+  const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
+  const [farmerBeneficiariesLoading, setFarmerBeneficiariesLoading] = useState(false);
 
   // Budget allocation state
   const [budgetSearchInput, setBudgetSearchInput] = useState('');
@@ -672,6 +587,61 @@ export default function Dashboard() {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
+
+  const normalizeFarmerBeneficiaryRow = useCallback((row) => {
+    if (!row) return null;
+    return {
+      id: row.id,
+      beneficiaryId: row.beneficiary_id || row.beneficiaryId || row.id,
+      fullName: row.full_name || row.fullName || 'Unnamed Farmer',
+      rsbsaNumber: row.rsbsa_number || row.rsbsaNumber || '',
+      contactNumber: row.contact_number || row.contactNumber || '',
+      municipality: row.municipality || '',
+      barangay: row.barangay || '',
+      crop: row.crop || '',
+      farmAreaHa: Number(row.farm_area_ha ?? row.farmAreaHa ?? 0),
+      estimatedYield: Number(row.estimated_yield ?? row.estimatedYield ?? 0),
+      linkedProjectId: row.linked_project_id || row.linkedProjectId || '',
+      linkedProject: row.linked_project_name || row.linkedProject || '',
+      linkedProjects: row.linked_project_name ? [row.linked_project_name] : row.linkedProjects || [],
+      linkedProjectStatus: row.linked_project_status || row.linkedProjectStatus || '',
+      distanceToFmrKm: Number(row.distance_to_fmr_km ?? row.distanceToFmrKm ?? 0),
+      serviceArea: row.service_area || row.serviceArea || '',
+      benefitReason: row.benefit_reason || row.benefitReason || '',
+      beneficiaryStatus: row.beneficiary_status || row.beneficiaryStatus || 'Under Review',
+      validationStatus: row.validation_status || row.validationStatus || 'For Verification',
+      submittedByLgu: row.submitted_by_lgu || row.submittedByLgu || row.created_by_name || 'LGU',
+      createdByUserId: row.created_by_user_id || row.createdByUserId || '',
+      createdByName: row.created_by_name || row.createdByName || '',
+      adminRemarks: row.admin_remarks || row.adminRemarks || '',
+      supportingDocuments: Array.isArray(row.supporting_documents) ? row.supporting_documents : row.supportingDocuments || [],
+      validationHistory: Array.isArray(row.validation_history) ? row.validation_history : row.validationHistory || [],
+      gps: row.gps || null,
+      submittedDate: row.submitted_date ? new Date(row.submitted_date) : row.submittedDate ? new Date(row.submittedDate) : new Date(),
+      lastUpdated: row.last_updated ? new Date(row.last_updated) : row.updated_at ? new Date(row.updated_at) : row.lastUpdated ? new Date(row.lastUpdated) : new Date(),
+    };
+  }, []);
+
+  const loadFallbackFarmerBeneficiaries = useCallback(() => buildFarmerBeneficiaries(fmrProjects, 84), [fmrProjects]);
+
+  const fetchFarmerBeneficiaries = useCallback(async () => {
+    setFarmerBeneficiariesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('farmer_beneficiaries')
+        .select('*')
+        .order('submitted_date', { ascending: false });
+
+      if (error) throw error;
+
+      setFarmerBeneficiaries((data || []).map(normalizeFarmerBeneficiaryRow).filter(Boolean));
+    } catch (err) {
+      console.error('Error fetching farmer beneficiaries:', err.message);
+      setFarmerBeneficiaries(loadFallbackFarmerBeneficiaries().map(normalizeFarmerBeneficiaryRow).filter(Boolean));
+    } finally {
+      setFarmerBeneficiariesLoading(false);
+    }
+  }, [loadFallbackFarmerBeneficiaries, normalizeFarmerBeneficiaryRow]);
 
   // Fetch projects from Supabase
   const fetchProjects = useCallback(async () => {
@@ -1619,6 +1589,7 @@ export default function Dashboard() {
       fetchPublicReports();
       fetchEscalations();
       fetchFmrProjects();
+      fetchFarmerBeneficiaries();
       fetchProjectRoutes();
       fetchMapReportData();
       fetchFieldEngineers();
@@ -1651,6 +1622,11 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, () => fetchProjectRoutes())
       .subscribe();
 
+    const farmerBeneficiariesChannel = supabase
+      .channel('admin-farmer-beneficiaries-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, () => fetchFarmerBeneficiaries())
+      .subscribe();
+
     // Real-time subscription for profiles (field engineers + contractors)
     const profilesChannel = supabase
       .channel('admin-profiles-realtime')
@@ -1668,10 +1644,11 @@ export default function Dashboard() {
       supabase.removeChannel(publicReportsChannel);
       supabase.removeChannel(escalationsChannel);
       supabase.removeChannel(fmrChannel);
+      supabase.removeChannel(farmerBeneficiariesChannel);
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -1940,9 +1917,6 @@ export default function Dashboard() {
     showNotification('CSV export complete.');
   };
 
-  const farmerRowsPerPage = 10;
-  const farmerDataset = useMemo(() => buildFarmerMockData(fmrProjects, 84), [fmrProjects]);
-
   const budgetRowsPerPage = 8;
   const budgetDataset = useMemo(() => buildBudgetAllocations(fmrProjects, 72), [fmrProjects]);
 
@@ -2060,120 +2034,6 @@ export default function Dashboard() {
       .slice(0, 8);
   }, [filteredBudgetAllocations]);
 
-  const farmerMunicipalityOptions = useMemo(() => {
-    return [...new Set(farmerDataset.map((f) => f.municipality))].sort((a, b) => a.localeCompare(b));
-  }, [farmerDataset]);
-
-  const filteredFarmers = useMemo(() => {
-    const q = farmerSearch.trim().toLowerCase();
-    return farmerDataset.filter((farmer) => {
-      const matchesSearch = !q || [
-        farmer.id,
-        farmer.fullName,
-        farmer.municipality,
-        farmer.barangay,
-        farmer.crop,
-        farmer.linkedProject,
-        farmer.contactNumber,
-      ].some((field) => String(field || '').toLowerCase().includes(q));
-
-      const matchesMunicipality = farmerMunicipalityFilter === 'All' || farmer.municipality === farmerMunicipalityFilter;
-      const matchesCrop = farmerCropFilter === 'All' || farmer.crop === farmerCropFilter;
-      const matchesStatus = farmerStatusFilter === 'All' || farmer.status === farmerStatusFilter;
-      const matchesVerification = farmerVerificationFilter === 'All' || farmer.verification === farmerVerificationFilter;
-
-      return matchesSearch && matchesMunicipality && matchesCrop && matchesStatus && matchesVerification;
-    });
-  }, [farmerDataset, farmerSearch, farmerMunicipalityFilter, farmerCropFilter, farmerStatusFilter, farmerVerificationFilter]);
-
-  const farmerTotalPages = Math.max(1, Math.ceil(filteredFarmers.length / farmerRowsPerPage));
-  const safeFarmerPage = Math.min(farmerPage, farmerTotalPages);
-  const paginatedFarmers = filteredFarmers.slice(
-    (safeFarmerPage - 1) * farmerRowsPerPage,
-    safeFarmerPage * farmerRowsPerPage
-  );
-
-  const farmerKpis = useMemo(() => {
-    const totalFarmers = filteredFarmers.length;
-    const verifiedFarmers = filteredFarmers.filter((f) => f.verification === 'Verified').length;
-    const totalFarmArea = filteredFarmers.reduce((sum, f) => sum + Number(f.farmSize || 0), 0);
-    const avgFarmSize = totalFarmers ? totalFarmArea / totalFarmers : 0;
-    const totalEstimatedYield = filteredFarmers.reduce((sum, f) => sum + Number(f.estimatedYield || 0), 0);
-
-    const municipalityYield = filteredFarmers.reduce((acc, f) => {
-      acc[f.municipality] = (acc[f.municipality] || 0) + Number(f.estimatedYield || 0);
-      return acc;
-    }, {});
-    const topProducingMunicipality = Object.keys(municipalityYield).sort((a, b) => municipalityYield[b] - municipalityYield[a])[0];
-
-    return {
-      totalFarmers,
-      verifiedFarmers,
-      totalFarmArea,
-      avgFarmSize,
-      totalEstimatedYield,
-      topProducingMunicipality: topProducingMunicipality || 'N/A',
-    };
-  }, [filteredFarmers]);
-
-  const cropDistribution = useMemo(() => {
-    return FARMER_CROPS.map((crop) => ({
-      name: crop,
-      value: filteredFarmers.filter((f) => f.crop === crop).length,
-    }));
-  }, [filteredFarmers]);
-
-  const farmersPerMunicipality = useMemo(() => {
-    const counts = filteredFarmers.reduce((acc, f) => {
-      acc[f.municipality] = (acc[f.municipality] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([municipality, count]) => ({ municipality, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [filteredFarmers]);
-
-  const registrationsByYear = useMemo(() => {
-    const yearly = filteredFarmers.reduce((acc, f) => {
-      const year = f.registeredDate.getFullYear();
-      acc[year] = (acc[year] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.keys(yearly)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((year) => ({ year, farmers: yearly[year] }));
-  }, [filteredFarmers]);
-
-  const yieldTrendByYear = useMemo(() => {
-    const yearly = filteredFarmers.reduce((acc, f) => {
-      const year = f.registeredDate.getFullYear();
-      acc[year] = (acc[year] || 0) + Number(f.estimatedYield || 0);
-      return acc;
-    }, {});
-    return Object.keys(yearly)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((year) => ({ year, yield: Number(yearly[year].toFixed(1)) }));
-  }, [filteredFarmers]);
-
-  const exportFilteredFarmers = () => {
-    const rows = filteredFarmers.map((f) => ({
-      farmer_id: f.id,
-      full_name: f.fullName,
-      municipality: f.municipality,
-      barangay: f.barangay,
-      main_crop: f.crop,
-      farm_size_ha: f.farmSize,
-      contact_number: f.contactNumber,
-      registered_date: f.registeredDate.toLocaleDateString(),
-      linked_fmr_project: f.linkedProject,
-      farm_status: f.status,
-      estimated_yield: f.estimatedYield,
-      account_verification: f.verification,
-    }));
-    exportRowsToCsv(rows, 'farmer_list.csv');
-  };
-
   const exportFilteredBudgets = () => {
     const rows = filteredBudgetAllocations.map((a) => ({
       allocation_id: a.allocation_id,
@@ -2190,6 +2050,49 @@ export default function Dashboard() {
     }));
     exportRowsToCsv(rows, 'budget_allocations.csv');
   };
+
+  const handleUpdateFarmerBeneficiary = useCallback(async (beneficiaryId, updates) => {
+    const currentRow = farmerBeneficiaries.find((row) => row.id === beneficiaryId);
+    if (!currentRow) return;
+
+    const nextValidationHistory = [
+      ...(Array.isArray(currentRow.validationHistory) ? currentRow.validationHistory : []),
+      {
+        date: new Date(),
+        actor: 'DA Regional Admin',
+        action: updates.validationStatus || currentRow.validationStatus,
+        remarks: updates.adminRemarks || currentRow.adminRemarks || 'DA admin updated the beneficiary review status.',
+      },
+    ];
+
+    const payload = {
+      validation_status: updates.validationStatus || currentRow.validationStatus,
+      beneficiary_status: updates.beneficiaryStatus || currentRow.beneficiaryStatus,
+      admin_remarks: updates.adminRemarks || currentRow.adminRemarks || '',
+      last_updated: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      validation_history: nextValidationHistory,
+    };
+
+    const { error } = await supabase.from('farmer_beneficiaries').update(payload).eq('id', beneficiaryId);
+    if (error) {
+      console.error('Failed to update beneficiary:', error.message);
+      showNotification(`Failed to update beneficiary: ${error.message}`, 'error');
+      return;
+    }
+
+    setFarmerBeneficiaries((current) => current.map((row) => (
+      row.id === beneficiaryId
+        ? normalizeFarmerBeneficiaryRow({
+          ...row,
+          ...updates,
+          validation_history: nextValidationHistory,
+          last_updated: payload.last_updated,
+          updated_at: payload.updated_at,
+        })
+        : row
+    )));
+  }, [farmerBeneficiaries, normalizeFarmerBeneficiaryRow]);
 
   // Classify FMR projects for Reports tab: Completed, Delayed, Ongoing
   const classifiedFmrProjects = useMemo(() => {
@@ -2836,7 +2739,7 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'FMR Projects'}
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
-                {activeTab === 'farmers' && 'Farmer List'}
+                {activeTab === 'farmers' && 'Farmer Beneficiaries'}
                 {activeTab === 'budget' && 'Budget Allocation'}
                 {activeTab === 'priorities' && 'Priorities'}
                 {activeTab === 'reports' && 'Reports'}
@@ -2848,7 +2751,7 @@ export default function Dashboard() {
                 {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
-                {activeTab === 'farmers' && 'Simulated farmer registry linked to FMR projects and yield analytics'}
+                {activeTab === 'farmers' && 'LGU-submitted farmer beneficiaries linked to FMR project service areas for DA review'}
                 {activeTab === 'budget' && 'Track allocations, releases, and funding health for FMR infrastructure'}
                 {activeTab === 'priorities' && 'Weighted ranking of FMR project urgency'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
@@ -4028,301 +3931,14 @@ export default function Dashboard() {
             );
           })()}
 
-          {/* Farmer List Tab */}
+          {/* Farmer Beneficiaries Tab */}
           {activeTab === 'farmers' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Farmers</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalFarmers}</p>
-                  <p className="text-sm text-slate-500 mt-1">Registered farmer profiles</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Verified Farmers</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.verifiedFarmers}</p>
-                  <p className="text-sm text-slate-500 mt-1">Identity verified accounts</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Farm Area</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalFarmArea.toFixed(1)} ha</p>
-                  <p className="text-sm text-slate-500 mt-1">Aggregated farm size</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Average Farm Size</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.avgFarmSize.toFixed(1)} ha</p>
-                  <p className="text-sm text-slate-500 mt-1">Across active profiles</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Estimated Yield</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{farmerKpis.totalEstimatedYield.toFixed(1)} t</p>
-                  <p className="text-sm text-slate-500 mt-1">Projected production volume</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Top Municipality</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-2">{farmerKpis.topProducingMunicipality}</p>
-                  <p className="text-sm text-slate-500 mt-1">Highest estimated yield</p>
-                </div>
-              </div>
-
-              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm">
-                <div className="px-6 py-6 border-b border-slate-200/60">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900">Farmer Accounts</h2>
-                      <p className="text-sm text-slate-500 mt-1">Simulated registered farmers linked to FMR projects</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={exportFilteredFarmers}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                </div>
-                <div className="px-6 py-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                    <div className="lg:col-span-2">
-                      <input
-                        type="text"
-                        value={farmerSearch}
-                        onChange={(e) => { setFarmerSearch(e.target.value); setFarmerPage(1); }}
-                        placeholder="Search by name, ID, crop, project..."
-                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                      />
-                    </div>
-                    <select
-                      value={farmerMunicipalityFilter}
-                      onChange={(e) => { setFarmerMunicipalityFilter(e.target.value); setFarmerPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Municipalities</option>
-                      {farmerMunicipalityOptions.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={farmerCropFilter}
-                      onChange={(e) => { setFarmerCropFilter(e.target.value); setFarmerPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Crops</option>
-                      {FARMER_CROPS.map((crop) => (
-                        <option key={crop} value={crop}>{crop}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={farmerStatusFilter}
-                      onChange={(e) => { setFarmerStatusFilter(e.target.value); setFarmerPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Farm Status</option>
-                      {FARMER_STATUSES.map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={farmerVerificationFilter}
-                      onChange={(e) => { setFarmerVerificationFilter(e.target.value); setFarmerPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Verification</option>
-                      {FARMER_VERIFICATION_STATUSES.map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1200px]">
-                    <thead>
-                      <tr className="bg-slate-50/60">
-                        {[
-                          'Farmer ID',
-                          'Full Name',
-                          'Municipality',
-                          'Barangay',
-                          'Main Crop',
-                          'Farm Size',
-                          'Contact Number',
-                          'Registered Date',
-                          'Linked FMR Project',
-                          'Farm Status',
-                          'Estimated Yield',
-                          'Account Verification',
-                          'Actions',
-                        ].map((label, idx) => (
-                          <th key={label} className={`${idx === 0 ? 'px-8' : 'px-6'} py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider`}>
-                            {label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {paginatedFarmers.map((farmer) => (
-                        <tr key={farmer.id} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-8 py-4 text-sm font-semibold text-slate-900">{farmer.id}</td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm font-semibold text-slate-900">{farmer.fullName}</p>
-                            <p className="text-xs text-slate-400">{farmer.crop} producer</p>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.municipality}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.barangay}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.crop}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.farmSize.toFixed(1)} ha</td>
-                          <td className="px-6 py-4 text-sm text-slate-700 font-mono">{farmer.contactNumber}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.registeredDate.toLocaleDateString()}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700 max-w-[220px]">
-                            <span className="line-clamp-2">{farmer.linkedProject}</span>
-                          </td>
-                          <td className="px-6 py-4">{renderStatusPill(farmer.status)}</td>
-                          <td className="px-6 py-4 text-sm text-slate-700">{farmer.estimatedYield.toFixed(1)} t</td>
-                          <td className="px-6 py-4">{renderStatusPill(farmer.verification)}</td>
-                          <td className="px-6 py-4">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFarmer(farmer)}
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {filteredFarmers.length === 0 && (
-                  <EmptyState
-                    title="No farmers found"
-                    description="Try adjusting the search or filter options to see more profiles."
-                    buttonLabel="Reset Filters"
-                    onButtonClick={() => {
-                      setFarmerSearch('');
-                      setFarmerMunicipalityFilter('All');
-                      setFarmerCropFilter('All');
-                      setFarmerStatusFilter('All');
-                      setFarmerVerificationFilter('All');
-                      setFarmerPage(1);
-                    }}
-                  />
-                )}
-
-                <div className="px-8 py-5 border-t border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row items-center justify-between gap-5">
-                  <p className="text-sm text-slate-500">
-                    Showing <span className="font-bold text-slate-700">{filteredFarmers.length ? (safeFarmerPage - 1) * farmerRowsPerPage + 1 : 0}</span> to{' '}
-                    <span className="font-bold text-slate-700">{Math.min(safeFarmerPage * farmerRowsPerPage, filteredFarmers.length)}</span> of{' '}
-                    <span className="font-bold text-slate-700">{filteredFarmers.length}</span> farmers
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setFarmerPage((p) => Math.max(1, p - 1))}
-                      disabled={safeFarmerPage === 1}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
-                      Previous
-                    </button>
-                    {Array.from({ length: farmerTotalPages }, (_, i) => i + 1).map((page) => (
-                      <button
-                        key={page}
-                        onClick={() => setFarmerPage(page)}
-                        className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                          safeFarmerPage === page
-                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                            : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    ))}
-                    <button
-                      onClick={() => setFarmerPage((p) => Math.min(farmerTotalPages, p + 1))}
-                      disabled={safeFarmerPage === farmerTotalPages}
-                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Crop Distribution</h3>
-                  <p className="text-sm text-slate-500 mb-4">Share of farmers per main crop</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={cropDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                          {cropDistribution.map((entry, index) => {
-                            const palette = ['#0d9488', '#22c55e', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444'];
-                            return <Cell key={`crop-${entry.name}`} fill={palette[index % palette.length]} />;
-                          })}
-                        </Pie>
-                        <Legend verticalAlign="bottom" height={36} />
-                        <RechartsTooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Farmers per Municipality</h3>
-                  <p className="text-sm text-slate-500 mb-4">Top municipalities by farmer count</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={farmersPerMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                        <RechartsTooltip />
-                        <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Yearly Registrations</h3>
-                  <p className="text-sm text-slate-500 mb-4">Farmer onboarding trend</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={registrationsByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                        <defs>
-                          <linearGradient id="farmerRegGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
-                            <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                        <RechartsTooltip />
-                        <Area type="monotone" dataKey="farmers" stroke="#0d9488" fill="url(#farmerRegGradient)" strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Estimated Yield Trend</h3>
-                  <p className="text-sm text-slate-500 mb-4">Projected output by registration year</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={yieldTrendByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                        <RechartsTooltip formatter={(value) => [`${value} t`, 'Estimated Yield']} />
-                        <Line dataKey="yield" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <FarmerBeneficiariesTab
+              beneficiaries={farmerBeneficiaries}
+              onUpdateBeneficiary={handleUpdateFarmerBeneficiary}
+              onExportCsv={exportRowsToCsv}
+              loading={farmerBeneficiariesLoading}
+            />
           )}
 
           {/* Budget Allocation Tab */}
@@ -7816,221 +7432,138 @@ export default function Dashboard() {
         );
       })()}
 
+      {selectedBudgetAllocation && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedBudgetAllocation(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Allocation</p>
+                <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedBudgetAllocation.project_name}</h3>
+                <p className="text-sm text-slate-500 mt-1">{selectedBudgetAllocation.allocation_id} • {selectedBudgetAllocation.municipality}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                {renderStatusPill(selectedBudgetAllocation.allocation_status)}
+                {renderStatusPill(selectedBudgetAllocation.priority_level)}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Funding Source</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.funding_source}</p>
+                  <p className="text-sm text-slate-500 mt-1">Fiscal Year {selectedBudgetAllocation.fiscal_year}</p>
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Breakdown</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{formatPeso(selectedBudgetAllocation.approved_budget)}</p>
+                  <p className="text-sm text-slate-500 mt-1">Released {formatPeso(selectedBudgetAllocation.released_amount)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Utilization</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.utilization_rate}%</p>
+                  <p className="text-sm text-slate-500 mt-1">Remaining {formatPeso(selectedBudgetAllocation.remaining_balance)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <h4 className="text-lg font-bold text-slate-900">Release History</h4>
+                  <div className="mt-4 space-y-3">
+                    {selectedBudgetAllocation.release_history.map((entry) => (
+                      <div key={entry.tranche} className="flex items-center justify-between text-sm">
+                        <div>
+                          <p className="font-semibold text-slate-900">{entry.tranche}</p>
+                          <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-slate-900">{formatPeso(entry.amount)}</p>
+                          <p className="text-xs text-slate-500">{entry.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <h4 className="text-lg font-bold text-slate-900">Contractor Payment Tracking</h4>
+                  <div className="mt-4 space-y-3">
+                    {selectedBudgetAllocation.contractor_payments.map((entry) => (
+                      <div key={entry.milestone} className="flex items-center justify-between text-sm">
+                        <div>
+                          <p className="font-semibold text-slate-900">{entry.milestone}</p>
+                          <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-slate-900">{formatPeso(entry.paid)}</p>
+                          <p className="text-xs text-slate-500">{entry.status}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Procurement Phase</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.procurement_phase}</p>
+                  <p className="text-sm text-slate-500 mt-1">Cost per km {formatPeso(selectedBudgetAllocation.cost_per_km)}</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Risk Assessment</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.risk_level}</p>
+                  <p className="text-sm text-slate-500 mt-1">Funding health {selectedBudgetAllocation.funding_health_score}/100</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <p className="text-xs text-slate-500 uppercase tracking-widest">Completion Probability</p>
+                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.completion_probability}%</p>
+                  <p className="text-sm text-slate-500 mt-1">Disbursement {selectedBudgetAllocation.disbursement_progress}%</p>
+                </div>
+              </div>
+
+              {selectedBudgetAllocation.delayed_release && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                  Delayed release warning: One or more tranches are behind schedule. Review procurement and release schedule.
+                </div>
+              )}
+
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <h4 className="text-lg font-bold text-slate-900">Disbursement Progress</h4>
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-sm text-slate-500">
+                    <span>Released</span>
+                    <span>{selectedBudgetAllocation.utilization_rate}%</span>
+                  </div>
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mt-2">
+                    <div
+                      className="h-3 bg-emerald-500"
+                      style={{ width: `${selectedBudgetAllocation.utilization_rate}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedBudgetAllocation(null)}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {projectFeedbackModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between bg-gradient-to-r from-slate-50 to-white">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Public Reports</h3>
-
-            {/* Farmer Detail Modal */}
-            {selectedFarmer && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedFarmer(null)}>
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                  <div className="px-6 py-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <p className="text-xs text-slate-500 uppercase tracking-widest">Farmer Profile</p>
-
-                  {/* Budget Allocation Detail Modal */}
-                  {selectedBudgetAllocation && (
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedBudgetAllocation(null)}>
-                      <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                        <div className="px-6 py-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                          <div>
-                            <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Allocation</p>
-                            <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedBudgetAllocation.project_name}</h3>
-                            <p className="text-sm text-slate-500 mt-1">{selectedBudgetAllocation.allocation_id} • {selectedBudgetAllocation.municipality}</p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3">
-                            {renderStatusPill(selectedBudgetAllocation.allocation_status)}
-                            {renderStatusPill(selectedBudgetAllocation.priority_level)}
-                          </div>
-                        </div>
-
-                        <div className="p-6 space-y-6">
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Funding Source</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.funding_source}</p>
-                              <p className="text-sm text-slate-500 mt-1">Fiscal Year {selectedBudgetAllocation.fiscal_year}</p>
-                            </div>
-                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Breakdown</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{formatPeso(selectedBudgetAllocation.approved_budget)}</p>
-                              <p className="text-sm text-slate-500 mt-1">Released {formatPeso(selectedBudgetAllocation.released_amount)}</p>
-                            </div>
-                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Utilization</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.utilization_rate}%</p>
-                              <p className="text-sm text-slate-500 mt-1">Remaining {formatPeso(selectedBudgetAllocation.remaining_balance)}</p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                              <h4 className="text-lg font-bold text-slate-900">Release History</h4>
-                              <div className="mt-4 space-y-3">
-                                {selectedBudgetAllocation.release_history.map((entry) => (
-                                  <div key={entry.tranche} className="flex items-center justify-between text-sm">
-                                    <div>
-                                      <p className="font-semibold text-slate-900">{entry.tranche}</p>
-                                      <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="font-semibold text-slate-900">{formatPeso(entry.amount)}</p>
-                                      <p className="text-xs text-slate-500">{entry.status}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                              <h4 className="text-lg font-bold text-slate-900">Contractor Payment Tracking</h4>
-                              <div className="mt-4 space-y-3">
-                                {selectedBudgetAllocation.contractor_payments.map((entry) => (
-                                  <div key={entry.milestone} className="flex items-center justify-between text-sm">
-                                    <div>
-                                      <p className="font-semibold text-slate-900">{entry.milestone}</p>
-                                      <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="font-semibold text-slate-900">{formatPeso(entry.paid)}</p>
-                                      <p className="text-xs text-slate-500">{entry.status}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Procurement Phase</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.procurement_phase}</p>
-                              <p className="text-sm text-slate-500 mt-1">Cost per km {formatPeso(selectedBudgetAllocation.cost_per_km)}</p>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Risk Assessment</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.risk_level}</p>
-                              <p className="text-sm text-slate-500 mt-1">Funding health {selectedBudgetAllocation.funding_health_score}/100</p>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                              <p className="text-xs text-slate-500 uppercase tracking-widest">Completion Probability</p>
-                              <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.completion_probability}%</p>
-                              <p className="text-sm text-slate-500 mt-1">Disbursement {selectedBudgetAllocation.disbursement_progress}%</p>
-                            </div>
-                          </div>
-
-                          {selectedBudgetAllocation.delayed_release && (
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-                              Delayed release warning: One or more tranches are behind schedule. Review procurement and release schedule.
-                            </div>
-                          )}
-
-                          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                            <h4 className="text-lg font-bold text-slate-900">Disbursement Progress</h4>
-                            <div className="mt-4">
-                              <div className="flex items-center justify-between text-sm text-slate-500">
-                                <span>Released</span>
-                                <span>{selectedBudgetAllocation.utilization_rate}%</span>
-                              </div>
-                              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mt-2">
-                                <div
-                                  className="h-3 bg-emerald-500"
-                                  style={{ width: `${selectedBudgetAllocation.utilization_rate}%` }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBudgetAllocation(null)}
-                            className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                      <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedFarmer.fullName}</h3>
-                      <p className="text-sm text-slate-500 mt-1">{selectedFarmer.id} • {selectedFarmer.municipality}, {selectedFarmer.barangay}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {renderStatusPill(selectedFarmer.status, `Farm Status: ${selectedFarmer.status}`)}
-                      {renderStatusPill(selectedFarmer.verification, `Verification: ${selectedFarmer.verification}`)}
-                    </div>
-                  </div>
-
-                  <div className="p-6 space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                        <p className="text-xs text-slate-500 uppercase tracking-widest">Contact</p>
-                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.contactNumber}</p>
-                        <p className="text-sm text-slate-500 mt-1">Registered {selectedFarmer.registeredDate.toLocaleDateString()}</p>
-                      </div>
-                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                        <p className="text-xs text-slate-500 uppercase tracking-widest">Farm Information</p>
-                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.crop} • {selectedFarmer.farmSize.toFixed(1)} ha</p>
-                        <p className="text-sm text-slate-500 mt-1">Estimated yield {selectedFarmer.estimatedYield.toFixed(1)} t</p>
-                      </div>
-                      <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                        <p className="text-xs text-slate-500 uppercase tracking-widest">Subsidy Eligibility</p>
-                        <p className="text-lg font-semibold text-slate-900 mt-2">{selectedFarmer.subsidyEligibility}</p>
-                        <p className="text-sm text-slate-500 mt-1">Benefit score {selectedFarmer.benefitScore}/100</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                        <h4 className="text-lg font-bold text-slate-900">Linked FMR Projects</h4>
-                        <ul className="mt-4 space-y-3">
-                          {selectedFarmer.linkedProjects.map((project) => (
-                            <li key={project} className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-700">
-                              {project}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                        <h4 className="text-lg font-bold text-slate-900">Production History</h4>
-                        <div className="mt-4 space-y-3">
-                          {selectedFarmer.productionHistory.map((entry) => (
-                            <div key={entry.year} className="flex items-center justify-between text-sm">
-                              <span className="text-slate-500">{entry.year}</span>
-                              <span className="font-semibold text-slate-900">{entry.yield.toFixed(1)} t</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                      <h4 className="text-lg font-bold text-slate-900">GPS Coordinates</h4>
-                      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600">
-                        <span className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100">Lat: {selectedFarmer.gps.lat.toFixed(5)}</span>
-                        <span className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100">Lng: {selectedFarmer.gps.lng.toFixed(5)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFarmer(null)}
-                      className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
                 <p className="text-sm text-slate-500 mt-0.5">{projectFeedbackModal.projectName} — {projectFeedbackModal.barangay}, {projectFeedbackModal.municipality}</p>
               </div>
               <button onClick={() => setProjectFeedbackModal(null)} className="p-2 hover:bg-slate-100 rounded-xl transition">
