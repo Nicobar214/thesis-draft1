@@ -196,28 +196,22 @@ export default function LguDashboard() {
       distance_to_fmr_km: distanceToFmrKm,
       service_area: serviceArea,
       benefit_reason: beneficiaryForm.benefitReason.trim() || `${serviceArea}; submitted by the LGU for DA beneficiary validation.`,
-      beneficiary_status: 'Under Review',
-      validation_status: 'For Verification',
+      beneficiary_status: 'Active Beneficiary',
+      validation_status: 'Validated',
       submitted_by_lgu: profile?.full_name || profile?.email || user.email,
       created_by_user_id: user.id,
       created_by_name: profile?.full_name || profile?.email || user.email,
       created_by_role: 'lgu',
       submitted_date: submittedAt,
       last_updated: submittedAt,
-      admin_remarks: 'Awaiting DA review and supporting validation.',
+      admin_remarks: 'Auto-approved upon LGU submission.',
       supporting_documents: ['LGU endorsement', 'Farm location sketch', 'Barangay certification'],
       validation_history: [
         {
           date: submittedAt,
           actor: profile?.full_name || profile?.email || user.email,
-          action: 'Submitted beneficiary record',
-          remarks: 'LGU submitted farmer beneficiary for DA validation.',
-        },
-        {
-          date: submittedAt,
-          actor: 'DA Regional Admin',
-          action: 'For Verification',
-          remarks: 'Queued for DA validation.',
+          action: 'Submitted farmer profile',
+          remarks: 'LGU submitted farmer beneficiary profile.',
         },
       ],
       gps: {},
@@ -240,7 +234,7 @@ export default function LguDashboard() {
       linkedProjectId: '',
       benefitReason: '',
     });
-    showNotification('Farmer beneficiary submitted for DA review.');
+    showNotification('Farmer beneficiary profile submitted successfully.');
     await fetchBeneficiaries();
   };
 
@@ -345,8 +339,6 @@ export default function LguDashboard() {
       resolved: filteredReports.filter((r) => r.status === 'resolved').length,
       escalated: escalations.filter((r) => ['for_action', 'endorsed', 'rejected', 'more_info_requested'].includes(r.escalation_status)).length,
       beneficiaries: beneficiaries.length,
-      beneficiariesPending: beneficiaries.filter((row) => row.validationStatus === 'For Verification').length,
-      beneficiariesValidated: beneficiaries.filter((row) => row.validationStatus === 'Validated').length,
     };
   }, [filteredReports, escalations, beneficiaries]);
 
@@ -533,9 +525,7 @@ export default function LguDashboard() {
             ['Pending', summary.pending, 'pending'],
             ['Resolved', summary.resolved, 'resolved'],
             ['Escalated', summary.escalated, 'escalated'],
-            ['Beneficiaries', summary.beneficiaries, 'default'],
-            ['For Review', summary.beneficiariesPending, 'pending'],
-            ['Validated', summary.beneficiariesValidated, 'resolved'],
+            ['Farmer Profiles', summary.beneficiaries, 'resolved'],
           ].map(([label, value, tone]) => (
             <div key={label} className={`rounded-xl border px-4 py-3 ${cardTone(tone)}`}>
               <p className="text-[11px] font-semibold uppercase tracking-wide">{label}</p>
@@ -707,7 +697,7 @@ export default function LguDashboard() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Register Farmer Beneficiary</p>
-                      <p className="text-xs text-slate-500">LGU creates a pending beneficiary record, then DA validates it.</p>
+                      <p className="text-xs text-slate-500">Register a farmer beneficiary profile. Profiles are submitted directly to the DA dashboard.</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
@@ -723,12 +713,7 @@ export default function LguDashboard() {
                         className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
                       >
                         <option value="all">All Statuses</option>
-                        <option value="For Verification">For Verification</option>
                         <option value="Validated">Validated</option>
-                        <option value="Needs Correction">Needs Correction</option>
-                        <option value="Duplicate Record">Duplicate Record</option>
-                        <option value="Rejected">Rejected</option>
-                        <option value="Archived">Archived</option>
                       </select>
                     </div>
                   </div>
@@ -756,7 +741,7 @@ export default function LguDashboard() {
                     <textarea value={beneficiaryForm.benefitReason} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, benefitReason: e.target.value }))} placeholder="Benefit reason / notes" rows={3} className="rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-2 xl:col-span-3" />
                     <div className="md:col-span-2 xl:col-span-3 flex justify-end">
                       <button type="submit" className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700">
-                        Submit for DA Review
+                        Submit Farmer Profile
                       </button>
                     </div>
                   </form>
@@ -775,16 +760,15 @@ export default function LguDashboard() {
                           <th className="px-4 py-3">Municipality</th>
                           <th className="px-4 py-3">Barangay</th>
                           <th className="px-4 py-3">Project</th>
-                          <th className="px-4 py-3">DA Status</th>
-                          <th className="px-4 py-3">LGU Status</th>
+                          <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3">Submitted</th>
                         </tr>
                       </thead>
                       <tbody>
                         {beneficiariesLoading ? (
-                          <tr><td className="px-4 py-5 text-slate-500" colSpan={7}>Loading beneficiary records...</td></tr>
+                          <tr><td className="px-4 py-5 text-slate-500" colSpan={6}>Loading beneficiary records...</td></tr>
                         ) : filteredBeneficiaries.length === 0 ? (
-                          <tr><td className="px-4 py-5 text-slate-500" colSpan={7}>No beneficiary records yet.</td></tr>
+                          <tr><td className="px-4 py-5 text-slate-500" colSpan={6}>No beneficiary records yet.</td></tr>
                         ) : filteredBeneficiaries.map((row) => (
                           <tr key={row.id} className="border-t border-slate-100">
                             <td className="px-4 py-3">
@@ -794,7 +778,6 @@ export default function LguDashboard() {
                             <td className="px-4 py-3 text-slate-700">{row.municipality}</td>
                             <td className="px-4 py-3 text-slate-700">{row.barangay}</td>
                             <td className="px-4 py-3 text-slate-700">{row.linkedProject || 'N/A'}</td>
-                            <td className="px-4 py-3 text-slate-700">{row.validationStatus}</td>
                             <td className="px-4 py-3 text-slate-700">{row.beneficiaryStatus}</td>
                             <td className="px-4 py-3 text-slate-700">{row.lastUpdated.toLocaleDateString()}</td>
                           </tr>

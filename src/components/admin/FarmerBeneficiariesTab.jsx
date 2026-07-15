@@ -16,10 +16,8 @@ import {
 } from 'recharts';
 import {
   BENEFICIARY_CROPS,
-  BENEFICIARY_VALIDATION_STATUSES,
   LGU_SUBMITTERS,
 } from '../../utils/farmerBeneficiaryData';
-import FarmerBeneficiaryDetailModal from './FarmerBeneficiaryDetailModal';
 
 const rowsPerPage = 10;
 const cardClass = 'bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm';
@@ -31,22 +29,7 @@ function formatDate(dateValue) {
   return date.toLocaleDateString();
 }
 
-function StatusPill({ status }) {
-  const tones = {
-    'For Verification': 'bg-amber-50 text-amber-700 border-amber-200',
-    Validated: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    'Needs Correction': 'bg-orange-50 text-orange-700 border-orange-200',
-    'Duplicate Record': 'bg-purple-50 text-purple-700 border-purple-200',
-    Rejected: 'bg-red-50 text-red-700 border-red-200',
-    Archived: 'bg-slate-50 text-slate-700 border-slate-200',
-  };
 
-  return (
-    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${tones[status] || tones.Archived}`}>
-      {status}
-    </span>
-  );
-}
 
 function EmptyBeneficiaries({ onReset }) {
   return (
@@ -57,7 +40,7 @@ function EmptyBeneficiaries({ onReset }) {
         </svg>
       </div>
       <p className="text-base font-bold text-slate-900">No beneficiary records found</p>
-      <p className="mt-1 max-w-md text-sm text-slate-500">Try adjusting the validation queue filters or search for another RSBSA number, farmer name, or linked FMR project.</p>
+      <p className="mt-1 max-w-md text-sm text-slate-500">Try adjusting the filters or search for another RSBSA number, farmer name, or linked FMR project.</p>
       <button
         type="button"
         onClick={onReset}
@@ -69,16 +52,14 @@ function EmptyBeneficiaries({ onReset }) {
   );
 }
 
-export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBeneficiary, onExportCsv, loading = false }) {
+export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loading = false }) {
   const [search, setSearch] = useState('');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [barangayFilter, setBarangayFilter] = useState('All');
   const [cropFilter, setCropFilter] = useState('All');
-  const [validationFilter, setValidationFilter] = useState('All');
   const [projectFilter, setProjectFilter] = useState('All');
   const [lguFilter, setLguFilter] = useState('All');
   const [page, setPage] = useState(1);
-  const [selectedBeneficiary, setSelectedBeneficiary] = useState(null);
 
   const municipalityOptions = useMemo(() => [...new Set(beneficiaries.map((item) => item.municipality).filter(Boolean))].sort(), [beneficiaries]);
   const barangayOptions = useMemo(() => {
@@ -113,11 +94,10 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
         && (municipalityFilter === 'All' || item.municipality === municipalityFilter)
         && (barangayFilter === 'All' || item.barangay === barangayFilter)
         && (cropFilter === 'All' || item.crop === cropFilter)
-        && (validationFilter === 'All' || item.validationStatus === validationFilter)
         && (projectFilter === 'All' || item.linkedProject === projectFilter)
         && (lguFilter === 'All' || item.submittedByLgu === lguFilter);
     });
-  }, [beneficiaries, search, municipalityFilter, barangayFilter, cropFilter, validationFilter, projectFilter, lguFilter]);
+  }, [beneficiaries, search, municipalityFilter, barangayFilter, cropFilter, projectFilter, lguFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBeneficiaries.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
@@ -125,9 +105,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
 
   const kpis = useMemo(() => {
     const total = filteredBeneficiaries.length;
-    const validated = filteredBeneficiaries.filter((item) => item.validationStatus === 'Validated').length;
-    const forVerification = filteredBeneficiaries.filter((item) => item.validationStatus === 'For Verification').length;
-    const needsCorrection = filteredBeneficiaries.filter((item) => item.validationStatus === 'Needs Correction').length;
     const hectares = filteredBeneficiaries.reduce((sum, item) => sum + Number(item.farmAreaHa || 0), 0);
     const activeProjects = new Set(filteredBeneficiaries.filter((item) => ['On-Going', 'Ongoing', 'Active'].includes(item.linkedProjectStatus)).map((item) => item.linkedProject)).size;
     const cropCounts = filteredBeneficiaries.reduce((acc, item) => {
@@ -136,7 +113,7 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
     }, {});
     const topCrop = Object.keys(cropCounts).sort((a, b) => cropCounts[b] - cropCounts[a])[0] || 'N/A';
 
-    return { total, validated, forVerification, needsCorrection, hectares, topCrop, activeProjects };
+    return { total, hectares, topCrop, activeProjects };
   }, [filteredBeneficiaries]);
 
   const cropDistribution = useMemo(() => BENEFICIARY_CROPS.map((crop) => ({
@@ -182,7 +159,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
     setMunicipalityFilter('All');
     setBarangayFilter('All');
     setCropFilter('All');
-    setValidationFilter('All');
     setProjectFilter('All');
     setLguFilter('All');
     setPage(1);
@@ -200,7 +176,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
       linked_fmr_project: item.linkedProject,
       distance_to_fmr_km: item.distanceToFmrKm,
       beneficiary_status: item.beneficiaryStatus,
-      validation_status: item.validationStatus,
       submitted_by_lgu: item.submittedByLgu,
       submitted_date: formatDate(item.submittedDate),
       latest_admin_remarks: item.adminRemarks,
@@ -212,24 +187,9 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
         <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Total Submitted</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Total Farmers</p>
           <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.total}</p>
-          <p className="mt-1 text-sm text-slate-500">LGU-submitted beneficiaries</p>
-        </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Validated</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.validated}</p>
-          <p className="mt-1 text-sm text-slate-500">Approved for DA monitoring</p>
-        </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Validation Queue</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.forVerification}</p>
-          <p className="mt-1 text-sm text-slate-500">For verification</p>
-        </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Correction Required</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.needsCorrection}</p>
-          <p className="mt-1 text-sm text-slate-500">Needs LGU update</p>
+          <p className="mt-1 text-sm text-slate-500">LGU-submitted farmer profiles</p>
         </div>
         <div className={cardClass}>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Farm Area Served</p>
@@ -246,11 +206,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
           <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.activeProjects}</p>
           <p className="mt-1 text-sm text-slate-500">On-going project links</p>
         </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">DA Role</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">Review</p>
-          <p className="mt-1 text-sm text-slate-500">LGU submits, DA validates</p>
-        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200/60 bg-white shadow-sm">
@@ -258,7 +213,7 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900">Farmer Beneficiary Registry</h2>
-              <p className="mt-1 text-sm text-slate-500">LGU-submitted farmer beneficiaries linked to FMR project service areas for DA review.</p>
+              <p className="mt-1 text-sm text-slate-500">LGU-submitted farmer beneficiaries linked to FMR project service areas.</p>
             </div>
             <button
               type="button"
@@ -291,10 +246,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
               <option value="All">All Commodities</option>
               {BENEFICIARY_CROPS.map((crop) => <option key={crop} value={crop}>{crop}</option>)}
             </select>
-            <select value={validationFilter} onChange={(event) => { setValidationFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20">
-              <option value="All">All DA Review Status</option>
-              {BENEFICIARY_VALIDATION_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
             <select value={projectFilter} onChange={(event) => { setProjectFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 lg:col-span-3">
               <option value="All">All Linked FMR Projects</option>
               {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
@@ -320,10 +271,8 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
                   'Location',
                   'Crop / Farm Area',
                   'Linked FMR Project',
-                  'DA Review Status',
                   'Submitted By',
                   'Last Updated',
-                  'Action',
                 ].map((label, index) => (
                   <th key={label} className={`${index === 0 ? 'px-8' : 'px-6'} py-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500`}>
                     {label}
@@ -351,18 +300,8 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
                     <p className="line-clamp-2 font-medium text-slate-900">{beneficiary.linkedProject}</p>
                     <p className="mt-1 text-xs text-slate-500">{beneficiary.distanceToFmrKm} km - {beneficiary.serviceArea}</p>
                   </td>
-                  <td className="px-6 py-4"><StatusPill status={beneficiary.validationStatus} /></td>
                   <td className="px-6 py-4 text-sm text-slate-700">{beneficiary.submittedByLgu}</td>
                   <td className="px-6 py-4 text-sm text-slate-700">{formatDate(beneficiary.lastUpdated)}</td>
-                  <td className="px-6 py-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedBeneficiary(beneficiary)}
-                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Review
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -485,17 +424,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onUpdateBenefici
         </div>
       </div>
 
-      {selectedBeneficiary && (
-        <FarmerBeneficiaryDetailModal
-          key={selectedBeneficiary.id}
-          beneficiary={selectedBeneficiary}
-          onClose={() => setSelectedBeneficiary(null)}
-          onUpdate={(id, updates) => {
-            onUpdateBeneficiary?.(id, updates);
-            setSelectedBeneficiary((current) => (current && current.id === id ? { ...current, ...updates } : current));
-          }}
-        />
-      )}
     </div>
   );
 }

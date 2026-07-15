@@ -3,12 +3,7 @@ import { getBarangays, getMunicipalities } from '../data/iloiloLocations';
 export const BENEFICIARY_CROPS = ['Rice', 'Corn', 'Sugarcane', 'Coconut', 'Vegetables', 'Banana'];
 
 export const BENEFICIARY_VALIDATION_STATUSES = [
-  'For Verification',
   'Validated',
-  'Needs Correction',
-  'Duplicate Record',
-  'Rejected',
-  'Archived',
 ];
 
 export const BENEFICIARY_STATUS_OPTIONS = ['Active Beneficiary', 'Under Review', 'Inactive'];
@@ -97,8 +92,8 @@ export function buildFarmerBeneficiaries(fmrProjects, size = 84) {
     const estimatedYield = Number((farmAreaHa * cropYieldPerHectare(crop)).toFixed(1));
     const submittedYear = 2021 + Math.floor(seededRandom(seed + 31) * 5);
     const submittedDate = new Date(submittedYear, Math.floor(seededRandom(seed + 41) * 12), 1 + Math.floor(seededRandom(seed + 43) * 27));
-    const validationStatus = pickFrom(BENEFICIARY_VALIDATION_STATUSES, seed + 47);
-    const beneficiaryStatus = validationStatus === 'Archived' ? 'Inactive' : validationStatus === 'Validated' ? 'Active Beneficiary' : 'Under Review';
+    const validationStatus = 'Validated';
+    const beneficiaryStatus = 'Active Beneficiary';
     const submittedByLgu = pickFrom(LGU_SUBMITTERS, seed + 53);
     const distanceToFmrKm = Number((seededRandom(seed + 59) * 2.8 + 0.15).toFixed(2));
     const serviceArea = distanceToFmrKm <= 1 ? 'Within primary service area' : distanceToFmrKm <= 2 ? 'Within secondary service area' : 'For proximity verification';
@@ -128,29 +123,15 @@ export function buildFarmerBeneficiaries(fmrProjects, size = 84) {
       submittedDate,
       submittedByLgu,
       lastUpdated: new Date(submittedDate.getTime() + 1000 * 60 * 60 * 24 * (12 + Math.floor(seededRandom(seed + 83) * 120))),
-      adminRemarks: validationStatus === 'Validated'
-        ? 'Validated against LGU submission and linked project service area.'
-        : validationStatus === 'Needs Correction'
-          ? 'Correction required: update farm area proof or registry reference.'
-          : validationStatus === 'Duplicate Record'
-            ? 'Possible duplicate record found under the same barangay and registry number.'
-            : validationStatus === 'Rejected'
-              ? 'Record does not currently meet beneficiary registry requirements.'
-              : 'Awaiting DA review and supporting validation.',
+      adminRemarks: 'Auto-approved upon LGU submission.',
       supportingDocuments: ['LGU endorsement', 'Farm location sketch', 'Barangay certification'],
       gps: { lat: gpsLat, lng: gpsLng },
       validationHistory: [
         {
           date: submittedDate,
           actor: submittedByLgu,
-          action: 'Submitted beneficiary record',
-          remarks: 'LGU submitted farmer beneficiary for DA validation.',
-        },
-        {
-          date: new Date(submittedDate.getTime() + 1000 * 60 * 60 * 24 * 7),
-          actor: 'DA Regional Admin',
-          action: validationStatus,
-          remarks: validationStatus === 'For Verification' ? 'Queued for DA validation.' : 'Initial DA review completed.',
+          action: 'Submitted farmer profile',
+          remarks: 'LGU submitted farmer beneficiary profile.',
         },
       ],
     };

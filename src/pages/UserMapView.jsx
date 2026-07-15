@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
@@ -11,6 +11,7 @@ import {
   getTargetDateChip,
   isOverdueProject,
   normalizeRouteStatus,
+  getJitteredCentroid,
 } from '../lib/mapRouteUtils';
 
 import Icons from '../components/Icons';
@@ -73,17 +74,23 @@ function fmtDistance(m) {
   if (m < 1000) return `~${Math.round(m)}m`;
   return `~${(m / 1000).toFixed(1)}km`;
 }
-/* â”€â”€â”€ Map bounds fitter â”€â”€â”€ */
-function FitBounds({ points }) {
+/* ─── Map bounds fitter ─── */
+function FitBounds({ points, filterKey }) {
   const map = useMap();
+  const lastKeyRef = useRef('');
 
   useEffect(() => {
     if (!points || points.length === 0) return;
-    const bounds = boundsFromPoints(points);
-    if (bounds) {
-      map.fitBounds(bounds, { padding: [30, 30] });
+    if (filterKey === undefined || lastKeyRef.current !== filterKey) {
+      if (filterKey !== undefined) {
+        lastKeyRef.current = filterKey;
+      }
+      const bounds = boundsFromPoints(points);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
     }
-  }, [points, map]);
+  }, [points, filterKey, map]);
 
   return null;
 }
@@ -246,18 +253,41 @@ export default function UserMapView({ embedded = false } = {}) {
   }, [projects, search, statusFilter, yearFilter, municipalityFilter, showOverdueOnly]);
 
   const mapEntities = useMemo(() => {
+    const municipalityCounts = {};
     return filtered.map((project) => {
       const route = buildRoutePoints(project, routeByProjectId[project.id]);
+      
+      const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
+      let coordinates = null;
+      let isApproximate = false;
+      let isCentroidFallback = false;
+
+      if (hasActualCoordinates) {
+        coordinates = route.startPoint || [project.start_latitude, project.start_longitude];
+        const remarks = String(project.remarks || '').toLowerCase();
+        if (remarks.includes('auto-geocoded')) {
+          isApproximate = true;
+        }
+      } else {
+        isCentroidFallback = true;
+        const muni = project.municipality || 'Leon';
+        municipalityCounts[muni] = (municipalityCounts[muni] || 0) + 1;
+        coordinates = getJitteredCentroid(muni, municipalityCounts[muni]);
+      }
+
       return {
         project,
         route,
-        hasFallbackPin: !route.hasPolyline && Boolean(project.start_latitude && project.start_longitude),
+        coordinates,
+        isApproximate,
+        isCentroidFallback,
+        hasFallbackPin: !route.hasPolyline || isCentroidFallback || isApproximate,
       };
     });
   }, [filtered, routeByProjectId]);
 
   const mappable = useMemo(() => {
-    return mapEntities.filter((entity) => entity.route.hasPolyline || entity.hasFallbackPin);
+    return mapEntities.filter((entity) => entity.coordinates && Number.isFinite(entity.coordinates[0]));
   }, [mapEntities]);
 
   useEffect(() => {
@@ -292,9 +322,10 @@ export default function UserMapView({ embedded = false } = {}) {
     const pts = [];
     mappable.forEach((entity) => {
       const routePoints = snappedRouteByProjectId[entity.project.id] || entity.route.points;
-      pts.push(...routePoints);
-      if (entity.hasFallbackPin && entity.project.start_latitude && entity.project.start_longitude) {
-        pts.push([Number(entity.project.start_latitude), Number(entity.project.start_longitude)]);
+      if (routePoints.length > 0) {
+        pts.push(...routePoints);
+      } else if (entity.coordinates) {
+        pts.push(entity.coordinates);
       }
     });
     return pts;
@@ -344,6 +375,8 @@ export default function UserMapView({ embedded = false } = {}) {
         contentClassName: 'px-0 py-0 pt-0',
       }
     : {};
+
+  const filterKey = `${search}-${statusFilter}-${yearFilter}-${municipalityFilter}-${showOverdueOnly}`;
 
   return (
     <UserLayout {...layoutProps}>
@@ -495,7 +528,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <FitBounds points={mapBoundsPoints} />
+                <FitBounds points={mapBoundsPoints} filterKey={filterKey} />
 
                 {/* User location: geofence zone + pulsing marker */}
                 {userLocation && (() => {
@@ -535,7 +568,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   );
                 })()}
 
-                {mappable.map(({ project, route, hasFallbackPin }) => {
+                {mappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
                   const isNearby = nearbyProjects.has(project.id);
@@ -549,7 +582,7 @@ export default function UserMapView({ embedded = false } = {}) {
 
                   return (
                     <div key={project.id}>
-                      {route.hasPolyline && (
+                      {route.hasPolyline && !isCentroidFallback && (
                         <>
                           <Polyline
                             positions={routePoints}
@@ -642,15 +675,16 @@ export default function UserMapView({ embedded = false } = {}) {
                         </>
                       )}
 
-                      {hasFallbackPin && (
+                      {hasFallbackPin && coordinates && (
                         <CircleMarker
-                          center={[project.start_latitude, project.start_longitude]}
+                          center={coordinates}
                           radius={isSelected ? 11 : 8}
                           pathOptions={{
-                            fillColor: color.fill,
-                            color: color.stroke,
-                            weight: isSelected ? 3 : 2,
+                            fillColor: isCentroidFallback ? '#fbbf24' : isApproximate ? '#f97316' : color.fill,
+                            color: isCentroidFallback ? '#d97706' : isApproximate ? '#ea580c' : color.stroke,
+                            weight: isSelected ? 3.5 : 2,
                             fillOpacity: 0.9,
+                            dashArray: isCentroidFallback ? '3, 4' : undefined
                           }}
                           eventHandlers={{
                             click: () => {
@@ -659,7 +693,64 @@ export default function UserMapView({ embedded = false } = {}) {
                             },
                           }}
                         >
-                          <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>⚠️ Route data missing</Tooltip>
+                          <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                            {isCentroidFallback 
+                              ? `⚠️ Municipality Centroid: ${project.municipality || 'Leon'} (GPS missing)`
+                              : isApproximate 
+                                ? `📍 Barangay Center: ${getProjectBarangay(project)} (Auto-Geocoded)`
+                                : '⚠️ Route coordinates missing'}
+                          </Tooltip>
+                          <Popup maxWidth={360} className="custom-popup">
+                            <div className="space-y-3 min-w-[260px]">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                    {isCentroidFallback ? 'MUNICIPAL CENTROID PIN' : 'BARANGAY CENTER GEOTAG'}
+                                  </p>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusBadge(project.status)}`}>
+                                  {normalizedStatus}
+                                </span>
+                              </div>
+
+                              <div>
+                                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                                  <span>Progress</span>
+                                  <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                </div>
+                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
+                                </div>
+                              </div>
+
+                              <div className="text-xs text-slate-600 space-y-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                <p><strong>Location:</strong> {project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
+                                <p><strong>Funding:</strong> FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                {isCentroidFallback && (
+                                  <p className="text-[10px] text-amber-700 font-medium">⚠️ No exact coordinates. Placed at municipal center centroid.</p>
+                                )}
+                                {isApproximate && (
+                                  <p className="text-[10px] text-orange-700 font-medium">📍 Coordinates auto-geocoded to Barangay center.</p>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-100">
+                                <a
+                                  href={`/reports?search=${encodeURIComponent(project.project_name || '')}`}
+                                  className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
+                                >
+                                  {reportsCount} reports
+                                </a>
+                                <a
+                                  href={`/projects/${project.id}`}
+                                  className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white hover:bg-slate-800"
+                                >
+                                  View Details
+                                </a>
+                              </div>
+                            </div>
+                          </Popup>
                         </CircleMarker>
                       )}
                     </div>
@@ -676,10 +767,15 @@ export default function UserMapView({ embedded = false } = {}) {
                   <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500" /> On-Going</div>
                   <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500" /> Proposed</div>
                 </div>
-                <div className="pt-1 border-t border-slate-200 space-y-1">
-                  <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-full bg-green-500 text-white items-center justify-center text-[10px] font-bold">S</span> Start</div>
-                  <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-sm bg-red-500 text-white items-center justify-center text-[10px] font-bold">E</span> End</div>
-                  <div className="flex items-center gap-2"><span>⚠️</span> Pin fallback (no route)</div>
+                <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
+                    <span>Barangay Geocoded</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
+                    <span>Centroid Fallback (No GPS)</span>
+                  </div>
                 </div>
               </div>
             </div>

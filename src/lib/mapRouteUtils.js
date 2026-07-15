@@ -211,3 +211,133 @@ export async function fetchRoadAlignedPolyline(points) {
     return points;
   }
 }
+
+export const ILOILO_MUNICIPALITY_CENTROIDS = {
+  'Leon': [10.7853, 122.3831],
+  'Barotac Nuevo': [10.8931, 122.7058],
+  'Passi': [11.1072, 122.6417],
+  'Passi City': [11.1072, 122.6417],
+  'Janiuay': [10.9525, 122.5028],
+  'Dumangas': [10.8267, 122.7139],
+  'Santa Barbara': [10.8247, 122.5350],
+  'Pototan': [10.9381, 122.6289],
+  'Cabatuan': [10.8789, 122.4831],
+  'Alimodian': [10.7719, 122.4286],
+  'San Miguel': [10.7869, 122.4633],
+  'Tigbauan': [10.6783, 122.3789],
+  'Oton': [10.6975, 122.4772],
+  'Miagao': [10.6406, 122.2308],
+  'Guimbal': [10.6594, 122.3161],
+  'Zarraga': [10.8144, 122.6267],
+  'New Lucena': [10.8703, 122.6094],
+  'Badiangan': [10.9631, 122.5458],
+  'Leganes': [10.7831, 122.5972],
+  'Pavia': [10.7714, 122.5422],
+  'Dingle': [10.9992, 122.6711],
+  'Dueñas': [11.0631, 122.6231],
+  'Lambunao': [11.0547, 122.4833],
+  'Calinog': [11.1247, 122.5286],
+  'Bingawan': [11.1739, 122.5117],
+  'San Enrique': [11.0558, 122.7308],
+  'Anilao': [10.9767, 122.7483],
+  'Banate': [11.0261, 122.8028],
+  'San Rafael': [11.1444, 122.8464],
+  'Barotac Viejo': [11.0361, 122.8431],
+  'Ajuy': [11.1717, 122.9722],
+  'Sara': [11.2589, 123.0139],
+  'Concepcion': [11.2189, 123.1097],
+  'San Dionisio': [11.2725, 123.0958],
+  'Batad': [11.3283, 123.1114],
+  'Balasan': [11.4300, 123.0800],
+  'Estancia': [11.4553, 123.1517],
+  'Carles': [11.5658, 123.1678],
+  'Tubungan': [10.7650, 122.2858],
+  'Igbaras': [10.7186, 122.2650],
+  'San Joaquin': [10.5900, 122.1400],
+  'Iloilo': [10.9500, 122.6000]
+};
+
+export function getMunicipalityCentroid(municipalityName) {
+  if (!municipalityName) return ILOILO_MUNICIPALITY_CENTROIDS.Iloilo;
+  const name = String(municipalityName).trim();
+  return ILOILO_MUNICIPALITY_CENTROIDS[name] || ILOILO_MUNICIPALITY_CENTROIDS.Iloilo;
+}
+
+export function getJitteredCentroid(municipalityName, index = 0) {
+  const base = getMunicipalityCentroid(municipalityName);
+  if (index === 0) return base;
+  
+  // Distribute multiple markers in a deterministic spiral around the base center
+  const angle = index * 0.5; 
+  const radius = 0.003 + (index * 0.0005); 
+  const latOffset = Math.sin(angle) * radius;
+  const lngOffset = Math.cos(angle) * radius;
+  return [base[0] + latOffset, base[1] + lngOffset];
+}
+
+const geocodeCache = new Map();
+
+export async function geocodeFmrLocation(municipality, location) {
+  const muni = String(municipality || '').trim();
+  const loc = String(location || '').trim();
+  if (!muni) return null;
+
+  // Clean the location: e.g. extract first barangay name from routes like "Agboy Norte-Siol Norte Rd"
+  let queryLoc = loc;
+  if (loc.includes('-')) {
+    queryLoc = loc.split('-')[0].trim();
+  } else if (loc.includes(',')) {
+    queryLoc = loc.split(',')[0].trim();
+  }
+  // Remove trailing "Rd", "Road", etc.
+  queryLoc = queryLoc.replace(/\s+(Rd|Road|St|Street|FMR|Fmr)$/i, '').trim();
+
+  // If we only have municipality and no location, just use municipal centroid
+  if (!queryLoc || queryLoc.toLowerCase() === muni.toLowerCase()) {
+    return getMunicipalityCentroid(muni);
+  }
+
+  const query = `${queryLoc}, ${muni}, Iloilo, Philippines`;
+  const cacheKey = query.toLowerCase();
+
+  if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
+
+  // Check localStorage to speed up subsequent reloads
+  try {
+    const stored = localStorage.getItem(`geocode:${cacheKey}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      geocodeCache.set(cacheKey, parsed);
+      return parsed;
+    }
+  } catch (e) {
+    console.error('localStorage access error', e);
+  }
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        'Accept-Language': 'en',
+        'User-Agent': 'KalsaTrack-DA-Admin-Dashboard'
+      }
+    });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (data && data.length > 0) {
+      const coords = [Number(data[0].lat), Number(data[0].lon)];
+      try {
+        localStorage.setItem(`geocode:${cacheKey}`, JSON.stringify(coords));
+      } catch (e) {
+        // Safe fail if storage is full
+      }
+      geocodeCache.set(cacheKey, coords);
+      return coords;
+    }
+  } catch (e) {
+    console.warn(`Geocoding failed for ${query}:`, e);
+  }
+
+  return null;
+}
+

@@ -14,6 +14,8 @@ import {
   getRouteStatusTheme,
   getTargetDateChip,
   isOverdueProject,
+  getJitteredCentroid,
+  geocodeFmrLocation,
 } from '../lib/mapRouteUtils';
 import {
   ResponsiveContainer,
@@ -234,15 +236,23 @@ function PublicReportLocationComparisonMap({ officialPoint, reportPoint }) {
 }
 
 /* ─── Map bounds fitter for admin ─── */
-function AdminFitBounds({ points }) {
+function AdminFitBounds({ points, filterKey }) {
   const map = useMap();
+  const lastKeyRef = useRef('');
+
   useEffect(() => {
     if (!points || points.length === 0) return;
-    const bounds = boundsFromPoints(points);
-    if (bounds) {
-      map.fitBounds(bounds, { padding: [30, 30] });
+    
+    if (filterKey === undefined || lastKeyRef.current !== filterKey) {
+      if (filterKey !== undefined) {
+        lastKeyRef.current = filterKey;
+      }
+      const bounds = boundsFromPoints(points);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
     }
-  }, [points, map]);
+  }, [points, filterKey, map]);
   return null;
 }
 
@@ -485,6 +495,9 @@ export default function Dashboard() {
   const [reportHeatPoints, setReportHeatPoints] = useState([]);
   const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
   const fmrProjectsRef = useRef([]);
+  const [geocodingStatus, setGeocodingStatus] = useState('');
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const hasStartedGeocodingRef = useRef(false);
 
   // Farmer beneficiaries state
   const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
@@ -1584,6 +1597,78 @@ export default function Dashboard() {
     fmrProjectsRef.current = fmrProjects;
   }, [fmrProjects]);
 
+  // Background FMR projects geocoder queue
+  useEffect(() => {
+    if (!fmrProjects || fmrProjects.length === 0 || isGeocoding) return;
+    if (hasStartedGeocodingRef.current) return;
+
+    // Identify projects with missing coordinates (either null, 0, or empty)
+    const unmapped = fmrProjects.filter(p => !p.start_latitude || !p.start_longitude);
+    if (unmapped.length === 0) {
+      setGeocodingStatus('');
+      return;
+    }
+
+    hasStartedGeocodingRef.current = true;
+    let active = true;
+    const runQueue = async () => {
+      setIsGeocoding(true);
+      setGeocodingStatus(`Auto-geocoding missing project coordinates (0/${unmapped.length})...`);
+
+      for (let i = 0; i < unmapped.length; i++) {
+        if (!active) break;
+        const project = unmapped[i];
+
+        setGeocodingStatus(`Geocoding project ${i + 1}/${unmapped.length}: ${project.project_name}...`);
+
+        // nominatim rate limit: 1 request per second
+        await new Promise(resolve => setTimeout(resolve, 1100));
+
+        try {
+          const coords = await geocodeFmrLocation(project.municipality, project.location);
+          if (coords && active) {
+            // Update Supabase directly. Since realtime is active, this will update fmrProjects list
+            const { error } = await supabase
+              .from('fmr_projects')
+              .update({
+                start_latitude: coords[0],
+                start_longitude: coords[1],
+                // Provide a default offset endpoint so route building works
+                end_latitude: coords[0] + 0.0005,
+                end_longitude: coords[1] + 0.0005,
+                remarks: project.remarks 
+                  ? `${project.remarks} (Auto-geocoded to Barangay center)`
+                  : 'Auto-geocoded to Barangay center'
+              })
+              .eq('id', project.id);
+
+            if (error) {
+              console.error('Failed to sync coordinates to Supabase:', error.message);
+            }
+          }
+        } catch (err) {
+          console.error('Error during automatic geocoding:', err);
+        }
+      }
+
+      if (active) {
+        setGeocodingStatus('All project coordinates successfully auto-geocoded!');
+        setIsGeocoding(false);
+        // Refresh in case realtime updates missed any
+        fetchFmrProjects();
+        setTimeout(() => {
+          if (active) setGeocodingStatus('');
+        }, 4000);
+      }
+    };
+
+    runQueue();
+
+    return () => {
+      active = false;
+    };
+  }, [fmrProjects, isGeocoding, fetchFmrProjects]);
+
   useEffect(() => {
     fetchAdminIdentity();
     ensureAdminProfile().then(() => {
@@ -2053,48 +2138,7 @@ export default function Dashboard() {
     exportRowsToCsv(rows, 'budget_allocations.csv');
   };
 
-  const handleUpdateFarmerBeneficiary = useCallback(async (beneficiaryId, updates) => {
-    const currentRow = farmerBeneficiaries.find((row) => row.id === beneficiaryId);
-    if (!currentRow) return;
 
-    const nextValidationHistory = [
-      ...(Array.isArray(currentRow.validationHistory) ? currentRow.validationHistory : []),
-      {
-        date: new Date(),
-        actor: 'DA Regional Admin',
-        action: updates.validationStatus || currentRow.validationStatus,
-        remarks: updates.adminRemarks || currentRow.adminRemarks || 'DA admin updated the beneficiary review status.',
-      },
-    ];
-
-    const payload = {
-      validation_status: updates.validationStatus || currentRow.validationStatus,
-      beneficiary_status: updates.beneficiaryStatus || currentRow.beneficiaryStatus,
-      admin_remarks: updates.adminRemarks || currentRow.adminRemarks || '',
-      last_updated: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      validation_history: nextValidationHistory,
-    };
-
-    const { error } = await supabase.from('farmer_beneficiaries').update(payload).eq('id', beneficiaryId);
-    if (error) {
-      console.error('Failed to update beneficiary:', error.message);
-      showNotification(`Failed to update beneficiary: ${error.message}`, 'error');
-      return;
-    }
-
-    setFarmerBeneficiaries((current) => current.map((row) => (
-      row.id === beneficiaryId
-        ? normalizeFarmerBeneficiaryRow({
-          ...row,
-          ...updates,
-          validation_history: nextValidationHistory,
-          last_updated: payload.last_updated,
-          updated_at: payload.updated_at,
-        })
-        : row
-    )));
-  }, [farmerBeneficiaries, normalizeFarmerBeneficiaryRow]);
 
   // Classify FMR projects for Reports tab: Completed, Delayed, Ongoing
   const classifiedFmrProjects = useMemo(() => {
@@ -3614,24 +3658,58 @@ export default function Dashboard() {
               const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
               return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesOverdue;
             });
+            const filterKey = `${adminMapSearch}-${adminMapStatusFilter}-${adminMapYearFilter}-${adminMapMunicipalityFilter}-${adminMapShowOverdueOnly}`;
+
+            // Geocoding and centroid jitter tracking
+            const municipalityCounts = {};
             const mapEntities = mapFiltered.map((project) => {
               const route = buildRoutePoints(project, routeByProjectId[project.id]);
+              
+              const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
+              let coordinates = null;
+              let isApproximate = false;
+              let isCentroidFallback = false;
+
+              if (hasActualCoordinates) {
+                coordinates = route.startPoint || [project.start_latitude, project.start_longitude];
+                const remarks = String(project.remarks || '').toLowerCase();
+                if (remarks.includes('auto-geocoded')) {
+                  isApproximate = true;
+                }
+              } else {
+                isCentroidFallback = true;
+                const muni = project.municipality || 'Leon';
+                municipalityCounts[muni] = (municipalityCounts[muni] || 0) + 1;
+                coordinates = getJitteredCentroid(muni, municipalityCounts[muni]);
+              }
+
               return {
                 project,
                 route,
-                hasFallbackPin: !route.hasPolyline && Boolean(project.start_latitude && project.start_longitude),
+                coordinates,
+                isApproximate,
+                isCentroidFallback,
+                hasFallbackPin: !route.hasPolyline || isCentroidFallback || isApproximate,
               };
             });
-            const mapMappable = mapEntities.filter((entity) => entity.route.hasPolyline || entity.hasFallbackPin);
-            const mapBoundsPoints = mapMappable.flatMap((entity) => entity.route.points);
+
+            const mapMappable = mapEntities.filter((entity) => entity.coordinates && Number.isFinite(entity.coordinates[0]));
+            // Gather bounds from polylines or individual fallback/centroid coordinates
+            const mapBoundsPoints = mapMappable.flatMap((entity) => 
+              entity.route.points.length > 0 ? entity.route.points : [entity.coordinates]
+            );
+
             const mapYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
             const mapMunicipalityOptions = [...new Set(fmrProjects.map((p) => p.municipality).filter(Boolean))].sort();
+
             const mapStats = {
               total: mapFiltered.length,
               mapped: mapMappable.length,
               completed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
               ongoing: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
               proposed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+              geocoded: mapEntities.filter(e => e.isApproximate).length,
+              centroids: mapEntities.filter(e => e.isCentroidFallback).length,
             };
 
             return (
@@ -3679,9 +3757,17 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {/* Geocoding Progress Alert */}
+                {geocodingStatus && (
+                  <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-xs font-semibold animate-pulse flex items-center gap-2.5 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-teal-500 inline-block animate-ping" />
+                    <span>{geocodingStatus}</span>
+                  </div>
+                )}
+
                 {/* Stats row */}
                 <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-                  <span>{mapStats.mapped} projects on map</span>
+                  <span>{mapStats.mapped} projects mapped ({mapStats.geocoded} geocoded, {mapStats.centroids} centroids)</span>
                   <span className="text-slate-300">|</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
@@ -3703,9 +3789,9 @@ export default function Dashboard() {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <AdminFitBounds points={mapBoundsPoints} />
+                      <AdminFitBounds points={mapBoundsPoints} filterKey={filterKey} />
                       <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
-                      {mapMappable.map(({ project, route, hasFallbackPin }) => {
+                      {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
                         const progress = Number(project.accomplishment || 0);
@@ -3714,7 +3800,7 @@ export default function Dashboard() {
 
                         return (
                           <div key={project.id}>
-                            {route.hasPolyline && (
+                            {route.hasPolyline && !isCentroidFallback && (
                               <>
                                 <Polyline positions={route.points} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }} />
                                 <Polyline
@@ -3807,14 +3893,82 @@ export default function Dashboard() {
                               </>
                             )}
 
-                            {hasFallbackPin && (
+                            {hasFallbackPin && coordinates && (
                               <CircleMarker
-                                center={[project.start_latitude, project.start_longitude]}
-                                radius={isSelected ? 10 : 7}
-                                pathOptions={{ fillColor: theme.line, color: theme.stroke, weight: isSelected ? 3 : 2, fillOpacity: 0.9 }}
+                                center={coordinates}
+                                radius={isSelected ? 11 : 8}
+                                pathOptions={{
+                                  fillColor: isCentroidFallback ? '#fbbf24' : isApproximate ? '#f97316' : theme.line,
+                                  color: isCentroidFallback ? '#d97706' : isApproximate ? '#ea580c' : theme.stroke,
+                                  weight: isSelected ? 3.5 : 2,
+                                  fillOpacity: 0.9,
+                                  dashArray: isCentroidFallback ? '3, 4' : undefined
+                                }}
                                 eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
                               >
-                                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>⚠️ Route data missing</Tooltip>
+                                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                                  {isCentroidFallback 
+                                    ? `⚠️ Municipality Centroid: ${project.municipality || 'Leon'} (GPS missing)`
+                                    : isApproximate 
+                                      ? `📍 Barangay Center: ${getProjectBarangay(project)} (Auto-Geocoded)`
+                                      : '⚠️ Route coordinates missing'}
+                                </Tooltip>
+                                <Popup maxWidth={380}>
+                                  <div className="space-y-3 min-w-[280px]">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
+                                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                          {isCentroidFallback ? 'MUNICIPAL CENTROID PIN' : 'BARANGAY CENTER GEOTAG'}
+                                        </p>
+                                      </div>
+                                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                        normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                                        normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                        'bg-sky-100 text-sky-700'
+                                      }`}>{normalizeFmrStatus(project.status)}</span>
+                                    </div>
+
+                                    <div>
+                                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                                        <span>Progress</span>
+                                        <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                      </div>
+                                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
+                                      </div>
+                                    </div>
+
+                                    <div className="text-xs text-slate-600 space-y-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                      <p><strong>Location:</strong> {project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
+                                      <p><strong>Funding:</strong> FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                      {isCentroidFallback && (
+                                        <p className="text-[10px] text-amber-700 font-medium">⚠️ No exact coordinates from DA. Placed at municipal centroid.</p>
+                                      )}
+                                      {isApproximate && (
+                                        <p className="text-[10px] text-orange-700 font-medium">📍 Auto-geocoded coordinates to Barangay center.</p>
+                                      )}
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+                                      <button
+                                        onClick={() => {
+                                          setActiveTab('public-reports');
+                                          setPublicReportProjectFilter(project.project_name || '');
+                                        }}
+                                        className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
+                                      >
+                                        {reportCount} reports
+                                      </button>
+                                      <button
+                                        onClick={() => openFmrEditModal(project)}
+                                        className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-teal-600 text-white hover:bg-teal-700"
+                                      >
+                                        Define Route
+                                      </button>
+                                    </div>
+                                  </div>
+                                </Popup>
                               </CircleMarker>
                             )}
                           </div>
@@ -3824,18 +3978,24 @@ export default function Dashboard() {
                   )}
 
                   <div className="absolute bottom-4 left-4 z-[500]">
-                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[220px]">
+                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
                       <p className="font-semibold text-slate-900">Map Legend</p>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500" /> Completed</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500" /> On-Going</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500" /> Proposed</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
                       </div>
-                      <div className="pt-1 border-t border-slate-200 space-y-1">
-                        <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-full bg-green-500 text-white items-center justify-center text-[10px] font-bold">S</span> Start</div>
-                        <div className="flex items-center gap-2"><span className="inline-flex w-4 h-4 rounded-sm bg-red-500 text-white items-center justify-center text-[10px] font-bold">E</span> End</div>
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
+                          <span>Barangay Geocoded</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
+                          <span>Centroid Fallback (No GPS)</span>
+                        </div>
                       </div>
-                      <label className="pt-1 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                      <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                         <input
                           type="checkbox"
                           checked={adminMapShowHeatmap}
@@ -3849,77 +4009,117 @@ export default function Dashboard() {
                 </div>
 
                 {/* Selected project detail */}
-                {adminMapSelectedProject && (
-                  <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div>
-                        <h3 className="font-bold text-lg text-slate-900">{adminMapSelectedProject.project_name}</h3>
-                        <p className="text-sm text-slate-500 mt-1">DA-RAED Region VI &middot; FMR Development Program</p>
+                {adminMapSelectedProject && (() => {
+                  const hasCoordinates = adminMapSelectedProject.start_latitude && adminMapSelectedProject.start_longitude;
+                  const remarks = String(adminMapSelectedProject.remarks || '').toLowerCase();
+                  const isApproximate = hasCoordinates && remarks.includes('auto-geocoded');
+                  const isCentroidFallback = !hasCoordinates;
+
+                  return (
+                    <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+                        <div>
+                          <h3 className="font-bold text-lg text-slate-900">{adminMapSelectedProject.project_name}</h3>
+                          <p className="text-sm text-slate-500 mt-1">DA-RAED Region VI &middot; FMR Development Program</p>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+                            normalizeFmrStatus(adminMapSelectedProject.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                            normalizeFmrStatus(adminMapSelectedProject.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>{normalizeFmrStatus(adminMapSelectedProject.status)}</span>
+                          <button onClick={() => setAdminMapSelectedProject(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                          normalizeFmrStatus(adminMapSelectedProject.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                          normalizeFmrStatus(adminMapSelectedProject.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>{normalizeFmrStatus(adminMapSelectedProject.status)}</span>
-                        <button onClick={() => setAdminMapSelectedProject(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+
+                      {/* Accuracy Alert Banner */}
+                      {isCentroidFallback && (
+                        <div className="mb-4 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-850 text-xs flex items-start gap-2">
+                          <span className="text-sm">⚠️</span>
+                          <div>
+                            <p className="font-semibold text-amber-900">Missing Road Coordinates</p>
+                            <p className="text-amber-700 mt-0.5">This project is placed at the municipal center because exact GPS coordinates are missing from the DA. You can define them below.</p>
+                          </div>
+                        </div>
+                      )}
+                      {isApproximate && (
+                        <div className="mb-4 p-3 rounded-xl border border-orange-200 bg-orange-50 text-orange-850 text-xs flex items-start gap-2">
+                          <span className="text-sm">📍</span>
+                          <div>
+                            <p className="font-semibold text-orange-950">Auto-Geocoded Barangay Center</p>
+                            <p className="text-orange-700 mt-0.5">The coordinates are automatically geocoded to the center of Barangay <strong>{getProjectBarangay(adminMapSelectedProject)}</strong>. You can refine this by drawing the official route.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {adminMapSelectedProject.municipality && (
+                          <div className="p-3 bg-slate-50 rounded-xl">
+                            <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Municipality</p>
+                            <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.municipality}</p>
+                          </div>
+                        )}
+                        {adminMapSelectedProject.year_funded && (
+                          <div className="p-3 bg-slate-50 rounded-xl">
+                            <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Year Funded</p>
+                            <p className="text-sm font-medium text-slate-800">FY {adminMapSelectedProject.year_funded}</p>
+                          </div>
+                        )}
+                        {adminMapSelectedProject.project_length_km > 0 && (
+                          <div className="p-3 bg-slate-50 rounded-xl">
+                            <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Road Length</p>
+                            <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.project_length_km} km</p>
+                          </div>
+                        )}
+                        {adminMapSelectedProject.date_completed && (
+                          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                            <p className="text-xs text-emerald-600 uppercase tracking-wider mb-0.5">Completed</p>
+                            <p className="text-sm font-medium text-emerald-800">{adminMapSelectedProject.date_completed}</p>
+                          </div>
+                        )}
+                        {adminMapSelectedProject.target_completion_date && (
+                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                            <p className="text-xs text-amber-600 uppercase tracking-wider mb-0.5">Target</p>
+                            <p className="text-sm font-medium text-amber-800">{adminMapSelectedProject.target_completion_date}</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
+                        {adminMapSelectedProject.start_latitude && adminMapSelectedProject.end_latitude && (
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md font-mono">
+                              START: {adminMapSelectedProject.start_latitude?.toFixed(6)}, {adminMapSelectedProject.start_longitude?.toFixed(6)}
+                            </span>
+                            <span>&rarr;</span>
+                            <span className="px-2 py-1 bg-rose-50 text-rose-700 rounded-md font-mono">
+                              END: {adminMapSelectedProject.end_latitude?.toFixed(6)}, {adminMapSelectedProject.end_longitude?.toFixed(6)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 ml-auto">
+                          <button
+                            onClick={() => openFmrEditModal(adminMapSelectedProject)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                            {isCentroidFallback ? 'Define Coordinates' : 'Edit Route'}
+                          </button>
+                          {adminMapSelectedProject.start_latitude && adminMapSelectedProject.end_latitude && (
+                            <a href={`https://www.google.com/maps/dir/${adminMapSelectedProject.start_latitude},${adminMapSelectedProject.start_longitude}/${adminMapSelectedProject.end_latitude},${adminMapSelectedProject.end_longitude}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-colors">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                              Google Maps
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                      {adminMapSelectedProject.municipality && (
-                        <div className="p-3 bg-slate-50 rounded-xl">
-                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Municipality</p>
-                          <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.municipality}</p>
-                        </div>
-                      )}
-                      {adminMapSelectedProject.year_funded && (
-                        <div className="p-3 bg-slate-50 rounded-xl">
-                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Year Funded</p>
-                          <p className="text-sm font-medium text-slate-800">FY {adminMapSelectedProject.year_funded}</p>
-                        </div>
-                      )}
-                      {adminMapSelectedProject.project_length_km > 0 && (
-                        <div className="p-3 bg-slate-50 rounded-xl">
-                          <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Road Length</p>
-                          <p className="text-sm font-medium text-slate-800">{adminMapSelectedProject.project_length_km} km</p>
-                        </div>
-                      )}
-                      {adminMapSelectedProject.date_completed && (
-                        <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                          <p className="text-xs text-emerald-600 uppercase tracking-wider mb-0.5">Completed</p>
-                          <p className="text-sm font-medium text-emerald-800">{adminMapSelectedProject.date_completed}</p>
-                        </div>
-                      )}
-                      {adminMapSelectedProject.target_completion_date && (
-                        <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                          <p className="text-xs text-amber-600 uppercase tracking-wider mb-0.5">Target</p>
-                          <p className="text-sm font-medium text-amber-800">{adminMapSelectedProject.target_completion_date}</p>
-                        </div>
-                      )}
-                    </div>
-                    {adminMapSelectedProject.start_latitude && adminMapSelectedProject.end_latitude && (
-                      <div className="mt-4 flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
-                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md font-mono">
-                            START: {adminMapSelectedProject.start_latitude?.toFixed(6)}, {adminMapSelectedProject.start_longitude?.toFixed(6)}
-                          </span>
-                          <span>&rarr;</span>
-                          <span className="px-2 py-1 bg-rose-50 text-rose-700 rounded-md font-mono">
-                            END: {adminMapSelectedProject.end_latitude?.toFixed(6)}, {adminMapSelectedProject.end_longitude?.toFixed(6)}
-                          </span>
-                        </div>
-                        <a href={`https://www.google.com/maps/dir/${adminMapSelectedProject.start_latitude},${adminMapSelectedProject.start_longitude}/${adminMapSelectedProject.end_latitude},${adminMapSelectedProject.end_longitude}`}
-                          target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium rounded-lg transition-colors">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
-                          Google Maps
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Source info */}
                 {!fmrLoading && fmrProjects.length > 0 && (
@@ -3937,7 +4137,6 @@ export default function Dashboard() {
           {activeTab === 'farmers' && (
             <FarmerBeneficiariesTab
               beneficiaries={farmerBeneficiaries}
-              onUpdateBeneficiary={handleUpdateFarmerBeneficiary}
               onExportCsv={exportRowsToCsv}
               loading={farmerBeneficiariesLoading}
             />
