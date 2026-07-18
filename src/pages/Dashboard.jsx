@@ -106,6 +106,28 @@ function calculateRoadLengthKm(startLat, startLng, endLat, endLng) {
   return meters / 1000;
 }
 
+function calculateSnappedPolylineDistanceKm(points) {
+  if (!points || points.length < 2) return 0;
+  let totalMeters = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const lat1 = Array.isArray(p1) ? p1[0] : (p1.lat ?? p1.latitude);
+    const lng1 = Array.isArray(p1) ? p1[1] : (p1.lng ?? p1.longitude);
+    const lat2 = Array.isArray(p2) ? p2[0] : (p2.lat ?? p2.latitude);
+    const lng2 = Array.isArray(p2) ? p2[1] : (p2.lng ?? p2.longitude);
+
+    if (
+      Number.isFinite(Number(lat1)) && Number.isFinite(Number(lng1)) &&
+      Number.isFinite(Number(lat2)) && Number.isFinite(Number(lng2))
+    ) {
+      totalMeters += haversineMeters(Number(lat1), Number(lng1), Number(lat2), Number(lng2));
+    }
+  }
+  return totalMeters / 1000;
+}
+
+
 // Accepts plain decimals and values like "10.82492N" or "122.53211E".
 function parseCoordinate(value) {
   if (value === null || value === undefined) return NaN;
@@ -253,6 +275,16 @@ function AdminFitBounds({ points, filterKey }) {
       }
     }
   }, [points, filterKey, map]);
+  return null;
+}
+
+function MapSearchController({ searchCoords }) {
+  const map = useMap();
+  useEffect(() => {
+    if (searchCoords) {
+      map.flyTo(searchCoords, 16);
+    }
+  }, [searchCoords, map]);
   return null;
 }
 
@@ -513,6 +545,20 @@ export default function Dashboard() {
   const [budgetPage, setBudgetPage] = useState(1);
   const [budgetLoading, setBudgetLoading] = useState(true);
   const [selectedBudgetAllocation, setSelectedBudgetAllocation] = useState(null);
+  // Project Management tab states
+  const [pmSubTab, setPmSubTab] = useState('board');
+  const [pmSearchInput, setPmSearchInput] = useState('');
+  const [pmSearch, setPmSearch] = useState('');
+  const [pmMunicipalityFilter, setPmMunicipalityFilter] = useState('All');
+  const [pmModeFilter, setPmModeFilter] = useState('All');
+  const [pmStatusFilter, setPmStatusFilter] = useState('All');
+  const [selectedFmrPmProject, setSelectedFmrPmProject] = useState(null);
+  const [pmBudgetPage, setPmBudgetPage] = useState(1);
+  const [pmCalMonth, setPmCalMonth] = useState(new Date().getMonth());
+  const [pmCalYear, setPmCalYear] = useState(new Date().getFullYear());
+  const [pmCalView, setPmCalView] = useState('month'); // 'month' | 'week' | 'agenda'
+  const [pmCalSelectedDate, setPmCalSelectedDate] = useState(new Date());
+
 
   // FMR CRUD state (edit / delete)
   const [showFmrEditModal, setShowFmrEditModal] = useState(false);
@@ -526,6 +572,116 @@ export default function Dashboard() {
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
   const [fmrRouteMode, setFmrRouteMode] = useState('waypoint');
   const [fmrRouteWaypoints, setFmrRouteWaypoints] = useState([]);
+
+  // Map Search States inside modals
+  const [createMapSearchQuery, setCreateMapSearchQuery] = useState('');
+  const [createMapSearchCoords, setCreateMapSearchCoords] = useState(null);
+  const [editMapSearchQuery, setEditMapSearchQuery] = useState('');
+  const [editMapSearchCoords, setEditMapSearchCoords] = useState(null);
+
+  const handleCreateMapSearch = async () => {
+    const q = createMapSearchQuery.trim();
+    if (!q) return;
+    try {
+      const query = `${q}, Iloilo, Philippines`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'KalsaTrack-Route-Builder-Search'
+        }
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setCreateMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
+      } else {
+        showNotification('Location not found. Try adding the municipality name.', 'error');
+      }
+    } catch {
+      showNotification('Error searching location.', 'error');
+    }
+  };
+
+  const handleEditMapSearch = async () => {
+    const q = editMapSearchQuery.trim();
+    if (!q) return;
+    try {
+      const query = `${q}, Iloilo, Philippines`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'KalsaTrack-Route-Builder-Search'
+        }
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setEditMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
+      } else {
+        showNotification('Location not found. Try adding the municipality name.', 'error');
+      }
+    } catch {
+      showNotification('Error searching location.', 'error');
+    }
+  };
+
+  // Projects Tab Mini-Map Search States
+  const [projectsMapSearchQuery, setProjectsMapSearchQuery] = useState('');
+  const [projectsMapSearchCoords, setProjectsMapSearchCoords] = useState(null);
+
+  const handleProjectsMapSearch = async () => {
+    const q = projectsMapSearchQuery.trim();
+    if (!q) return;
+    try {
+      const query = `${q}, Iloilo, Philippines`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'KalsaTrack-Projects-Map-Search'
+        }
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setProjectsMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
+      } else {
+        showNotification('Location not found. Try adding the municipality name.', 'error');
+      }
+    } catch {
+      showNotification('Error searching location.', 'error');
+    }
+  };
+
+  // Main Map Tab Search States
+  const [mainMapGeopSearchQuery, setMainMapGeopSearchQuery] = useState('');
+  const [mainMapGeopSearchCoords, setMainMapGeopSearchCoords] = useState(null);
+
+  const handleMainMapGeopSearch = async () => {
+    const q = mainMapGeopSearchQuery.trim();
+    if (!q) return;
+    try {
+      const query = `${q}, Iloilo, Philippines`;
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+      const res = await fetch(url, {
+        headers: {
+          'Accept-Language': 'en',
+          'User-Agent': 'KalsaTrack-Main-Map-Search'
+        }
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (data && data.length > 0) {
+        setMainMapGeopSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
+      } else {
+        showNotification('Location not found. Try adding the municipality name.', 'error');
+      }
+    } catch {
+      showNotification('Error searching location.', 'error');
+    }
+  };
 
   const [newProjectRouteMode, setNewProjectRouteMode] = useState('waypoint');
   const [newProjectRouteWaypoints, setNewProjectRouteWaypoints] = useState([]);
@@ -1670,6 +1826,40 @@ export default function Dashboard() {
   }, [fmrProjects, isGeocoding, fetchFmrProjects]);
 
   useEffect(() => {
+    if (!fmrProjects || fmrProjects.length === 0) return undefined;
+    
+    let cancelled = false;
+    async function snapAdminRoutes() {
+      const toSnap = fmrProjects.filter((p) => {
+        const route = buildRoutePoints(p, routeByProjectId[p.id]);
+        return route.hasPolyline && !route.hasRouteRecord;
+      });
+
+      const snappedEntries = await Promise.all(
+        toSnap.map(async (project) => {
+          const route = buildRoutePoints(project, routeByProjectId[project.id]);
+          const snapped = await fetchRoadAlignedPolyline(route.points);
+          return [project.id, snapped];
+        })
+      );
+
+      if (cancelled) return;
+      setAdminSnappedRouteByProjectId((prev) => {
+        const next = { ...prev };
+        snappedEntries.forEach(([projectId, points]) => {
+          next[projectId] = points;
+        });
+        return next;
+      });
+    }
+
+    snapAdminRoutes();
+    return () => {
+      cancelled = true;
+    };
+  }, [fmrProjects, routeByProjectId]);
+
+  useEffect(() => {
     fetchAdminIdentity();
     ensureAdminProfile().then(() => {
       fetchProjects();
@@ -2011,6 +2201,11 @@ export default function Dashboard() {
     const handle = setTimeout(() => setBudgetSearch(budgetSearchInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [budgetSearchInput]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setPmSearch(pmSearchInput.trim()), 350);
+    return () => clearTimeout(handle);
+  }, [pmSearchInput]);
 
   useEffect(() => {
     setBudgetLoading(true);
@@ -2413,32 +2608,146 @@ export default function Dashboard() {
   // ─── FMR CRUD Handlers ───
   const handleFmrInputChange = (e) => {
     const { name, value } = e.target;
-    setFmrFormData(prev => ({ ...prev, [name]: value }));
+    setFmrFormData(prev => {
+      const next = { ...prev, [name]: value };
+      
+      if (
+        name === 'start_latitude' ||
+        name === 'start_longitude' ||
+        name === 'end_latitude' ||
+        name === 'end_longitude'
+      ) {
+        const sLat = parseCoordinate(name === 'start_latitude' ? value : next.start_latitude);
+        const sLng = parseCoordinate(name === 'start_longitude' ? value : next.start_longitude);
+        const eLat = parseCoordinate(name === 'end_latitude' ? value : next.end_latitude);
+        const eLng = parseCoordinate(name === 'end_longitude' ? value : next.end_longitude);
+        
+        if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+          if (fmrRouteWaypoints && fmrRouteWaypoints.length > 0) {
+            const points = [[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+            next.project_length_km = calculateSnappedPolylineDistanceKm(points).toFixed(2);
+          } else {
+            next.project_length_km = calculateRoadLengthKm(sLat, sLng, eLat, eLng).toFixed(2);
+          }
+        } else {
+          next.project_length_km = '';
+        }
+      }
+      
+      return next;
+    });
   };
 
   const handleNewProjectRoutePick = ({ lat, lng }) => {
     if (newProjectRouteMode === 'start') {
-      setFormData((prev) => ({ ...prev, startLatitude: lat.toFixed(6), startLongitude: lng.toFixed(6) }));
+      setFormData((prev) => {
+        const next = { ...prev, startLatitude: lat.toFixed(6), startLongitude: lng.toFixed(6) };
+        const sLat = parseCoordinate(next.startLatitude);
+        const sLng = parseCoordinate(next.startLongitude);
+        const eLat = parseCoordinate(next.endLatitude);
+        const eLng = parseCoordinate(next.endLongitude);
+        if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+          const points = [[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+          next.roadLength = calculateSnappedPolylineDistanceKm(points).toFixed(2);
+        } else {
+          next.roadLength = '';
+        }
+        return next;
+      });
       return;
     }
     if (newProjectRouteMode === 'end') {
-      setFormData((prev) => ({ ...prev, endLatitude: lat.toFixed(6), endLongitude: lng.toFixed(6) }));
+      setFormData((prev) => {
+        const next = { ...prev, endLatitude: lat.toFixed(6), endLongitude: lng.toFixed(6) };
+        const sLat = parseCoordinate(next.startLatitude);
+        const sLng = parseCoordinate(next.startLongitude);
+        const eLat = parseCoordinate(next.endLatitude);
+        const eLng = parseCoordinate(next.endLongitude);
+        if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+          const points = [[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+          next.roadLength = calculateSnappedPolylineDistanceKm(points).toFixed(2);
+        } else {
+          next.roadLength = '';
+        }
+        return next;
+      });
       return;
     }
-    setNewProjectRouteWaypoints((prev) => [...prev, { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) }]);
+    if (newProjectRouteMode === 'waypoint') {
+      const newPt = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+      setNewProjectRouteWaypoints((prev) => {
+        const nextWaypoints = [...prev, newPt];
+        setFormData((curr) => {
+          const sLat = parseCoordinate(curr.startLatitude);
+          const sLng = parseCoordinate(curr.startLongitude);
+          const eLat = parseCoordinate(curr.endLatitude);
+          const eLng = parseCoordinate(curr.endLongitude);
+          if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+            const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+            return { ...curr, roadLength: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+          }
+          return curr;
+        });
+        return nextWaypoints;
+      });
+    }
   };
 
   const handleFmrRoutePick = ({ lat, lng }) => {
     if (fmrRouteMode === 'start') {
-      setFmrFormData((prev) => ({ ...prev, start_latitude: lat.toFixed(6), start_longitude: lng.toFixed(6) }));
+      setFmrFormData((prev) => {
+        const next = { ...prev, start_latitude: lat.toFixed(6), start_longitude: lng.toFixed(6) };
+        const sLat = parseCoordinate(next.start_latitude);
+        const sLng = parseCoordinate(next.start_longitude);
+        const eLat = parseCoordinate(next.end_latitude);
+        const eLng = parseCoordinate(next.end_longitude);
+        if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+          const points = [[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+          next.project_length_km = calculateSnappedPolylineDistanceKm(points).toFixed(2);
+        } else {
+          next.project_length_km = '';
+        }
+        return next;
+      });
       return;
     }
     if (fmrRouteMode === 'end') {
-      setFmrFormData((prev) => ({ ...prev, end_latitude: lat.toFixed(6), end_longitude: lng.toFixed(6) }));
+      setFmrFormData((prev) => {
+        const next = { ...prev, end_latitude: lat.toFixed(6), end_longitude: lng.toFixed(6) };
+        const sLat = parseCoordinate(next.start_latitude);
+        const sLng = parseCoordinate(next.start_longitude);
+        const eLat = parseCoordinate(next.end_latitude);
+        const eLng = parseCoordinate(next.end_longitude);
+        if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+          const points = [[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+          next.project_length_km = calculateSnappedPolylineDistanceKm(points).toFixed(2);
+        } else {
+          next.project_length_km = '';
+        }
+        return next;
+      });
       return;
     }
-    setFmrRouteWaypoints((prev) => [...prev, { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) }]);
+    if (fmrRouteMode === 'waypoint') {
+      const newPt = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+      setFmrRouteWaypoints((prev) => {
+        const nextWaypoints = [...prev, newPt];
+        setFmrFormData((curr) => {
+          const sLat = parseCoordinate(curr.start_latitude);
+          const sLng = parseCoordinate(curr.start_longitude);
+          const eLat = parseCoordinate(curr.end_latitude);
+          const eLng = parseCoordinate(curr.end_longitude);
+          if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+            const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+            return { ...curr, project_length_km: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+          }
+          return curr;
+        });
+        return nextWaypoints;
+      });
+    }
   };
+
 
   const openFmrEditModal = (project) => {
     setSelectedFmrProject(project);
@@ -2589,17 +2898,17 @@ export default function Dashboard() {
 
   const fmrRoutePreview = useMemo(() => {
     const points = [];
-    const sLat = Number(fmrFormData.start_latitude);
-    const sLng = Number(fmrFormData.start_longitude);
-    const eLat = Number(fmrFormData.end_latitude);
-    const eLng = Number(fmrFormData.end_longitude);
-    if (Number.isFinite(sLat) && Number.isFinite(sLng)) points.push([sLat, sLng]);
+    const sLat = parseCoordinate(fmrFormData.start_latitude);
+    const sLng = parseCoordinate(fmrFormData.start_longitude);
+    const eLat = parseCoordinate(fmrFormData.end_latitude);
+    const eLng = parseCoordinate(fmrFormData.end_longitude);
+    if (!Number.isNaN(sLat) && !Number.isNaN(sLng)) points.push([sLat, sLng]);
     fmrRouteWaypoints.forEach((point) => {
       const lat = Number(point.lat);
       const lng = Number(point.lng);
       if (Number.isFinite(lat) && Number.isFinite(lng)) points.push([lat, lng]);
     });
-    if (Number.isFinite(eLat) && Number.isFinite(eLng)) points.push([eLat, eLng]);
+    if (!Number.isNaN(eLat) && !Number.isNaN(eLng)) points.push([eLat, eLng]);
     return points;
   }, [fmrFormData.start_latitude, fmrFormData.start_longitude, fmrFormData.end_latitude, fmrFormData.end_longitude, fmrRouteWaypoints]);
 
@@ -2608,7 +2917,7 @@ export default function Dashboard() {
     { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
     { id: 'farmers', label: 'Farmer List', icon: 'M18 18.72a2.01 2.01 0 01-1.8 2.28H7.6a2.01 2.01 0 01-1.8-2.28l.75-5.4a3 3 0 012.97-2.58h4.96a3 3 0 012.97 2.58l.54 5.4zM12 13.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z' },
-    { id: 'budget', label: 'Budget Allocation', icon: 'M12 3.75c-2.65 0-5.2.34-7.5.98v11.04A42.22 42.22 0 0112 14.25c2.55 0 5.03.25 7.5.73V3.73A42.22 42.22 0 0112 3.75zM9 6h6m-6 4h6m-6 4h6' },
+    { id: 'project-mgmt', label: 'Project Mgmt', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
     { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
@@ -2657,126 +2966,155 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-24' : 'w-80'} bg-slate-900 text-white flex flex-col transition-all duration-300 ${
+      <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gradient-to-b from-slate-950 to-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${
         showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      }`}>
+      } border-r border-slate-800/60 shadow-xl`}>
         {/* Logo */}
-        <div className={`${sidebarCollapsed ? 'px-4 py-6' : 'px-6 py-8'} border-b border-slate-700/50`}>
-          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
-            <div className={`flex items-center ${sidebarCollapsed ? '' : 'gap-4'}`}>
-              <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-bold text-xl shadow-lg shadow-teal-500/20 flex-shrink-0">
+        <div className="px-5 py-6 border-b border-slate-800/60">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3.5 overflow-hidden">
+              <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-black text-lg shadow-md shadow-teal-500/25 flex-shrink-0 text-white select-none transition-transform duration-300 group-hover:scale-105">
                 K
               </div>
-              {!sidebarCollapsed && (
-                <div>
-                  <h1 className="text-xl font-bold tracking-tight">KalsaTrack</h1>
-                  <p className="text-xs text-slate-400 mt-0.5">FMR Portal v1.0</p>
-                </div>
-              )}
+              <div className={`transition-all duration-300 ease-in-out flex flex-col ${
+                sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-40 opacity-100'
+              }`}>
+                <h1 className="text-base font-extrabold tracking-tight text-white leading-tight">KalsaTrack</h1>
+                <p className="text-[10px] font-bold text-slate-500 mt-0.5 tracking-wider uppercase">FMR Portal v1.0</p>
+              </div>
             </div>
             {/* Collapse Toggle Button */}
             <button
               onClick={() => setSidebarCollapsed(c => !c)}
-              className={`hidden lg:flex w-8 h-8 bg-slate-700/60 hover:bg-teal-600 rounded-lg items-center justify-center text-slate-400 hover:text-white transition-all duration-200 ${sidebarCollapsed ? 'mt-4' : ''}`}
+              className="hidden lg:flex w-7.5 h-7.5 bg-slate-850 hover:bg-teal-600 border border-slate-700/50 rounded-lg items-center justify-center text-slate-400 hover:text-white transition-all duration-200"
+              style={{ width: '30px', height: '30px' }}
             >
-              <svg className={`w-4 h-4 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              <svg className={`w-3.5 h-3.5 transition-transform duration-355 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
           </div>
-          {sidebarCollapsed && (
-            <button
-              onClick={() => setSidebarCollapsed(c => !c)}
-              className="hidden lg:flex w-full mt-4 h-8 bg-slate-700/60 hover:bg-teal-600 rounded-lg items-center justify-center text-slate-400 hover:text-white transition-all duration-200"
-            >
-              <svg className="w-4 h-4 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-          )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-8 overflow-y-auto">
-          {!sidebarCollapsed && <p className="px-4 mb-6 text-xs font-bold text-slate-500 uppercase tracking-widest">Main Menu</p>}
-          <div className="space-y-3">
-            {navItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                title={sidebarCollapsed ? item.label : undefined}
-                className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-3' : 'gap-5 px-6'} py-5 rounded-2xl text-left transition-all duration-200 group ${
-                  activeTab === item.id
-                    ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                    : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-                }`}
-              >
-                <svg className={`${sidebarCollapsed ? 'w-7 h-7' : 'w-7 h-7'} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
-                </svg>
-                {!sidebarCollapsed && (
-                  <span className="text-lg font-semibold flex items-center gap-2">
-                    {item.label}
-                    {item.badgeCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-red-500" />}
+        <nav className="flex-1 px-3 py-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${
+            sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
+          }`}>
+            Main Menu
+          </p>
+          <div className="space-y-1.5">
+            {navItems.map(item => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  title={sidebarCollapsed ? item.label : undefined}
+                  className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${
+                    isActive
+                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
+                      : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
+                  }`}
+                >
+                  {/* Left Indicator Stripe */}
+                  <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${
+                    isActive ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
+                  }`} />
+                  
+                  <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive ? 2.25 : 1.75} d={item.icon} />
+                  </svg>
+                  
+                  <span className={`text-[13.5px] font-medium flex-grow flex items-center justify-between transition-all duration-300 ease-in-out ${
+                    sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
+                  }`}>
+                    <span className="truncate">{item.label}</span>
+                    {item.badgeCount > 0 && (
+                      <span className={`min-w-[18px] h-4.5 px-1.5 flex items-center justify-center text-[9px] font-extrabold rounded-full transition-all duration-200 ${
+                        isActive ? 'bg-white text-teal-600' : 'bg-red-500 text-white'
+                      }`}>
+                        {item.badgeCount}
+                      </span>
+                    )}
                   </span>
-                )}
-                {sidebarCollapsed && item.badgeCount > 0 && (
-                  <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-red-500" />
-                )}
-              </button>
-            ))}
+                  
+                  {sidebarCollapsed && item.badgeCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 min-w-[15px] h-4 flex items-center justify-center text-[8px] font-black bg-red-500 text-white rounded-full shadow border border-slate-950 animate-pulse">
+                      {item.badgeCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
 
-            <div className={`${sidebarCollapsed ? 'pt-8' : 'pt-10 pb-4'}`}>
-              {!sidebarCollapsed && <p className="px-4 text-xs font-bold text-slate-500 uppercase tracking-widest">System</p>}
-              {sidebarCollapsed && <div className="border-t border-slate-700/50 mx-2"></div>}
-            </div>
+            <div className="my-5 border-t border-slate-800/60 mx-2"></div>
+            <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${
+              sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
+            }`}>
+              System
+            </p>
 
             <button
               onClick={() => setActiveTab('settings')}
               title={sidebarCollapsed ? 'Settings' : undefined}
-              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-3 mt-4' : 'gap-5 px-6'} py-5 rounded-2xl text-left transition-all duration-200 ${
+              className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3 mt-1.5' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${
                 activeTab === 'settings'
-                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                  : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
+                  : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
               }`}
             >
-              <svg className="w-7 h-7 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${
+                activeTab === 'settings' ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
+              }`} />
+              
+              <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              {!sidebarCollapsed && <span className="text-lg font-semibold">Settings</span>}
+              <span className={`text-[13.5px] font-medium transition-all duration-300 ease-in-out ${
+                sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
+              }`}>
+                Settings
+              </span>
             </button>
           </div>
         </nav>
 
         {/* User Profile */}
-        <div className={`${sidebarCollapsed ? 'p-3' : 'p-6'} border-t border-slate-700/50 bg-slate-800/50`}>
-          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-4 px-2'} py-3`}>
-            <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-bold text-sm shadow-lg shadow-teal-500/20 flex-shrink-0">
+        <div className={`${sidebarCollapsed ? 'p-2.5' : 'p-5'} border-t border-slate-800/60 bg-slate-900/60`}>
+          <div className="flex items-center gap-3 px-1.5 py-2 overflow-hidden">
+            <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-extrabold text-sm shadow-md shadow-teal-500/20 flex-shrink-0 text-white select-none">
               {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
             </div>
-            {!sidebarCollapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-base truncate">{adminIdentity.full_name}</p>
-                <p className="text-sm text-slate-400 mt-0.5 truncate">{adminIdentity.email}</p>
-              </div>
-            )}
+            <div className={`transition-all duration-300 ease-in-out flex flex-col ${
+              sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100 flex-grow'
+            }`}>
+              <p className="font-bold text-[13.5px] text-white truncate leading-snug">{adminIdentity.full_name}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5 truncate">{adminIdentity.email}</p>
+            </div>
           </div>
           <button 
             onClick={handleSignOut}
             title={sidebarCollapsed ? 'Sign Out' : undefined}
-            className={`w-full mt-4 bg-slate-700/50 hover:bg-slate-600/50 ${sidebarCollapsed ? 'px-3' : 'px-4'} py-3.5 rounded-xl transition-all duration-200 text-sm font-semibold border border-slate-600/30 hover:border-slate-500/50 flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-center gap-2'}`}
+            className={`w-full mt-3 bg-slate-800 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-all duration-300 text-xs font-bold border border-slate-700/50 hover:border-red-500/20 flex items-center justify-center ${
+              sidebarCollapsed ? 'px-2 py-3 gap-0' : 'px-4 py-2.5 gap-2'
+            }`}
           >
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            {!sidebarCollapsed && 'Sign Out'}
+            <span className={`transition-all duration-300 ease-in-out ${
+              sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden max-w-0' : 'w-auto opacity-100 max-w-[200px]'
+            }`}>
+              Sign Out
+            </span>
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-0 min-h-screen">
+      <div className={`flex-1 min-h-screen transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
           <div className="px-6 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
@@ -3288,8 +3626,288 @@ export default function Dashboard() {
               }));
               exportRowsToCsv(rows, 'kalsatrack_filtered_projects.csv');
             };
+
+            const mapFiltered = fmrProjects.filter(p => {
+              const q = adminMapSearch.toLowerCase();
+              const name = (p.project_name || '').toLowerCase();
+              const loc = (p.location || '').toLowerCase();
+              const muni = (p.municipality || '').toLowerCase();
+              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+              const normalizedStatus = normalizeFmrStatus(p.status);
+              const matchesStatus = adminMapStatusFilter === 'All' ||
+                (adminMapStatusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === adminMapStatusFilter);
+              const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
+              const matchesMunicipality = adminMapMunicipalityFilter === 'All' || (p.municipality || '') === adminMapMunicipalityFilter;
+              const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
+              return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesOverdue;
+            });
+
+            const mapYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
+            const mapMunicipalityOptions = [...new Set(fmrProjects.map((p) => p.municipality).filter(Boolean))].sort();
+
+            const municipalityCounts = {};
+            const mapEntities = mapFiltered.map((project) => {
+              const route = buildRoutePoints(project, routeByProjectId[project.id]);
+              
+              const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
+              let coordinates = null;
+              let isApproximate = false;
+              let isCentroidFallback = false;
+
+              if (hasActualCoordinates) {
+                coordinates = route.startPoint || [project.start_latitude, project.start_longitude];
+                const remarks = String(project.remarks || '').toLowerCase();
+                if (remarks.includes('auto-geocoded')) {
+                  isApproximate = true;
+                }
+              } else {
+                isCentroidFallback = true;
+                const muni = project.municipality || 'Leon';
+                municipalityCounts[muni] = (municipalityCounts[muni] || 0) + 1;
+                coordinates = getJitteredCentroid(muni, municipalityCounts[muni]);
+              }
+
+              return {
+                project,
+                route,
+                coordinates,
+                isApproximate,
+                isCentroidFallback,
+                hasFallbackPin: !route.hasPolyline || isCentroidFallback || isApproximate,
+              };
+            });
+
+            const mapMappable = mapEntities.filter((entity) => entity.coordinates && Number.isFinite(entity.coordinates[0]));
+            const mapBoundsPoints = mapMappable.flatMap((entity) => {
+              const routePoints = adminSnappedRouteByProjectId[entity.project.id] || entity.route.points;
+              return routePoints.length > 0 ? routePoints : [entity.coordinates];
+            });
+
+            const mapStats = {
+              total: mapFiltered.length,
+              mapped: mapMappable.length,
+              completed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
+              ongoing: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
+              proposed: mapFiltered.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+              geocoded: mapEntities.filter(e => e.isApproximate).length,
+              centroids: mapEntities.filter(e => e.isCentroidFallback).length,
+            };
+
             return (
             <div className="space-y-6">
+              {/* Map View Integration */}
+              <div className="space-y-4">
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>
+                    <input type="text" value={adminMapSearch} onChange={e => setAdminMapSearch(e.target.value)} placeholder="Search by name, municipality..."
+                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none animate-none" />
+                  </div>
+                  <select value={adminMapYearFilter} onChange={e => setAdminMapYearFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                    <option value="All">All Years</option>
+                    {mapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
+                  </select>
+                  <select value={adminMapMunicipalityFilter} onChange={e => setAdminMapMunicipalityFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                    <option value="All">All Municipalities</option>
+                    {mapMunicipalityOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <button
+                    onClick={() => setAdminMapShowOverdueOnly((prev) => !prev)}
+                    className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                      adminMapShowOverdueOnly
+                        ? 'bg-red-600 border-red-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Show Overdue Only
+                  </button>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {['On-Going', 'Pending', 'Completed', 'All'].map(s => (
+                      <button key={s} onClick={() => setAdminMapStatusFilter(s)}
+                        className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+                          adminMapStatusFilter === s
+                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        }`}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Geocoding Progress Alert */}
+                {geocodingStatus && (
+                  <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-xs font-semibold animate-pulse flex items-center gap-2.5 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-teal-500 inline-block animate-ping" />
+                    <span>{geocodingStatus}</span>
+                  </div>
+                )}
+
+                {/* Stats row */}
+                <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
+                  <span>{mapStats.mapped} projects mapped ({mapStats.geocoded} geocoded, {mapStats.centroids} centroids)</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> {mapStats.proposed} Proposed</span>
+                </div>
+
+                {/* Mini Map Container */}
+                <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '350px' }}>
+                  {/* Map Search Overlay */}
+                  <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
+                    <input
+                      type="text"
+                      placeholder="Search location (e.g. Bucari, Leon)..."
+                      value={projectsMapSearchQuery}
+                      onChange={(e) => setProjectsMapSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleProjectsMapSearch();
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleProjectsMapSearch}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                    >
+                      Go
+                    </button>
+                  </div>
+
+                  <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <MapSearchController searchCoords={projectsMapSearchCoords} />
+                    {projectsMapSearchCoords && (
+                      <Marker position={projectsMapSearchCoords}>
+                        <Popup>
+                          <span className="text-xs font-semibold text-slate-800">Search: {projectsMapSearchQuery}</span>
+                        </Popup>
+                      </Marker>
+                    )}
+                    <AdminFitBounds points={mapBoundsPoints} filterKey="projects-tab-minimap" />
+                    <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
+                    {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
+                      const theme = getRouteStatusTheme(project.status);
+                      const isSelected = adminMapSelectedProject?.id === project.id;
+                      const progress = Number(project.accomplishment || 0);
+                      const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
+                      const reportCount = reportCountByProjectId[project.id] || 0;
+
+                      return (
+                        <div key={project.id}>
+                          {route.hasPolyline && !isCentroidFallback && (
+                            <>
+                              <Polyline
+                                positions={adminSnappedRouteByProjectId[project.id] || route.points}
+                                pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
+                                eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                              />
+                              <Polyline
+                                positions={adminSnappedRouteByProjectId[project.id] || route.points}
+                                pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
+                                eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                              >
+                                <Tooltip sticky>
+                                  {project.project_name}
+                                </Tooltip>
+                              </Polyline>
+
+                              {route.startPoint && (
+                                <CircleMarker
+                                  center={route.startPoint}
+                                  radius={8}
+                                  pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
+                                >
+                                  <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
+                                </CircleMarker>
+                              )}
+
+                              {route.endPoint && (
+                                <Marker
+                                  position={route.endPoint}
+                                  icon={L.divIcon({
+                                    className: 'route-end-marker-admin',
+                                    html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
+                                    iconSize: [16, 16],
+                                    iconAnchor: [8, 8],
+                                  })}
+                                />
+                              )}
+                            </>
+                          )}
+
+                          {hasFallbackPin && coordinates && (
+                            <CircleMarker
+                              center={coordinates}
+                              radius={isSelected ? 11 : 8}
+                              pathOptions={{
+                                fillColor: theme.line,
+                                color: theme.stroke,
+                                weight: isSelected ? 3.5 : 2,
+                                fillOpacity: 0.9,
+                                dashArray: isCentroidFallback ? '3, 4' : undefined
+                              }}
+                              eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                            >
+                              <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                                <div className="p-1">
+                                  <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
+                                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                                    {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                  </span>
+                                </div>
+                              </Tooltip>
+                            </CircleMarker>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </MapContainer>
+
+                  <div className="absolute bottom-4 left-4 z-[500]">
+                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
+                      <p className="font-semibold text-slate-900">Map Legend</p>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
+                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
+                      </div>
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
+                          <span>Barangay Geocoded</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
+                          <span>Centroid Fallback (No GPS)</span>
+                        </div>
+                      </div>
+                      <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={adminMapShowHeatmap}
+                          onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Report Heatmap
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Summary Stat Chips */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
@@ -3695,9 +4313,10 @@ export default function Dashboard() {
 
             const mapMappable = mapEntities.filter((entity) => entity.coordinates && Number.isFinite(entity.coordinates[0]));
             // Gather bounds from polylines or individual fallback/centroid coordinates
-            const mapBoundsPoints = mapMappable.flatMap((entity) => 
-              entity.route.points.length > 0 ? entity.route.points : [entity.coordinates]
-            );
+            const mapBoundsPoints = mapMappable.flatMap((entity) => {
+              const routePoints = adminSnappedRouteByProjectId[entity.project.id] || entity.route.points;
+              return routePoints.length > 0 ? routePoints : [entity.coordinates];
+            });
 
             const mapYearOptions = [...new Set(fmrProjects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
             const mapMunicipalityOptions = [...new Set(fmrProjects.map((p) => p.municipality).filter(Boolean))].sort();
@@ -3776,6 +4395,30 @@ export default function Dashboard() {
 
                 {/* Map */}
                 <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '500px' }}>
+                  {/* Map Search Overlay */}
+                  <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
+                    <input
+                      type="text"
+                      placeholder="Search location (e.g. Bucari, Leon)..."
+                      value={mainMapGeopSearchQuery}
+                      onChange={(e) => setMainMapGeopSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleMainMapGeopSearch();
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleMainMapGeopSearch}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                    >
+                      Go
+                    </button>
+                  </div>
+
                   {fmrLoading ? (
                     <div className="h-full flex items-center justify-center bg-slate-50">
                       <div className="text-center">
@@ -3789,6 +4432,14 @@ export default function Dashboard() {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
+                      <MapSearchController searchCoords={mainMapGeopSearchCoords} />
+                      {mainMapGeopSearchCoords && (
+                        <Marker position={mainMapGeopSearchCoords}>
+                          <Popup>
+                            <span className="text-xs font-semibold text-slate-800">Search: {mainMapGeopSearchQuery}</span>
+                          </Popup>
+                        </Marker>
+                      )}
                       <AdminFitBounds points={mapBoundsPoints} filterKey={filterKey} />
                       <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
@@ -3802,9 +4453,9 @@ export default function Dashboard() {
                           <div key={project.id}>
                             {route.hasPolyline && !isCentroidFallback && (
                               <>
-                                <Polyline positions={route.points} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }} />
+                                <Polyline positions={adminSnappedRouteByProjectId[project.id] || route.points} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }} />
                                 <Polyline
-                                  positions={route.points}
+                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
                                   pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
                                   eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
                                 >
@@ -3898,8 +4549,8 @@ export default function Dashboard() {
                                 center={coordinates}
                                 radius={isSelected ? 11 : 8}
                                 pathOptions={{
-                                  fillColor: isCentroidFallback ? '#fbbf24' : isApproximate ? '#f97316' : theme.line,
-                                  color: isCentroidFallback ? '#d97706' : isApproximate ? '#ea580c' : theme.stroke,
+                                  fillColor: theme.line,
+                                  color: theme.stroke,
                                   weight: isSelected ? 3.5 : 2,
                                   fillOpacity: 0.9,
                                   dashArray: isCentroidFallback ? '3, 4' : undefined
@@ -3907,11 +4558,12 @@ export default function Dashboard() {
                                 eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
                               >
                                 <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                                  {isCentroidFallback 
-                                    ? `⚠️ Municipality Centroid: ${project.municipality || 'Leon'} (GPS missing)`
-                                    : isApproximate 
-                                      ? `📍 Barangay Center: ${getProjectBarangay(project)} (Auto-Geocoded)`
-                                      : '⚠️ Route coordinates missing'}
+                                  <div className="p-1">
+                                    <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
+                                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                                      {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                    </span>
+                                  </div>
                                 </Tooltip>
                                 <Popup maxWidth={380}>
                                   <div className="space-y-3 min-w-[280px]">
@@ -4142,344 +4794,1291 @@ export default function Dashboard() {
             />
           )}
 
-          {/* Budget Allocation Tab */}
-          {activeTab === 'budget' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Total Budget</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.totalBudget)}</p>
-                  <p className="text-sm text-slate-500 mt-1">Across all allocations</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Allocated Budget</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.allocatedBudget)}</p>
-                  <p className="text-sm text-slate-500 mt-1">Approved amounts</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Released Funds</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.releasedFunds)}</p>
-                  <p className="text-sm text-slate-500 mt-1">Disbursed to projects</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Remaining Balance</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{formatPeso(budgetKpis.remainingBalance)}</p>
-                  <p className="text-sm text-slate-500 mt-1">Pending releases</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Utilization Rate</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{budgetKpis.utilizationRate}%</p>
-                  <p className="text-sm text-slate-500 mt-1">Released vs approved</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Active Funding Sources</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">{budgetKpis.activeFundingSources}</p>
-                  <p className="text-sm text-slate-500 mt-1">Distinct sources in use</p>
-                </div>
-              </div>
+          {/* Project Management Tab */}
+          {activeTab === 'project-mgmt' && (() => {
+            // ── helpers ──────────────────────────────────────────────
+            const pmStatusMap = {
+              'Completed':  { col: 'completed', label: 'Completed',  color: 'emerald', line: '#10b981', bg: 'bg-emerald-500', border: 'border-l-emerald-500', pill: 'bg-emerald-100 text-emerald-700' },
+              'On-Going':   { col: 'ongoing',   label: 'On-Going',   color: 'amber',   line: '#f59e0b', bg: 'bg-amber-400',   border: 'border-l-amber-400',   pill: 'bg-amber-100 text-amber-700'   },
+              'Proposed':   { col: 'proposed',  label: 'Proposed',   color: 'blue',    line: '#3b82f6', bg: 'bg-blue-500',    border: 'border-l-blue-500',    pill: 'bg-blue-100 text-blue-700'    },
+            };
+            const getPmStatus = (s) => {
+              const n = normalizeFmrStatus(s);
+              return pmStatusMap[n] || pmStatusMap['Proposed'];
+            };
+            const priorityColor = { Low: 'bg-slate-100 text-slate-600', Medium: 'bg-sky-100 text-sky-700', High: 'bg-orange-100 text-orange-700', Critical: 'bg-red-100 text-red-700' };
+            const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+            const relTime = (d) => {
+              if (!d) return 'just now';
+              const diff = Date.now() - new Date(d).getTime();
+              const mins = Math.floor(diff / 60000);
+              if (mins < 2) return 'just now';
+              if (mins < 60) return `${mins}m ago`;
+              const hrs = Math.floor(mins / 60);
+              if (hrs < 24) return `${hrs}h ago`;
+              return `${Math.floor(hrs / 24)}d ago`;
+            };
 
-              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm">
-                <div className="px-6 py-6 border-b border-slate-200/60">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-900">Budget Allocations</h2>
-                      <p className="text-sm text-slate-500 mt-1">Simulated agricultural infrastructure funding allocations</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={exportFilteredBudgets}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Export CSV
-                    </button>
+            // ── DA-BAFE FMRDP Budget Processor ─────────────────────────
+            const getDaBudgetDetails = (p) => {
+              const length = Number(p.project_length_km || 1.5);
+              // Use real database totalBudget or total_budget if available, otherwise fall back to DA Standard Unit Cost of ₱13.5M/km
+              const dbCost = Number(p.totalBudget ?? p.total_budget ?? p.budget ?? p.allocated_budget ?? 0);
+              const estimatedCost = dbCost > 0 ? dbCost : length * 13500000;
+              
+              // Implementing Mode: deterministic based on ID
+              const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
+              const mode = isDpwh ? 'DPWH (Inter-agency)' : 'LGU (MOA-Downloaded)';
+              
+              const progress = Number(p.accomplishment || 0);
+              
+              // Tranche releases (15%, 35%, 40%, 10%)
+              const tranches = [
+                {
+                  id: 1,
+                  name: 'Mobilization Advance',
+                  percentage: 15,
+                  amount: estimatedCost * 0.15,
+                  requiredProgress: 0,
+                  released: true, // Mobilization is always released on NTP
+                  liquidated: progress > 15, // Liquidated once project starts progressing well
+                  label: 'Mobilization (15%)',
+                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 15 * 24 * 60 * 60 * 1000) : new Date(),
+                },
+                {
+                  id: 2,
+                  name: '1st Progress Release',
+                  percentage: 35,
+                  amount: estimatedCost * 0.35,
+                  requiredProgress: 30,
+                  released: progress >= 30,
+                  liquidated: progress > 50,
+                  label: 'Progress 1 (35%)',
+                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 60 * 24 * 60 * 60 * 1000) : new Date(),
+                },
+                {
+                  id: 3,
+                  name: '2nd Progress Release',
+                  percentage: 40,
+                  amount: estimatedCost * 0.40,
+                  requiredProgress: 70,
+                  released: progress >= 70,
+                  liquidated: progress > 90,
+                  label: 'Progress 2 (40%)',
+                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 120 * 24 * 60 * 60 * 1000) : new Date(),
+                },
+                {
+                  id: 4,
+                  name: 'Retention Release',
+                  percentage: 10,
+                  amount: estimatedCost * 0.10,
+                  requiredProgress: 100,
+                  released: progress === 100,
+                  liquidated: progress === 100,
+                  label: 'Retention (10%)',
+                  date: p.date_completed ? new Date(p.date_completed) : p.target_completion_date ? new Date(p.target_completion_date) : new Date(),
+                }
+              ];
+
+              const totalReleased = tranches.reduce((sum, t) => sum + (t.released ? t.amount : 0), 0);
+              const totalLiquidated = tranches.reduce((sum, t) => sum + (t.liquidated ? t.amount : 0), 0);
+              const remainingToRelease = estimatedCost - totalReleased;
+              const remainingToLiquidate = totalReleased - totalLiquidated;
+              const liquidationRate = totalReleased > 0 ? (totalLiquidated / totalReleased) * 100 : 0;
+
+              return {
+                estimatedCost,
+                mode,
+                isDpwh,
+                tranches,
+                totalReleased,
+                totalLiquidated,
+                remainingToRelease,
+                remainingToLiquidate,
+                liquidationRate,
+              };
+            };
+
+            // ── Unified Filtering Logic ────────────────────────────────
+            const filteredFmrProjects = fmrProjects.filter(p => {
+              const q = pmSearch.toLowerCase();
+              const matchesSearch = !q || [
+                p.project_name,
+                p.municipality,
+                p.barangay,
+                p.location
+              ].some(field => String(field || '').toLowerCase().includes(q));
+
+              const matchesMuni = pmMunicipalityFilter === 'All' || p.municipality === pmMunicipalityFilter;
+              
+              const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
+              const matchesMode = pmModeFilter === 'All' || 
+                (pmModeFilter === 'DPWH' && isDpwh) ||
+                (pmModeFilter === 'LGU' && !isDpwh);
+
+              const matchesStatus = pmStatusFilter === 'All' || normalizeFmrStatus(p.status) === pmStatusFilter;
+
+              return matchesSearch && matchesMuni && matchesMode && matchesStatus;
+            });
+
+            // ── Kanban groups from filtered list ───────────────────────
+            const kanbanGroups = {
+              proposed:  filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed'),
+              ongoing:   filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going'),
+              completed: filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed'),
+            };
+
+            // ── Timeline: group by target-completion month ─────────────
+            const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const currentYear = new Date().getFullYear();
+            
+            const getTimelineColumns = (p) => {
+              const start = p.created_at ? new Date(p.created_at) : new Date(currentYear, 0, 1);
+              const end = p.target_completion_date ? new Date(p.target_completion_date) : p.date_completed ? new Date(p.date_completed) : new Date(currentYear, 11, 31);
+              
+              let startCol = 1;
+              if (start.getFullYear() === currentYear) {
+                startCol = start.getMonth() + 1;
+              } else if (start.getFullYear() < currentYear) {
+                startCol = 1;
+              } else {
+                startCol = 12;
+              }
+
+              let endCol = 12;
+              if (end.getFullYear() === currentYear) {
+                endCol = end.getMonth() + 1;
+              } else if (end.getFullYear() > currentYear) {
+                endCol = 12;
+              } else {
+                endCol = 1;
+              }
+              
+              if (endCol < startCol) {
+                endCol = startCol;
+              }
+              
+              return { startCol, endCol };
+            };
+
+            // ── Activity Feed: merge progressUpdates + publicReports ───
+            const activityItems = [
+              ...(progressUpdates || []).slice(0, 15).map(u => ({
+                id: `pu-${u.id}`,
+                type: 'progress',
+                icon: '📈',
+                text: `Progress update submitted for`,
+                project: u.project_name || u.fmr_projects?.project_name || 'a project',
+                detail: u.status === 'pending' ? 'Pending review' : `Status: ${u.status}`,
+                time: u.created_at,
+                color: 'teal',
+              })),
+              ...(publicReports || []).slice(0, 10).map(r => ({
+                id: `pr-${r.id}`,
+                type: 'report',
+                icon: '📋',
+                text: `Public report filed for`,
+                project: r.project_name || 'a project',
+                detail: r.category || r.report_type || 'General report',
+                time: r.created_at,
+                color: 'blue',
+              })),
+            ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 20);
+
+            // ── Budget program KPIs ────────────────────────────────────
+            const programGaaTotal = filteredFmrProjects.reduce((sum, p) => sum + getDaBudgetDetails(p).estimatedCost, 0);
+            const programTotalReleased = filteredFmrProjects.reduce((sum, p) => sum + getDaBudgetDetails(p).totalReleased, 0);
+            const programTotalLiquidated = filteredFmrProjects.reduce((sum, p) => sum + getDaBudgetDetails(p).totalLiquidated, 0);
+            const programLiquidationCompliance = programTotalReleased > 0 ? (programTotalLiquidated / programTotalReleased) * 100 : 0;
+
+            // ── Sub-tab pills ──────────────────────────────────────────
+            const pmSubTabs = [
+              { id: 'board',    label: 'Board',        icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg> },
+              { id: 'timeline', label: 'Timeline',     icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
+              { id: 'budget',   label: 'Budget Audit', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+              { id: 'activity', label: 'Activity',     icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> },
+            ];
+
+            return (
+              <div className="space-y-6">
+                {/* ── Header ─────────────────────────────────────────── */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Project Management</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">{filteredFmrProjects.length} filtered FMR projects · Farm-to-Market Road Program</p>
+                  </div>
+                  {/* KPI pills row */}
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: 'Proposed',  val: kanbanGroups.proposed.length,  cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+                      { label: 'On-Going',  val: kanbanGroups.ongoing.length,   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+                      { label: 'Completed', val: kanbanGroups.completed.length, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                    ].map(k => (
+                      <span key={k.label} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${k.cls}`}>
+                        <span className="font-bold text-base leading-none">{k.val}</span> {k.label}
+                      </span>
+                    ))}
                   </div>
                 </div>
-                <div className="px-6 py-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-                    <div className="lg:col-span-2">
+
+                {/* ── Sub-tab bar ─────────────────────────────────────── */}
+                <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
+                  {pmSubTabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setPmSubTab(tab.id); setPmBudgetPage(1); }}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+                        pmSubTab === tab.id
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {tab.icon(`w-3.5 h-3.5 ${pmSubTab === tab.id ? 'text-teal-600' : 'text-slate-400'}`)}
+                      <span>{tab.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── Global Filter Header ──────────────────────────── */}
+                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">Project Operations</h3>
+                      <p className="text-xs text-slate-500">Unified filters for Board, Gantt Timeline, and FMRDP Auditing views</p>
+                    </div>
+                    {/* Mode Selector */}
+                    <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
+                      {[
+                        { id: 'All', label: 'All Modes' },
+                        { id: 'LGU', label: 'LGU (MOA)' },
+                        { id: 'DPWH', label: 'DPWH' }
+                      ].map(m => (
+                        <button
+                          key={m.id}
+                          onClick={() => { setPmModeFilter(m.id); setPmBudgetPage(1); }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                            pmModeFilter === m.id
+                              ? 'bg-white text-slate-900 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Search */}
+                    <div className="relative">
                       <input
                         type="text"
-                        value={budgetSearchInput}
-                        onChange={(e) => { setBudgetSearchInput(e.target.value); setBudgetPage(1); }}
-                        placeholder="Search allocation ID, project, municipality..."
-                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                        value={pmSearchInput}
+                        onChange={(e) => { setPmSearchInput(e.target.value); setPmBudgetPage(1); }}
+                        placeholder="Search project, barangay..."
+                        className="h-10 w-full pl-9 pr-8 border border-slate-200 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all shadow-sm"
                       />
+                      <span className="absolute left-3 top-3 text-slate-400 text-xs">🔍</span>
+                      {pmSearchInput && (
+                        <button 
+                          onClick={() => { setPmSearchInput(''); setPmBudgetPage(1); }}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-semibold"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
+
+                    {/* Municipality */}
                     <select
-                      value={budgetStatusFilter}
-                      onChange={(e) => { setBudgetStatusFilter(e.target.value); setBudgetPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                      value={pmMunicipalityFilter}
+                      onChange={(e) => { setPmMunicipalityFilter(e.target.value); setPmBudgetPage(1); }}
+                      className="h-10 w-full px-3 border border-slate-200 rounded-xl text-xs text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all shadow-sm"
                     >
-                      <option value="All">All Status</option>
-                      {BUDGET_STATUSES.map((status) => (
-                        <option key={status} value={status}>{status}</option>
+                      <option value="All">All Municipalities</option>
+                      {getMunicipalities().map((muni) => (
+                        <option key={muni} value={muni}>{muni}</option>
                       ))}
                     </select>
+
+                    {/* Status */}
                     <select
-                      value={budgetSourceFilter}
-                      onChange={(e) => { setBudgetSourceFilter(e.target.value); setBudgetPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
+                      value={pmStatusFilter}
+                      onChange={(e) => { setPmStatusFilter(e.target.value); setPmBudgetPage(1); }}
+                      className="h-10 w-full px-3 border border-slate-200 rounded-xl text-xs text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all shadow-sm"
                     >
-                      <option value="All">All Funding Sources</option>
-                      {FUNDING_SOURCES.map((source) => (
-                        <option key={source} value={source}>{source}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={budgetPriorityFilter}
-                      onChange={(e) => { setBudgetPriorityFilter(e.target.value); setBudgetPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Priority Levels</option>
-                      {BUDGET_PRIORITIES.map((priority) => (
-                        <option key={priority} value={priority}>{priority}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={budgetYearFilter}
-                      onChange={(e) => { setBudgetYearFilter(e.target.value); setBudgetPage(1); }}
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none shadow-sm"
-                    >
-                      <option value="All">All Fiscal Years</option>
-                      {budgetYearOptions.map((year) => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
+                      <option value="All">All Statuses</option>
+                      <option value="Proposed">Proposed</option>
+                      <option value="On-Going">On-Going</option>
+                      <option value="Completed">Completed</option>
                     </select>
                   </div>
                 </div>
 
-                {budgetLoading ? (
-                  <div className="p-12 text-center">
-                    <div className="w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    <p className="text-slate-600 mt-4">Loading budget allocations...</p>
-                  </div>
-                ) : filteredBudgetAllocations.length === 0 ? (
-                  <EmptyState
-                    title="No allocations found"
-                    description="Try adjusting the filters or search query to see more allocations."
-                    buttonLabel="Reset Filters"
-                    onButtonClick={() => {
-                      setBudgetSearchInput('');
-                      setBudgetSearch('');
-                      setBudgetStatusFilter('All');
-                      setBudgetSourceFilter('All');
-                      setBudgetPriorityFilter('All');
-                      setBudgetYearFilter('All');
-                      setBudgetPage(1);
-                    }}
-                  />
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[1400px]">
-                        <thead>
-                          <tr className="bg-slate-50/60">
-                            {[
-                              'Allocation ID',
-                              'Project Name',
-                              'Municipality',
-                              'Funding Source',
-                              'Approved Budget',
-                              'Released Amount',
-                              'Remaining Balance',
-                              'Fiscal Year',
-                              'Allocation Status',
-                              'Priority Level',
-                              'Date Approved',
-                              'Actions',
-                            ].map((label, idx) => (
-                              <th key={label} className={`${idx === 0 ? 'px-8' : 'px-6'} py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider`}>
-                                {label}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {paginatedBudgetAllocations.map((allocation) => (
-                            <tr key={allocation.allocation_id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="px-8 py-4 text-sm font-semibold text-slate-900">{allocation.allocation_id}</td>
-                              <td className="px-6 py-4">
-                                <p className="text-sm font-semibold text-slate-900 line-clamp-2">{allocation.project_name}</p>
-                                <p className="text-xs text-slate-400">{allocation.procurement_phase}</p>
-                              </td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{allocation.municipality}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{allocation.funding_source}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700 font-semibold">{formatPeso(allocation.approved_budget)}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{formatPeso(allocation.released_amount)}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{formatPeso(allocation.remaining_balance)}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700">FY {allocation.fiscal_year}</td>
-                              <td className="px-6 py-4">{renderStatusPill(allocation.allocation_status)}</td>
-                              <td className="px-6 py-4">{renderStatusPill(allocation.priority_level)}</td>
-                              <td className="px-6 py-4 text-sm text-slate-700">{new Date(allocation.date_approved).toLocaleDateString()}</td>
-                              <td className="px-6 py-4">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedBudgetAllocation(allocation)}
-                                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                {/* ════════════════════════════════════════════════════ */}
+                {/* BOARD VIEW                                           */}
+                {/* ════════════════════════════════════════════════════ */}
+                {pmSubTab === 'board' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {[
+                      { key: 'proposed',  label: 'Proposed',   dot: 'bg-blue-500',    header: 'bg-blue-50 border-blue-200',    count: kanbanGroups.proposed.length },
+                      { key: 'ongoing',   label: 'On-Going',   dot: 'bg-amber-400',   header: 'bg-amber-50 border-amber-200',   count: kanbanGroups.ongoing.length },
+                      { key: 'completed', label: 'Completed',  dot: 'bg-emerald-500', header: 'bg-emerald-50 border-emerald-200', count: kanbanGroups.completed.length },
+                    ].map(col => {
+                      const projects = kanbanGroups[col.key];
+                      return (
+                        <div key={col.key} className="flex flex-col bg-slate-50/70 rounded-2xl border border-slate-200/80 overflow-hidden">
+                          {/* Column header */}
+                          <div className={`flex items-center justify-between px-4 py-3 border-b ${col.header}`}>
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
+                              <span className="text-sm font-bold text-slate-800">{col.label}</span>
+                            </div>
+                            <span className="min-w-[22px] h-5.5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-black bg-white border border-slate-200 text-slate-600 shadow-sm" style={{height:'22px'}}>
+                              {col.count}
+                            </span>
+                          </div>
+                          {/* Cards */}
+                          <div className="flex-1 overflow-y-auto max-h-[520px] p-3 space-y-2.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                            {projects.length === 0 ? (
+                              <div className="py-10 text-center text-xs text-slate-400 font-medium">No projects here</div>
+                            ) : projects.map(p => {
+                              const st = getPmStatus(p.status);
+                              const progress = Number(p.accomplishment || 0);
+                              const targetChip = getTargetDateChip(p.target_completion_date, normalizeFmrStatus(p.status) === 'Completed');
+                              const budget = getDaBudgetDetails(p);
+                              return (
+                                <div
+                                  key={p.id}
+                                  onClick={() => openProjectDetailModal(p)}
+                                  className={`bg-white rounded-xl border-l-4 ${st.border} border border-slate-200/70 p-3.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-205 group`}
                                 >
-                                  View
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                                  <p className="text-[13px] font-semibold text-slate-900 leading-snug line-clamp-2 group-hover:text-teal-700 transition-colors">{p.project_name}</p>
+                                  <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    {p.municipality || 'Iloilo'}{p.barangay ? `, ${p.barangay}` : ''}
+                                  </p>
+                                  {/* Progress bar */}
+                                  <div className="mt-3">
+                                    <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                                      <span>Progress</span>
+                                      <span className="font-semibold text-slate-600">{progress.toFixed(0)}%</span>
+                                    </div>
+                                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                      <div className={`h-1.5 rounded-full ${st.bg} transition-all duration-500`} style={{ width: `${Math.min(progress, 100)}%` }} />
+                                    </div>
+                                  </div>
+                                  {/* Footer badges */}
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                      budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'
+                                    }`}>
+                                      {budget.isDpwh ? 'DPWH' : 'LGU (MOA)'}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                                      {formatPeso(budget.estimatedCost)}
+                                    </span>
+                                    {p.project_length_km > 0 && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600">
+                                        {p.project_length_km} km
+                                      </span>
+                                    )}
+                                    {targetChip && (
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${targetChip.className}`}>
+                                        {targetChip.text}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-                    <div className="px-8 py-5 border-t border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row items-center justify-between gap-5">
-                      <p className="text-sm text-slate-500">
-                        Showing <span className="font-bold text-slate-700">{(safeBudgetPage - 1) * budgetRowsPerPage + 1}</span> to{' '}
-                        <span className="font-bold text-slate-700">{Math.min(safeBudgetPage * budgetRowsPerPage, filteredBudgetAllocations.length)}</span> of{' '}
-                        <span className="font-bold text-slate-700">{filteredBudgetAllocations.length}</span> allocations
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setBudgetPage((p) => Math.max(1, p - 1))}
-                          disabled={safeBudgetPage === 1}
-                          className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        >
-                          Previous
-                        </button>
-                        {Array.from({ length: budgetTotalPages }, (_, i) => i + 1).map((page) => (
-                          <button
-                            key={page}
-                            onClick={() => setBudgetPage(page)}
-                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                              safeBudgetPage === page
-                                ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                                : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => setBudgetPage((p) => Math.min(budgetTotalPages, p + 1))}
-                          disabled={safeBudgetPage === budgetTotalPages}
-                          className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        >
-                          Next
-                        </button>
+                {/* ════════════════════════════════════════════════════ */}
+                {/* TIMELINE VIEW                                        */}
+                {/* ════════════════════════════════════════════════════ */}
+                {pmSubTab === 'timeline' && (() => {
+                  const CAL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                  const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                  
+                  // Local timezone-safe project milestone date resolver
+                  const getProjectMilestoneDate = (proj) => {
+                    const statusNormal = normalizeFmrStatus(proj.status);
+                    const dateStr = statusNormal === 'Completed'
+                      ? (proj.date_completed || proj.target_completion_date || proj.created_at)
+                      : (proj.target_completion_date || proj.created_at);
+                    
+                    if (!dateStr) return null;
+                    const isoStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+                    const parts = isoStr.split('-');
+                    if (parts.length !== 3) return null;
+                    
+                    const [y, m, d] = parts.map(Number);
+                    return new Date(y, m - 1, d);
+                  };
+
+                  // Navigation handlers
+                  const handlePrev = () => {
+                    if (pmCalView === 'week') {
+                      const newDate = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - 7);
+                      setPmCalSelectedDate(newDate);
+                      setPmCalMonth(newDate.getMonth());
+                      setPmCalYear(newDate.getFullYear());
+                    } else {
+                      if (pmCalMonth === 0) {
+                        setPmCalMonth(11);
+                        setPmCalYear(y => y - 1);
+                      } else {
+                        setPmCalMonth(m => m - 1);
+                      }
+                    }
+                  };
+                  
+                  const handleNext = () => {
+                    if (pmCalView === 'week') {
+                      const newDate = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() + 7);
+                      setPmCalSelectedDate(newDate);
+                      setPmCalMonth(newDate.getMonth());
+                      setPmCalYear(newDate.getFullYear());
+                    } else {
+                      if (pmCalMonth === 11) {
+                        setPmCalMonth(0);
+                        setPmCalYear(y => y + 1);
+                      } else {
+                        setPmCalMonth(m => m + 1);
+                      }
+                    }
+                  };
+                  
+                  const handleToday = () => {
+                    const today = new Date();
+                    setPmCalSelectedDate(today);
+                    setPmCalMonth(today.getMonth());
+                    setPmCalYear(today.getFullYear());
+                  };
+                  
+                  const todayObj = new Date();
+                  const todayDay = todayObj.getDate();
+                  const todayMonth = todayObj.getMonth();
+                  const todayYear = todayObj.getFullYear();
+                  
+                  // View Title Label
+                  let calendarHeaderTitle = `${CAL_MONTHS[pmCalMonth]} ${pmCalYear}`;
+                  if (pmCalView === 'week') {
+                    const startOfWeek = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - pmCalSelectedDate.getDay());
+                    const endOfWeek = new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + 6);
+                    calendarHeaderTitle = `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                  }
+                  
+                  return (
+                    <div className="space-y-6">
+                      {/* ── Monday.com Calendar Component ─────────────────── */}
+                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
+                        <div className="px-6 py-4.5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Project Calendar</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">Day-to-day schedule and project allocation view</p>
+                          </div>
+                          
+                          {/* Calendar Controls & Navigation */}
+                          <div className="flex flex-wrap items-center gap-3">
+                            {/* View Switcher Toggle */}
+                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shadow-inner">
+                              {[
+                                { id: 'month', label: 'Month' },
+                                { id: 'week',  label: 'Week' },
+                                { id: 'agenda', label: 'Agenda' }
+                              ].map(v => (
+                                <button
+                                  key={v.id}
+                                  onClick={() => setPmCalView(v.id)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
+                                    pmCalView === v.id
+                                      ? 'bg-white text-slate-900 shadow-sm'
+                                      : 'text-slate-550 hover:text-slate-800'
+                                  }`}
+                                >
+                                  {v.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            <button
+                              onClick={handleToday}
+                              className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 shadow-sm transition-all"
+                            >
+                              Today
+                            </button>
+                            
+                            <div className="flex items-center border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden">
+                              <button
+                                onClick={handlePrev}
+                                className="px-2.5 py-1.5 hover:bg-slate-50 text-slate-500 transition-colors border-r border-slate-150"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                                </svg>
+                              </button>
+                              <span className="px-3 text-xs font-bold text-slate-700 min-w-[130px] text-center">
+                                {calendarHeaderTitle}
+                              </span>
+                              <button
+                                onClick={handleNext}
+                                className="px-2.5 py-1.5 hover:bg-slate-50 text-slate-500 transition-colors border-l border-slate-150"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* View Contents */}
+                        <div className="p-4 bg-white">
+                          
+                          {/* MONTH VIEW */}
+                          {pmCalView === 'month' && (() => {
+                            const firstDayIndex = new Date(pmCalYear, pmCalMonth, 1).getDay();
+                            const totalDays = new Date(pmCalYear, pmCalMonth + 1, 0).getDate();
+                            const prevMonthTotalDays = new Date(pmCalYear, pmCalMonth, 0).getDate();
+                            
+                            const cells = [];
+                            // Previous Month Padding
+                            for (let i = firstDayIndex - 1; i >= 0; i--) {
+                              cells.push({
+                                day: prevMonthTotalDays - i,
+                                month: pmCalMonth === 0 ? 11 : pmCalMonth - 1,
+                                year: pmCalMonth === 0 ? pmCalYear - 1 : pmCalYear,
+                                isCurrentMonth: false,
+                              });
+                            }
+                            // Current Month Days
+                            for (let d = 1; d <= totalDays; d++) {
+                              cells.push({
+                                day: d,
+                                month: pmCalMonth,
+                                year: pmCalYear,
+                                isCurrentMonth: true,
+                              });
+                            }
+                            // Next Month Padding
+                            const totalCells = cells.length;
+                            const remainingSquares = totalCells <= 35 ? 35 - totalCells : 42 - totalCells;
+                            for (let d = 1; d <= remainingSquares; d++) {
+                              cells.push({
+                                day: d,
+                                month: pmCalMonth === 11 ? 0 : pmCalMonth + 1,
+                                year: pmCalMonth === 11 ? pmCalYear + 1 : pmCalYear,
+                                isCurrentMonth: false,
+                              });
+                            }
+
+                            return (
+                              <div className="grid grid-cols-7 gap-1.5 animate-fadeIn">
+                                {DAYS_OF_WEEK.map(d => (
+                                  <div key={d} className="text-center py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                                    {d}
+                                  </div>
+                                ))}
+                                {cells.map((cell, idx) => {
+                                  const isToday = cell.day === todayDay && cell.month === todayMonth && cell.year === todayYear;
+                                  
+                                  const activeProjects = filteredFmrProjects.filter(p => {
+                                    const mDate = getProjectMilestoneDate(p);
+                                    if (!mDate) return false;
+                                    return mDate.getFullYear() === cell.year &&
+                                           mDate.getMonth() === cell.month &&
+                                           mDate.getDate() === cell.day;
+                                  });
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className={`min-h-[90px] p-2 border border-slate-100 rounded-xl flex flex-col justify-between transition-all ${
+                                        cell.isCurrentMonth 
+                                          ? 'bg-slate-50/30 hover:bg-slate-50/60' 
+                                          : 'bg-slate-100/40 text-slate-400 opacity-60'
+                                      } ${isToday ? 'ring-2 ring-teal-500/20 border-teal-500 bg-teal-50/5' : ''}`}
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <span className={`text-[10px] font-extrabold ${
+                                          isToday 
+                                            ? 'bg-teal-600 text-white w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-sm shadow-teal-600/20' 
+                                            : cell.isCurrentMonth ? 'text-slate-700' : 'text-slate-400'
+                                        }`}>
+                                          {cell.day}
+                                        </span>
+                                        {activeProjects.length > 0 && cell.isCurrentMonth && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block shadow-sm shadow-teal-500/30" />
+                                        )}
+                                      </div>
+
+                                      {/* Stack of events (Scrollable) */}
+                                      <div className="mt-1.5 space-y-1 overflow-y-auto max-h-[60px] pr-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                                        {activeProjects.map(p => {
+                                          const statusNormal = normalizeFmrStatus(p.status);
+                                          return (
+                                            <div
+                                              key={p.id}
+                                              onClick={(e) => { e.stopPropagation(); openProjectDetailModal(p); }}
+                                              className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate cursor-pointer transition-all hover:scale-[1.02] font-semibold ${
+                                                statusNormal === 'Completed'
+                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-150 hover:bg-emerald-100'
+                                                  : statusNormal === 'On-Going'
+                                                    ? 'bg-amber-50 text-amber-700 border-amber-150 hover:bg-amber-100'
+                                                    : 'bg-blue-50 text-blue-700 border-blue-150 hover:bg-blue-100'
+                                              }`}
+                                              title={`${p.project_name} (${p.accomplishment || 0}% accomplishment)`}
+                                            >
+                                              {p.project_name}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+
+                          {/* WEEK VIEW */}
+                          {pmCalView === 'week' && (() => {
+                            const startOfWeek = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - pmCalSelectedDate.getDay());
+                            const weekCells = [];
+                            for (let i = 0; i < 7; i++) {
+                              const dayDate = new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + i);
+                              weekCells.push({
+                                date: dayDate,
+                                dayName: DAYS_OF_WEEK[i],
+                                dayNum: dayDate.getDate(),
+                                month: dayDate.getMonth(),
+                                year: dayDate.getFullYear()
+                              });
+                            }
+
+                            return (
+                              <div className="grid grid-cols-1 md:grid-cols-7 gap-3 animate-fadeIn">
+                                {weekCells.map((wCell, idx) => {
+                                  const isToday = wCell.dayNum === todayDay && wCell.month === todayMonth && wCell.year === todayYear;
+                                  
+                                  const activeProjects = filteredFmrProjects.filter(p => {
+                                    const mDate = getProjectMilestoneDate(p);
+                                    if (!mDate) return false;
+                                    return mDate.getFullYear() === wCell.year &&
+                                           mDate.getMonth() === wCell.month &&
+                                           mDate.getDate() === wCell.dayNum;
+                                  });
+
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className={`min-h-[220px] p-3 border border-slate-100 rounded-2xl flex flex-col justify-start gap-3 bg-slate-50/20 shadow-sm ${
+                                        isToday ? 'ring-2 ring-teal-500/20 border-teal-500 bg-teal-50/5' : ''
+                                      }`}
+                                    >
+                                      {/* Header Date details */}
+                                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                                          {wCell.dayName}
+                                        </span>
+                                        <span className={`text-xs font-black w-6 h-6 rounded-full flex items-center justify-center ${
+                                          isToday 
+                                            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/25' 
+                                            : 'text-slate-800'
+                                        }`}>
+                                          {wCell.dayNum}
+                                        </span>
+                                      </div>
+
+                                      {/* Active projects list */}
+                                      <div className="space-y-2 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                                        {activeProjects.length === 0 ? (
+                                          <p className="text-[10px] text-slate-350 italic mt-4 text-center">No assignments</p>
+                                        ) : activeProjects.map(p => {
+                                          const statusNormal = normalizeFmrStatus(p.status);
+                                          return (
+                                            <div
+                                              key={p.id}
+                                              onClick={() => openProjectDetailModal(p)}
+                                              className="p-2 border border-slate-100 rounded-xl bg-white shadow-xs cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all text-left space-y-1.5"
+                                            >
+                                              <p className="text-[10px] font-bold text-slate-800 line-clamp-2 leading-normal">
+                                                {p.project_name}
+                                              </p>
+                                              <p className="text-[9px] text-slate-400">
+                                                {p.municipality} · {p.project_length_km || 1.5}km
+                                              </p>
+                                              <div className="flex items-center gap-1.5">
+                                                <span className={`text-[8px] px-1.5 py-0.5 rounded font-black uppercase ${
+                                                  statusNormal === 'Completed'
+                                                    ? 'bg-emerald-50 text-emerald-700'
+                                                    : statusNormal === 'On-Going'
+                                                      ? 'bg-amber-50 text-amber-700'
+                                                      : 'bg-blue-50 text-blue-700'
+                                                }`}>
+                                                  {statusNormal}
+                                                </span>
+                                                <span className="text-[9px] font-bold text-slate-650">
+                                                  {Number(p.accomplishment || 0).toFixed(0)}%
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+
+                          {/* AGENDA VIEW */}
+                          {pmCalView === 'agenda' && (() => {
+                            const monthStart = new Date(pmCalYear, pmCalMonth, 1);
+                            const monthEnd = new Date(pmCalYear, pmCalMonth + 1, 0);
+                            
+                            const agendaProjects = filteredFmrProjects.filter(p => {
+                              const mDate = getProjectMilestoneDate(p);
+                              if (!mDate) return false;
+                              return mDate.getFullYear() === pmCalYear &&
+                                     mDate.getMonth() === pmCalMonth;
+                            });
+                            agendaProjects.sort((a, b) => {
+                              const dA = getProjectMilestoneDate(a);
+                              const dB = getProjectMilestoneDate(b);
+                              return (dA?.getTime() || 0) - (dB?.getTime() || 0);
+                            });
+
+                            return (
+                              <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 animate-fadeIn [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full">
+                                {agendaProjects.length === 0 ? (
+                                  <div className="py-16 text-center text-slate-400">
+                                    <svg className="w-12 h-12 text-slate-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <p className="text-sm font-semibold text-slate-800">No Projects on the Agenda</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">No FMR projects are scheduled or active during this month</p>
+                                  </div>
+                                ) : agendaProjects.map(p => {
+                                  const statusNormal = normalizeFmrStatus(p.status);
+                                  const progress = Number(p.accomplishment || 0);
+                                  const mDate = getProjectMilestoneDate(p);
+                                  const startStr = p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Jan 1';
+                                  const targetStr = mDate ? mDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Undated';
+                                  
+                                  return (
+                                    <div
+                                      key={p.id}
+                                      onClick={() => openProjectDetailModal(p)}
+                                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border border-slate-150/60 rounded-2xl hover:bg-slate-50/50 cursor-pointer hover:shadow-sm transition-all"
+                                    >
+                                      <div className="flex items-start gap-4">
+                                        {/* Duration Strip */}
+                                        <div className="bg-slate-100 rounded-xl p-2.5 min-w-[110px] text-center shadow-xs border border-slate-150">
+                                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Milestone</p>
+                                          <p className="text-[11px] font-bold text-slate-700 mt-0.5">{targetStr}</p>
+                                        </div>
+                                        
+                                        <div className="min-w-0">
+                                          <h4 className="text-sm font-bold text-slate-800 hover:text-teal-700 transition-colors line-clamp-1">
+                                            {p.project_name}
+                                          </h4>
+                                          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                                            <span className="font-semibold text-slate-650">{p.municipality}</span>
+                                            <span className="text-slate-200">|</span>
+                                            <span>{p.project_length_km || 1.5} km length</span>
+                                            <span className="text-slate-200">|</span>
+                                            <span>Start: {startStr}</span>
+                                          </p>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
+                                        <div className="text-left sm:text-right">
+                                          <span className={`inline-flex px-2 py-0.5 rounded-full font-bold text-[9px] border ${
+                                            statusNormal === 'Completed'
+                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-250'
+                                              : statusNormal === 'On-Going'
+                                                ? 'bg-amber-50 text-amber-700 border-amber-250'
+                                                : 'bg-blue-50 text-blue-700 border-blue-250'
+                                          }`}>
+                                            {statusNormal}
+                                          </span>
+                                          <p className="text-[10px] text-slate-400 mt-1 font-bold">
+                                            {progress.toFixed(0)}% Complete
+                                          </p>
+                                        </div>
+                                        
+                                        <div className="w-24 flex-shrink-0">
+                                          <div className="h-2 bg-slate-150 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all duration-500 ${
+                                              statusNormal === 'Completed'
+                                                ? 'bg-emerald-500'
+                                                : statusNormal === 'On-Going'
+                                                  ? 'bg-amber-400'
+                                                  : 'bg-blue-500'
+                                            }`} style={{ width: `${progress}%` }} />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* ── Gantt Chart Timeline ───────────────────────────── */}
+                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
+                        <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900">Project Gantt Timeline</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">Physical schedule mapped across the 12 fiscal months of {currentYear}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> Completed</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> On-Going</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" /> Proposed</span>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <div className="min-w-[900px] divide-y divide-slate-150">
+                            {/* Calendar header row */}
+                            <div className="grid grid-cols-12 gap-1 bg-slate-50 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                              <div className="col-span-4 text-left pl-6">Project details</div>
+                              <div className="col-span-8 grid grid-cols-12 gap-1 pl-4 pr-6">
+                                {MONTHS.map(m => (
+                                  <div key={m} className="text-center">{m}</div>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            {/* Project Rows */}
+                            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                              {filteredFmrProjects.length === 0 ? (
+                                <div className="py-12 text-center text-slate-400 text-sm font-medium">No projects match the selected filters</div>
+                              ) : filteredFmrProjects.map(p => {
+                                const st = getPmStatus(p.status);
+                                const progress = Number(p.accomplishment || 0);
+                                const { startCol, endCol } = getTimelineColumns(p);
+                                
+                                return (
+                                  <div key={p.id} className="grid grid-cols-12 gap-1 py-3 items-center hover:bg-slate-50/50 transition-colors">
+                                    {/* Project title col */}
+                                    <div className="col-span-4 pl-6 pr-4 cursor-pointer" onClick={() => openProjectDetailModal(p)}>
+                                      <p className="text-[13px] font-semibold text-slate-800 line-clamp-1 hover:text-teal-700 transition-colors">{p.project_name}</p>
+                                      <p className="text-[10px] text-slate-400 font-medium">{p.municipality} · {p.project_length_km || 1.5} km</p>
+                                    </div>
+                                    
+                                    {/* Gantt Bar col */}
+                                    <div className="col-span-8 grid grid-cols-12 gap-1 items-center relative pl-4 pr-6 h-10">
+                                      {/* Vertical grid guide lines in background */}
+                                      {Array.from({ length: 12 }).map((_, i) => (
+                                        <div key={i} className="absolute top-0 bottom-0 border-r border-slate-100/60" style={{ left: `${(i + 1) * (100 / 12)}%`, zIndex: 0 }} />
+                                      ))}
+                                      
+                                      {/* Gantt Bar Span */}
+                                      <div 
+                                        className="relative h-7 rounded-xl flex items-center justify-between px-3 text-[10px] font-bold text-white shadow-sm hover:scale-[1.01] cursor-pointer transition-all z-10 group overflow-hidden" 
+                                        onClick={() => openProjectDetailModal(p)}
+                                        style={{ 
+                                          gridColumnStart: startCol, 
+                                          gridColumnEnd: endCol + 1,
+                                          backgroundColor: `${st.line}cc`
+                                        }}
+                                      >
+                                        {/* Progress fill overlay */}
+                                        <div className="absolute inset-y-0 left-0 bg-white/20 transition-all duration-500" style={{ width: `${progress}%`, zIndex: -1 }} />
+                                        <span className="truncate pr-2">{progress.toFixed(0)}% Done</span>
+                                        <span className="text-[9px] opacity-95 font-medium hidden sm:inline">{fmtDateShort(p.target_completion_date || p.date_completed) || 'Undated'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </>
+                  );
+                })()}
+
+                {/* ════════════════════════════════════════════════════ */}
+                {/* BUDGET AUDIT VIEW                                    */}
+                {/* ════════════════════════════════════════════════════ */}
+                {pmSubTab === 'budget' && (() => {
+                  const budgetAuditPageSize = 6;
+                  const totalAuditPages = Math.ceil(filteredFmrProjects.length / budgetAuditPageSize);
+                  const safeAuditPage = Math.max(1, Math.min(pmBudgetPage, totalAuditPages));
+                  const paginatedAuditProjects = filteredFmrProjects.slice(
+                    (safeAuditPage - 1) * budgetAuditPageSize,
+                    safeAuditPage * budgetAuditPageSize
+                  );
+                  return (
+                    <div className="space-y-6">
+                      {/* Official Scorecard */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total FMRDP Allocation</p>
+                          <p className="text-2xl font-bold text-slate-900 mt-2">{formatPeso(programGaaTotal)}</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Based on dynamic standard unit cost</p>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Downloaded / Released</p>
+                          <p className="text-2xl font-bold text-slate-900 mt-2">{formatPeso(programTotalReleased)}</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Funds transferred to executing agency</p>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Liquidated (COA Audited)</p>
+                          <p className="text-2xl font-bold text-slate-900 mt-2">{formatPeso(programTotalLiquidated)}</p>
+                          <p className="text-[11px] text-slate-500 mt-1">Cleared expenditures</p>
+                        </div>
+                        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Liquidation Compliance</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-2xl font-bold text-slate-900">{programLiquidationCompliance.toFixed(1)}%</p>
+                            <span className={`text-[9px] px-2 py-0.5 rounded font-black border ${
+                              programLiquidationCompliance >= 80 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-250' 
+                                : programLiquidationCompliance >= 40 
+                                  ? 'bg-amber-50 text-amber-700 border-amber-250' 
+                                  : 'bg-red-50 text-red-700 border-red-250'
+                            }`}>
+                              {programLiquidationCompliance >= 80 ? 'HIGH COMPLIANCE' : programLiquidationCompliance >= 40 ? 'ONGOING AUDIT' : 'CRITICAL PEN'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                        {/* Projects budget audit table */}
+                        <div className="xl:col-span-3 bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col justify-between">
+                          <div>
+                            <div className="px-6 py-5 border-b border-slate-100">
+                              <h3 className="text-base font-bold text-slate-900">FMRDP Allocation Ledger</h3>
+                              <p className="text-xs text-slate-500 mt-0.5">Select a road project to view its DA-BAFE milestone release schedule</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs text-slate-600">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                                  <tr>
+                                    <th className="py-3 px-4 pl-6">Project details</th>
+                                    <th className="py-3 px-4">Implementing Agency</th>
+                                    <th className="py-3 px-4">Est. Cost</th>
+                                    <th className="py-3 px-4">Released</th>
+                                    <th className="py-3 px-4">Liquidated</th>
+                                    <th className="py-3 px-4 pr-6">Auditing Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {paginatedAuditProjects.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={6} className="py-12 text-center text-slate-400 font-medium">No projects match the selected filters</td>
+                                    </tr>
+                                  ) : paginatedAuditProjects.map(p => {
+                                    const budget = getDaBudgetDetails(p);
+                                    const isSelected = selectedFmrPmProject && selectedFmrPmProject.id === p.id;
+                                    
+                                    // Auditing status pill
+                                    let auditPill = { text: 'Fully Audited', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                                    if (budget.liquidationRate < 100) {
+                                      auditPill = budget.liquidationRate > 0 
+                                        ? { text: 'Auditing Out', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
+                                        : { text: 'Pending Audit', cls: 'bg-red-50 text-red-700 border-red-200' };
+                                    }
+                                    
+                                    return (
+                                      <tr 
+                                        key={p.id} 
+                                        onClick={() => setSelectedFmrPmProject(p)}
+                                        className={`cursor-pointer hover:bg-slate-50/50 transition-colors ${isSelected ? 'bg-teal-50/40 hover:bg-teal-50/60' : ''}`}
+                                      >
+                                        <td className="py-3 px-4 pl-6">
+                                          <p className="font-semibold text-slate-900 line-clamp-1">{p.project_name}</p>
+                                          <p className="text-[10px] text-slate-400 font-medium">{p.municipality} · {p.project_length_km || 1.5} km</p>
+                                        </td>
+                                        <td className="py-3 px-4">
+                                          <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] ${
+                                            budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border border-indigo-150' : 'bg-teal-50 text-teal-700 border border-teal-150'
+                                          }`}>
+                                            {budget.isDpwh ? 'DPWH' : 'LGU (MOA)'}
+                                          </span>
+                                        </td>
+                                        <td className="py-3 px-4 font-semibold text-slate-800">{formatPeso(budget.estimatedCost)}</td>
+                                        <td className="py-3 px-4 text-slate-600">{formatPeso(budget.totalReleased)}</td>
+                                        <td className="py-3 px-4 text-slate-600">{formatPeso(budget.totalLiquidated)}</td>
+                                        <td className="py-3 px-4 pr-6">
+                                          <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold border text-[9px] ${auditPill.cls}`}>
+                                            {auditPill.text}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* Pagination Footer */}
+                          {totalAuditPages > 1 && (
+                            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px]">
+                              <p className="text-slate-500">
+                                Showing <span className="font-semibold text-slate-700">{(safeAuditPage - 1) * budgetAuditPageSize + 1}</span> to{' '}
+                                <span className="font-semibold text-slate-700">{Math.min(safeAuditPage * budgetAuditPageSize, filteredFmrProjects.length)}</span> of{' '}
+                                <span className="font-semibold text-slate-700">{filteredFmrProjects.length}</span> projects
+                              </p>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setPmBudgetPage((p) => Math.max(1, p - 1))}
+                                  disabled={safeAuditPage === 1}
+                                  className="px-2.5 py-1 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold text-slate-650 shadow-sm"
+                                >
+                                  Prev
+                                </button>
+                                {Array.from({ length: totalAuditPages }, (_, i) => i + 1).map((page) => (
+                                  <button
+                                    key={page}
+                                    onClick={() => setPmBudgetPage(page)}
+                                    className={`min-w-[24px] h-6 rounded-lg text-[10px] font-semibold border transition-all ${
+                                      safeAuditPage === page
+                                        ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
+                                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    {page}
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={() => setPmBudgetPage((p) => Math.min(totalAuditPages, p + 1))}
+                                  disabled={safeAuditPage === totalAuditPages}
+                                  className="px-2.5 py-1 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold text-slate-650 shadow-sm"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Detailed Side Panel */}
+                        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 flex flex-col justify-start min-h-[400px]">
+                          {!selectedFmrPmProject ? (
+                            <div className="h-full flex flex-col items-center justify-center py-20 text-center text-slate-400 my-auto">
+                              <svg className="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <h4 className="text-sm font-bold text-slate-800">No FMR Project Selected</h4>
+                              <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">Select any road project from the ledger to audit its DA-BAFE milestone release schedule and COA liquidation records</p>
+                            </div>
+                          ) : (() => {
+                            const p = selectedFmrPmProject;
+                            const budget = getDaBudgetDetails(p);
+                            const progress = Number(p.accomplishment || 0);
+                            
+                            return (
+                              <div className="space-y-6">
+                                <div>
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h3 className="text-sm font-extrabold text-slate-900 leading-snug break-words">{p.project_name}</h3>
+                                      <p className="text-[10px] text-slate-400 mt-0.5">{p.municipality} · {p.barangay ? `${p.barangay}, ` : ''}FMR</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => setSelectedFmrPmProject(null)}
+                                      className="text-slate-400 hover:text-slate-650 font-bold text-xs p-1 hover:bg-slate-100 rounded transition-all flex-shrink-0"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                      budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'
+                                    }`}>
+                                      {budget.mode}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                      {p.project_length_km || 1.5} km
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Progress Indicator */}
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                  <div className="flex justify-between text-xs text-slate-600 mb-1">
+                                    <span className="font-semibold">Physical Accomplishment</span>
+                                    <span className="font-bold text-teal-600">{progress.toFixed(0)}%</span>
+                                  </div>
+                                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-full bg-teal-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+                                  </div>
+                                </div>
+
+                                {/* Tranches Flow */}
+                                <div className="space-y-4">
+                                  <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">DA FMRDP Release Lifecycle</h4>
+                                  <div className="relative pl-6 space-y-4 border-l border-slate-200 ml-3">
+                                    {budget.tranches.map((t) => {
+                                      return (
+                                        <div key={t.id} className="relative">
+                                          {/* Connector dot */}
+                                          <span className={`absolute -left-9 top-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] border shadow-sm ${
+                                            t.released 
+                                              ? 'bg-teal-500 border-teal-600 text-white font-bold' 
+                                              : 'bg-white border-slate-200 text-slate-400'
+                                          }`}>
+                                            {t.released ? '✓' : t.id}
+                                          </span>
+                                          
+                                          <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="flex justify-between items-start gap-2">
+                                              <div>
+                                                <p className="text-xs font-bold text-slate-800">{t.name}</p>
+                                                <p className="text-[10px] text-slate-400 mt-0.5">Required Progress: {t.requiredProgress}%</p>
+                                              </div>
+                                              <span className="text-xs font-semibold text-slate-800">{formatPeso(t.amount)}</span>
+                                            </div>
+                                            
+                                            <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-[10px]">
+                                              <span className={`font-semibold ${t.released ? 'text-teal-600' : 'text-slate-400'}`}>
+                                                {t.released ? `Released on ${t.date.toLocaleDateString()}` : 'Pending Accomplishment'}
+                                              </span>
+                                              {t.released && (
+                                                <span className={`font-bold px-1.5 py-0.5 rounded ${
+                                                  t.liquidated ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                                                }`}>
+                                                  {t.liquidated ? 'COA Liquidated' : 'Pending LGU Audit'}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+                {/* ════════════════════════════════════════════════════ */}
+                {/* ACTIVITY FEED                                        */}
+                {/* ════════════════════════════════════════════════════ */}
+                {pmSubTab === 'activity' && (
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    {/* Activity log */}
+                    <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+                      <div className="px-6 py-5 border-b border-slate-100">
+                        <h3 className="text-lg font-bold text-slate-900">Recent Activity</h3>
+                        <p className="text-sm text-slate-500 mt-0.5">Live project updates and reports</p>
+                      </div>
+                      <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                        {activityItems.length === 0 ? (
+                          <div className="py-16 text-center text-slate-400 text-sm">No recent activity found</div>
+                        ) : activityItems.map((item) => (
+                          <div key={item.id} className="flex items-start gap-4 px-6 py-4 hover:bg-slate-50/60 transition-colors">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                              item.type === 'progress' ? 'bg-teal-50 text-teal-600' : 'bg-blue-50 text-blue-600'
+                            }`}>
+                              {item.type === 'progress' ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] text-slate-700">
+                                <span>{item.text} </span>
+                                <span className="font-semibold text-slate-900">{item.project}</span>
+                              </p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">{item.detail}</p>
+                            </div>
+                            <span className="text-[11px] text-slate-400 flex-shrink-0 mt-0.5">{relTime(item.time)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Side stats */}
+                    <div className="space-y-5">
+                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-5">
+                        <h4 className="text-sm font-bold text-slate-900 mb-4">Project Health</h4>
+                        <div className="space-y-3">
+                          {[
+                            { label: 'Completed', val: kanbanGroups.completed.length, total: filteredFmrProjects.length, color: 'bg-emerald-500' },
+                            { label: 'On-Going',  val: kanbanGroups.ongoing.length,   total: filteredFmrProjects.length, color: 'bg-amber-400' },
+                            { label: 'Proposed',  val: kanbanGroups.proposed.length,  total: filteredFmrProjects.length, color: 'bg-blue-500' },
+                          ].map(item => {
+                            const pct = filteredFmrProjects.length > 0 ? Math.round((item.val / filteredFmrProjects.length) * 100) : 0;
+                            return (
+                              <div key={item.label}>
+                                <div className="flex justify-between text-xs mb-1.5">
+                                  <span className="text-slate-600 font-medium">{item.label}</span>
+                                  <span className="text-slate-500">{item.val} <span className="text-slate-300">/ {filteredFmrProjects.length}</span></span>
+                                </div>
+                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className={`h-2 rounded-full ${item.color} transition-all duration-700`} style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-5">
+                        <h4 className="text-sm font-bold text-slate-900 mb-4">Activity Summary</h4>
+                        <div className="space-y-3">
+                          {[
+                            { icon: '📈', label: 'Progress Updates', val: (progressUpdates || []).length, color: 'text-teal-600' },
+                            { icon: '📋', label: 'Public Reports', val: (publicReports || []).length, color: 'text-blue-600' },
+                            { icon: '⚠️', label: 'Pending Reviews', val: (progressUpdates || []).filter(u => u.status === 'pending').length, color: 'text-amber-600' },
+                          ].map(s => (
+                            <div key={s.label} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2.5">
+                                <span className="text-base">{s.icon}</span>
+                                <span className="text-xs text-slate-600">{s.label}</span>
+                              </div>
+                              <span className={`text-sm font-bold ${s.color}`}>{s.val}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-teal-600 to-teal-500 rounded-2xl p-5 text-white">
+                        <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Avg Completion</p>
+                        <p className="text-3xl font-black mt-1">
+                          {filteredFmrProjects.length > 0
+                            ? `${Math.round(filteredFmrProjects.reduce((s, p) => s + Number(p.accomplishment || 0), 0) / filteredFmrProjects.length)}%`
+                            : '—'}
+                        </p>
+                        <p className="text-xs opacity-70 mt-1">Across all {filteredFmrProjects.length} filtered projects</p>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Budget Utilization Trend</h3>
-                  <p className="text-sm text-slate-500 mb-4">Approved vs released budget over time</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={budgetUtilizationTrend} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                        <defs>
-                          <linearGradient id="approvedBudgetGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#0f172a" stopOpacity={0.35} />
-                            <stop offset="95%" stopColor="#0f172a" stopOpacity={0.05} />
-                          </linearGradient>
-                          <linearGradient id="releasedBudgetGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
-                            <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
-                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
-                        <Area type="monotone" dataKey="approved" stroke="#0f172a" fill="url(#approvedBudgetGradient)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="released" stroke="#0d9488" fill="url(#releasedBudgetGradient)" strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Municipality Budget Comparison</h3>
-                  <p className="text-sm text-slate-500 mb-4">Top municipalities by approved budget</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={budgetByMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
-                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
-                        <Bar dataKey="budget" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Funding Source Distribution</h3>
-                  <p className="text-sm text-slate-500 mb-4">Allocations per funding stream</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={budgetBySource} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                          {budgetBySource.map((entry, index) => {
-                            const palette = ['#0d9488', '#0ea5e9', '#f59e0b', '#a855f7', '#ef4444', '#22c55e'];
-                            return <Cell key={`source-${entry.name}`} fill={palette[index % palette.length]} />;
-                          })}
-                        </Pie>
-                        <Legend verticalAlign="bottom" height={36} />
-                        <RechartsTooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Allocation Growth by Year</h3>
-                  <p className="text-sm text-slate-500 mb-4">Count of allocations approved yearly</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={allocationGrowthByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                        <RechartsTooltip />
-                        <Line dataKey="allocations" stroke="#0d9488" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Project Cost Efficiency</h3>
-                  <p className="text-sm text-slate-500 mb-4">Cost per kilometer by project</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={projectCostEfficiency} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="project" tick={{ fill: '#64748b', fontSize: 10 }} angle={-20} textAnchor="end" height={70} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
-                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
-                        <Bar dataKey="costPerKm" fill="#f59e0b" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className={enterpriseCardClass}>
-                  <h3 className="text-lg font-bold text-slate-900">Budget Release Progress</h3>
-                  <p className="text-sm text-slate-500 mb-4">Released vs approved per project</p>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={budgetReleaseProgress} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="project" tick={{ fill: '#64748b', fontSize: 10 }} angle={-20} textAnchor="end" height={70} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
-                        <RechartsTooltip formatter={(v) => formatCurrency(Number(v || 0))} />
-                        <Bar dataKey="approved" fill="#0f172a" radius={[8, 8, 0, 0]} />
-                        <Bar dataKey="released" fill="#0d9488" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
@@ -6765,7 +8364,7 @@ export default function Dashboard() {
 
       {/* Add Project Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
@@ -6847,9 +8446,60 @@ export default function Dashboard() {
                           {label}
                         </button>
                       ))}
+                       <button
+                        type="button"
+                        onClick={async () => {
+                          const sLat = parseCoordinate(formData.startLatitude);
+                          const sLng = parseCoordinate(formData.startLongitude);
+                          const eLat = parseCoordinate(formData.endLatitude);
+                          const eLng = parseCoordinate(formData.endLongitude);
+                          
+                          if (Number.isNaN(sLat) || Number.isNaN(sLng) || Number.isNaN(eLat) || Number.isNaN(eLng)) {
+                            showNotification('Please set both Start and End coordinates first.', 'error');
+                            return;
+                          }
+                          
+                          try {
+                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
+                            if (snappedPoints && snappedPoints.length >= 2) {
+                              const first = snappedPoints[0];
+                              const last = snappedPoints[snappedPoints.length - 1];
+                              const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
+                              
+                              setNewProjectRouteWaypoints(middle);
+                              const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
+                              setFormData(prev => ({
+                                ...prev,
+                                startLatitude: first[0].toFixed(6),
+                                startLongitude: first[1].toFixed(6),
+                                endLatitude: last[0].toFixed(6),
+                                endLongitude: last[1].toFixed(6),
+                                roadLength: totalDist.toFixed(2)
+                              }));
+                              showNotification('Snapped successfully to road alignment!');
+                            } else {
+                              showNotification('Could not find road connection between coordinates.', 'error');
+                            }
+                          } catch (err) {
+                            showNotification('Failed to connect coordinates to road network.', 'error');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                      >
+                        ⚡ Snap to Road
+                      </button>
                       <button
                         type="button"
-                        onClick={() => setNewProjectRouteWaypoints([])}
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            startLatitude: '',
+                            startLongitude: '',
+                            endLatitude: '',
+                            endLongitude: ''
+                          }));
+                          setNewProjectRouteWaypoints([]);
+                        }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                       >
                         Clear
@@ -6857,13 +8507,45 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200">
+                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
+                    {/* Map Search Overlay */}
+                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
+                      <input
+                        type="text"
+                        placeholder="Search location (e.g. Sto. Tomas, Leon)..."
+                        value={createMapSearchQuery}
+                        onChange={(e) => setCreateMapSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCreateMapSearch();
+                          }
+                        }}
+                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateMapSearch}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                      >
+                        Go
+                      </button>
+                    </div>
+
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
+                      <MapSearchController searchCoords={createMapSearchCoords} />
                       <RouteEditorMapClick onPickPoint={handleNewProjectRoutePick} />
+                      {createMapSearchCoords && (
+                        <Marker position={createMapSearchCoords}>
+                          <Popup>
+                            <span className="text-xs font-semibold text-slate-800">Search: {createMapSearchQuery}</span>
+                          </Popup>
+                        </Marker>
+                      )}
                       {newProjectRoutePreview.length >= 2 && (
                         <>
                           <Polyline positions={newProjectRoutePreview} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
@@ -6897,7 +8579,21 @@ export default function Dashboard() {
                             value={point.lat}
                             onChange={(e) => {
                               const value = e.target.value;
-                              setNewProjectRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lat: value } : p));
+                              setNewProjectRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.map((p, i) => i === idx ? { ...p, lat: value } : p);
+                                setFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.startLatitude);
+                                  const sLng = parseCoordinate(curr.startLongitude);
+                                  const eLat = parseCoordinate(curr.endLatitude);
+                                  const eLng = parseCoordinate(curr.endLongitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, roadLength: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
                             }}
                             className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                             placeholder="Latitude"
@@ -6908,14 +8604,44 @@ export default function Dashboard() {
                             value={point.lng}
                             onChange={(e) => {
                               const value = e.target.value;
-                              setNewProjectRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lng: value } : p));
+                              setNewProjectRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.map((p, i) => i === idx ? { ...p, lng: value } : p);
+                                setFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.startLatitude);
+                                  const sLng = parseCoordinate(curr.startLongitude);
+                                  const eLat = parseCoordinate(curr.endLatitude);
+                                  const eLng = parseCoordinate(curr.endLongitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, roadLength: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
                             }}
                             className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                             placeholder="Longitude"
                           />
                           <button
                             type="button"
-                            onClick={() => setNewProjectRouteWaypoints((prev) => prev.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              setNewProjectRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.filter((_, i) => i !== idx);
+                                setFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.startLatitude);
+                                  const sLng = parseCoordinate(curr.startLongitude);
+                                  const eLat = parseCoordinate(curr.endLatitude);
+                                  const eLng = parseCoordinate(curr.endLongitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, roadLength: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
+                            }}
                             className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-semibold border border-red-200 hover:bg-red-100"
                           >
                             Remove
@@ -7243,7 +8969,7 @@ export default function Dashboard() {
 
       {/* FMR Edit Modal */}
       {showFmrEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
@@ -7334,9 +9060,60 @@ export default function Dashboard() {
                           {label}
                         </button>
                       ))}
+                       <button
+                        type="button"
+                        onClick={async () => {
+                          const sLat = parseCoordinate(fmrFormData.start_latitude);
+                          const sLng = parseCoordinate(fmrFormData.start_longitude);
+                          const eLat = parseCoordinate(fmrFormData.end_latitude);
+                          const eLng = parseCoordinate(fmrFormData.end_longitude);
+                          
+                          if (Number.isNaN(sLat) || Number.isNaN(sLng) || Number.isNaN(eLat) || Number.isNaN(eLng)) {
+                            showNotification('Please set both Start and End coordinates first.', 'error');
+                            return;
+                          }
+                          
+                          try {
+                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
+                            if (snappedPoints && snappedPoints.length >= 2) {
+                              const first = snappedPoints[0];
+                              const last = snappedPoints[snappedPoints.length - 1];
+                              const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
+                              
+                              setFmrRouteWaypoints(middle);
+                              const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
+                              setFmrFormData(prev => ({
+                                ...prev,
+                                start_latitude: first[0].toFixed(6),
+                                start_longitude: first[1].toFixed(6),
+                                end_latitude: last[0].toFixed(6),
+                                end_longitude: last[1].toFixed(6),
+                                project_length_km: totalDist.toFixed(2)
+                              }));
+                              showNotification('Snapped successfully to road alignment!');
+                            } else {
+                              showNotification('Could not find road connection between coordinates.', 'error');
+                            }
+                          } catch (err) {
+                            showNotification('Failed to connect coordinates to road network.', 'error');
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                      >
+                        ⚡ Snap to Road
+                      </button>
                       <button
                         type="button"
-                        onClick={() => setFmrRouteWaypoints([])}
+                        onClick={() => {
+                          setFmrFormData(prev => ({
+                            ...prev,
+                            start_latitude: '',
+                            start_longitude: '',
+                            end_latitude: '',
+                            end_longitude: ''
+                          }));
+                          setFmrRouteWaypoints([]);
+                        }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                       >
                         Clear
@@ -7344,13 +9121,45 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200">
+                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
+                    {/* Map Search Overlay */}
+                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
+                      <input
+                        type="text"
+                        placeholder="Search location (e.g. Sto. Tomas, Leon)..."
+                        value={editMapSearchQuery}
+                        onChange={(e) => setEditMapSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditMapSearch();
+                          }
+                        }}
+                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleEditMapSearch}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                      >
+                        Go
+                      </button>
+                    </div>
+
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
+                      <MapSearchController searchCoords={editMapSearchCoords} />
                       <RouteEditorMapClick onPickPoint={handleFmrRoutePick} />
+                      {editMapSearchCoords && (
+                        <Marker position={editMapSearchCoords}>
+                          <Popup>
+                            <span className="text-xs font-semibold text-slate-800">Search: {editMapSearchQuery}</span>
+                          </Popup>
+                        </Marker>
+                      )}
                       {fmrRoutePreview.length >= 2 && (
                         <>
                           <Polyline positions={fmrRoutePreview} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
@@ -7384,7 +9193,21 @@ export default function Dashboard() {
                             value={point.lat}
                             onChange={(e) => {
                               const value = e.target.value;
-                              setFmrRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lat: value } : p));
+                              setFmrRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.map((p, i) => i === idx ? { ...p, lat: value } : p);
+                                setFmrFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.start_latitude);
+                                  const sLng = parseCoordinate(curr.start_longitude);
+                                  const eLat = parseCoordinate(curr.end_latitude);
+                                  const eLng = parseCoordinate(curr.end_longitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, project_length_km: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
                             }}
                             className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                             placeholder="Latitude"
@@ -7395,14 +9218,44 @@ export default function Dashboard() {
                             value={point.lng}
                             onChange={(e) => {
                               const value = e.target.value;
-                              setFmrRouteWaypoints((prev) => prev.map((p, i) => i === idx ? { ...p, lng: value } : p));
+                              setFmrRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.map((p, i) => i === idx ? { ...p, lng: value } : p);
+                                setFmrFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.start_latitude);
+                                  const sLng = parseCoordinate(curr.start_longitude);
+                                  const eLat = parseCoordinate(curr.end_latitude);
+                                  const eLng = parseCoordinate(curr.end_longitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, project_length_km: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
                             }}
                             className="px-3 py-2 border border-slate-200 rounded-lg text-sm"
                             placeholder="Longitude"
                           />
                           <button
                             type="button"
-                            onClick={() => setFmrRouteWaypoints((prev) => prev.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              setFmrRouteWaypoints((prev) => {
+                                const nextWaypoints = prev.filter((_, i) => i !== idx);
+                                setFmrFormData((curr) => {
+                                  const sLat = parseCoordinate(curr.start_latitude);
+                                  const sLng = parseCoordinate(curr.start_longitude);
+                                  const eLat = parseCoordinate(curr.end_latitude);
+                                  const eLng = parseCoordinate(curr.end_longitude);
+                                  if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
+                                    const points = [[sLat, sLng], ...nextWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
+                                    return { ...curr, project_length_km: calculateSnappedPolylineDistanceKm(points).toFixed(2) };
+                                  }
+                                  return curr;
+                                });
+                                return nextWaypoints;
+                              });
+                            }}
                             className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-semibold border border-red-200 hover:bg-red-100"
                           >
                             Remove
@@ -7436,7 +9289,7 @@ export default function Dashboard() {
 
       {/* FMR Delete Confirmation Modal */}
       {showFmrDeleteModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
               <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{width: '72px', height: '72px'}}>
@@ -7497,7 +9350,7 @@ export default function Dashboard() {
         const projectCode = detailValue('projectCode', 'project_code') || (isFmrProject ? `FMR-${rawProject.id}` : 'N/A');
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setSelectedProjectDetail(null)}>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setSelectedProjectDetail(null)}>
             <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 bg-gradient-to-r from-slate-50 to-white">
                 <div className="min-w-0">
@@ -7614,12 +9467,21 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-800">
-                  DA staff can open this from All Projects by clicking the row or the View action.
-                </div>
               </div>
 
               <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                {isFmrProject && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProjectDetail(null);
+                      openFmrEditModal(rawProject);
+                    }}
+                    className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-600/10"
+                  >
+                    Define Route / GPS
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedProjectDetail(null)}

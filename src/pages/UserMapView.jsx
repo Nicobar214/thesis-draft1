@@ -294,7 +294,8 @@ export default function UserMapView({ embedded = false } = {}) {
     let cancelled = false;
 
     async function snapRoutes() {
-      const candidates = mappable.filter((entity) => entity.route.hasPolyline).slice(0, 50);
+      // Only snap routes that don't already have an official detailed route record in project_routes
+      const candidates = mappable.filter((entity) => entity.route.hasPolyline && !entity.route.hasRouteRecord).slice(0, 50);
       const snappedEntries = await Promise.all(
         candidates.map(async (entity) => {
           const snapped = await fetchRoadAlignedPolyline(entity.route.points);
@@ -680,8 +681,8 @@ export default function UserMapView({ embedded = false } = {}) {
                           center={coordinates}
                           radius={isSelected ? 11 : 8}
                           pathOptions={{
-                            fillColor: isCentroidFallback ? '#fbbf24' : isApproximate ? '#f97316' : color.fill,
-                            color: isCentroidFallback ? '#d97706' : isApproximate ? '#ea580c' : color.stroke,
+                            fillColor: color.fill,
+                            color: color.stroke,
                             weight: isSelected ? 3.5 : 2,
                             fillOpacity: 0.9,
                             dashArray: isCentroidFallback ? '3, 4' : undefined
@@ -694,11 +695,12 @@ export default function UserMapView({ embedded = false } = {}) {
                           }}
                         >
                           <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                            {isCentroidFallback 
-                              ? `⚠️ Municipality Centroid: ${project.municipality || 'Leon'} (GPS missing)`
-                              : isApproximate 
-                                ? `📍 Barangay Center: ${getProjectBarangay(project)} (Auto-Geocoded)`
-                                : '⚠️ Route coordinates missing'}
+                            <div className="p-1">
+                              <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
+                              <span className="text-[10px] text-slate-500 block mt-0.5">
+                                {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                              </span>
+                            </div>
                           </Tooltip>
                           <Popup maxWidth={360} className="custom-popup">
                             <div className="space-y-3 min-w-[260px]">
