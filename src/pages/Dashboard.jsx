@@ -1256,10 +1256,10 @@ export default function Dashboard() {
 
     const payload = {
       project_id: projectId,
-      start_latitude: Number(startLat),
-      start_longitude: Number(startLng),
-      end_latitude: Number(endLat),
-      end_longitude: Number(endLng),
+      start_latitude: parseCoordinate(startLat),
+      start_longitude: parseCoordinate(startLng),
+      end_latitude: parseCoordinate(endLat),
+      end_longitude: parseCoordinate(endLng),
       route_points: cleanedWaypoints,
       updated_at: new Date().toISOString(),
     };
@@ -1270,9 +1270,12 @@ export default function Dashboard() {
       Number.isFinite(payload.end_latitude) &&
       Number.isFinite(payload.end_longitude);
 
-    if (!hasCoordinates) return;
+    if (!hasCoordinates) {
+      throw new Error('Route was not saved: start/end coordinates are missing or invalid. Set both the Start and End points on the map before saving.');
+    }
 
-    await supabase.from('project_routes').upsert(payload, { onConflict: 'project_id' });
+    const { error } = await supabase.from('project_routes').upsert(payload, { onConflict: 'project_id' });
+    if (error) throw error;
   }, []);
 
   // Fetch contractor profiles
