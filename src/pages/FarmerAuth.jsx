@@ -1,0 +1,157 @@
+/* FarmerAuth.jsx - Login page for Farmer accounts */
+import { useState } from "react";
+import { supabase } from "../lib/supabase";
+import { useNavigate, Link } from "react-router-dom";
+
+function normalizeRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function resolveEffectiveRole(profileRole, metadataRole) {
+  const normalizedProfileRole = normalizeRole(profileRole);
+  const normalizedMetadataRole = normalizeRole(metadataRole);
+
+  if (normalizedProfileRole && normalizedProfileRole !== "user") return normalizedProfileRole;
+  if (normalizedMetadataRole && normalizedMetadataRole !== "user") return normalizedMetadataRole;
+  return normalizedProfileRole || normalizedMetadataRole || "user";
+}
+
+export default function FarmerAuth() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!email || !password) {
+      setError("Email and password are required");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) throw authError;
+
+      let userRole = null;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", data.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.warn("Profile lookup error (will use metadata fallback):", profileError);
+      }
+
+      userRole = resolveEffectiveRole(profile?.role, data.user.user_metadata?.role);
+
+      if (userRole !== "farmer") {
+        await supabase.auth.signOut();
+        setError("Access denied. This login is for Farmer accounts only.");
+        setLoading(false);
+        return;
+      }
+
+      navigate("/farmer");
+    } catch (err) {
+      setError(err.message || "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-[100dvh] flex flex-col justify-between bg-gradient-to-br from-emerald-950 via-teal-900 to-slate-900 px-4 py-8 sm:py-12">
+      <div className="flex-1 flex items-center justify-center">
+        <div className="max-w-md w-full">
+          <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl p-6 sm:p-8 border border-emerald-500/20">
+            <div className="text-center mb-6 sm:mb-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100/90 rounded-2xl mb-3 shadow-inner">
+                <svg className="w-8 h-8 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V3.545M12.75 21h7.5V10.75M2.25 21h1.5m18 0h-18M2.25 9l4.5-1.636M18.75 3l-1.5.545m0 6.205l3 1M5.25 10.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm10.5-1.125a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Farmer Portal</h1>
+              <p className="text-emerald-700 text-xs sm:text-sm mt-1 font-semibold uppercase tracking-wider">KalsaTrack Oversight Portal</p>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-xl text-sm mb-6 animate-pulse">
+                <p className="font-semibold">Access Denied</p>
+                <p className="text-xs sm:text-sm mt-0.5">{error}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">Farmer Account Email</label>
+                <input
+                  type="email"
+                  placeholder="juan.delacruz@kalsatrack.gov.ph"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full h-12 px-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition text-sm text-slate-900 bg-white"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">Password</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full h-12 px-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition text-sm text-slate-900 bg-white"
+                  disabled={loading}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50 text-sm flex items-center justify-center"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Authenticating...
+                  </span>
+                ) : (
+                  "Sign In to Farmer Portal"
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link to="/" className="text-xs sm:text-sm text-slate-500 hover:text-emerald-600 transition font-semibold inline-flex items-center gap-1">
+                ← Back to KalsaTrack Home
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-[11px] sm:text-xs text-slate-400 mt-6 leading-relaxed max-w-sm mx-auto">
+        Farmer accounts are provisioned by your LGU during registration.<br />
+        Contact your Municipal Agriculture Office if you require assistance.
+      </p>
+    </div>
+  );
+}

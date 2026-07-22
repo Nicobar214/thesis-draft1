@@ -103,6 +103,10 @@ export default function ProtectedRoute({ children, requiredRole }) {
     if (role === 'lgu') {
       return <Navigate to="/lgu" replace />;
     }
+    // Farmer trying to access other pages → send to farmer dashboard
+    if (role === 'farmer') {
+      return <Navigate to="/farmer" replace />;
+    }
     // User trying to access admin/engineer pages → send to user dashboard
     return <Navigate to="/user" replace />;
   }

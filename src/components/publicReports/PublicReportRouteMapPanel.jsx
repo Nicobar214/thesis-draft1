@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker } from 'react-leaflet';
+import { useMemo, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -33,6 +33,18 @@ const reportIcon = new L.DivIcon({
   iconAnchor: [12, 12],
 });
 
+function MapFlyController({ focusTarget, bounds }) {
+  const map = useMap();
+  useEffect(() => {
+    if (focusTarget && Array.isArray(focusTarget) && Number.isFinite(Number(focusTarget[0])) && Number.isFinite(Number(focusTarget[1]))) {
+      map.flyTo([Number(focusTarget[0]), Number(focusTarget[1])], 16, { duration: 1.2 });
+    } else if (focusTarget === 'fit' && bounds) {
+      map.fitBounds(bounds, { padding: [24, 24], duration: 1.2 });
+    }
+  }, [focusTarget, bounds, map]);
+  return null;
+}
+
 export default function PublicReportRouteMapPanel({
   project,
   routeRecord,
@@ -41,6 +53,8 @@ export default function PublicReportRouteMapPanel({
   heightClass = 'h-72',
   title = 'Project Route and Report Location',
   showLegend = true,
+  focusTarget = null,
+  onResetFocus = null,
 }) {
   const reportPoint = useMemo(() => toPoint(reportLatitude, reportLongitude), [reportLatitude, reportLongitude]);
 
@@ -78,20 +92,31 @@ export default function PublicReportRouteMapPanel({
   const center = reportPoint || routeStart || [10.7, 122.56];
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70">
-        <p className="text-sm font-semibold text-slate-800">{title}</p>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <span className={`px-2.5 py-1 rounded-full border font-semibold ${band.className}`}>
-            {formatDistance(distanceMeters)} from route
-          </span>
-          <span className="px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-700 font-semibold">
-            Route length: {formatDistance(routeLengthMeters)}
-          </span>
-          <span className="px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-700 font-semibold">
-            {nearKmLabel}
-          </span>
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">{title}</p>
+          <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
+            <span className={`px-2.5 py-0.5 rounded-full border font-semibold ${band.className}`}>
+              {formatDistance(distanceMeters)} from route
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full border border-slate-200 bg-white text-slate-700 font-semibold">
+              Route length: {formatDistance(routeLengthMeters)}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full border border-slate-200 bg-white text-slate-700 font-semibold">
+              {nearKmLabel}
+            </span>
+          </div>
         </div>
+        {onResetFocus && (
+          <button
+            type="button"
+            onClick={onResetFocus}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 transition shrink-0 shadow-2xs"
+          >
+            🔍 Reset Full View
+          </button>
+        )}
       </div>
 
       {showLegend && (
@@ -107,7 +132,7 @@ export default function PublicReportRouteMapPanel({
           center={center}
           zoom={13}
           style={{ width: '100%', height: '100%' }}
-          scrollWheelZoom={false}
+          scrollWheelZoom={true}
           whenReady={(event) => {
             if (bounds) {
               event.target.fitBounds(bounds, { padding: [24, 24] });
@@ -118,6 +143,8 @@ export default function PublicReportRouteMapPanel({
             attribution='&copy; OpenStreetMap contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+
+          <MapFlyController focusTarget={focusTarget} bounds={bounds} />
 
           {routePoints.length >= 2 && (
             <Polyline positions={routePoints} pathOptions={{ color: '#0f766e', weight: 5, opacity: 0.75 }} />

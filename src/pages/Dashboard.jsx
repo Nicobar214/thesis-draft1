@@ -18,6 +18,11 @@ import {
   geocodeFmrLocation,
 } from '../lib/mapRouteUtils';
 import {
+  estimateProjectBudget,
+  buildDisbursementTranches,
+  summarizeTranches,
+} from '../lib/budgetEstimate';
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -42,6 +47,7 @@ import PriorityTab from '../components/admin/PriorityTab';
 import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import { computePriorityScores } from '../lib/priorityScoring';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
+import Icons from '../components/Icons';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -313,6 +319,27 @@ function ReportHeatmapLayer({ visible, points }) {
   return null;
 }
 
+function FarmerHeatmapLayer({ visible, points }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
+    
+    const layer = window.L.heatLayer(points, {
+      radius: 30,
+      blur: 20,
+      maxZoom: 15,
+      gradient: { 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }
+    }).addTo(map);
+
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map, visible, points]);
+
+  return null;
+}
+
 function RouteEditorMapClick({ onPickPoint }) {
   useMapEvents({
     click(event) {
@@ -485,6 +512,8 @@ export default function Dashboard() {
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
   const [publicReportFilter, setPublicReportFilter] = useState('pending');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
+  const [publicReportAssignedFilter, setPublicReportAssignedFilter] = useState('all');
+  const [publicReportViewMode, setPublicReportViewMode] = useState('grid');
   const [publicReportSearch, setPublicReportSearch] = useState('');
   const [publicReportDateFrom, setPublicReportDateFrom] = useState('');
   const [publicReportDateTo, setPublicReportDateTo] = useState('');
@@ -505,11 +534,15 @@ export default function Dashboard() {
   const [adminUserId, setAdminUserId] = useState('');
   const [selectedReportLguDecision, setSelectedReportLguDecision] = useState(null);
   const [escalations, setEscalations] = useState([]);
+  const [selectedFieldFinding, setSelectedFieldFinding] = useState(null);
+  const [selectedResolution, setSelectedResolution] = useState(null);
+  const [rejectReasonDraft, setRejectReasonDraft] = useState('');
+  const [showRejectReason, setShowRejectReason] = useState(false);
+  const [findingActionSaving, setFindingActionSaving] = useState(false);
 
   // Field engineer state
   const [fieldEngineers, setFieldEngineers] = useState([]);
   const [assigningEngineer, setAssigningEngineer] = useState(false);
-  const [selectedEngineerId, setSelectedEngineerId] = useState('');
 
   // FMR Projects state (synced from user side - DA data)
   const [fmrProjects, setFmrProjects] = useState([]);
@@ -534,6 +567,16 @@ export default function Dashboard() {
   // Farmer beneficiaries state
   const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
   const [farmerBeneficiariesLoading, setFarmerBeneficiariesLoading] = useState(false);
+
+  const farmerHeatPoints = useMemo(() => {
+    return (farmerBeneficiaries || [])
+      .map((f) => {
+        const lat = f.farmLatitude || f.gps?.lat;
+        const lng = f.farmLongitude || f.gps?.lng;
+        return lat && lng ? [Number(lat), Number(lng), 1.0] : null;
+      })
+      .filter(Boolean);
+  }, [farmerBeneficiaries]);
 
   // Budget allocation state
   const [budgetSearchInput, setBudgetSearchInput] = useState('');
@@ -567,7 +610,8 @@ export default function Dashboard() {
   const emptyFmrForm = {
     project_name: '', status: 'Proposed', year_funded: '', municipality: '', province: 'Iloilo',
     accomplishment: '', project_length_km: '', start_latitude: '', start_longitude: '',
-    end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', location: '', remarks: ''
+    end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', location: '', remarks: '',
+    total_budget: '', funds_released: '', funding_source: ''
   };
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
   const [fmrRouteMode, setFmrRouteMode] = useState('waypoint');
@@ -708,6 +752,13 @@ export default function Dashboard() {
   const [selectedContractorId, setSelectedContractorId] = useState('');
   const [newProjectContractorId, setNewProjectContractorId] = useState('');
 
+  // Markets & supply chain map layers states
+  const [markets, setMarkets] = useState([]);
+  const [showFarmerDots, setShowFarmerDots] = useState(false);
+  const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
+  const [showMarketsMap, setShowMarketsMap] = useState(true);
+  const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
+
   // Reports tab state (split sections + per-section pagination)
   const [reportsSectionFilter, setReportsSectionFilter] = useState('ongoing');
   const [reportsPageBySection, setReportsPageBySection] = useState({ completed: 1, delayed: 1, ongoing: 1, pending: 1 });
@@ -759,11 +810,29 @@ export default function Dashboard() {
 
   const normalizeFarmerBeneficiaryRow = useCallback((row) => {
     if (!row) return null;
+    const farmLatitude = row.farm_latitude !== undefined && row.farm_latitude !== null
+      ? Number(row.farm_latitude)
+      : (row.gps && row.gps.lat !== undefined ? Number(row.gps.lat) : null);
+    const farmLongitude = row.farm_longitude !== undefined && row.farm_longitude !== null
+      ? Number(row.farm_longitude)
+      : (row.gps && row.gps.lng !== undefined ? Number(row.gps.lng) : null);
+
     return {
       id: row.id,
       beneficiaryId: row.beneficiary_id || row.beneficiaryId || row.id,
       fullName: row.full_name || row.fullName || 'Unnamed Farmer',
       rsbsaNumber: row.rsbsa_number || row.rsbsaNumber || '',
+      controlNo: row.control_no || row.controlNo || '',
+      firstName: row.first_name || row.firstName || '',
+      middleName: row.middle_name || row.middleName || '',
+      lastName: row.last_name || row.lastName || '',
+      extName: row.ext_name || row.extName || '',
+      birthday: row.birthday || row.birthday || '',
+      gender: row.gender || row.gender || '',
+      agency: row.agency || row.agency || 'DA',
+      farmLatitude,
+      farmLongitude,
+      nearestMarketId: row.nearest_market_id || row.nearestMarketId || null,
       contactNumber: row.contact_number || row.contactNumber || '',
       municipality: row.municipality || '',
       barangay: row.barangay || '',
@@ -785,7 +854,7 @@ export default function Dashboard() {
       adminRemarks: row.admin_remarks || row.adminRemarks || '',
       supportingDocuments: Array.isArray(row.supporting_documents) ? row.supporting_documents : row.supportingDocuments || [],
       validationHistory: Array.isArray(row.validation_history) ? row.validation_history : row.validationHistory || [],
-      gps: row.gps || null,
+      gps: row.gps || { lat: farmLatitude, lng: farmLongitude },
       submittedDate: row.submitted_date ? new Date(row.submitted_date) : row.submittedDate ? new Date(row.submittedDate) : new Date(),
       lastUpdated: row.last_updated ? new Date(row.last_updated) : row.updated_at ? new Date(row.updated_at) : row.lastUpdated ? new Date(row.lastUpdated) : new Date(),
     };
@@ -1001,6 +1070,18 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Count each field engineer's active (not-yet-resolved) assignments, used to
+  // recommend a realistic inspection date instead of piling everything on day one.
+  const engineerWorkloads = useMemo(() => {
+    const counts = {};
+    publicReports.forEach((r) => {
+      if (r.assigned_engineer_id && r.status !== 'resolved') {
+        counts[r.assigned_engineer_id] = (counts[r.assigned_engineer_id] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [publicReports]);
+
   // Assign field engineer to a public report
   const assignEngineerToReport = async (reportId, engineerId) => {
     setAssigningEngineer(true);
@@ -1047,7 +1128,6 @@ export default function Dashboard() {
         await createReportNotification(report, 'public_report_assignment', 'A field engineer has been assigned to your report.');
         await createEngineerAssignmentNotification(reportId, engineerId, report.project_name || report.municipality || 'Public report');
       }
-      setSelectedEngineerId('');
     } catch (err) {
       console.error('Failed to assign engineer:', err.message);
       showNotification(`Failed to assign: ${err.message}`, 'error');
@@ -1225,6 +1305,20 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch market locations
+  const fetchMarkets = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('market_locations')
+        .select('*')
+        .order('market_name', { ascending: true });
+      if (error) throw error;
+      setMarkets(data || []);
+    } catch (err) {
+      console.error('Error fetching markets:', err.message);
+    }
+  }, []);
+
   // Fetch all progress_updates with project info
   const fetchProgressUpdates = useCallback(async () => {
     setProgressUpdatesLoading(true);
@@ -1308,9 +1402,43 @@ export default function Dashboard() {
     }
   };
 
-  // Update public report status (admin action)
-  // If the public report belongs to a registered user, also create/update
-  // a feedback entry so it appears on their Community Feedback page.
+  // If the public report belongs to a registered user, create/update a
+  // feedback entry so it appears on their Community Feedback page.
+  const syncFeedbackStatus = async (report, newStatus) => {
+    if (!report || !report.user_id) return;
+
+    const { data: existingFb } = await supabase
+      .from('feedbacks')
+      .select('id')
+      .eq('public_report_id', report.id)
+      .maybeSingle();
+
+    if (existingFb) {
+      await supabase
+        .from('feedbacks')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', existingFb.id);
+    } else {
+      await supabase.from('feedbacks').insert([{
+        user_id: report.user_id,
+        user_email: report.contact_info || null,
+        project_id: report.project_id || null,
+        project_name: report.project_name || null,
+        type: 'issue',
+        message: report.description,
+        photo_urls: report.photo_url ? [report.photo_url] : [],
+        latitude: report.latitude || null,
+        longitude: report.longitude || null,
+        status: newStatus,
+        public_report_id: report.id,
+        source: 'public_report',
+      }]);
+    }
+  };
+
+  // Update public report status (admin action) — 'pending'/'reviewed' only.
+  // 'resolved' can only be set via finalizeResolution() below, which requires
+  // the field engineer's findings to have been DA-validated first.
   const updatePublicReportStatus = async (reportId, newStatus) => {
     try {
       const { error } = await supabase
@@ -1319,60 +1447,140 @@ export default function Dashboard() {
         .eq('id', reportId);
       if (error) throw error;
 
-      // Find the report to check if it belongs to a registered user
       const report = publicReports.find(r => r.id === reportId);
-      if (report && report.user_id) {
-        // Upsert a feedback entry so it shows in the user's Community Feedback page
-        // Check if a linked feedback already exists for this public report
-        const { data: existingFb } = await supabase
-          .from('feedbacks')
-          .select('id')
-          .eq('public_report_id', reportId)
-          .maybeSingle();
-
-        if (existingFb) {
-          // Update the existing linked feedback status
-          await supabase
-            .from('feedbacks')
-            .update({ status: newStatus, updated_at: new Date().toISOString() })
-            .eq('id', existingFb.id);
-        } else {
-          // Create a new feedback entry linked to this public report
-          await supabase.from('feedbacks').insert([{
-            user_id: report.user_id,
-            user_email: report.contact_info || null,
-            project_id: report.project_id || null,
-            project_name: report.project_name || null,
-            type: 'issue',
-            message: report.description,
-            photo_urls: report.photo_url ? [report.photo_url] : [],
-            latitude: report.latitude || null,
-            longitude: report.longitude || null,
-            status: newStatus,
-            public_report_id: reportId,
-            source: 'public_report',
-          }]);
-        }
-      }
+      await syncFeedbackStatus(report, newStatus);
 
       await fetchPublicReports();
+      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: newStatus } : prev));
       showNotification(`Public report marked as ${newStatus}`);
       await addPublicReportActivity(reportId, 'status_updated', `Status changed to ${newStatus}`);
       if (report) {
         await createReportNotification(report, 'public_report_status', `Your public report status is now ${newStatus}.`);
-        if (newStatus === 'resolved') {
-          await createLguNotification(
-            report.municipality,
-            'lgu_resolution_summary',
-            'Project report resolved',
-            `Report ${String(report.id).slice(0, 8)} in ${report.municipality || 'your jurisdiction'} has been marked resolved.`,
-            report.id
-          );
-        }
       }
     } catch (err) {
       console.error('Failed to update public report:', err.message);
       showNotification(`Failed to update: ${err.message}`, 'error');
+    }
+  };
+
+  // DA admin validates the field engineer's on-site findings as accurate —
+  // this is the only action that unlocks the ability to mark a report resolved.
+  const validateFieldFinding = async (reportId) => {
+    if (!reportId) return;
+    setFindingActionSaving(true);
+    try {
+      const { error } = await supabase
+        .from('public_reports')
+        .update({ engineer_status: 'validated', verification: 'Verified On-Site', updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+      if (error) throw error;
+
+      const report = publicReports.find(r => r.id === reportId);
+      await addPublicReportActivity(reportId, 'finding_validated', 'DA admin validated the field engineer findings');
+      if (report) {
+        await createReportNotification(report, 'public_report_field_update', 'DA admin validated the field inspection findings for your report.');
+        if (report.assigned_engineer_id) {
+          await supabase.from('notifications').insert({
+            user_id: report.assigned_engineer_id,
+            type: 'public_report_finding_validated',
+            title: 'Findings validated',
+            message: `DA admin validated your findings for report ${String(reportId).slice(0, 8)}.`,
+            report_id: reportId,
+            is_read: false,
+          });
+        }
+      }
+
+      await fetchPublicReports();
+      await loadLatestFieldFinding(reportId);
+      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, engineer_status: 'validated', verification: 'Verified On-Site' } : prev));
+      showNotification('Field finding validated');
+    } catch (err) {
+      console.error('Failed to validate finding:', err.message);
+      showNotification(`Failed to validate: ${err.message}`, 'error');
+    } finally {
+      setFindingActionSaving(false);
+    }
+  };
+
+  // DA admin rejects the field engineer's findings and sends the report back
+  // for re-inspection. A reason is required so the engineer knows what to fix.
+  const rejectFieldFinding = async (reportId, reason) => {
+    if (!reportId || !reason?.trim()) {
+      showNotification('A reason is required to reject findings', 'error');
+      return;
+    }
+    setFindingActionSaving(true);
+    try {
+      const { error } = await supabase
+        .from('public_reports')
+        .update({ engineer_status: 'rejected', verification: 'Needs Review', updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+      if (error) throw error;
+
+      const report = publicReports.find(r => r.id === reportId);
+      await addPublicReportActivity(reportId, 'finding_rejected', `DA admin rejected field findings: ${reason.trim()}`);
+      if (report) {
+        await createReportNotification(report, 'public_report_field_update', 'DA admin requested additional field re-inspection for your report.');
+        if (report.assigned_engineer_id) {
+          await supabase.from('notifications').insert({
+            user_id: report.assigned_engineer_id,
+            type: 'public_report_finding_rejected',
+            title: 'Findings rejected — re-inspection needed',
+            message: `DA admin rejected your findings for report ${String(reportId).slice(0, 8)}: ${reason.trim()}`,
+            report_id: reportId,
+            is_read: false,
+          });
+        }
+      }
+
+      await fetchPublicReports();
+      await loadLatestFieldFinding(reportId);
+      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, engineer_status: 'rejected', verification: 'Needs Review' } : prev));
+      setShowRejectReason(false);
+      setRejectReasonDraft('');
+      showNotification('Field finding rejected and sent back for re-inspection');
+    } catch (err) {
+      console.error('Failed to reject finding:', err.message);
+      showNotification(`Failed to reject: ${err.message}`, 'error');
+    } finally {
+      setFindingActionSaving(false);
+    }
+  };
+
+  // The only path allowed to set status: 'resolved'. Requires a DA-validated
+  // field finding and a mandatory resolution summary (see AdminWorkflowControls).
+  const finalizeResolution = async (reportId, summary) => {
+    if (!reportId || !summary?.trim()) return;
+    const report = publicReports.find(r => r.id === reportId);
+    if (report?.engineer_status !== 'validated') {
+      showNotification('Resolution requires DA validation of field findings first', 'error');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('public_reports')
+        .update({ status: 'resolved', updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+      if (error) throw error;
+
+      await syncFeedbackStatus(report, 'resolved');
+      await fetchPublicReports();
+      await loadLatestResolution(reportId);
+      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: 'resolved' } : prev));
+      await addPublicReportActivity(reportId, 'resolved_with_summary', summary.trim());
+      await createReportNotification(report, 'public_report_status', 'Your public report status is now resolved.');
+      await createLguNotification(
+        report.municipality,
+        'lgu_resolution_summary',
+        'Project report resolved',
+        `Report ${String(report.id).slice(0, 8)} in ${report.municipality || 'your jurisdiction'} has been marked resolved.`,
+        report.id
+      );
+    } catch (err) {
+      console.error('Failed to finalize resolution:', err.message);
+      showNotification(`Failed to resolve: ${err.message}`, 'error');
     }
   };
 
@@ -1604,6 +1812,48 @@ export default function Dashboard() {
     }
   }, []);
 
+  const loadLatestFieldFinding = useCallback(async (reportId) => {
+    if (!reportId) {
+      setSelectedFieldFinding(null);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('public_report_field_findings')
+        .select('*')
+        .eq('report_id', reportId)
+        .order('submitted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setSelectedFieldFinding(data || null);
+    } catch {
+      setSelectedFieldFinding(null);
+    }
+  }, []);
+
+  const loadLatestResolution = useCallback(async (reportId) => {
+    if (!reportId) {
+      setSelectedResolution(null);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('public_report_resolutions')
+        .select('*')
+        .eq('report_id', reportId)
+        .order('resolved_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      setSelectedResolution(data || null);
+    } catch {
+      setSelectedResolution(null);
+    }
+  }, []);
+
   const escalateReportToLgu = useCallback(async (report, reason) => {
     if (!report?.id || !reason) return;
 
@@ -1740,6 +1990,10 @@ export default function Dashboard() {
       setSimilarNearbyReports([]);
       setAdminPrivateNote('');
       setSelectedReportLguDecision(null);
+      setSelectedFieldFinding(null);
+      setSelectedResolution(null);
+      setShowRejectReason(false);
+      setRejectReasonDraft('');
       return;
     }
 
@@ -1747,7 +2001,11 @@ export default function Dashboard() {
     loadAdminPrivateNote(selectedPublicReport.id);
     loadSimilarNearbyReports(selectedPublicReport);
     loadLatestLguDecision(selectedPublicReport.id);
-  }, [selectedPublicReport, loadPublicReportActivity, loadAdminPrivateNote, loadSimilarNearbyReports, loadLatestLguDecision]);
+    loadLatestFieldFinding(selectedPublicReport.id);
+    loadLatestResolution(selectedPublicReport.id);
+    setShowRejectReason(false);
+    setRejectReasonDraft('');
+  }, [selectedPublicReport, loadPublicReportActivity, loadAdminPrivateNote, loadSimilarNearbyReports, loadLatestLguDecision, loadLatestFieldFinding, loadLatestResolution]);
 
   useEffect(() => {
     fmrProjectsRef.current = fmrProjects;
@@ -1867,6 +2125,7 @@ export default function Dashboard() {
       fetchEscalations();
       fetchFmrProjects();
       fetchFarmerBeneficiaries();
+      fetchMarkets();
       fetchProjectRoutes();
       fetchMapReportData();
       fetchFieldEngineers();
@@ -1904,6 +2163,11 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, () => fetchFarmerBeneficiaries())
       .subscribe();
 
+    const marketsChannel = supabase
+      .channel('admin-markets-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, () => fetchMarkets())
+      .subscribe();
+
     // Real-time subscription for profiles (field engineers + contractors)
     const profilesChannel = supabase
       .channel('admin-profiles-realtime')
@@ -1922,10 +2186,11 @@ export default function Dashboard() {
       supabase.removeChannel(escalationsChannel);
       supabase.removeChannel(fmrChannel);
       supabase.removeChannel(farmerBeneficiariesChannel);
+      supabase.removeChannel(marketsChannel);
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -1968,12 +2233,13 @@ export default function Dashboard() {
         totalBudget: 0,
         status: mappedStatus,
         progress: Number(p.accomplishment || 0),
+        source: p.source || 'DA-RAED Region VI',
         _source: 'fmr',
         _raw: p,
       };
     });
 
-    const mappedProjects = projects.map((p) => ({ ...p, _source: 'projects' }));
+    const mappedProjects = projects.map((p) => ({ ...p, source: p.source || 'LGU', _source: 'projects' }));
     return [...mappedProjects, ...mappedFmr];
   }, [projects, fmrProjects]);
 
@@ -1983,7 +2249,8 @@ export default function Dashboard() {
       const matchesSearch = project.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.projectCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.municipality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        project.contractor?.toLowerCase().includes(searchQuery.toLowerCase());
+        project.contractor?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        project.source?.toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
       
@@ -2477,13 +2744,13 @@ export default function Dashboard() {
       target_completion_date: formData.expectedEndDate || null,
       location: formData.barangay,
       contractor_id: newProjectContractorId || null,
+      total_budget: formData.totalBudget ? parseFloat(formData.totalBudget) : null,
+      funds_released: formData.disbursedAmount ? parseFloat(formData.disbursedAmount) : null,
+      funding_source: formData.budgetSource || null,
       remarks: [
         `FMR Code: ${enteredCode}`,
         formData.roadType ? `Road Type: ${formData.roadType}` : null,
         formData.contractor ? `Contractor: ${formData.contractor}` : null,
-        formData.budgetSource ? `Funding Source: ${formData.budgetSource}` : null,
-        formData.totalBudget ? `Total Budget: ${formData.totalBudget}` : null,
-        formData.disbursedAmount ? `Disbursed Amount: ${formData.disbursedAmount}` : null,
         formData.description ? `Description: ${formData.description}` : null,
       ].filter(Boolean).join(' | '),
     };
@@ -2779,7 +3046,10 @@ export default function Dashboard() {
       date_completed: project.date_completed || '',
       target_completion_date: project.target_completion_date || '',
       location: project.location || '',
-      remarks: project.remarks || ''
+      remarks: project.remarks || '',
+      total_budget: project.total_budget?.toString() || '',
+      funds_released: project.funds_released?.toString() || '',
+      funding_source: project.funding_source || '',
     });
     setShowFmrEditModal(true);
   };
@@ -2806,7 +3076,10 @@ export default function Dashboard() {
       date_completed: fmrFormData.date_completed || null,
       target_completion_date: fmrFormData.target_completion_date || null,
       location: fmrFormData.location,
-      remarks: fmrFormData.remarks
+      remarks: fmrFormData.remarks,
+      total_budget: fmrFormData.total_budget ? parseFloat(fmrFormData.total_budget) : null,
+      funds_released: fmrFormData.funds_released ? parseFloat(fmrFormData.funds_released) : null,
+      funding_source: fmrFormData.funding_source || null,
     };
     try {
       const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
@@ -2916,7 +3189,7 @@ export default function Dashboard() {
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'map', label: 'Map View', icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-    { id: 'farmers', label: 'Farmer List', icon: 'M18 18.72a2.01 2.01 0 01-1.8 2.28H7.6a2.01 2.01 0 01-1.8-2.28l.75-5.4a3 3 0 012.97-2.58h4.96a3 3 0 012.97 2.58l.54 5.4zM12 13.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z' },
+    { id: 'farmers', label: 'Farmer Beneficiaries', icon: 'M18 18.72a2.01 2.01 0 01-1.8 2.28H7.6a2.01 2.01 0 01-1.8-2.28l.75-5.4a3 3 0 012.97-2.58h4.96a3 3 0 012.97 2.58l.54 5.4zM12 13.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z' },
     { id: 'project-mgmt', label: 'Project Mgmt', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
     { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
@@ -3574,11 +3847,7 @@ export default function Dashboard() {
               const muni = (p.municipality || '').toLowerCase();
               const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
               const normalizedStatus = normalizeFmrStatus(p.status);
-              const isPendingStatus = normalizedStatus === 'Pending' || normalizedStatus === 'Proposed';
-              const matchesStatus =
-                fmrProjectStatusFilter === 'Pending'
-                  ? isPendingStatus
-                  : normalizedStatus === fmrProjectStatusFilter;
+              const matchesStatus = fmrProjectStatusFilter === 'All' || normalizedStatus === fmrProjectStatusFilter;
               const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
               const candidateDate = p.updated_at || p.created_at || p.date_completed || p.target_completion_date;
               const matchesDate = inDateRange(candidateDate, fmrProjectDateFrom, fmrProjectDateTo);
@@ -3596,10 +3865,7 @@ export default function Dashboard() {
               all: fmrProjects.length,
               completed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
               ongoing: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
-              pending: fmrProjects.filter(p => {
-                const status = normalizeFmrStatus(p.status);
-                return status === 'Pending' || status === 'Proposed';
-              }).length,
+              proposed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
             };
             const fmrTotalPages = Math.max(1, Math.ceil(filteredFmr.length / fmrProjectsPerPage));
             const safeFmrPage = Math.min(fmrProjectCurrentPage, fmrTotalPages);
@@ -3632,10 +3898,10 @@ export default function Dashboard() {
               const name = (p.project_name || '').toLowerCase();
               const loc = (p.location || '').toLowerCase();
               const muni = (p.municipality || '').toLowerCase();
-              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+              const src = (p.source || '').toLowerCase();
+              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q) || src.includes(q);
               const normalizedStatus = normalizeFmrStatus(p.status);
-              const matchesStatus = adminMapStatusFilter === 'All' ||
-                (adminMapStatusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === adminMapStatusFilter);
+              const matchesStatus = adminMapStatusFilter === 'All' || normalizedStatus === adminMapStatusFilter;
               const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
               const matchesMunicipality = adminMapMunicipalityFilter === 'All' || (p.municipality || '') === adminMapMunicipalityFilter;
               const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
@@ -3727,7 +3993,7 @@ export default function Dashboard() {
                     Show Overdue Only
                   </button>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {['On-Going', 'Pending', 'Completed', 'All'].map(s => (
+                    {['On-Going', 'Proposed', 'Completed', 'All'].map(s => (
                       <button key={s} onClick={() => setAdminMapStatusFilter(s)}
                         className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                           adminMapStatusFilter === s
@@ -3874,6 +4140,131 @@ export default function Dashboard() {
                         </div>
                       );
                     })}
+                    {/* Farmer Heatmap Layer */}
+                    <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
+
+                    {/* Markets Layer */}
+                    {showMarketsMap && (markets || []).map(m => (
+                      <Marker
+                        key={`market-${m.id}`}
+                        position={[Number(m.latitude), Number(m.longitude)]}
+                        icon={new L.DivIcon({
+                          className: 'custom-market-pin',
+                          html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                          iconSize: [30, 30],
+                          iconAnchor: [15, 15],
+                        })}
+                      >
+                        <Popup>
+                          <div className="p-1 space-y-1 text-slate-800">
+                            <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
+                            <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
+                            <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
+                            {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
+                            {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
+                            {m.commodities_accepted?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {m.commodities_accepted.map(c => (
+                                  <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ))}
+
+                    {/* Farmers Layer */}
+                    {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+                      const lat = f.farmLatitude || f.gps?.lat;
+                      const lng = f.farmLongitude || f.gps?.lng;
+                      if (!lat || !lng) return null;
+                      
+                      const cropColor = 
+                        f.crop === 'Rice' ? '#10b981' :
+                        f.crop === 'Corn' ? '#f59e0b' :
+                        f.crop === 'Sugarcane' ? '#8b5cf6' :
+                        f.crop === 'Coconut' ? '#3b82f6' :
+                        f.crop === 'Vegetables' ? '#ec4899' :
+                        '#64748b';
+
+                      return (
+                        <CircleMarker
+                          key={`farmer-${f.id}`}
+                          center={[Number(lat), Number(lng)]}
+                          radius={6}
+                          pathOptions={{
+                            fillColor: cropColor,
+                            fillOpacity: 0.9,
+                            color: '#ffffff',
+                            weight: 1.5
+                          }}
+                        >
+                          <Popup>
+                            <div className="p-1 space-y-1 text-slate-800">
+                              <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
+                              <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
+                              <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
+                                <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
+                                <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
+                                <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
+                                {f.nearestMarketId && (
+                                  <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
+                                )}
+                                {f.distanceToFmrKm && (
+                                  <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
+                                )}
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={() => setSelectedFarmerForPath(f)} 
+                                className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
+                              >
+                                Show Supply Chain Links
+                              </button>
+                            </div>
+                          </Popup>
+                        </CircleMarker>
+                      );
+                    })}
+
+                    {/* Supply Chain Connection Lines */}
+                    {(() => {
+                      if (!selectedFarmerForPath) return null;
+                      const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+                      const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+                      if (!farmLat || !farmLng) return null;
+
+                      const connectionPoints = [];
+                      connectionPoints.push([Number(farmLat), Number(farmLng)]);
+
+                      const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
+                      if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
+                        connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
+                        if (linkedProj.end_latitude && linkedProj.end_longitude) {
+                          connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
+                        }
+                      }
+
+                      const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
+                      if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
+                        connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+                      }
+
+                      if (connectionPoints.length < 2) return null;
+
+                      return (
+                        <Polyline
+                          positions={connectionPoints}
+                          pathOptions={{
+                            color: '#fb7185',
+                            weight: 3.5,
+                            dashArray: '5, 8',
+                            opacity: 0.95
+                          }}
+                        />
+                      );
+                    })()}
                   </MapContainer>
 
                   <div className="absolute bottom-4 left-4 z-[500]">
@@ -3902,6 +4293,36 @@ export default function Dashboard() {
                           className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                         />
                         Show Report Heatmap
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showFarmerDots}
+                          onChange={(e) => {
+                            setShowFarmerDots(e.target.checked);
+                            if (!e.target.checked) setSelectedFarmerForPath(null);
+                          }}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Farmers (Dots)
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showFarmerHeatmap}
+                          onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Farmer Density
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showMarketsMap}
+                          onChange={(e) => setShowMarketsMap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Markets (Icons)
                       </label>
                     </div>
                   </div>
@@ -3943,8 +4364,8 @@ export default function Dashboard() {
                       <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
                     </div>
                   </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.pending}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Pending</p>
+                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
                 </div>
               </div>
 
@@ -4051,7 +4472,7 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
                   <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
-                    {['On-Going', 'Pending', 'Completed'].map(s => (
+                    {['On-Going', 'Proposed', 'Completed'].map(s => (
                       <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
                         className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
                           fmrProjectStatusFilter === s
@@ -4106,7 +4527,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                   {paginatedFilteredFmr.map(project => {
                     const status = normalizeFmrStatus(project.status);
-                    const displayStatus = status === 'Proposed' ? 'Pending' : status;
+                    const displayStatus = status;
                     const statusStyle = status === 'Completed'
                       ? { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' }
                       : status === 'On-Going'
@@ -4267,10 +4688,10 @@ export default function Dashboard() {
               const name = (p.project_name || '').toLowerCase();
               const loc = (p.location || '').toLowerCase();
               const muni = (p.municipality || '').toLowerCase();
-              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+              const src = (p.source || '').toLowerCase();
+              const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q) || src.includes(q);
               const normalizedStatus = normalizeFmrStatus(p.status);
-              const matchesStatus = adminMapStatusFilter === 'All' ||
-                (adminMapStatusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === adminMapStatusFilter);
+              const matchesStatus = adminMapStatusFilter === 'All' || normalizedStatus === adminMapStatusFilter;
               const matchesYear = adminMapYearFilter === 'All' || String(Number(p.year_funded)) === adminMapYearFilter;
               const matchesMunicipality = adminMapMunicipalityFilter === 'All' || (p.municipality || '') === adminMapMunicipalityFilter;
               const matchesOverdue = !adminMapShowOverdueOnly || isOverdueProject(p);
@@ -4363,7 +4784,7 @@ export default function Dashboard() {
                     Show Overdue Only
                   </button>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {['On-Going', 'Pending', 'Completed', 'All'].map(s => (
+                    {['On-Going', 'Proposed', 'Completed', 'All'].map(s => (
                       <button key={s} onClick={() => setAdminMapStatusFilter(s)}
                         className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                           adminMapStatusFilter === s
@@ -4626,7 +5047,132 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
-                    </MapContainer>
+                    {/* Farmer Heatmap Layer */}
+                    <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
+
+                    {/* Markets Layer */}
+                    {showMarketsMap && (markets || []).map(m => (
+                      <Marker
+                        key={`market-${m.id}`}
+                        position={[Number(m.latitude), Number(m.longitude)]}
+                        icon={new L.DivIcon({
+                          className: 'custom-market-pin',
+                          html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                          iconSize: [30, 30],
+                          iconAnchor: [15, 15],
+                        })}
+                      >
+                        <Popup>
+                          <div className="p-1 space-y-1 text-slate-800">
+                            <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
+                            <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
+                            <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
+                            {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
+                            {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
+                            {m.commodities_accepted?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {m.commodities_accepted.map(c => (
+                                  <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ))}
+
+                    {/* Farmers Layer */}
+                    {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+                      const lat = f.farmLatitude || f.gps?.lat;
+                      const lng = f.farmLongitude || f.gps?.lng;
+                      if (!lat || !lng) return null;
+                      
+                      const cropColor = 
+                        f.crop === 'Rice' ? '#10b981' :
+                        f.crop === 'Corn' ? '#f59e0b' :
+                        f.crop === 'Sugarcane' ? '#8b5cf6' :
+                        f.crop === 'Coconut' ? '#3b82f6' :
+                        f.crop === 'Vegetables' ? '#ec4899' :
+                        '#64748b';
+
+                      return (
+                        <CircleMarker
+                          key={`farmer-${f.id}`}
+                          center={[Number(lat), Number(lng)]}
+                          radius={6}
+                          pathOptions={{
+                            fillColor: cropColor,
+                            fillOpacity: 0.9,
+                            color: '#ffffff',
+                            weight: 1.5
+                          }}
+                        >
+                          <Popup>
+                            <div className="p-1 space-y-1 text-slate-800">
+                              <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
+                              <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
+                              <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
+                                <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
+                                <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
+                                <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
+                                {f.nearestMarketId && (
+                                  <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
+                                )}
+                                {f.distanceToFmrKm && (
+                                  <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
+                                )}
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={() => setSelectedFarmerForPath(f)} 
+                                className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
+                              >
+                                Show Supply Chain Links
+                              </button>
+                            </div>
+                          </Popup>
+                        </CircleMarker>
+                      );
+                    })}
+
+                    {/* Supply Chain Connection Lines */}
+                    {(() => {
+                      if (!selectedFarmerForPath) return null;
+                      const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+                      const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+                      if (!farmLat || !farmLng) return null;
+
+                      const connectionPoints = [];
+                      connectionPoints.push([Number(farmLat), Number(farmLng)]);
+
+                      const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
+                      if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
+                        connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
+                        if (linkedProj.end_latitude && linkedProj.end_longitude) {
+                          connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
+                        }
+                      }
+
+                      const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
+                      if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
+                        connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+                      }
+
+                      if (connectionPoints.length < 2) return null;
+
+                      return (
+                        <Polyline
+                          positions={connectionPoints}
+                          pathOptions={{
+                            color: '#fb7185',
+                            weight: 3.5,
+                            dashArray: '5, 8',
+                            opacity: 0.95
+                          }}
+                        />
+                      );
+                    })()}
+                  </MapContainer>
                   )}
 
                   <div className="absolute bottom-4 left-4 z-[500]">
@@ -4655,6 +5201,36 @@ export default function Dashboard() {
                           className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                         />
                         Show Report Heatmap
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showFarmerDots}
+                          onChange={(e) => {
+                            setShowFarmerDots(e.target.checked);
+                            if (!e.target.checked) setSelectedFarmerForPath(null);
+                          }}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Farmers (Dots)
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showFarmerHeatmap}
+                          onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Farmer Density
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={showMarketsMap}
+                          onChange={(e) => setShowMarketsMap(e.target.checked)}
+                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        Show Markets (Icons)
                       </label>
                     </div>
                   </div>
@@ -4821,70 +5397,27 @@ export default function Dashboard() {
 
             // ── DA-BAFE FMRDP Budget Processor ─────────────────────────
             const getDaBudgetDetails = (p) => {
-              const length = Number(p.project_length_km || 1.5);
-              // Use real database totalBudget or total_budget if available, otherwise fall back to DA Standard Unit Cost of ₱13.5M/km
-              const dbCost = Number(p.totalBudget ?? p.total_budget ?? p.budget ?? p.allocated_budget ?? 0);
-              const estimatedCost = dbCost > 0 ? dbCost : length * 13500000;
-              
+              // Real total_budget if the admin has entered one, else the DA-BAFE
+              // 2026 ₱15M/km indicative rate (see src/lib/budgetEstimate.js).
+              const { amount: estimatedCost } = estimateProjectBudget(p);
+
               // Implementing Mode: deterministic based on ID
               const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
               const mode = isDpwh ? 'DPWH (Inter-agency)' : 'LGU (MOA-Downloaded)';
-              
-              const progress = Number(p.accomplishment || 0);
-              
-              // Tranche releases (15%, 35%, 40%, 10%)
-              const tranches = [
-                {
-                  id: 1,
-                  name: 'Mobilization Advance',
-                  percentage: 15,
-                  amount: estimatedCost * 0.15,
-                  requiredProgress: 0,
-                  released: true, // Mobilization is always released on NTP
-                  liquidated: progress > 15, // Liquidated once project starts progressing well
-                  label: 'Mobilization (15%)',
-                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 15 * 24 * 60 * 60 * 1000) : new Date(),
-                },
-                {
-                  id: 2,
-                  name: '1st Progress Release',
-                  percentage: 35,
-                  amount: estimatedCost * 0.35,
-                  requiredProgress: 30,
-                  released: progress >= 30,
-                  liquidated: progress > 50,
-                  label: 'Progress 1 (35%)',
-                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 60 * 24 * 60 * 60 * 1000) : new Date(),
-                },
-                {
-                  id: 3,
-                  name: '2nd Progress Release',
-                  percentage: 40,
-                  amount: estimatedCost * 0.40,
-                  requiredProgress: 70,
-                  released: progress >= 70,
-                  liquidated: progress > 90,
-                  label: 'Progress 2 (40%)',
-                  date: p.created_at ? new Date(new Date(p.created_at).getTime() + 120 * 24 * 60 * 60 * 1000) : new Date(),
-                },
-                {
-                  id: 4,
-                  name: 'Retention Release',
-                  percentage: 10,
-                  amount: estimatedCost * 0.10,
-                  requiredProgress: 100,
-                  released: progress === 100,
-                  liquidated: progress === 100,
-                  label: 'Retention (10%)',
-                  date: p.date_completed ? new Date(p.date_completed) : p.target_completion_date ? new Date(p.target_completion_date) : new Date(),
-                }
-              ];
 
-              const totalReleased = tranches.reduce((sum, t) => sum + (t.released ? t.amount : 0), 0);
-              const totalLiquidated = tranches.reduce((sum, t) => sum + (t.liquidated ? t.amount : 0), 0);
-              const remainingToRelease = estimatedCost - totalReleased;
-              const remainingToLiquidate = totalReleased - totalLiquidated;
-              const liquidationRate = totalReleased > 0 ? (totalLiquidated / totalReleased) * 100 : 0;
+              // Tranche releases (15% Mobilization / 35% + 40% Progress / 10% Retention)
+              const tranches = buildDisbursementTranches(estimatedCost, p).map((t) => ({
+                ...t,
+                label: `${t.name} (${t.percentage}%)`,
+              }));
+
+              const {
+                totalReleased,
+                totalLiquidated,
+                remainingToRelease,
+                remainingToLiquidate,
+                liquidationRate,
+              } = summarizeTranches(tranches, estimatedCost);
 
               return {
                 estimatedCost,
@@ -6499,6 +7032,9 @@ export default function Dashboard() {
             const filteredPublicReports = publicReports.filter(rpt => {
               const matchesStatus = rpt.status === publicReportFilter;
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
+              const matchesAssigned = publicReportAssignedFilter === 'all' ||
+                (publicReportAssignedFilter === 'unassigned' && !rpt.assigned_engineer_id) ||
+                (publicReportAssignedFilter === 'assigned' && rpt.assigned_engineer_id);
               const matchesDate = inDateRange(rpt.created_at, publicReportDateFrom, publicReportDateTo);
               const matchesMunicipality = publicReportMunicipalityFilter === 'all' || rpt.municipality === publicReportMunicipalityFilter;
               const matchesBarangay = publicReportBarangayFilter === 'all' || rpt.barangay === publicReportBarangayFilter;
@@ -6513,7 +7049,7 @@ export default function Dashboard() {
                 (rpt.street || '').toLowerCase().includes(q) ||
                 (rpt.project_name || '').toLowerCase().includes(q) ||
                 (rpt.description || '').toLowerCase().includes(q);
-              return matchesStatus && matchesVerification && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesProject && matchesSearch;
+              return matchesStatus && matchesVerification && matchesAssigned && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesProject && matchesSearch;
             });
             const sortedFilteredPublicReports = [...filteredPublicReports].sort((a, b) => {
               const aTime = new Date(a.updated_at || a.created_at || 0).getTime() || 0;
@@ -6903,227 +7439,26 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Reports Analytics */}
-                <section className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
+                {/* Executive DA Citizen Reports Header Banner */}
+                <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white p-5 rounded-2xl border border-emerald-900/60 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="size-12 rounded-xl bg-emerald-500/20 text-emerald-400 grid place-items-center border border-emerald-500/30 shrink-0 shadow-inner">
+                      <Icons.AlertTriangle />
+                    </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Reports Analytics</h3>
-                      <p className="text-xs text-slate-500 mt-1">Operational signals for report concentration, trend, and resolution performance.</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-lg font-bold text-white tracking-tight">Citizen Damage & Incident Reports</h2>
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30 flex items-center gap-1.5">
+                          <span className="size-2 rounded-full bg-amber-400 inline-block animate-pulse"></span>
+                          {pendingCount} Pending Review
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-1 font-medium">
+                        Direct public feedback channel for Region VI Farm-to-Market Road damage, landslides, and infrastructure issues.
+                      </p>
                     </div>
-                    <button
-                      onClick={() => setPublicReportsAnalyticsOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      {publicReportsAnalyticsOpen ? 'Hide Analytics' : 'Show Analytics'}
-                      <svg className={`w-4 h-4 transition-transform ${publicReportsAnalyticsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                      </svg>
-                    </button>
                   </div>
-
-                  {publicReportsAnalyticsOpen && (
-                    <div className="mt-4 space-y-5">
-                      {(pending14 > 0 || unresolved30 > 0) && (
-                        <div className="space-y-2">
-                          {pending14 > 0 && (
-                            <button
-                              onClick={() => {
-                                const cutoff = new Date(today);
-                                cutoff.setDate(cutoff.getDate() - 14);
-                                setPublicReportFilter('pending');
-                                setPublicReportDateTo(formatDateInput(cutoff));
-                              }}
-                              className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
-                            >
-                              <strong>{pending14}</strong> reports have been pending for 14+ days.
-                            </button>
-                          )}
-                          {unresolved30 > 0 && (
-                            <button
-                              onClick={() => {
-                                const cutoff = new Date(today);
-                                cutoff.setDate(cutoff.getDate() - 30);
-                                setPublicReportFilter('pending');
-                                setPublicReportDateTo(formatDateInput(cutoff));
-                              }}
-                              className="w-full text-left rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 transition-colors"
-                            >
-                              <strong>{unresolved30}</strong> reports have been unresolved for 30+ days.
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                        <div className="xl:col-span-6 rounded-2xl border border-slate-200 p-4 bg-white">
-                          <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-slate-800">Top 10 Most Reported Projects</h4>
-                            {publicReportProjectFilter && (
-                              <button
-                                onClick={() => setPublicReportProjectFilter('')}
-                                className="text-xs font-medium text-teal-700 hover:text-teal-800"
-                              >
-                                Clear project filter
-                              </button>
-                            )}
-                          </div>
-                          {topProjectsData.length === 0 ? (
-                            <p className="text-sm text-slate-500 py-12 text-center">No project report data yet.</p>
-                          ) : (
-                            <div className="h-80">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={topProjectsData} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                  <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
-                                  <YAxis type="category" dataKey="project_label" width={150} tick={{ fontSize: 11, fill: '#475569' }} />
-                                  <RechartsTooltip
-                                    cursor={{ fill: 'rgba(148,163,184,0.08)' }}
-                                    formatter={(value) => [`${value} reports`, 'Count']}
-                                    labelFormatter={(label, payload) => payload?.[0]?.payload?.project_name || label}
-                                  />
-                                  <Bar dataKey="count" radius={[0, 8, 8, 0]}>
-                                    {topProjectsData.map((entry) => (
-                                      <Cell
-                                        key={entry.project_name}
-                                        fill={entry.fill}
-                                        cursor="pointer"
-                                        stroke={publicReportProjectFilter === entry.project_name ? '#0f172a' : 'none'}
-                                        strokeWidth={publicReportProjectFilter === entry.project_name ? 1.5 : 0}
-                                        onClick={() => {
-                                          setPublicReportProjectFilter(entry.project_name);
-                                          setPublicReportFilter('pending');
-                                        }}
-                                      />
-                                    ))}
-                                  </Bar>
-                                </BarChart>
-                              </ResponsiveContainer>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="xl:col-span-6 rounded-2xl border border-slate-200 p-4 bg-white">
-                          <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-slate-800">Report Volume Trend</h4>
-                            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
-                              <button
-                                onClick={() => setPublicReportsTrendView('weekly')}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                                  publicReportsTrendView === 'weekly' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                                }`}
-                              >
-                                Weekly
-                              </button>
-                              <button
-                                onClick={() => setPublicReportsTrendView('monthly')}
-                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                                  publicReportsTrendView === 'monthly' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                                }`}
-                              >
-                                Monthly
-                              </button>
-                            </div>
-                          </div>
-                          {trendData.length === 0 ? (
-                            <p className="text-sm text-slate-500 py-12 text-center">No time-series data available.</p>
-                          ) : (
-                            <div className="h-80">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={trendData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
-                                  <defs>
-                                    <linearGradient id="reportsTotalFill" x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.3} />
-                                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0.02} />
-                                    </linearGradient>
-                                  </defs>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} />
-                                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                                  <RechartsTooltip />
-                                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                                  <Area type="monotone" dataKey="total" name="Total Reports" stroke="#0f766e" fill="url(#reportsTotalFill)" strokeWidth={2} />
-                                  <Line type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" strokeWidth={2.5} dot={{ r: 2 }} />
-                                </AreaChart>
-                              </ResponsiveContainer>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Avg. Resolution Time</p>
-                          <p className="text-2xl font-bold text-slate-900 mt-1">
-                            {avgResolutionDays == null ? 'N/A' : `${avgResolutionDays.toFixed(1)} days`}
-                          </p>
-                        </div>
-                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Resolved Within 7 Days</p>
-                          <p className="text-2xl font-bold text-emerald-700 mt-1">{resolvedWithinSevenPct.toFixed(1)}%</p>
-                        </div>
-                        <div className="bg-white border border-slate-200/60 rounded-2xl p-4 shadow-sm">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">On-Site Verification</p>
-                          <p className="text-2xl font-bold text-teal-700 mt-1">{onsitePct.toFixed(1)}%</p>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                        <div className="px-4 py-3 border-b border-slate-100">
-                          <h4 className="text-sm font-semibold text-slate-800">Location Heatmap Summary</h4>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[760px]">
-                            <thead className="bg-slate-50/70">
-                              <tr>
-                                {[
-                                  { key: 'municipality', label: 'Municipality' },
-                                  { key: 'total', label: 'Total Reports' },
-                                  { key: 'pending', label: 'Pending' },
-                                  { key: 'resolved', label: 'Resolved' },
-                                  { key: 'avgResolveDays', label: 'Avg. Days to Resolve' },
-                                ].map((col) => (
-                                  <th key={col.key} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                                    <button
-                                      onClick={() => toggleMunicipalitySort(col.key)}
-                                      className="inline-flex items-center gap-1 hover:text-slate-700"
-                                    >
-                                      {col.label}
-                                      {publicReportsLocationSort.key === col.key && (
-                                        <span className="text-teal-600">{publicReportsLocationSort.direction === 'asc' ? '↑' : '↓'}</span>
-                                      )}
-                                    </button>
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {sortedMunicipalityRows.length === 0 ? (
-                                <tr>
-                                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No municipality data to display.</td>
-                                </tr>
-                              ) : (
-                                sortedMunicipalityRows.map((row) => (
-                                  <tr
-                                    key={row.municipality}
-                                    className={`${row.pending > row.resolved ? 'bg-amber-50/45' : 'bg-white'} hover:bg-slate-50 transition-colors`}
-                                  >
-                                    <td className="px-4 py-3 text-sm font-medium text-slate-800">{row.municipality}</td>
-                                    <td className="px-4 py-3 text-sm text-slate-600">{row.total}</td>
-                                    <td className="px-4 py-3 text-sm text-amber-700 font-semibold">{row.pending}</td>
-                                    <td className="px-4 py-3 text-sm text-emerald-700 font-semibold">{row.resolved}</td>
-                                    <td className="px-4 py-3 text-sm text-slate-600">{row.avgResolveDays == null ? 'N/A' : row.avgResolveDays.toFixed(1)}</td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                {/* Filters */}
+                </div>
                 <div className="bg-white border border-slate-200/70 rounded-2xl p-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.3)]">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
@@ -7163,7 +7498,7 @@ export default function Dashboard() {
                   </div>
 
                   <div className="mt-3 grid gap-3 xl:grid-cols-12">
-                    <div className="relative xl:col-span-4">
+                    <div className="relative xl:col-span-3">
                       <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Search</label>
                       <svg className="absolute left-3.5 top-[calc(50%+11px)] -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
                       <input
@@ -7203,6 +7538,19 @@ export default function Dashboard() {
                     </div>
 
                     <div className="xl:col-span-2">
+                      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Assignment</label>
+                      <select
+                        value={publicReportAssignedFilter}
+                        onChange={e => setPublicReportAssignedFilter(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                      >
+                        <option value="all">All Assignments</option>
+                        <option value="unassigned">Unassigned</option>
+                        <option value="assigned">Assigned</option>
+                      </select>
+                    </div>
+
+                    <div className="xl:col-span-1.5">
                       <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Start Date</label>
                       <input
                         type="date"
@@ -7215,7 +7563,7 @@ export default function Dashboard() {
                       />
                     </div>
 
-                    <div className="xl:col-span-2">
+                    <div className="xl:col-span-1.5">
                       <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">End Date</label>
                       <input
                         type="date"
@@ -7284,370 +7632,469 @@ export default function Dashboard() {
                 </div>
 
                 {/* Detail Modal */}
-                {selectedPublicReport && (
-                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedPublicReport(null)}>
-                    <div className="bg-white rounded-2xl shadow-2xl w-[95vw] lg:w-[75vw] max-w-6xl max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                      <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900">Public Report Detail</h3>
-                          <p className="text-sm text-slate-500 mt-0.5">{selectedPublicReport.project_name || 'No project linked'}</p>
-                        </div>
-                        <button onClick={() => setSelectedPublicReport(null)} className="p-2 hover:bg-slate-100 rounded-xl">
-                          <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                      </div>
-                      <div className="p-6 space-y-5">
-                        {/* Badges row */}
-                        <div className="flex items-center gap-3 flex-wrap">
-                          {verifyBadge(selectedPublicReport.verification)}
-                          {statusBadge(selectedPublicReport.status)}
-                          <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
-                            {selectedPublicReport.source || 'Anonymous'}
-                          </span>
-                          <span className={`px-3 py-1 rounded-lg text-xs font-semibold border ${distanceBand.tone}`}>
-                            {distanceBand.emoji} {distanceBand.label}
-                          </span>
-                        </div>
+                {selectedPublicReport && (() => {
+                  const selectedReportProject = (() => {
+                    if (!selectedPublicReport) return null;
+                    if (selectedPublicReport.project_id) {
+                      const byId = fmrProjects.find((p) => p.id === selectedPublicReport.project_id);
+                      if (byId) return byId;
+                    }
+                    const reportName = String(selectedPublicReport.project_name || '').trim().toLowerCase();
+                    if (!reportName) return null;
+                    return fmrProjects.find((p) => String(p.project_name || '').trim().toLowerCase() === reportName) || null;
+                  })();
 
-                        {/* Credibility score */}
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Credibility Score</p>
-                            <span className="text-sm font-bold text-slate-800">{credibility.score}/100</span>
-                          </div>
-                          <div className="mt-2 h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${credibility.tone}`}
-                              style={{ width: `${credibility.score}%` }}
-                            />
-                          </div>
-                          <p className="mt-2 text-xs text-slate-600">{credibility.label}</p>
-                        </div>
+                  const officialPoint = (() => {
+                    if (!selectedReportProject) return null;
+                    const route = routeByProjectId[selectedReportProject.id];
+                    if (route && Number.isFinite(Number(route.start_latitude)) && Number.isFinite(Number(route.start_longitude))) {
+                      const hasEnd = Number.isFinite(Number(route.end_latitude)) && Number.isFinite(Number(route.end_longitude));
+                      if (hasEnd) {
+                        return {
+                          lat: (Number(route.start_latitude) + Number(route.end_latitude)) / 2,
+                          lng: (Number(route.start_longitude) + Number(route.end_longitude)) / 2,
+                        };
+                      }
+                      return {
+                        lat: Number(route.start_latitude),
+                        lng: Number(route.start_longitude),
+                      };
+                    }
+                    const startLat = Number(selectedReportProject.start_latitude);
+                    const startLng = Number(selectedReportProject.start_longitude);
+                    if (Number.isFinite(startLat) && Number.isFinite(startLng)) {
+                      return { lat: startLat, lng: startLng };
+                    }
+                    return null;
+                  })();
 
-                        {/* Potential duplicates */}
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                          <div className="flex items-start justify-between gap-3">
+                  const reportPoint = (() => {
+                    if (!selectedPublicReport) return null;
+                    const lat = Number(selectedPublicReport.latitude);
+                    const lng = Number(selectedPublicReport.longitude);
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+                    return { lat, lng };
+                  })();
+
+                  const photoPoint = (() => {
+                    if (!selectedPublicReport) return null;
+                    const lat = Number(selectedPublicReport.photo_latitude ?? selectedPublicReport.latitude);
+                    const lng = Number(selectedPublicReport.photo_longitude ?? selectedPublicReport.longitude);
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+                    return { lat, lng };
+                  })();
+
+                  const photoGpsMatchesReport = (() => {
+                    if (!reportPoint || !photoPoint) return false;
+                    return haversineMeters(reportPoint.lat, reportPoint.lng, photoPoint.lat, photoPoint.lng) <= 20;
+                  })();
+
+                  const distanceFromProjectMeters = (() => {
+                    if (!officialPoint || !reportPoint) return NaN;
+                    return haversineMeters(officialPoint.lat, officialPoint.lng, reportPoint.lat, reportPoint.lng);
+                  })();
+
+                  const distanceBand = getDistanceBand(distanceFromProjectMeters);
+
+                  const credibility = calculateCredibilityScore({
+                    accuracy: Number(selectedPublicReport?.geo_accuracy),
+                    distanceMeters: distanceFromProjectMeters,
+                    isVerifiedUser: Boolean(selectedPublicReport?.user_id),
+                    photoGpsMatch: photoGpsMatchesReport,
+                  });
+
+                  return (
+                    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200" onClick={() => setSelectedPublicReport(null)}>
+                      <div className="bg-white rounded-2xl shadow-2xl w-[98vw] lg:w-[90vw] max-w-7xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200/80" onClick={e => e.stopPropagation()}>
+                        
+                        {/* Top Government Case Header */}
+                        <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between shrink-0 border-b border-emerald-900/50">
+                          <div className="flex items-center gap-3.5">
+                            <div className="size-11 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/30 shadow-inner">
+                              <Icons.Road />
+                            </div>
                             <div>
-                              <p className="text-xs text-amber-700 uppercase font-semibold tracking-wide">Duplicate Check (100m)</p>
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">Public Road Damage Case File</h3>
+                                <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 font-mono border border-emerald-800/60 font-bold">
+                                  REF #{selectedPublicReport.id.slice(0, 8).toUpperCase()}
+                                </span>
+                                {statusBadge(selectedPublicReport.status)}
+                                {verifyBadge(selectedPublicReport.verification)}
+                              </div>
+                              <p className="text-xs text-slate-300 font-medium mt-0.5">
+                                DA RAED Region VI &middot; {selectedPublicReport.project_name || 'General Road Sector Area'}
+                              </p>
+                            </div>
+                          </div>
+                          <button onClick={() => setSelectedPublicReport(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                            <Icons.X />
+                          </button>
+                        </div>
+
+                        {/* Main 2-Column Case Body */}
+                        <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-100/60">
+                          
+                          {/* LEFT COLUMN: Evidence & Geolocation (Col 7) */}
+                          <div className="lg:col-span-7 space-y-4">
+
+                            {/* Citizen Report Statement */}
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs relative">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Icons.Document /> Citizen Statement & Description
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                  Submitted {new Date(selectedPublicReport.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-slate-800 leading-relaxed font-medium bg-slate-50/80 p-3.5 rounded-lg border border-slate-100 italic">
+                                &ldquo;{selectedPublicReport.description || 'No detailed description attached.'}&rdquo;
+                              </p>
+                            </div>
+
+                            {/* Credibility & Geo Metrics Banner */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span className="flex items-center gap-1.5 text-slate-600">
+                                  <Icons.ShieldCheck /> Verification & Credibility Index
+                                </span>
+                                <span className="text-emerald-700 font-extrabold">{credibility.score}/100 ({credibility.label})</span>
+                              </div>
+                              <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200/50">
+                                <div className={`h-full rounded-full ${credibility.tone} transition-all duration-500`} style={{ width: `${credibility.score}%` }} />
+                              </div>
+                              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 flex-wrap gap-2">
+                                <span className={`px-2 py-0.5 rounded font-bold border ${distanceBand.tone}`}>
+                                  {distanceBand.emoji} Offset: {distanceBand.label}
+                                </span>
+                                {selectedPublicReport.geo_accuracy && (
+                                  <span>GPS Accuracy: ±{Math.round(selectedPublicReport.geo_accuracy)}m</span>
+                                )}
+                                {(selectedPublicReport.latitude || selectedPublicReport.longitude) && (
+                                  <a href={`https://www.google.com/maps?q=${selectedPublicReport.latitude},${selectedPublicReport.longitude}`} target="_blank" rel="noopener noreferrer"
+                                    className="font-bold text-teal-700 hover:underline inline-flex items-center gap-1">
+                                    <Icons.ExternalLink /> Open in Maps
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Site Photo */}
+                            {selectedPublicReport.photo_url && (
+                              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Icons.Camera /> On-Site Damage Photo Evidence
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${photoPoint ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                    {photoPoint ? '✓ Geotag Verified' : 'No Photo Geotag'}
+                                  </span>
+                                </div>
+                                <div className="relative rounded-lg overflow-hidden border border-slate-200">
+                                  <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
+                                    <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-80 object-cover hover:opacity-95 transition-opacity" />
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Route Map */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                Geospatial Location & Route Alignment Map
+                              </span>
+                              <PublicReportRouteMapPanel
+                                project={selectedReportProject}
+                                routeRecord={selectedReportProject ? routeByProjectId[selectedReportProject.id] : null}
+                                reportLatitude={selectedPublicReport.latitude}
+                                reportLongitude={selectedPublicReport.longitude}
+                                heightClass="h-64 sm:h-72"
+                                title="Project Route Map"
+                              />
+                            </div>
+
+                            {/* Vicinity Duplicates */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                Vicinity Duplicates Check (100m Radius)
+                              </span>
                               {similarReportsLoading ? (
-                                <p className="text-sm text-amber-700 mt-1">Scanning nearby reports...</p>
+                                <p className="text-xs text-slate-400">Checking nearby reports...</p>
                               ) : similarNearbyReports.length > 0 ? (
-                                <p className="text-sm text-amber-800 mt-1">{similarNearbyReports.length} nearby report(s) found in the same vicinity.</p>
+                                <div className="space-y-1.5">
+                                  <p className="text-xs font-bold text-amber-800">{similarNearbyReports.length} duplicate report(s) found nearby:</p>
+                                  {similarNearbyReports.slice(0, 3).map((similar) => (
+                                    <button
+                                      key={similar.id}
+                                      onClick={() => {
+                                        const fullReport = publicReports.find((row) => row.id === similar.id);
+                                        if (fullReport) setSelectedPublicReport(fullReport);
+                                      }}
+                                      className="w-full text-left rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs hover:bg-amber-100/60 transition-colors flex items-center justify-between"
+                                    >
+                                      <span className="font-bold text-slate-800">{similar.project_name || 'Unlinked Road'}</span>
+                                      <span className="text-amber-800 font-semibold">{formatDistance(similar.distanceMeters)} away</span>
+                                    </button>
+                                  ))}
+                                </div>
                               ) : (
-                                <p className="text-sm text-emerald-700 mt-1">No nearby potential duplicate reports detected.</p>
+                                <p className="text-xs font-bold text-emerald-700">✓ No duplicate reports detected in this vicinity.</p>
                               )}
                             </div>
-                          </div>
-                          {!similarReportsLoading && similarNearbyReports.length > 0 && (
-                            <div className="mt-3 space-y-2">
-                              {similarNearbyReports.slice(0, 5).map((similar) => (
-                                <button
-                                  key={similar.id}
-                                  onClick={() => {
-                                    const fullReport = publicReports.find((row) => row.id === similar.id);
-                                    if (fullReport) {
-                                      setSelectedPublicReport(fullReport);
-                                    }
-                                  }}
-                                  className="w-full text-left rounded-lg border border-amber-200 bg-white px-3 py-2 hover:bg-amber-50 transition"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <p className="text-sm font-semibold text-slate-800">{similar.project_name || 'Unlinked project'}</p>
-                                    <span className="text-xs font-medium text-amber-700">{formatDistance(similar.distanceMeters)}</span>
-                                  </div>
-                                  <p className="text-xs text-slate-500 mt-0.5">
-                                    {similar.full_name || 'Anonymous'} • {new Date(similar.created_at).toLocaleString()}
-                                  </p>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
 
-                        <PublicReportRouteMapPanel
-                          project={selectedReportProject}
-                          routeRecord={selectedReportProject ? routeByProjectId[selectedReportProject.id] : null}
-                          reportLatitude={selectedPublicReport.latitude}
-                          reportLongitude={selectedPublicReport.longitude}
-                          heightClass="h-64 sm:h-72"
-                          title="Project Route Map"
-                        />
+                          </div>
 
-                        <AdminWorkflowControls
-                          report={selectedPublicReport}
-                          adminIdentity={adminIdentity}
-                          onNotify={showNotification}
-                          onResolve={async () => {
-                            await updatePublicReportStatus(selectedPublicReport.id, 'resolved');
-                            setSelectedPublicReport(null);
-                          }}
-                        />
+                          {/* RIGHT COLUMN: Administrative Action Station (Col 5) */}
+                          <div className="lg:col-span-5 space-y-4">
 
-                        <LguEscalationPanel
-                          report={selectedPublicReport}
-                          decision={selectedReportLguDecision}
-                          onEscalate={async (reason) => {
-                            try {
-                              await escalateReportToLgu(selectedPublicReport, reason);
-                              showNotification('Report escalated to LGU', 'success');
-                              await loadLatestLguDecision(selectedPublicReport.id);
-                            } catch (err) {
-                              showNotification(`Failed to escalate: ${err.message}`, 'error');
-                            }
-                          }}
-                        />
-
-                        {/* Captured photo */}
-                        {selectedPublicReport.photo_url && (
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Site Photo</p>
-                            <div className="relative">
-                              <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
-                                <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-72 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition" />
-                              </a>
-                              <div className="absolute left-3 top-3 rounded-lg bg-black/65 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">
-                                Geotag {photoPoint ? 'Verified' : 'Unavailable'}
-                              </div>
-                              <div className="absolute right-3 top-3 rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-800 border border-slate-200">
-                                {photoGpsMatchesReport ? 'Photo GPS matches report' : 'Photo GPS mismatch'}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Info grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Submitted By</p>
-                            <p className="text-sm text-slate-700">{selectedPublicReport.full_name || 'Anonymous'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Contact</p>
-                            <p className="text-sm text-slate-700">{selectedPublicReport.contact_info || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Municipality</p>
-                            <p className="text-sm text-slate-700">{selectedPublicReport.municipality || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Barangay</p>
-                            <p className="text-sm text-slate-700">{selectedPublicReport.barangay || '—'}</p>
-                          </div>
-                          {selectedPublicReport.street && (
-                            <div>
-                              <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Street / Sitio</p>
-                              <p className="text-sm text-slate-700">{selectedPublicReport.street}</p>
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Project</p>
-                            <p className="text-sm text-slate-700">{selectedPublicReport.project_name || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Date Submitted</p>
-                            <p className="text-sm text-slate-700">{new Date(selectedPublicReport.created_at).toLocaleString()}</p>
-                          </div>
-                        </div>
-
-                        {/* GPS info */}
-                        {(selectedPublicReport.latitude || selectedPublicReport.longitude) && (
-                          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                            <p className="text-xs text-slate-400 uppercase font-semibold mb-2">GPS Verification</p>
-                            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-700">
-                              <span><strong>Lat:</strong> {Number(selectedPublicReport.latitude).toFixed(6)}</span>
-                              <span><strong>Lng:</strong> {Number(selectedPublicReport.longitude).toFixed(6)}</span>
-                              {selectedPublicReport.geo_accuracy && <span><strong>Accuracy:</strong> ±{Math.round(selectedPublicReport.geo_accuracy)}m</span>}
-                              {officialPoint && <span><strong>Project Offset:</strong> {formatDistance(distanceFromProjectMeters)}</span>}
-                            </div>
-                            {officialPoint && reportPoint && (
-                              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
-                                  <p className="font-semibold">Official Project Point</p>
-                                  <p>{officialPoint.lat.toFixed(6)}, {officialPoint.lng.toFixed(6)}</p>
+                            {/* Citizen Details */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block border-b border-slate-100 pb-2">
+                                Reporter Metadata
+                              </span>
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Submitted By</span>
+                                  <span className="font-bold text-slate-900">{selectedPublicReport.full_name || 'Anonymous Citizen'}</span>
                                 </div>
-                                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sky-800">
-                                  <p className="font-semibold">Reported Point</p>
-                                  <p>{reportPoint.lat.toFixed(6)}, {reportPoint.lng.toFixed(6)}</p>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Contact Info</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.contact_info || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Municipality</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.municipality || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Barangay</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.barangay || '—'}</span>
                                 </div>
                               </div>
-                            )}
-                            {(officialPoint || reportPoint) && (
-                              <div className="mt-4 rounded-xl overflow-hidden border border-slate-200">
-                                <PublicReportLocationComparisonMap officialPoint={officialPoint} reportPoint={reportPoint} />
-                              </div>
-                            )}
-                            {selectedPublicReport.latitude && selectedPublicReport.longitude && (
-                              <a href={`https://www.google.com/maps?q=${selectedPublicReport.latitude},${selectedPublicReport.longitude}`} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 mt-3 text-xs font-medium text-teal-600 hover:text-teal-700 transition">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
-                                View on Google Maps
-                              </a>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Description */}
-                        <div>
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Description</p>
-                          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedPublicReport.description}</p>
-                        </div>
-
-                        {/* Activity timeline */}
-                        <div className="pt-4 border-t border-slate-100">
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Activity Timeline</p>
-                          {publicReportActivityLoading ? (
-                            <p className="text-sm text-slate-500">Loading activity...</p>
-                          ) : timelineEntries.length === 0 ? (
-                            <p className="text-sm text-slate-500">No activity entries yet.</p>
-                          ) : (
-                            <div className="space-y-3">
-                              {timelineEntries.map((entry) => (
-                                <div key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                      <p className="text-sm font-medium text-slate-800">{entry.description}</p>
-                                      <p className="text-xs text-slate-500 mt-0.5">{entry.actor_name || 'Administrator'}</p>
-                                    </div>
-                                    <p className="text-xs text-slate-500 whitespace-nowrap">{new Date(entry.created_at).toLocaleString()}</p>
-                                  </div>
-                                </div>
-                              ))}
                             </div>
-                          )}
-                        </div>
 
-                        {/* Internal notes */}
-                        <div className="pt-4 border-t border-slate-100">
-                          <div className="flex items-center justify-between gap-2 mb-3">
-                            <p className="text-xs text-slate-400 uppercase font-semibold">Private Admin Notes</p>
-                            {!adminUserId && <span className="text-[11px] text-amber-700">Admin identity unavailable</span>}
-                          </div>
-                          <textarea
-                            value={adminPrivateNote}
-                            onChange={(e) => setAdminPrivateNote(e.target.value)}
-                            placeholder="Add internal context, verification findings, and follow-up reminders..."
-                            rows={4}
-                            className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
-                          />
-                          <div className="mt-3 flex justify-end">
-                            <button
-                              onClick={saveAdminPrivateNote}
-                              disabled={adminPrivateNoteSaving || !adminUserId}
-                              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition"
-                            >
-                              {adminPrivateNoteSaving ? 'Saving...' : 'Save Note'}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Admin Actions */}
-                        <div className="pt-4 border-t border-slate-100">
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Status</p>
-                          <div className="flex gap-3 flex-wrap">
-                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'pending'); setSelectedPublicReport(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50'}`}>
-                              Pending
-                            </button>
-                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'reviewed'); setSelectedPublicReport(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'reviewed' ? 'bg-blue-100 text-blue-700 border-blue-300 ring-2 ring-blue-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-blue-50'}`}>
-                              Reviewed
-                            </button>
-                            <button onClick={() => { updatePublicReportStatus(selectedPublicReport.id, 'resolved'); setSelectedPublicReport(null); }}
-                              className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${selectedPublicReport.status === 'resolved' ? 'bg-emerald-100 text-emerald-700 border-emerald-300 ring-2 ring-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'}`}>
-                              Resolved
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Assign Field Engineer */}
-                        <div className="pt-4 border-t border-slate-100">
-                          <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Assign Field Engineer</p>
-                          {selectedPublicReport.assigned_engineer_id ? (
-                            <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                            {/* Field Engineer Findings Review */}
+                            {selectedPublicReport.assigned_engineer_id && (
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
-                                    {(selectedPublicReport.assigned_engineer_name || 'FE').charAt(0).toUpperCase()}
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                  Field Engineer Findings Review
+                                </span>
+                                {selectedPublicReport.engineer_status && (
+                                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                                    selectedPublicReport.engineer_status === 'validated' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                    selectedPublicReport.engineer_status === 'rejected' ? 'bg-red-100 text-red-700 border-red-200' :
+                                    selectedPublicReport.engineer_status === 'inspected' ? 'bg-violet-100 text-violet-700 border-violet-200' :
+                                    'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}>
+                                    {selectedPublicReport.engineer_status.replace('_', ' ').toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+
+                              {selectedFieldFinding ? (
+                                <div className="space-y-2 text-xs bg-slate-50 rounded-lg border border-slate-200 p-3">
+                                  <div>
+                                    <span className="text-slate-500 block font-medium">Condition Observed</span>
+                                    <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.condition_observed}</p>
                                   </div>
                                   <div>
-                                    <p className="text-sm font-semibold text-teal-900">{selectedPublicReport.assigned_engineer_name || 'Field Engineer'}</p>
-                                    <p className="text-xs text-teal-600">
-                                      {selectedPublicReport.engineer_status ? selectedPublicReport.engineer_status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Assigned'}
-                                      {selectedPublicReport.assigned_at && ` · ${new Date(selectedPublicReport.assigned_at).toLocaleDateString()}`}
-                                    </p>
+                                    <span className="text-slate-500 block font-medium">Recommended Action</span>
+                                    <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.recommended_action}</p>
                                   </div>
+                                  {selectedFieldFinding.estimated_cost_range && (
+                                    <div>
+                                      <span className="text-slate-500 block font-medium">Estimated Cost</span>
+                                      <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.estimated_cost_range}</p>
+                                    </div>
+                                  )}
+                                  {selectedFieldFinding.field_photo_url && (
+                                    <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-36 object-cover rounded-lg border border-slate-200" />
+                                  )}
                                 </div>
-                                <button onClick={() => { unassignEngineerFromReport(selectedPublicReport.id); setSelectedPublicReport(prev => ({ ...prev, assigned_engineer_id: null, assigned_engineer_name: '', engineer_status: null, assigned_at: null })); }}
-                                  className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-                                  Unassign
-                                </button>
-                              </div>
-                              {selectedPublicReport.engineer_notes && (
-                                <div className="mt-3 pt-3 border-t border-teal-200">
-                                  <p className="text-xs text-teal-500 uppercase font-semibold mb-1">Engineer Notes</p>
-                                  <p className="text-sm text-teal-800">{selectedPublicReport.engineer_notes}</p>
+                              ) : (
+                                <p className="text-xs text-slate-400 italic">No field engineer findings submitted yet.</p>
+                              )}
+
+                              {selectedFieldFinding && selectedPublicReport.engineer_status !== 'validated' && (
+                                <div className="space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                      onClick={() => validateFieldFinding(selectedPublicReport.id)}
+                                      disabled={findingActionSaving}
+                                      className="py-2 rounded-lg text-xs font-bold border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 transition-all"
+                                    >
+                                      Validate Finding
+                                    </button>
+                                    <button
+                                      onClick={() => setShowRejectReason((v) => !v)}
+                                      disabled={findingActionSaving}
+                                      className="py-2 rounded-lg text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 transition-all"
+                                    >
+                                      Reject & Send Back
+                                    </button>
+                                  </div>
+                                  {showRejectReason && (
+                                    <div className="space-y-2">
+                                      <textarea
+                                        value={rejectReasonDraft}
+                                        onChange={(e) => setRejectReasonDraft(e.target.value)}
+                                        rows={2}
+                                        placeholder="Reason for rejection (required) — what needs to be re-inspected?"
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-red-500/20"
+                                      />
+                                      <button
+                                        onClick={() => rejectFieldFinding(selectedPublicReport.id, rejectReasonDraft)}
+                                        disabled={findingActionSaving || !rejectReasonDraft.trim()}
+                                        className="w-full py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-all"
+                                      >
+                                        Confirm Rejection
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               )}
+                              {selectedPublicReport.engineer_status === 'validated' && (
+                                <p className="text-[11px] text-emerald-700 font-semibold">
+                                  Findings validated — resolution can now be issued below.
+                                </p>
+                              )}
                             </div>
-                          ) : (
-                            <div className="flex gap-3">
-                              <select value={selectedEngineerId} onChange={e => setSelectedEngineerId(e.target.value)}
-                                className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                                <option value="">Select a field engineer...</option>
-                                {fieldEngineers.map(eng => (
-                                  <option key={eng.id} value={eng.id}>{eng.full_name || eng.email} {eng.phone ? `(${eng.phone})` : ''}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => { if (selectedEngineerId) { assignEngineerToReport(selectedPublicReport.id, selectedEngineerId); setSelectedPublicReport(prev => ({ ...prev, assigned_engineer_id: selectedEngineerId, assigned_engineer_name: fieldEngineers.find(e => e.id === selectedEngineerId)?.full_name || '', engineer_status: 'assigned', assigned_at: new Date().toISOString() })); } }}
-                                disabled={!selectedEngineerId || assigningEngineer}
-                                className="px-5 py-2.5 bg-gradient-to-r from-teal-600 to-teal-500 text-white rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:from-teal-700 hover:to-teal-600 shadow-lg shadow-teal-500/25">
-                                {assigningEngineer ? 'Assigning...' : 'Assign'}
-                              </button>
+                            )}
+
+                            {/* Workflow Controls (Priority, Field Engineer Assignment & Availability, Resolution) */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs">
+                              <AdminWorkflowControls
+                                report={selectedPublicReport}
+                                resolution={selectedResolution}
+                                adminIdentity={adminIdentity}
+                                onNotify={showNotification}
+                                onResolve={(summary) => finalizeResolution(selectedPublicReport.id, summary)}
+                                fieldEngineers={fieldEngineers}
+                                engineerWorkloads={engineerWorkloads}
+                                assigningEngineer={assigningEngineer}
+                                onAssignEngineer={(engineerId) => {
+                                  assignEngineerToReport(selectedPublicReport.id, engineerId);
+                                  setSelectedPublicReport(prev => (prev ? { ...prev, assigned_engineer_id: engineerId, assigned_engineer_name: fieldEngineers.find(e => e.id === engineerId)?.full_name || '', engineer_status: 'assigned', assigned_at: new Date().toISOString() } : prev));
+                                }}
+                                onUnassignEngineer={() => {
+                                  unassignEngineerFromReport(selectedPublicReport.id);
+                                  setSelectedPublicReport(prev => (prev ? { ...prev, assigned_engineer_id: null, assigned_engineer_name: '', engineer_status: null, assigned_at: null } : prev));
+                                }}
+                              />
                             </div>
-                          )}
-                          {fieldEngineers.length === 0 && (
-                            <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">No field engineers registered yet. Go to <strong>Settings → Field Engineers</strong> to register one, then come back here to assign.</p>
-                          )}
-                          {feLoadError && (
-                            <p className="text-xs text-amber-700 mt-2 bg-amber-50 p-3 rounded-lg border border-amber-200">{feLoadError}</p>
-                          )}
+
+                            {/* Quick Status Buttons */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                Set Official Case Status
+                              </span>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  onClick={() => updatePublicReportStatus(selectedPublicReport.id, 'pending')}
+                                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${selectedPublicReport.status === 'pending' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50'}`}
+                                >
+                                  Pending
+                                </button>
+                                <button
+                                  onClick={() => updatePublicReportStatus(selectedPublicReport.id, 'reviewed')}
+                                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${selectedPublicReport.status === 'reviewed' ? 'bg-blue-600 text-white border-blue-700 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50'}`}
+                                >
+                                  Reviewed
+                                </button>
+                              </div>
+                              <p className="text-[11px] text-slate-400">
+                                Resolved status is set from the Workflow Controls panel above, once field findings are validated.
+                              </p>
+                            </div>
+
+                            {/* Internal Notes */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                Private Internal Notes
+                              </span>
+                              <textarea
+                                value={adminPrivateNote}
+                                onChange={(e) => setAdminPrivateNote(e.target.value)}
+                                placeholder="Internal verification context..."
+                                rows={3}
+                                className="w-full rounded-lg border border-slate-200 p-2.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              />
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={saveAdminPrivateNote}
+                                  disabled={adminPrivateNoteSaving || !adminUserId}
+                                  className="px-3.5 py-1.5 rounded-md bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50"
+                                >
+                                  {adminPrivateNoteSaving ? 'Saving...' : 'Save Note'}
+                                </button>
+                              </div>
+                            </div>
+
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Reports List */}
-                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl shadow-xs overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200/60 bg-white">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-base font-semibold text-slate-800">Public Reports</p>
-                        <p className="text-xs text-slate-500 mt-0.5">Newest reports appear first to keep review flow up to date.</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Newest citizen feedback reports sorted by date to prioritize critical damage issues.</p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {[
-                          { key: 'pending', label: 'Pending', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-                          { key: 'reviewed', label: 'Reviewed', tone: 'bg-blue-50 text-blue-700 border-blue-200' },
-                          { key: 'resolved', label: 'Resolved', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                        ].map((option) => (
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* View Mode Toggle */}
+                        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 shrink-0">
                           <button
-                            key={option.key}
-                            onClick={() => setPublicReportFilter(option.key)}
-                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                              publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            type="button"
+                            onClick={() => setPublicReportViewMode('grid')}
+                            className={`p-1.5 rounded-md transition-all ${
+                              publicReportViewMode === 'grid' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
                             }`}
+                            title="Grid of Cards"
                           >
-                            {option.label}
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                           </button>
-                        ))}
+                          <button
+                            type="button"
+                            onClick={() => setPublicReportViewMode('list')}
+                            className={`p-1.5 rounded-md transition-all ${
+                              publicReportViewMode === 'list' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                            title="Detailed List"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                          </button>
+                        </div>
+
+                        {/* Status Buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {[
+                            { key: 'pending', label: 'Pending', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+                            { key: 'reviewed', label: 'Reviewed', tone: 'bg-blue-50 text-blue-700 border-blue-200' },
+                            { key: 'resolved', label: 'Resolved', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                          ].map((option) => (
+                            <button
+                              key={option.key}
+                              onClick={() => setPublicReportFilter(option.key)}
+                              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+                                publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
                   {publicReportsLoading ? (
-                    <div className="p-8 text-center text-slate-400">
-                      <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
+                    <div className="p-10 text-center text-slate-400">
+                      <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-350 border-t-teal-600 rounded-full mb-3" />
                       <p className="text-sm">Loading public reports...</p>
                     </div>
                   ) : filteredPublicReports.length === 0 ? (
@@ -7658,6 +8105,7 @@ export default function Dashboard() {
                       onButtonClick={() => {
                         setPublicReportFilter('pending');
                         setPublicReportCategoryFilter('all');
+                        setPublicReportAssignedFilter('all');
                         setPublicReportSearch('');
                         setPublicReportMunicipalityFilter('all');
                         setPublicReportBarangayFilter('all');
@@ -7668,19 +8116,262 @@ export default function Dashboard() {
                       }}
                     />
                   ) : (
-                    <div className="p-4">
-                      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">{publicReportFilter}</span>
-                          <span className="text-xs font-semibold text-slate-500">{sortedFilteredPublicReports.length}</span>
+                    <div>
+                      {publicReportViewMode === 'grid' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5">
+                          {sortedFilteredPublicReports.map((rpt) => {
+                            const reportDate = rpt.updated_at || rpt.created_at;
+                            const formattedReportDate = reportDate
+                              ? new Date(reportDate).toLocaleString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              : 'No date';
+
+                            return (
+                              <button
+                                key={rpt.id}
+                                onClick={() => setSelectedPublicReport(rpt)}
+                                className="group flex flex-col text-left bg-white rounded-2xl border border-slate-200/80 hover:border-teal-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden relative shadow-2xs"
+                              >
+                                {/* Card Image Preview / Vector Placeholder */}
+                                <div className="h-40 w-full relative bg-slate-900 overflow-hidden shrink-0">
+                                  {rpt.photo_url ? (
+                                    <img
+                                      src={rpt.photo_url}
+                                      alt="Damage Inspection"
+                                      className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-gradient-to-br from-slate-900 via-slate-950 to-emerald-950 p-4 text-center">
+                                      <svg className="w-8 h-8 text-teal-600 mb-1.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m2.25 15.75 5.159-5.159a6 6 0 0 1 8.486 0L21.75 15.75m-18-10.5h18A2.25 2.25 0 0 1 21.75 7.5v9a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 16.5v-9a2.25 2.25 0 0 1 2.25-2.25z" /></svg>
+                                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">No Image Uploaded</span>
+                                    </div>
+                                  )}
+                                  {/* Floating Badges */}
+                                  <div className="absolute top-3 left-3 right-3 flex justify-between items-center gap-2 pointer-events-none">
+                                    {verifyBadge(rpt.verification)}
+                                    {statusBadge(rpt.status)}
+                                  </div>
+                                </div>
+
+                                {/* Card Body */}
+                                <div className="p-4.5 flex-1 flex flex-col justify-between space-y-3.5">
+                                  <div>
+                                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold mb-1">
+                                      <span className="text-teal-600 uppercase tracking-wider">{rpt.municipality}</span>
+                                      <span>{formattedReportDate}</span>
+                                    </div>
+                                    <h4 className="text-sm font-bold text-slate-900 group-hover:text-teal-700 transition-colors line-clamp-1 leading-snug">
+                                      {rpt.project_name || 'Unlinked Damage Site'}
+                                    </h4>
+                                    <p className="text-[11px] font-semibold text-slate-500 mt-0.5 line-clamp-1">
+                                      📍 Barangay {rpt.barangay}{rpt.street ? `, ${rpt.street}` : ''}
+                                    </p>
+                                    <p className="text-xs text-slate-600 mt-2 line-clamp-3 leading-relaxed">
+                                      {rpt.description || 'No description provided.'}
+                                    </p>
+                                  </div>
+
+                                  {/* Footer with Assignment */}
+                                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500 font-medium">
+                                    <span className="truncate">Reporter: {rpt.full_name || 'Anonymous'}</span>
+                                    {rpt.assigned_engineer_name ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/60 font-semibold text-[10px]">
+                                        👤 {rpt.assigned_engineer_name.split(' ')[0]}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">Unassigned</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
-                        <div className="max-h-[460px] overflow-y-auto divide-y divide-slate-100">
-                          {sortedFilteredPublicReports.map(renderPublicReportItem)}
+                      ) : (
+                        <div className="p-4">
+                          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                              <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">{publicReportFilter}</span>
+                              <span className="text-xs font-semibold text-slate-500">{sortedFilteredPublicReports.length}</span>
+                            </div>
+                            <div className="max-h-[500px] overflow-y-auto divide-y divide-slate-100 bg-white">
+                              {sortedFilteredPublicReports.map(renderPublicReportItem)}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Reports Analytics */}
+                <section className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">Reports Analytics</h3>
+                      <p className="text-xs text-slate-500 mt-1">Operational signals for report concentration, trend, and resolution performance.</p>
+                    </div>
+                    <button
+                      onClick={() => setPublicReportsAnalyticsOpen((prev) => !prev)}
+                      className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      {publicReportsAnalyticsOpen ? 'Hide Analytics' : 'Show Analytics'}
+                      <svg className={`w-4 h-4 transition-transform ${publicReportsAnalyticsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {publicReportsAnalyticsOpen && (
+                    <div className="mt-4 space-y-5">
+                      {(pending14 > 0 || unresolved30 > 0) && (
+                        <div className="space-y-2">
+                          {pending14 > 0 && (
+                            <button
+                              onClick={() => {
+                                const cutoff = new Date(today);
+                                cutoff.setDate(cutoff.getDate() - 14);
+                                setPublicReportFilter('pending');
+                                setPublicReportDateTo(formatDateInput(cutoff));
+                              }}
+                              className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
+                            >
+                              ⚠️ <span className="font-semibold">{pending14} pending report(s)</span> are 14+ days old and require review action.
+                            </button>
+                          )}
+                          {unresolved30 > 0 && (
+                            <button
+                              onClick={() => {
+                                const cutoff = new Date(today);
+                                cutoff.setDate(cutoff.getDate() - 30);
+                                setPublicReportFilter('pending');
+                                setPublicReportDateTo(formatDateInput(cutoff));
+                              }}
+                              className="w-full text-left rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 transition-colors"
+                            >
+                              🚨 <span className="font-semibold">{unresolved30} report(s)</span> remain unresolved for 30+ days.
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        <div className="bg-slate-50/70 border border-slate-200/70 rounded-2xl p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-slate-800">Public Reports Trend</h4>
+                            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+                              <button
+                                onClick={() => setPublicReportsTrendView('weekly')}
+                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                  publicReportsTrendView === 'weekly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Weekly
+                              </button>
+                              <button
+                                onClick={() => setPublicReportsTrendView('monthly')}
+                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                  publicReportsTrendView === 'monthly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Monthly
+                              </button>
+                            </div>
+                          </div>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={trendData} margin={{ top: 8, right: 12, left: -16, bottom: 8 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} />
+                                <YAxis allowDecimals={false} tick={{ fill: '#64748b', fontSize: 11 }} />
+                                <RechartsTooltip />
+                                <Legend />
+                                <Line type="monotone" dataKey="total" name="Total Reports" stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3 }} />
+                                <Line type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" strokeWidth={2} dot={{ r: 2 }} />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50/70 border border-slate-200/70 rounded-2xl p-4">
+                          <h4 className="text-sm font-semibold text-slate-800 mb-1">Top Reported FMR Projects</h4>
+                          <p className="text-xs text-slate-500 mb-3">Top 10 projects with highest citizen report counts.</p>
+                          <div className="h-64">
+                            {topProjectsData.length === 0 ? (
+                              <div className="h-full flex items-center justify-center text-xs text-slate-400">No report data available</div>
+                            ) : (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={topProjectsData} layout="vertical" margin={{ top: 8, right: 12, left: 8, bottom: 8 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis type="number" allowDecimals={false} tick={{ fill: '#64748b', fontSize: 11 }} />
+                                  <YAxis type="category" dataKey="display_name" width={110} tick={{ fill: '#475569', fontSize: 10 }} />
+                                  <RechartsTooltip />
+                                  <Bar dataKey="count" name="Report Count" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 pt-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-800">Municipality Resolution Performance</h4>
+                            <p className="text-xs text-slate-500 mt-0.5">Click column headers to sort by workload or resolution speed.</p>
+                          </div>
+                          <span className="text-xs text-slate-500">{sortedMunicipalityRows.length} municipalities</span>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                                <th className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleMunicipalitySort('municipality')}>
+                                  Municipality {publicReportsLocationSort.key === 'municipality' ? (publicReportsLocationSort.direction === 'asc' ? '↑' : '↓') : ''}
+                                </th>
+                                <th className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleMunicipalitySort('total')}>
+                                  Total {publicReportsLocationSort.key === 'total' ? (publicReportsLocationSort.direction === 'asc' ? '↑' : '↓') : ''}
+                                </th>
+                                <th className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleMunicipalitySort('pending')}>
+                                  Pending {publicReportsLocationSort.key === 'pending' ? (publicReportsLocationSort.direction === 'asc' ? '↑' : '↓') : ''}
+                                </th>
+                                <th className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleMunicipalitySort('resolved')}>
+                                  Resolved {publicReportsLocationSort.key === 'resolved' ? (publicReportsLocationSort.direction === 'asc' ? '↑' : '↓') : ''}
+                                </th>
+                                <th className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleMunicipalitySort('avgResolveDays')}>
+                                  Avg Resolution Days {publicReportsLocationSort.key === 'avgResolveDays' ? (publicReportsLocationSort.direction === 'asc' ? '↑' : '↓') : ''}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {sortedMunicipalityRows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No municipality data to display.</td>
+                                </tr>
+                              ) : (
+                                sortedMunicipalityRows.map((row) => (
+                                  <tr
+                                    key={row.municipality}
+                                    className={`${row.pending > row.resolved ? 'bg-amber-50/45' : 'bg-white'} hover:bg-slate-50 transition-colors`}
+                                  >
+                                    <td className="px-4 py-3 text-sm font-medium text-slate-800">{row.municipality}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600">{row.total}</td>
+                                    <td className="px-4 py-3 text-sm text-amber-700 font-semibold">{row.pending}</td>
+                                    <td className="px-4 py-3 text-sm text-emerald-700 font-semibold">{row.resolved}</td>
+                                    <td className="px-4 py-3 text-sm text-slate-600">{row.avgResolveDays == null ? 'N/A' : row.avgResolveDays.toFixed(1)}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     </div>
                   )}
-                </div>
+                </section>
               </div>
             );
           })()}
@@ -8532,7 +9223,7 @@ export default function Dashboard() {
                       </button>
                     </div>
 
-                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -9019,6 +9710,19 @@ export default function Dashboard() {
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km)</label>
                   <input type="number" step="0.01" name="project_length_km" value={fmrFormData.project_length_km} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
                 </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Total Budget (₱)</label>
+                  <input type="number" name="total_budget" value={fmrFormData.total_budget} onChange={handleFmrInputChange} placeholder={`Leave blank to auto-estimate (₱15M × km)`} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <p className="text-xs text-slate-400 mt-1">Blank = shown to citizens as an estimate (DA-BAFE ₱15M/km), not an official figure.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Funds Released (₱)</label>
+                  <input type="number" name="funds_released" value={fmrFormData.funds_released} onChange={handleFmrInputChange} placeholder="Leave blank to auto-estimate from progress" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Funding Source</label>
+                  <input type="text" name="funding_source" value={fmrFormData.funding_source} onChange={handleFmrInputChange} placeholder="e.g. DA-PRDP, GAA 2026, LGU" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Location / Address</label>
                   <input type="text" name="location" value={fmrFormData.location} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
@@ -9146,7 +9850,7 @@ export default function Dashboard() {
                       </button>
                     </div>
 
-                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }}>
+                    <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

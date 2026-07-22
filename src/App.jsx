@@ -22,6 +22,8 @@ import ContractorProjects from "./pages/ContractorProjects";
 import ContractorReports from "./pages/ContractorReports";
 import LguAuth from "./pages/LguAuth";
 import LguDashboard from "./pages/LguDashboard";
+import FarmerAuth from "./pages/FarmerAuth";
+import FarmerDashboard from "./pages/FarmerDashboard";
 import PWAInstallBanner from "./components/PWAInstallBanner";
 import { triggerQueuedSync } from "./lib/offlineSync";
 
@@ -125,6 +127,14 @@ function App() {
         <Route path="/lgu" element={
           <ProtectedRoute requiredRole="lgu">
             <LguDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* ===== FARMER SIDE ===== */}
+        <Route path="/farmer/login" element={<FarmerAuth />} />
+        <Route path="/farmer" element={
+          <ProtectedRoute requiredRole="farmer">
+            <FarmerDashboard />
           </ProtectedRoute>
         } />
 

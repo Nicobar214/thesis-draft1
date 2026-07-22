@@ -1,4 +1,4 @@
-﻿import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import Icons from './Icons';
@@ -7,9 +7,9 @@ const navItems = [
   { to: '/user', label: 'Dashboard', icon: Icons.Dashboard },
   { to: '/user/fmr-projects', label: 'FMR Projects', icon: Icons.Road },
   { to: '/user/map', label: 'Map View', icon: Icons.MapPin },
-  { to: '/user/reports', label: 'Reports', icon: Icons.Document },
-  { to: '/user/feedback', label: 'Feedback', icon: Icons.Feedback },
-  { to: '/user/profile', label: 'Profile', icon: Icons.Building },
+  { to: '/user/reports', label: 'My Reports', icon: Icons.Document },
+  { to: '/user/feedback', label: 'Community Feedback', icon: Icons.Feedback },
+  { to: '/user/profile', label: 'Profile Settings', icon: Icons.Building },
 ];
 
 export default function UserSidebar({ collapsed, setCollapsed, user }) {
@@ -28,16 +28,21 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 h-16 border-b border-slate-200 shrink-0">
-        <div className="size-9 bg-teal-600 rounded-lg grid place-items-center shrink-0">
-          <span className="text-white font-bold text-sm">K</span>
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800 shrink-0">
+        <div className="size-9 bg-emerald-700 text-white rounded-lg flex items-center justify-center shrink-0">
+          <Icons.Sprout />
         </div>
         {!collapsed && (
-          <span className="font-semibold text-slate-900 tracking-tight whitespace-nowrap">
-            KalsaTrack
-          </span>
+          <div className="flex flex-col min-w-0">
+            <span className="font-bold text-white text-base tracking-tight leading-tight truncate">
+              KalsaTrack
+            </span>
+            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider leading-none">
+              Citizen Portal
+            </span>
+          </div>
         )}
       </div>
 
@@ -52,13 +57,15 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
               to={item.to}
               onClick={() => setMobileOpen(false)}
               title={collapsed ? item.label : undefined}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors group ${
                 active
-                  ? 'bg-teal-50 text-teal-700 shadow-sm shadow-teal-100'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  ? 'bg-emerald-800 text-white font-semibold'
+                  : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
               } ${collapsed ? 'justify-center' : ''}`}
             >
-              <Icon />
+              <span className={active ? 'text-white' : 'text-slate-400 group-hover:text-emerald-400'}>
+                <Icon />
+              </span>
               {!collapsed && <span>{item.label}</span>}
             </Link>
           );
@@ -66,17 +73,17 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       </nav>
 
       {/* User Info & Logout */}
-      <div className="border-t border-slate-200 px-3 py-4 space-y-2 shrink-0">
+      <div className="border-t border-slate-800 px-3 py-4 space-y-2 shrink-0">
         {!collapsed && user && (
-          <Link to="/user/profile" className="block px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors">
-            <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Signed in as</p>
-            <p className="text-sm text-slate-700 truncate">{user.email}</p>
+          <Link to="/user/profile" className="block px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-colors">
+            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-0.5">Signed In</p>
+            <p className="text-xs text-slate-200 font-medium truncate">{user.email}</p>
           </Link>
         )}
         <button
           onClick={handleLogout}
           title={collapsed ? 'Sign out' : undefined}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-colors w-full ${
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors w-full ${
             collapsed ? 'justify-center' : ''
           }`}
         >
@@ -86,10 +93,10 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       </div>
 
       {/* Collapse Toggle (desktop only) */}
-      <div className="hidden lg:block border-t border-slate-200 px-3 py-3 shrink-0">
+      <div className="hidden lg:block border-t border-slate-800 px-3 py-3 shrink-0">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center w-full py-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          className="flex items-center justify-center w-full py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
         >
           {collapsed ? <Icons.ChevronRight /> : <Icons.ChevronLeft />}
         </button>
@@ -102,7 +109,8 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md border border-slate-200 text-slate-600"
+        className="lg:hidden fixed top-3.5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
+        aria-label="Open Navigation Menu"
       >
         <Icons.Menu />
       </button>
@@ -110,20 +118,20 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-xs transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Mobile sidebar */}
       <aside
-        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-300 ${
+        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <button
           onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600"
+          className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white"
         >
           <Icons.X />
         </button>
@@ -132,7 +140,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
 
       {/* Desktop sidebar */}
       <aside
-        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 z-30 bg-white border-r border-slate-200 transition-all duration-300 ${
+        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 z-30 bg-slate-900 border-r border-slate-800 transition-all duration-300 ${
           collapsed ? 'w-[72px]' : 'w-64'
         }`}
       >

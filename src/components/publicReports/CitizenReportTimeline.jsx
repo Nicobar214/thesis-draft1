@@ -28,9 +28,9 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
     const resolvedAt = status === 'resolved' ? (report.updated_at || report.reviewed_at || null) : null;
 
     const dynamicAssessmentLabel = engineerStatus === 'rejected'
-      ? 'Field Assessment: Rejected'
+      ? 'Field Assessment: Re-inspection Needed'
       : engineerStatus === 'validated'
-        ? 'Field Assessment: Validated'
+        ? 'Field Assessment: Confirmed'
         : 'Field Assessment';
 
     const stages = [
@@ -61,7 +61,7 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
       },
       {
         key: 'admin_decision',
-        label: 'Admin Final Review',
+        label: 'DA Admin Review',
         done: ['validated', 'rejected'].includes(engineerStatus) || status === 'resolved',
         timestamp: status === 'resolved' ? (resolvedAt || forAdminDecisionAt) : forAdminDecisionAt,
       },
@@ -108,6 +108,13 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-xs text-emerald-700 uppercase font-semibold">Resolution Summary</p>
           <p className="text-sm text-emerald-900 mt-1">{resolutionSummary || 'This report has been marked as resolved.'}</p>
+        </div>
+      )}
+
+      {String(report.status || '').toLowerCase() !== 'resolved' && String(report.engineer_status || '').toLowerCase() === 'rejected' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs text-amber-700 uppercase font-semibold">Re-inspection In Progress</p>
+          <p className="text-sm text-amber-900 mt-1">Your report has not been dismissed — the DA admin requested another on-site check before this can be resolved. The field engineer will visit again.</p>
         </div>
       )}
 

@@ -1,17 +1,18 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import { normalizeProjectName } from '../lib/projectHelpers';
+import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 
 function normalizeUserProjectStatus(status) {
   const lower = String(status || '').toLowerCase().replace(/[-\s]/g, '');
   if (lower === 'ongoing') return 'On-Going';
-  if (lower === 'proposed' || lower === 'pending') return 'Pending';
+  if (lower === 'proposed' || lower === 'pending') return 'Proposed';
   if (lower === 'completed') return 'Completed';
-  return status || 'Pending';
+  return status || 'Proposed';
 }
 
 function parseDateOnly(value) {
@@ -51,9 +52,9 @@ function getStatusStyle(status) {
   const styles = {
     'Completed':  { badge: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
     'On-Going':   { badge: 'bg-amber-100 text-amber-700',     bar: 'bg-amber-500',   dot: 'bg-amber-500' },
-    'Pending':    { badge: 'bg-sky-100 text-sky-700',          bar: 'bg-sky-500',     dot: 'bg-sky-500' },
+    'Proposed':   { badge: 'bg-sky-100 text-sky-700',          bar: 'bg-sky-500',     dot: 'bg-sky-500' },
   };
-  return styles[status] || styles['Pending'];
+  return styles[status] || styles['Proposed'];
 }
 
 /* â”€â”€â”€ Stat Card â”€â”€â”€ */
@@ -77,7 +78,7 @@ function StatCard({ icon, value, label, variant = 'default' }) {
   );
 }
 
-/* â”€â”€â”€ Project List Card â”€â”€â”€ */
+/* ——— Project List Card ——— */
 function FMRProjectCard({ project, onClick }) {
   const normalizedStatus = normalizeUserProjectStatus(project.status);
   const style = getStatusStyle(normalizedStatus);
@@ -85,88 +86,84 @@ function FMRProjectCard({ project, onClick }) {
   const contractorName = String(project.contractor || project.contractor_name || '').trim();
   const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
   const overdue = isProjectOverdue(project);
+  const accomplishment = Number(project.accomplishment) || (normalizedStatus === 'Completed' ? 100 : 0);
+  const budget = getProjectBudgetSummary(project);
 
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-zinc-300 hover:shadow-sm transition-all group"
+      className="w-full text-left bg-white rounded-2xl border border-slate-200/80 p-5 hover:border-emerald-500/50 hover:shadow-md transition-all duration-200 group flex flex-col justify-between"
     >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900 group-hover:text-teal-700 transition-colors line-clamp-2 text-sm leading-snug">
-            {name}
-          </h3>
-          <div className="flex items-center gap-1.5 mt-1.5 text-sm text-slate-500">
-            <Icons.MapPin />
-            <span className="truncate">{project.municipality}, {project.province}</span>
+      <div className="space-y-3 w-full">
+        {/* Top Header & Status Badge */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors line-clamp-2 text-sm sm:text-base leading-snug">
+              {name}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500 font-medium">
+              <Icons.MapPin />
+              <span className="truncate">{project.location ? `${project.location}, ` : ''}{project.municipality || 'Leon'}, {project.province || 'Iloilo'}</span>
+            </div>
+          </div>
+          <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-extrabold border uppercase tracking-wider ${style.badge}`}>
+            {normalizedStatus}
+          </span>
+        </div>
+
+        {contractorName && (
+          <p className="text-[11px] text-slate-500 truncate">
+            Contractor: <span className="font-semibold text-slate-700">{contractorName}</span>
+          </p>
+        )}
+
+        {/* Accomplishment Progress Bar */}
+        <div>
+          <div className="flex items-center justify-between text-xs font-semibold mb-1">
+            <span className="text-slate-500">Progress</span>
+            <span className="text-slate-800 tabular-nums font-bold">{accomplishment}%</span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+            <div
+              className={`h-full rounded-full ${style.bar} transition-all duration-500`}
+              style={{ width: `${Math.min(accomplishment, 100)}%` }}
+            />
           </div>
         </div>
-        <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${style.badge}`}>
-          {normalizedStatus}
-        </span>
+
+        {/* Budget summary */}
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500">Project Budget</span>
+          <span className="font-bold text-slate-800 tabular-nums">
+            {formatPeso(budget.totalBudget)}
+            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+              {budget.budgetIsEstimated ? 'Est.' : 'Official'}
+            </span>
+          </span>
+        </div>
       </div>
 
-      {contractorName && (
-        <p className="mb-2 text-xs text-slate-500">Contractor: {contractorName}</p>
-      )}
-
-      {/* Progress bar (only for On-Going) */}
-      {normalizedStatus === 'On-Going' && (
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full ${style.bar} transition-all`} style={{ width: `${project.accomplishment || 0}%` }} />
-          </div>
-          <span className="text-xs font-medium text-slate-600 tabular-nums w-10 text-right">
-            {project.accomplishment || 0}%
-          </span>
-        </div>
-      )}
-
-      {/* Completed indicator */}
-      {normalizedStatus === 'Completed' && (
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex-1 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-emerald-500 w-full" />
-          </div>
-          <span className="text-xs font-medium text-teal-600 tabular-nums w-10 text-right">100%</span>
-        </div>
-      )}
-
-      <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
+      {/* Footer Metadata Chips */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-3 mt-3 border-t border-slate-100 text-xs w-full">
         {project.year_funded && (
-          <span className="flex items-center gap-1">
-            <Icons.Calendar /> FY {project.year_funded}
-          </span>
-        )}
-        {overdue && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-700 border border-red-200">
-            Overdue
-          </span>
-        )}
-        {normalizedStatus !== 'Completed' && typeof daysDelta === 'number' && (
-          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium border ${
-            daysDelta < 0
-              ? 'bg-red-50 text-red-700 border-red-200'
-              : 'bg-amber-50 text-amber-700 border-amber-200'
-          }`}>
-            {daysDelta < 0 ? `${Math.abs(daysDelta)} days overdue` : `${daysDelta} days remaining`}
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-bold text-[11px] border border-emerald-200/60">
+            FY {project.year_funded}
           </span>
         )}
         {project.project_length_km > 0 && (
-          <span className="flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200/60">
             <Icons.Ruler /> {project.project_length_km} km
           </span>
         )}
-        {project.target_completion_date && (
-          <span className="flex items-center gap-1">
-            <Icons.Calendar /> Target: {project.target_completion_date}
+        {overdue ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-red-50 text-red-700 border border-red-200 font-bold text-[11px]">
+            Overdue
           </span>
-        )}
-        {project.date_completed && (
-          <span className="flex items-center gap-1 text-emerald-500">
-            <Icons.CheckCircle /> {project.date_completed}
+        ) : daysDelta !== null && normalizedStatus !== 'Completed' ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
+            {daysDelta < 0 ? `${Math.abs(daysDelta)}d overdue` : `${daysDelta}d left`}
           </span>
-        )}
+        ) : null}
       </div>
     </button>
   );
@@ -214,6 +211,8 @@ function FMRProjectDetail({ project, onBack }) {
   const style = getStatusStyle(project.status);
   const hasCoords = project.start_latitude && project.start_longitude;
   const name = normalizeProjectName(project);
+  const budget = getProjectBudgetSummary(project);
+  const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -306,6 +305,61 @@ function FMRProjectDetail({ project, onBack }) {
         )}
       </div>
 
+      {/* Project Budget */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+            <Icons.Money /> Project Budget
+          </h2>
+          {project.funding_source && (
+            <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+              {project.funding_source}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/60">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Total Budget</p>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                {budget.budgetIsEstimated ? 'Estimated' : 'Official'}
+              </span>
+            </div>
+            <p className="text-lg font-bold text-slate-900">{formatPeso(budget.totalBudget)}</p>
+          </div>
+          <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-amber-700 uppercase tracking-wider">Funds Utilized</p>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.utilizationIsEstimated ? 'bg-amber-200 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+                {budget.utilizationIsEstimated ? 'Estimated' : 'Official'}
+              </span>
+            </div>
+            <p className="text-lg font-bold text-amber-900">{formatPeso(budget.released)}</p>
+          </div>
+          <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+            <p className="text-xs text-emerald-700 uppercase tracking-wider mb-1">Funds Remaining</p>
+            <p className="text-lg font-bold text-emerald-900">{formatPeso(budget.remaining)}</p>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between text-xs font-medium mb-1.5">
+            <span className="text-slate-500">Utilization</span>
+            <span className="text-slate-700 font-bold">{utilizationPct.toFixed(0)}%</span>
+          </div>
+          <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
+          </div>
+        </div>
+
+        {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Figures marked "Estimated" are computed from the DA-BAFE 2026 indicative rate of ₱15M per kilometer and this project's reported physical progress, following the standard government mobilization/progress/retention release schedule — not confirmed disbursement records. They will update once DA-RAED enters official figures.
+          </p>
+        )}
+      </div>
+
       {/* Source Info */}
       <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
         <p className="font-medium text-sky-900 mb-1">Data Source</p>
@@ -319,7 +373,7 @@ function FMRProjectDetail({ project, onBack }) {
 }
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['On-Going', 'Pending', 'Completed', 'Overdue'];
+const statusFilters = ['On-Going', 'Proposed', 'Completed', 'Overdue'];
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN FMR PROJECTS PAGE
@@ -339,7 +393,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [reportCountByProject, setReportCountByProject] = useState({});
-  const projectsPerPage = 8;
+  const projectsPerPage = embedded ? 6 : 9;
 
   const getProjectDate = (project) => {
     const candidates = [
@@ -442,7 +496,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const stats = {
     total: projects.length,
     ongoing: projects.filter(p => normalizeUserProjectStatus(p.status) === 'On-Going').length,
-    pending: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Pending').length,
+    proposed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Proposed').length,
     completed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Completed').length,
     overdue: projects.filter((p) => isProjectOverdue(p)).length,
     totalKm: projects.reduce((sum, p) => sum + (p.project_length_km || 0), 0).toFixed(2),
@@ -746,8 +800,8 @@ export default function UserFMRProjects({ embedded = false } = {}) {
               const count =
                 s === 'On-Going'
                   ? stats.ongoing
-                  : s === 'Pending'
-                  ? stats.pending
+                  : s === 'Proposed'
+                  ? stats.proposed
                   : s === 'Completed'
                   ? stats.completed
                   : stats.overdue;
@@ -795,8 +849,8 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         {/* Results count */}
         <p className="text-sm text-slate-400">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
 
-        {/* Projects List */}
-        <div className="space-y-4">
+        {/* Projects List Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {loading ? (
             Array.from({ length: 6 }).map((_, i) => <ProjectSkeleton key={i} />)
           ) : filtered.length === 0 ? (

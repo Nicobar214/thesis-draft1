@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
+import PublicReportRouteMapPanel from './publicReports/PublicReportRouteMapPanel';
 
 // ── Constants ──────────────────────────────────────────────
 const REGION          = 'Region VI – Western Visayas';
@@ -153,6 +154,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const [widerSearch, setWiderSearch] = useState(false);
   const [browseAll,   setBrowseAll]   = useState(false);
   const [selProject,  setSelProject]  = useState(null);
+  const [selProjectRoute, setSelProjectRoute] = useState(null);
 
   // ── Camera / photo ──
   const videoRef   = useRef(null);
@@ -297,6 +299,27 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       .sort((a, b) => distToProject(gps.lat, gps.lng, a) - distToProject(gps.lat, gps.lng, b));
     setNearby(list);
   }, [gps, allProjects, projReady, widerSearch]);
+
+  // ── Fetch the project's mapped route once a project is selected ──
+  useEffect(() => {
+    if (!selProject?.id) {
+      setSelProjectRoute(null);
+      return;
+    }
+    let alive = true;
+    supabase
+      .from('project_routes')
+      .select('*')
+      .eq('project_id', selProject.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (alive) setSelProjectRoute(data || null);
+      })
+      .catch(() => {
+        if (alive) setSelProjectRoute(null);
+      });
+    return () => { alive = false; };
+  }, [selProject]);
 
   // ── Camera ────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
@@ -864,6 +887,18 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
             )}
           </div>
         </div>
+
+        {/* Map preview: report pin + the reported project's route */}
+        {gps && selProject && (
+          <PublicReportRouteMapPanel
+            project={selProject}
+            routeRecord={selProjectRoute}
+            reportLatitude={gps.lat}
+            reportLongitude={gps.lng}
+            heightClass="h-56 sm:h-64"
+            title="Your Report Pin & Project Route"
+          />
+        )}
 
         {/* Low-accuracy warning */}
         {lowAcc && (

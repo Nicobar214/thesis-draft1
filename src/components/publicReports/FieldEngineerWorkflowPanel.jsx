@@ -71,6 +71,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [project, setProject] = useState(null);
   const [routeRecord, setRouteRecord] = useState(null);
   const [latestFinding, setLatestFinding] = useState(null);
+  const [mapFocus, setMapFocus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photoFile, setPhotoFile] = useState(null);
@@ -112,6 +113,22 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
     }
   }, []);
 
+  const notifyCitizen = useCallback(async (reportRecord, message) => {
+    if (!reportRecord?.user_id) return;
+    try {
+      await supabase.from('notifications').insert({
+        user_id: reportRecord.user_id,
+        type: 'public_report_field_update',
+        title: 'Public report update',
+        message,
+        report_id: reportRecord.id,
+        is_read: false,
+      });
+    } catch {
+      // Silent fallback for deployments without notifications table.
+    }
+  }, []);
+
   const loadSupportingData = useCallback(async () => {
     if (!report?.id) return;
     setLoading(true);
@@ -131,23 +148,9 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           .maybeSingle(),
       ];
 
-      if (report.project_id) {
-        tasks.push(
-          supabase.from('fmr_projects').select('*').eq('id', report.project_id).maybeSingle(),
-          supabase.from('project_routes').select('*').eq('project_id', report.project_id).maybeSingle()
-        );
-      } else {
-        tasks.push(
-          supabase.from('fmr_projects').select('*').ilike('project_name', String(report.project_name || '')).limit(1).maybeSingle(),
-          Promise.resolve({ data: null, error: null })
-        );
-      }
-
-      const [metaRes, findingRes, projRes, routeRes] = await Promise.all(tasks);
+      const [metaRes, findingRes] = await Promise.all(tasks);
       setWorkflowMeta(metaRes?.data || null);
       setLatestFinding(findingRes?.data || null);
-      setProject(projRes?.data || null);
-      setRouteRecord(routeRes?.data || null);
 
       if (findingRes?.data) {
         setConditionObserved(findingRes.data.condition_observed || '');
@@ -158,6 +161,50 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         setRecommendedAction('');
         setEstimatedCostRange('');
       }
+
+      // Fetch matched project
+      let matchedProject = null;
+      if (report.project_id) {
+        const { data: proj } = await supabase.from('fmr_projects').select('*').eq('id', report.project_id).maybeSingle();
+        matchedProject = proj;
+      }
+
+      if (!matchedProject && report.project_name) {
+        const cleanName = String(report.project_name).trim();
+        const { data: projByName } = await supabase
+          .from('fmr_projects')
+          .select('*')
+          .ilike('project_name', `%${cleanName}%`)
+          .limit(1)
+          .maybeSingle();
+        matchedProject = projByName;
+      }
+
+      if (!matchedProject && report.municipality) {
+        const { data: projByMuni } = await supabase
+          .from('fmr_projects')
+          .select('*')
+          .ilike('municipality', String(report.municipality).trim())
+          .limit(1)
+          .maybeSingle();
+        matchedProject = projByMuni;
+      }
+
+      setProject(matchedProject || null);
+
+      // Fetch route for matched project
+      if (matchedProject?.id) {
+        const { data: route } = await supabase
+          .from('project_routes')
+          .select('*')
+          .eq('project_id', matchedProject.id)
+          .maybeSingle();
+        setRouteRecord(route || null);
+      } else {
+        setRouteRecord(null);
+      }
+    } catch (err) {
+      console.warn('Failed loading supporting data:', err);
     } finally {
       setLoading(false);
     }
@@ -225,8 +272,8 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
   const routeData = useMemo(() => buildRoutePoints(project, routeRecord), [project, routeRecord]);
 
-  const startPoint = routeData.startPoint;
-  const endPoint = routeData.endPoint;
+  const startPoint = routeData.startPoint || (project?.start_latitude && project?.start_longitude ? [Number(project.start_latitude), Number(project.start_longitude)] : null);
+  const endPoint = routeData.endPoint || (project?.end_latitude && project?.end_longitude ? [Number(project.end_latitude), Number(project.end_longitude)] : (startPoint || null));
   const routeLengthMeters = useMemo(() => {
     const km = Number(project?.project_length_km);
     if (Number.isFinite(km) && km > 0) return km * 1000;
@@ -234,8 +281,13 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   }, [project, routeData.points]);
 
   const navigateTo = (lat, lng) => {
-    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return;
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    const numLat = Number(lat);
+    const numLng = Number(lng);
+    if (!Number.isFinite(numLat) || !Number.isFinite(numLng)) {
+      if (onSaved) onSaved('Coordinates unavailable for this location point.', 'error');
+      return;
+    }
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${numLat},${numLng}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -332,6 +384,15 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
       if (insErr) throw insErr;
 
+      try {
+        await supabase
+          .from('public_reports')
+          .update({ engineer_status: 'inspected', verification: 'Needs Review', updated_at: new Date().toISOString() })
+          .eq('id', report.id);
+      } catch {
+        // Findings are already saved; a failure here shouldn't block the submission.
+      }
+
       await supabase.from('public_report_activity_logs').insert({
         report_id: report.id,
         action_type: 'findings_submitted',
@@ -342,6 +403,10 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       await notifyAdmin(
         'Field findings submitted',
         `Field findings are available for report ${String(report.id).slice(0, 8)}.`
+      );
+      await notifyCitizen(
+        report,
+        'Field inspection was completed and is now awaiting DA admin review.'
       );
 
       if (onSaved) onSaved('Field findings submitted');
@@ -412,6 +477,32 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
   return (
     <section className="space-y-4">
+      {/* DA-RAED 5-Step Report Flow Stepper */}
+      <div className="bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 shadow-sm">
+        <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-3">
+          DA-RAED Official Damage Report Flow
+        </p>
+        <div className="grid grid-cols-5 gap-1 text-center relative">
+          {[
+            { step: '1', title: 'Public Report', desc: 'Citizen Submitted', active: true, done: true },
+            { step: '2', title: 'DA Triage', desc: 'Engineer Assigned', active: true, done: true },
+            { step: '3', title: 'FE Inspection', desc: 'On-Site Verification', active: true, done: report?.engineer_status === 'validated' || report?.status === 'resolved' },
+            { step: '4', title: 'Work Order', desc: 'DA Action Plan', active: report?.engineer_status === 'validated' || report?.status === 'resolved', done: report?.status === 'resolved' },
+            { step: '5', title: 'Resolution', desc: 'Public Sign-off', active: report?.status === 'resolved', done: report?.status === 'resolved' },
+          ].map((s, idx) => (
+            <div key={idx} className="flex flex-col items-center">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                s.done ? 'bg-emerald-500 text-slate-950 font-extrabold ring-2 ring-emerald-400/30' : s.active ? 'bg-amber-500 text-slate-950 font-extrabold animate-pulse' : 'bg-slate-800 text-slate-500 border border-slate-700'
+              }`}>
+                {s.done ? '✓' : s.step}
+              </div>
+              <p className="text-[11px] font-bold text-slate-200 mt-1.5 leading-tight">{s.title}</p>
+              <p className="text-[9px] text-slate-400 hidden sm:block mt-0.5">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <PublicReportRouteMapPanel
         project={project}
         routeRecord={routeRecord}
@@ -419,37 +510,45 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         reportLongitude={report?.longitude}
         heightClass="h-64 sm:h-72"
         title="Project Route Map"
+        focusTarget={mapFocus}
+        onResetFocus={() => setMapFocus('fit')}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
           type="button"
-          onClick={() => navigateTo(report?.latitude, report?.longitude)}
-          className="rounded-xl border border-teal-200 bg-teal-50 text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-100 transition"
+          onClick={() => setMapFocus([report?.latitude, report?.longitude])}
+          className="rounded-xl border border-teal-200 bg-teal-50 text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-100 transition flex items-center justify-center gap-1.5"
         >
-          Navigate to Report
+          📍 Focus Damage Site
         </button>
         <button
           type="button"
-          onClick={() => navigateTo(startPoint?.[0], startPoint?.[1])}
-          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-100 transition"
+          onClick={() => {
+            if (startPoint) setMapFocus(startPoint);
+            else if (onSaved) onSaved('Start point coordinates unavailable.', 'error');
+          }}
+          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-100 transition flex items-center justify-center gap-1.5"
         >
-          Navigate to Project Start
+          🏁 Focus Project Start
         </button>
         <button
           type="button"
-          onClick={() => navigateTo(endPoint?.[0], endPoint?.[1])}
-          className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-100 transition"
+          onClick={() => {
+            if (endPoint) setMapFocus(endPoint);
+            else if (onSaved) onSaved('End point coordinates unavailable.', 'error');
+          }}
+          className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-100 transition flex items-center justify-center gap-1.5"
         >
-          Navigate to Project End
+          🏁 Focus Project End
         </button>
         <button
           type="button"
           onClick={markVisited}
           disabled={saving}
-          className="rounded-xl border border-slate-200 bg-white text-slate-700 px-3 py-2 text-sm font-semibold hover:bg-slate-50 transition disabled:opacity-60"
+          className="rounded-xl border border-slate-200 bg-slate-900 text-white px-3 py-2 text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 flex items-center justify-center gap-1.5"
         >
-          {saving ? 'Saving...' : 'Mark as Visited'}
+          {saving ? 'Saving...' : 'Mark Site Visited'}
         </button>
       </div>
 
@@ -558,18 +657,14 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-3">
-          {(latestFinding?.field_photo_url || photoFile) && (
+        {!photoFile && latestFinding?.field_photo_url && (
+          <div className="grid grid-cols-1 gap-3">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Field Engineer Photo</p>
-              {photoFile ? (
-                <img src={photoPreviewUrl} alt="Field capture" className="w-full h-40 object-cover rounded-xl border border-slate-200" />
-              ) : (
-                <img src={latestFinding.field_photo_url} alt="Field capture" className="w-full h-40 object-cover rounded-xl border border-slate-200" />
-              )}
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Previously Submitted Photo</p>
+              <img src={latestFinding.field_photo_url} alt="Previously submitted field capture" className="w-full h-40 object-cover rounded-xl border border-slate-200" />
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="flex justify-end">
           <button

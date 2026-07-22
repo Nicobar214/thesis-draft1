@@ -81,7 +81,23 @@ const ILOILO_LOCATIONS = {
       barangays: ['Agtatacay', 'Atipulu-an', 'Cabantohan', 'Ito', 'Nagsulang', 'Naslo', 'Poblacion', 'Rosal', 'Timpas'],
     },
     Leon: {
-      barangays: ['Agboy', 'Bucari', 'Camandag', 'Doldol', 'Guiso', 'Mabini', 'Mapili', 'Poblacion', 'San Isidro', 'Siol'],
+      barangays: [
+        'Agboy Norte', 'Agboy Sur', 'Agta', 'Ambulong', 'Anonang', 'Apian',
+        'Avanzada', 'Awis', 'Ayabang', 'Ayubo', 'Bacolod', 'Baje', 'Banagan',
+        'Barangbang', 'Barasan', 'Bayag Norte', 'Bayag Sur', 'Binolbog',
+        'Biri Norte', 'Biri Sur', 'Bobon', 'Bucari', 'Buenavista', 'Buga',
+        'Bulad', 'Bulwang', 'Cabolo-an', 'Cabunga-an', 'Cabutongan', 'Cagay',
+        'Camandag', 'Camando', 'Cananaman', 'Capt. Fernando', 'Carara-an',
+        'Carolina', 'Cawilihan', 'Coyugan Norte', 'Coyugan Sur', 'Danao',
+        'Dorog', 'Dusacan', 'Gines', 'Gumboc', 'Igcadios', 'Ingay', 'Isian Norte',
+        'Isian Victoria', 'Jamog Gines', 'Lanag', 'Lampaya', 'Lang-og',
+        'Ligtos', 'Lonoc', 'Magcapay', 'Maliao', 'Malublub', 'Manampunay',
+        'Marirong', 'Mina', 'Mocol', 'Nagbangi', 'Nalbang', 'Odong-odong',
+        'Oluangan', 'Omambong', 'Paga', 'Pandan', 'Panginman', 'Paoy', 'Pepe',
+        'Poblacion', 'Salngan', 'Samlague', 'Siol Norte', 'Siol Sur',
+        'Tacuyong Norte', 'Tacuyong Sur', 'Tagsing', 'Talacuan', 'Ticuan',
+        'Tina-an Norte', 'Tina-an Sur', 'Tu-og', 'Tunguan'
+      ],
     },
     Maasin: {
       barangays: ['Abay', 'Alibunan', 'Bagumbayan', 'Bolo', 'Dagami', 'Libo-on', 'Naslo', 'Poblacion', 'Sambag', 'Tigbauan'],

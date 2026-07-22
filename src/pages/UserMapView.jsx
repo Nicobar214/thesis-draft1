@@ -13,6 +13,7 @@ import {
   normalizeRouteStatus,
   getJitteredCentroid,
 } from '../lib/mapRouteUtils';
+import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -95,8 +96,29 @@ function FitBounds({ points, filterKey }) {
   return null;
 }
 
-/* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['On-Going', 'Pending', 'Completed', 'All'];
+function FarmerHeatmapLayer({ visible, points }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
+    
+    const layer = window.L.heatLayer(points, {
+      radius: 30,
+      blur: 20,
+      maxZoom: 15,
+      gradient: { 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }
+    }).addTo(map);
+
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map, visible, points]);
+
+  return null;
+}
+
+/* ─── Status Filter Tabs ─── */
+const statusFilters = ['On-Going', 'Proposed', 'Completed', 'All'];
 
 /* â”€â”€â”€ Year options from data â”€â”€â”€ */
 function getYearOptions(projects) {
@@ -121,6 +143,13 @@ export default function UserMapView({ embedded = false } = {}) {
   const [routeByProjectId, setRouteByProjectId] = useState({});
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
   const [snappedRouteByProjectId, setSnappedRouteByProjectId] = useState({});
+
+  // Farmer & Market Supply Chain layers (PII-free for citizen view)
+  const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
+  const [markets, setMarkets] = useState([]);
+  const [showFarmerDots, setShowFarmerDots] = useState(false);
+  const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
+  const [showMarketsMap, setShowMarketsMap] = useState(true);
 
   // Geofencing state
   const [userLocation, setUserLocation] = useState(null); // { lat, lng, accuracy }
@@ -153,15 +182,44 @@ export default function UserMapView({ embedded = false } = {}) {
     fetchProjects();
     fetchProjectRoutes();
     fetchProjectReportCounts();
+    fetchFarmerBeneficiaries();
+    fetchMarkets();
 
     const channel = supabase
       .channel('map-view-fmr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchProjects)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, fetchProjectRoutes)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchProjectReportCounts)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, fetchFarmerBeneficiaries)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, fetchMarkets)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
+
+  async function fetchFarmerBeneficiaries() {
+    try {
+      const { data, error } = await supabase
+        .from('farmer_beneficiaries')
+        .select('id, farm_latitude, farm_longitude, crop');
+      if (error) throw error;
+      setFarmerBeneficiaries(data || []);
+    } catch (err) {
+      console.error('Error fetching farmer beneficiaries:', err);
+    }
+  }
+
+  async function fetchMarkets() {
+    try {
+      const { data, error } = await supabase
+        .from('market_locations')
+        .select('*')
+        .order('market_name', { ascending: true });
+      if (error) throw error;
+      setMarkets(data || []);
+    } catch (err) {
+      console.error('Error fetching markets:', err);
+    }
+  }
 
   async function fetchProjects() {
     try {
@@ -242,9 +300,7 @@ export default function UserMapView({ embedded = false } = {}) {
       const muni = (p.municipality || '').toLowerCase();
 
       const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-      const normalizedStatus = normalizeStatus(p.status);
-      const matchesStatus = statusFilter === 'All' ||
-        (statusFilter === 'Pending' ? normalizedStatus === 'Proposed' : normalizedStatus === statusFilter);
+      const matchesStatus = statusFilter === 'All' || normalizeStatus(p.status) === statusFilter;
       const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
       const matchesMunicipality = municipalityFilter === 'All' || (p.municipality || '') === municipalityFilter;
       const matchesOverdue = !showOverdueOnly || isOverdueProject(p);
@@ -376,6 +432,16 @@ export default function UserMapView({ embedded = false } = {}) {
         contentClassName: 'px-0 py-0 pt-0',
       }
     : {};
+
+  const farmerHeatPoints = useMemo(() => {
+    return (farmerBeneficiaries || [])
+      .map((f) => {
+        const lat = f.farm_latitude || f.farmLatitude;
+        const lng = f.farm_longitude || f.farmLongitude;
+        return lat && lng ? [Number(lat), Number(lng), 1.0] : null;
+      })
+      .filter(Boolean);
+  }, [farmerBeneficiaries]);
 
   const filterKey = `${search}-${statusFilter}-${yearFilter}-${municipalityFilter}-${showOverdueOnly}`;
 
@@ -575,6 +641,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   const isNearby = nearbyProjects.has(project.id);
                   const normalizedStatus = normalizeStatus(project.status);
                   const progress = Number(project.accomplishment || 0);
+                  const budget = getProjectBudgetSummary(project);
                   const reportsCount = reportCountByProjectId[project.id] || 0;
                   const targetChip = getTargetDateChip(project.target_completion_date, normalizedStatus === 'Completed');
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
@@ -627,6 +694,12 @@ export default function UserMapView({ embedded = false } = {}) {
                                 <div className="text-xs text-slate-600 space-y-1">
                                   <p>{project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
                                   <p>FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                  <p>
+                                    Budget: <strong>{formatPeso(budget.totalBudget)}</strong>
+                                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                      {budget.budgetIsEstimated ? 'Est.' : 'Official'}
+                                    </span>
+                                  </p>
                                   {targetChip && (
                                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${targetChip.className}`}>
                                       {targetChip.text}
@@ -729,6 +802,12 @@ export default function UserMapView({ embedded = false } = {}) {
                               <div className="text-xs text-slate-600 space-y-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100">
                                 <p><strong>Location:</strong> {project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
                                 <p><strong>Funding:</strong> FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
+                                <p>
+                                  <strong>Budget:</strong> {formatPeso(budget.totalBudget)}
+                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {budget.budgetIsEstimated ? 'Est.' : 'Official'}
+                                  </span>
+                                </p>
                                 {isCentroidFallback && (
                                   <p className="text-[10px] text-amber-700 font-medium">⚠️ No exact coordinates. Placed at municipal center centroid.</p>
                                 )}
@@ -758,6 +837,72 @@ export default function UserMapView({ embedded = false } = {}) {
                     </div>
                   );
                 })}
+                {/* Farmer Heatmap Layer */}
+                <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
+
+                {/* Markets Layer */}
+                {showMarketsMap && (markets || []).map(m => (
+                  <Marker
+                    key={`market-${m.id}`}
+                    position={[Number(m.latitude), Number(m.longitude)]}
+                    icon={new L.DivIcon({
+                      className: 'custom-market-pin',
+                      html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                      iconSize: [30, 30],
+                      iconAnchor: [15, 15],
+                    })}
+                  >
+                    <Popup>
+                      <div className="p-1 space-y-1 text-slate-800">
+                        <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
+                        <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
+                        <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
+                        {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
+                        {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
+                        {m.commodities_accepted?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {m.commodities_accepted.map(c => (
+                              <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+
+                {/* Farmers Layer (Dots only - strictly anonymous) */}
+                {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+                  const lat = f.farm_latitude || f.farmLatitude;
+                  const lng = f.farm_longitude || f.farmLongitude;
+                  if (!lat || !lng) return null;
+                  
+                  const cropColor = 
+                    f.crop === 'Rice' ? '#10b981' :
+                    f.crop === 'Corn' ? '#f59e0b' :
+                    f.crop === 'Sugarcane' ? '#8b5cf6' :
+                    f.crop === 'Coconut' ? '#3b82f6' :
+                    f.crop === 'Vegetables' ? '#ec4899' :
+                    '#64748b';
+
+                  return (
+                    <CircleMarker
+                      key={`farmer-${f.id}`}
+                      center={[Number(lat), Number(lng)]}
+                      radius={5.5}
+                      pathOptions={{
+                        fillColor: cropColor,
+                        fillOpacity: 0.9,
+                        color: '#ffffff',
+                        weight: 1.5
+                      }}
+                    >
+                      <Tooltip direction="top" opacity={0.9}>
+                        <span className="text-xs font-semibold text-slate-700">Crop Beneficiary ({f.crop || 'N/A'})</span>
+                      </Tooltip>
+                    </CircleMarker>
+                  );
+                })}
               </MapContainer>
             )}
 
@@ -778,6 +923,37 @@ export default function UserMapView({ embedded = false } = {}) {
                     <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
                     <span>Centroid Fallback (No GPS)</span>
                   </div>
+                </div>
+                <div className="pt-2 border-t border-slate-200 space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
+                    <input
+                      type="checkbox"
+                      checked={showFarmerDots}
+                      onChange={(e) => setShowFarmerDots(e.target.checked)}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    Show Farmers (Dots)
+                  </label>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
+                    <input
+                      type="checkbox"
+                      checked={showFarmerHeatmap}
+                      onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    Show Farmer Density
+                  </label>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
+                    <input
+                      type="checkbox"
+                      checked={showMarketsMap}
+                      onChange={(e) => setShowMarketsMap(e.target.checked)}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    Show Markets (Icons)
+                  </label>
                 </div>
               </div>
             </div>
@@ -919,6 +1095,20 @@ export default function UserMapView({ embedded = false } = {}) {
                   <p className="text-sm font-medium text-slate-800">{selectedProject.project_length_km} km</p>
                 </div>
               )}
+              {(() => {
+                const budget = getProjectBudgetSummary(selectedProject);
+                return (
+                  <div className="p-3 bg-slate-50 rounded-xl">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-xs text-slate-400 uppercase tracking-wider">Budget</p>
+                      <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {budget.budgetIsEstimated ? 'Est.' : 'Official'}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-slate-800">{formatPeso(budget.totalBudget)}</p>
+                  </div>
+                );
+              })()}
               {selectedProject.date_completed && (
                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                   <p className="text-xs text-teal-600 uppercase tracking-wider mb-0.5">Completed</p>
@@ -932,6 +1122,33 @@ export default function UserMapView({ embedded = false } = {}) {
                 </div>
               )}
             </div>
+
+            {/* Funds utilized / remaining */}
+            {(() => {
+              const budget = getProjectBudgetSummary(selectedProject);
+              const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
+              return (
+                <div className="mt-4 p-3.5 bg-white border border-slate-200 rounded-xl">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-slate-500">
+                      Funds Utilized: <strong className="text-amber-700">{formatPeso(budget.released)}</strong>
+                      <span className={`ml-1 px-1 py-0.5 rounded text-[9px] font-bold ${budget.utilizationIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {budget.utilizationIsEstimated ? 'Est.' : 'Official'}
+                      </span>
+                    </span>
+                    <span className="text-slate-500">Remaining: <strong className="text-emerald-700">{formatPeso(budget.remaining)}</strong></span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
+                  </div>
+                  {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      Estimated using DA-BAFE's ₱15M/km rate and physical progress — not confirmed disbursement records.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* GPS coordinates + Google Maps link */}
             {selectedProject.start_latitude && selectedProject.end_latitude && (

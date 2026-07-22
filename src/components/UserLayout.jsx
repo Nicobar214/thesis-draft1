@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import UserSidebar from './UserSidebar';
+import Icons from './Icons';
 
 /**
  * UserLayout - Shared layout wrapper for all user pages.
@@ -24,12 +24,12 @@ export default function UserLayout({
 
   const pageTitleMap = {
     '/user': 'Dashboard',
-    '/user/fmr-projects': 'FMR Projects',
-    '/user/projects': 'Projects',
-    '/user/map': 'Map View',
-    '/user/reports': 'My Reports',
-    '/user/feedback': 'Community Feedback',
-    '/user/profile': 'Profile',
+    '/user/fmr-projects': 'FMR Projects Directory',
+    '/user/projects': 'FMR Projects Directory',
+    '/user/map': 'Geospatial Map View',
+    '/user/reports': 'My Road Reports',
+    '/user/feedback': 'Community Feedback Hub',
+    '/user/profile': 'Profile & Account Settings',
   };
 
   const pageTitle = pageTitleMap[location.pathname] || 'User Portal';
@@ -43,7 +43,7 @@ export default function UserLayout({
     });
   }, [navigate, requireAuth]);
 
-  const rootClass = rootClassName ?? 'min-h-screen bg-slate-50';
+  const rootClass = rootClassName ?? 'min-h-screen bg-slate-50 font-sans text-slate-800';
 
   return (
     <div className={rootClass}>
@@ -56,15 +56,37 @@ export default function UserLayout({
         className={`transition-all duration-300 ${showSidebar ? (collapsed ? 'lg:ml-[72px]' : 'lg:ml-64') : ''} ${mainClassName}`}
       >
         {showHeader && (
-          <header className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-200">
-            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-              <h1 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
-              <p className="hidden sm:block text-sm text-slate-500">Welcome back, {userLabel}</p>
+          <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <h1 className="text-base sm:text-lg font-bold text-slate-900">{pageTitle}</h1>
+                <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <Icons.ShieldCheck />
+                  DA Region VI Citizen Portal
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/user/reports?action=new"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 text-xs font-semibold transition-colors"
+                >
+                  <Icons.Warning />
+                  <span>Report Road Issue</span>
+                </Link>
+
+                <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                    {userLabel.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="hidden sm:block text-xs font-semibold text-slate-700">{userLabel}</span>
+                </div>
+              </div>
             </div>
           </header>
         )}
 
-        <div className={`mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-6 pt-20 lg:pt-6 ${contentClassName}`}>
+        <div className={`mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 pt-16 lg:pt-6 ${contentClassName}`}>
           {children}
         </div>
       </main>

@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 import Icons from '../components/Icons';
@@ -6,6 +7,7 @@ import PublicReportForm from '../components/PublicReportForm';
 import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
+import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
 
 export const SEVERITY_TAXONOMY = {
   safety: {
@@ -81,6 +83,8 @@ function StatusBadge({ status }) {
   );
 }
 
+const STATUS_PRIORITY = { pending: 0, reviewed: 1, resolved: 2 };
+
 /* â”€â”€â”€ Format date â”€â”€â”€ */
 function fmtDate(iso) {
   if (!iso) return 'N/A';
@@ -125,13 +129,30 @@ function UserReports() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selected, setSelected] = useState(null);
   const [selectedResolutionSummary, setSelectedResolutionSummary] = useState('');
+  const [selectedResolution, setSelectedResolution] = useState(null);
+  const [selectedFieldFinding, setSelectedFieldFinding] = useState(null);
   const [selectedLguDecision, setSelectedLguDecision] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
+  const [showCertModal, setShowCertModal] = useState(false);
   const [userId, setUserId] = useState(null);
   const [reportStep, setReportStep] = useState('idle');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [problemFilter, setProblemFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Arriving with ?action=new (e.g. the "Report Road Issue" button elsewhere
+  // in the app) opens the report form immediately instead of landing on the list.
+  useEffect(() => {
+    if (searchParams.get('action') === 'new') {
+      setReportStep('form');
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* â”€â”€ Get current user & fetch their reports â”€â”€ */
   useEffect(() => {
@@ -184,7 +205,9 @@ function UserReports() {
     const handleEscape = (event) => {
       if (event.key !== 'Escape') return;
 
-      if (selected) {
+      if (showCertModal) {
+        setShowCertModal(false);
+      } else if (selected) {
         setSelected(null);
       } else if (reportStep !== 'idle') {
         setReportStep('idle');
@@ -193,7 +216,7 @@ function UserReports() {
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [selected, reportStep]);
+  }, [selected, reportStep, showCertModal]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -217,6 +240,8 @@ function UserReports() {
       if (!selected?.id) {
         if (alive) {
           setSelectedResolutionSummary('');
+          setSelectedResolution(null);
+          setSelectedFieldFinding(null);
           setSelectedLguDecision(null);
           setSelectedProject(null);
           setSelectedProjectRoute(null);
@@ -225,12 +250,19 @@ function UserReports() {
       }
 
       try {
-        const [resolutionRes, lguDecisionRes, projectRes] = await Promise.all([
+        const [resolutionRes, findingRes, lguDecisionRes] = await Promise.all([
           supabase
             .from('public_report_resolutions')
-            .select('summary, resolved_at')
+            .select('*')
             .eq('report_id', selected.id)
             .order('resolved_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('public_report_field_findings')
+            .select('*')
+            .eq('report_id', selected.id)
+            .order('submitted_at', { ascending: false })
             .limit(1)
             .maybeSingle(),
           supabase
@@ -240,15 +272,27 @@ function UserReports() {
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle(),
-          selected.project_id
-            ? supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle()
-            : supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name || '')).limit(1).maybeSingle(),
         ]);
 
         if (!alive) return;
 
-        const projectRow = projectRes?.data || null;
+        // project_id on public_reports is sometimes stored as a prefixed
+        // string (e.g. "fmr-<uuid>") rather than the raw fmr_projects.id, so
+        // a direct id match can miss — always fall back to matching by name.
+        let projectRow = null;
+        if (selected.project_id) {
+          const { data } = await supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle();
+          projectRow = data || null;
+        }
+        if (!projectRow && selected.project_name) {
+          const { data } = await supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name)).limit(1).maybeSingle();
+          projectRow = data || null;
+        }
+        if (!alive) return;
+
+        setSelectedResolution(resolutionRes?.data || null);
         setSelectedResolutionSummary(resolutionRes?.data?.summary || '');
+        setSelectedFieldFinding(findingRes?.data || null);
         setSelectedLguDecision(lguDecisionRes?.data || null);
         setSelectedProject(projectRow);
 
@@ -265,6 +309,8 @@ function UserReports() {
       } catch {
         if (!alive) return;
         setSelectedResolutionSummary('');
+        setSelectedResolution(null);
+        setSelectedFieldFinding(null);
         setSelectedLguDecision(null);
         setSelectedProject(null);
         setSelectedProjectRoute(null);
@@ -278,9 +324,9 @@ function UserReports() {
     };
   }, [selected]);
 
-  /* â”€â”€ Filter â”€â”€ */
+  /* â”€â”€ Filter + Sort â”€â”€ */
   const filtered = useMemo(() => {
-    return reports.filter((r) => {
+    const result = reports.filter((r) => {
       if (search) {
         const q = search.toLowerCase();
         const hay = `${r.description} ${r.municipality} ${r.barangay} ${r.street} ${r.project_name}`.toLowerCase();
@@ -295,7 +341,17 @@ function UserReports() {
       }
       return true;
     });
-  }, [reports, search, statusFilter, categoryFilter, problemFilter]);
+
+    const sorted = [...result];
+    if (sortBy === 'oldest') {
+      sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    } else if (sortBy === 'status') {
+      sorted.sort((a, b) => (STATUS_PRIORITY[a.status] ?? 0) - (STATUS_PRIORITY[b.status] ?? 0));
+    } else {
+      sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    return sorted;
+  }, [reports, search, statusFilter, categoryFilter, problemFilter, sortBy]);
 
   /* â”€â”€ Stat counts â”€â”€ */
   const counts = useMemo(() => ({
@@ -365,6 +421,18 @@ function UserReports() {
                 <option value="pending">Pending Review</option>
                 <option value="reviewed">Reviewed</option>
                 <option value="resolved">Resolved</option>
+              </select>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
+            </div>
+            <div className="relative">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="appearance-none pl-4 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="status">By Status</option>
               </select>
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
@@ -465,55 +533,55 @@ function UserReports() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((r) => {
               const cat = resolveCategory(r);
               const problem = resolveSpecificProblem(r);
               return (
-                <article
+                <button
                   key={r.id}
-                  className="bg-white rounded-2xl border border-slate-200/60 hover:border-zinc-300 transition-colors overflow-hidden"
+                  onClick={() => setSelected(r)}
+                  className="w-full text-left bg-white rounded-2xl border border-slate-200/60 hover:border-teal-500/50 hover:shadow-md transition-all duration-200 overflow-hidden flex flex-col h-full"
                 >
-                  <div className="p-5 sm:p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                      <div className="flex flex-wrap items-center gap-2 sm:w-48 shrink-0">
-                        <StatusBadge status={r.status} />
-                        <SeverityBadge category={cat} />
-                        {problem && (
-                          <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-600">
-                            {problem.label}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 leading-snug line-clamp-2 mb-1.5">{r.description}</p>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                          <span className="inline-flex items-center gap-1">
-                            <Icons.Clock />
-                            {fmtDate(r.created_at)}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Icons.MapPin />
-                            {r.barangay}, {r.municipality}
-                          </span>
-                          {r.project_name && (
-                            <span className="inline-flex items-center gap-1">
-                              <Icons.Document />
-                              {r.project_name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setSelected(r)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700 transition shrink-0 self-start sm:self-center"
-                      >
-                        View Details
-                        <Icons.ArrowRight />
-                      </button>
+                  {r.photo_url && (
+                    <img
+                      src={r.photo_url}
+                      alt="Report site"
+                      className="w-full h-36 object-cover"
+                    />
+                  )}
+                  <div className="p-4 flex flex-col flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      <StatusBadge status={r.status} />
+                      <SeverityBadge category={cat} />
+                    </div>
+
+                    {problem && (
+                      <span className="self-start mb-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-600">
+                        {problem.label}
+                      </span>
+                    )}
+
+                    <p className="text-sm font-medium text-slate-900 leading-snug line-clamp-2">{r.description}</p>
+
+                    <div className="mt-auto pt-3 space-y-1 text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <Icons.MapPin />
+                        <span className="truncate">{r.barangay}, {r.municipality}</span>
+                      </span>
+                      {r.project_name && (
+                        <span className="flex items-center gap-1">
+                          <Icons.Document />
+                          <span className="truncate">{r.project_name}</span>
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1">
+                        <Icons.Clock />
+                        {fmtDate(r.created_at)}
+                      </span>
                     </div>
                   </div>
-                </article>
+                </button>
               );
             })}
           </div>
@@ -568,6 +636,47 @@ function UserReports() {
                 heightClass="h-64"
                 title="Project Route Context"
               />
+
+              {/* DA Field Engineer Technical Inspection Findings Card */}
+              {selectedFieldFinding && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                      <Icons.ShieldCheck /> DA Field Engineer Technical Inspection
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">{fmtDate(selectedFieldFinding.submitted_at)}</span>
+                  </div>
+                  <div className="text-xs space-y-1.5 text-slate-800 pt-1">
+                    <p><span className="font-semibold text-slate-600">Observed Condition:</span> {selectedFieldFinding.condition_observed}</p>
+                    <p><span className="font-semibold text-slate-600">Recommended Action:</span> {selectedFieldFinding.recommended_action}</p>
+                    {selectedFieldFinding.estimated_cost_range && (
+                      <p><span className="font-semibold text-slate-600">Estimated Cost:</span> {selectedFieldFinding.estimated_cost_range}</p>
+                    )}
+                  </div>
+                  {selectedFieldFinding.field_photo_url && (
+                    <div className="pt-2">
+                      <p className="text-[10px] text-slate-500 uppercase font-semibold mb-1">On-Site Verified Photo:</p>
+                      <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-32 object-cover rounded-lg border border-slate-300" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Official DA Action Certificate Button — only once the DA has resolved the issue */}
+              {selected.status === 'resolved' ? (
+                <button
+                  onClick={() => setShowCertModal(true)}
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-xs transition-colors"
+                >
+                  <Icons.Document />
+                  <span>View Official DA Action Resolution Certificate</span>
+                </button>
+              ) : (
+                <div className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-500 font-semibold py-2.5 px-4 rounded-xl text-xs border border-slate-200">
+                  <Icons.Clock />
+                  <span>Resolution certificate is issued once the DA settles this road issue</span>
+                </div>
+              )}
 
               <div>
                 <h3 className="text-base font-semibold text-slate-900 mb-1">Issue Description</h3>
@@ -642,6 +751,15 @@ function UserReports() {
             </div>
           </div>
         </div>
+      )}
+
+      {showCertModal && selected && (
+        <DAResolutionCertificate
+          report={selected}
+          fieldFinding={selectedFieldFinding}
+          resolution={selectedResolution}
+          onClose={() => setShowCertModal(false)}
+        />
       )}
     </UserLayout>
   );

@@ -88,6 +88,7 @@ export default function FieldEngineerDashboard() {
   const [notification, setNotification] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
@@ -157,6 +158,31 @@ export default function FieldEngineerDashboard() {
       setLoading(false);
     }
   }, [user]);
+
+  // Surface the DA admin's rejection reason so the engineer knows what to fix.
+  useEffect(() => {
+    if (!selectedReport?.id || selectedReport.engineer_status !== 'rejected') {
+      setRejectionReason('');
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('public_report_activity_logs')
+          .select('description')
+          .eq('report_id', selectedReport.id)
+          .eq('action_type', 'finding_rejected')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (alive) setRejectionReason(data?.description || '');
+      } catch {
+        if (alive) setRejectionReason('');
+      }
+    })();
+    return () => { alive = false; };
+  }, [selectedReport?.id, selectedReport?.engineer_status]);
 
   const createReportNotification = useCallback(async (report, type, message) => {
     if (!report?.user_id) return;
@@ -390,7 +416,8 @@ export default function FieldEngineerDashboard() {
     if (activeTab === 'all') return reports;
     if (activeTab === 'assigned') return reports.filter(r => r.engineer_status === 'assigned');
     if (activeTab === 'in-progress') return reports.filter(r => r.engineer_status === 'in_progress');
-    if (activeTab === 'completed') return reports.filter(r => ['inspected', 'validated', 'rejected'].includes(r.engineer_status));
+    if (activeTab === 'needs-rework') return reports.filter(r => r.engineer_status === 'rejected');
+    if (activeTab === 'completed') return reports.filter(r => ['inspected', 'validated'].includes(r.engineer_status));
     return reports;
   }, [reports, activeTab]);
 
@@ -399,7 +426,8 @@ export default function FieldEngineerDashboard() {
     total: reports.length,
     assigned: reports.filter(r => r.engineer_status === 'assigned').length,
     inProgress: reports.filter(r => r.engineer_status === 'in_progress').length,
-    completed: reports.filter(r => ['inspected', 'validated', 'rejected'].includes(r.engineer_status)).length,
+    needsRework: reports.filter(r => r.engineer_status === 'rejected').length,
+    completed: reports.filter(r => ['inspected', 'validated'].includes(r.engineer_status)).length,
   }), [reports]);
 
   if (!user || !profile) {
@@ -462,7 +490,7 @@ export default function FieldEngineerDashboard() {
         </div>
 
         {/* Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mb-6">
           <div className="bg-white rounded-2xl border border-slate-200/60 p-4 sm:p-5">
             <p className="text-2xl sm:text-3xl font-bold text-slate-900">{metrics.total}</p>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">Total Assigned</p>
@@ -475,6 +503,10 @@ export default function FieldEngineerDashboard() {
             <p className="text-2xl sm:text-3xl font-bold text-amber-700">{metrics.inProgress}</p>
             <p className="text-xs sm:text-sm text-amber-600 mt-1">In Progress</p>
           </div>
+          <div className="bg-red-50 rounded-2xl border border-red-200/60 p-4 sm:p-5">
+            <p className="text-2xl sm:text-3xl font-bold text-red-700">{metrics.needsRework}</p>
+            <p className="text-xs sm:text-sm text-red-600 mt-1">Needs Rework</p>
+          </div>
           <div className="bg-emerald-50 rounded-2xl border border-emerald-200/60 p-4 sm:p-5">
             <p className="text-2xl sm:text-3xl font-bold text-emerald-700">{metrics.completed}</p>
             <p className="text-xs sm:text-sm text-emerald-600 mt-1">Completed</p>
@@ -486,6 +518,7 @@ export default function FieldEngineerDashboard() {
           {[
             { id: 'assigned', label: 'New', count: metrics.assigned },
             { id: 'in-progress', label: 'In Progress', count: metrics.inProgress },
+            { id: 'needs-rework', label: 'Needs Rework', count: metrics.needsRework },
             { id: 'completed', label: 'Completed', count: metrics.completed },
             { id: 'all', label: 'All', count: metrics.total },
           ].map(tab => (
@@ -583,25 +616,43 @@ export default function FieldEngineerDashboard() {
             onClick={e => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between z-10">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Report Detail</h3>
-                <p className="text-xs text-slate-500">{selectedReport.barangay}, {selectedReport.municipality}</p>
+            <div className="sticky top-0 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white px-5 py-4 flex items-center justify-between z-10 border-b border-emerald-900/60">
+              <div className="flex items-center gap-3">
+                <div className="size-9 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/30 font-bold text-sm">
+                  FE
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white tracking-tight">On-Site Field Inspection</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono border border-emerald-800 font-bold">
+                      REF #{selectedReport.id.slice(0, 8).toUpperCase()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300">{selectedReport.barangay}, {selectedReport.municipality} &middot; DA RAED Region VI</p>
+                </div>
               </div>
-              <button onClick={() => setSelectedReport(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button onClick={() => setSelectedReport(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <div className="p-5 space-y-5">
+            <div className="p-5 space-y-5 bg-slate-50/50">
               {/* Badges */}
               <div className="flex items-center gap-2 flex-wrap">
                 <EngineerStatusBadge status={selectedReport.engineer_status} />
                 <VerifyBadge verification={selectedReport.verification} />
                 <ReportStatusBadge status={selectedReport.status} />
               </div>
+
+              {selectedReport.engineer_status === 'rejected' && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 space-y-1">
+                  <p className="text-xs font-bold text-red-800 uppercase tracking-wide">DA Admin sent this back for re-inspection</p>
+                  <p className="text-sm text-red-900">{rejectionReason || 'No reason was recorded.'}</p>
+                  <p className="text-xs text-red-600">Resubmit findings below once the issue is re-checked to send it back for review.</p>
+                </div>
+              )}
 
               <FieldEngineerWorkflowPanel
                 report={selectedReport}
@@ -614,51 +665,46 @@ export default function FieldEngineerDashboard() {
 
               {/* Photo */}
               {selectedReport.photo_url && (
-                <div>
-                  <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Site Photo</p>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                  <p className="text-xs text-slate-500 uppercase font-bold mb-2">Citizen On-Site Photo Evidence</p>
                   <a href={selectedReport.photo_url} target="_blank" rel="noopener noreferrer">
-                    <img src={selectedReport.photo_url} alt="Site" className="w-full max-h-52 object-cover rounded-xl border border-slate-200" />
+                    <img src={selectedReport.photo_url} alt="Site" className="w-full max-h-56 object-cover rounded-xl border border-slate-200 hover:opacity-95 transition" />
                   </a>
                 </div>
               )}
 
               {/* Location Info */}
-              <div className="bg-slate-50 rounded-xl p-4 space-y-2.5">
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="text-slate-400 w-24 shrink-0 font-medium">Municipality</span>
-                  <span className="text-slate-800">{selectedReport.municipality}</span>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="text-slate-400 w-24 shrink-0 font-medium">Barangay</span>
-                  <span className="text-slate-800">{selectedReport.barangay}</span>
-                </div>
-                {selectedReport.street && (
-                  <div className="flex items-start gap-3 text-sm">
-                    <span className="text-slate-400 w-24 shrink-0 font-medium">Street / Sitio</span>
-                    <span className="text-slate-800">{selectedReport.street}</span>
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs space-y-2.5">
+                <p className="text-xs text-slate-500 uppercase font-bold border-b border-slate-100 pb-2">Location & Case Metadata</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-400 block font-semibold">Municipality</span>
+                    <span className="font-bold text-slate-800">{selectedReport.municipality}</span>
                   </div>
-                )}
-                {selectedReport.project_name && (
-                  <div className="flex items-start gap-3 text-sm">
-                    <span className="text-slate-400 w-24 shrink-0 font-medium">Project</span>
-                    <span className="text-slate-800">{selectedReport.project_name}</span>
+                  <div>
+                    <span className="text-slate-400 block font-semibold">Barangay</span>
+                    <span className="font-bold text-slate-800">{selectedReport.barangay}</span>
                   </div>
-                )}
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="text-slate-400 w-24 shrink-0 font-medium">Reported by</span>
-                  <span className="text-slate-800">{selectedReport.full_name || 'Anonymous'}</span>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <span className="text-slate-400 w-24 shrink-0 font-medium">Date</span>
-                  <span className="text-slate-800">{new Date(selectedReport.created_at).toLocaleDateString()}</span>
+                  {selectedReport.street && (
+                    <div>
+                      <span className="text-slate-400 block font-semibold">Sitio / Street</span>
+                      <span className="font-bold text-slate-800">{selectedReport.street}</span>
+                    </div>
+                  )}
+                  {selectedReport.project_name && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 block font-semibold">FMR Project</span>
+                      <span className="font-bold text-teal-800">{selectedReport.project_name}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* GPS */}
               {(selectedReport.latitude || selectedReport.longitude) && (
-                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
-                  <p className="text-xs text-teal-500 uppercase font-semibold mb-2">GPS Location</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-teal-800">
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-4 shadow-xs">
+                  <p className="text-xs text-emerald-800 uppercase font-bold mb-2">Geospatial Coordinates</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-emerald-950 font-mono">
                     <span><strong>Lat:</strong> {Number(selectedReport.latitude).toFixed(6)}</span>
                     <span><strong>Lng:</strong> {Number(selectedReport.longitude).toFixed(6)}</span>
                     {selectedReport.geo_accuracy && <span><strong>Accuracy:</strong> ±{Math.round(selectedReport.geo_accuracy)}m</span>}
@@ -667,45 +713,47 @@ export default function FieldEngineerDashboard() {
                     href={`https://www.google.com/maps?q=${selectedReport.latitude},${selectedReport.longitude}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shadow-sm"
+                    className="inline-flex items-center gap-1.5 mt-3 px-3.5 py-2 bg-emerald-700 text-white rounded-lg text-xs font-bold hover:bg-emerald-800 transition shadow-xs"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0Z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0Z" />
                     </svg>
-                    Open in Google Maps
+                    Open Target Location in Google Maps
                   </a>
                 </div>
               )}
 
               {/* Description */}
-              <div>
-                <p className="text-xs text-slate-400 uppercase font-semibold mb-1">Issue Description</p>
-                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl">{selectedReport.description}</p>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+                <p className="text-xs text-slate-500 uppercase font-bold mb-2">Citizen Complaint Description</p>
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed italic bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  &ldquo;{selectedReport.description || 'No description provided.'}&rdquo;
+                </p>
               </div>
 
               {/* Status Update Actions */}
-              <div className="pt-4 border-t border-slate-100">
-                <p className="text-xs text-slate-400 uppercase font-semibold mb-3">Update Inspection Status</p>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
+              <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                <p className="text-xs text-slate-700 uppercase font-bold">Update Official Inspection Workflow Status</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {[
-                    { status: 'in_progress', label: 'Start Inspection', cls: 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100' },
-                    { status: 'inspected', label: 'Mark Inspected', cls: 'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100' },
-                    { status: 'validated', label: 'Validate', cls: 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-                    { status: 'rejected', label: 'Reject', cls: 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' },
+                    { status: 'in_progress', label: 'Start Inspection', cls: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100' },
                   ].map(action => (
                     <button
                       key={action.status}
                       onClick={() => updateReportStatus(selectedReport.id, action.status)}
                       disabled={updatingStatus || selectedReport.engineer_status === action.status}
-                      className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${action.cls} ${
-                        selectedReport.engineer_status === action.status ? 'ring-2 ring-offset-1' : ''
+                      className={`px-3 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${action.cls} ${
+                        selectedReport.engineer_status === action.status ? 'ring-2 ring-emerald-500 ring-offset-1' : ''
                       }`}
                     >
                       {action.label}
                     </button>
                   ))}
                 </div>
+                <p className="text-[11px] text-slate-400">
+                  Submitting findings below automatically marks this report as Inspected for DA admin review — inspection results are no longer self-certified here.
+                </p>
               </div>
             </div>
           </div>

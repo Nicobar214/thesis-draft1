@@ -1,11 +1,12 @@
-/* LandingPage.jsx - Professional Redesign with FMR Projects & Map Preview */
 import { Link } from 'react-router-dom';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import UserFMRProjects from './UserFMRProjects';
 import UserMapView from './UserMapView';
+import Icons from '../components/Icons';
 
 export default function LandingPage() {
   const observerRef = useRef(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     observerRef.current = new IntersectionObserver(
@@ -27,216 +28,278 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50" style={{ overflowX: 'hidden' }}>
+    <div className="min-h-screen bg-slate-50 font-sans" style={{ overflowX: 'hidden' }}>
       {/* Animation Styles */}
       <style>{`
         .fade-up {
           opacity: 0;
-          transform: translateY(20px);
-          transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+          transform: translateY(24px);
+          transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .fade-up.animate-in {
           opacity: 1;
           transform: translateY(0);
         }
       `}</style>
+
       {/* Navigation */}
-      <nav className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <nav className="bg-white/90 backdrop-blur-xl border-b border-slate-200/80 sticky top-0 z-50 transition-all">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center">
-                <span className="text-white text-lg font-bold">K</span>
+            {/* Logo */}
+            <Link to="/" className="flex items-center gap-2.5 group">
+              <div className="w-10 h-10 bg-gradient-to-tr from-emerald-700 to-teal-500 rounded-xl flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                <span className="text-white text-xl font-black">K</span>
               </div>
-              <span className="text-lg font-bold text-slate-900">KalsaTrack</span>
-            </div>
-            
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-slate-600 hover:text-slate-900 transition text-sm">Features</a>
-              <a href="#projects" className="text-slate-600 hover:text-slate-900 transition text-sm">Projects</a>
-              <a href="#map-view" className="text-slate-600 hover:text-slate-900 transition text-sm">Map View</a>
-              <a href="#how-it-works" className="text-slate-600 hover:text-slate-900 transition text-sm">How It Works</a>
-              <Link to="/report-portal" className="text-slate-600 hover:text-slate-900 transition text-sm font-medium text-emerald-600">Quick Report</Link>
+              <div className="flex flex-col">
+                <span className="text-lg font-extrabold text-slate-900 tracking-tight leading-tight group-hover:text-emerald-700 transition-colors">KalsaTrack</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-none">DA Region VI</span>
+              </div>
+            </Link>
+
+            {/* Desktop Navigation Links */}
+            <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+              <a href="#map-view" className="hover:text-emerald-700 transition-colors">Geospatial Map</a>
+              <a href="#projects" className="hover:text-emerald-700 transition-colors">FMR Projects</a>
+              <a href="#features" className="hover:text-emerald-700 transition-colors">Platform Features</a>
+              <a href="#how-it-works" className="hover:text-emerald-700 transition-colors">How It Works</a>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Link 
-                to="/signin" 
-                className="text-slate-600 hover:text-slate-900 transition font-medium px-4 py-2 text-sm"
+            {/* Action Buttons */}
+            <div className="hidden md:flex items-center gap-3">
+              <Link
+                to="/signin"
+                className="text-slate-700 hover:text-emerald-800 transition font-semibold px-4 py-2 text-sm rounded-lg hover:bg-slate-100"
               >
                 Sign In
               </Link>
-              <Link 
-                to="/signup" 
-                className="bg-emerald-600 text-white px-5 py-2 rounded-lg hover:bg-emerald-700 transition font-medium text-sm"
+              <Link
+                to="/signup"
+                className="bg-emerald-700 text-white px-5 py-2.5 rounded-lg hover:bg-emerald-800 transition font-bold text-sm shadow-xs"
               >
                 Get Started
               </Link>
             </div>
+
+            {/* Mobile Menu Toggle Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 focus:outline-none"
+              aria-label="Toggle Navigation Menu"
+            >
+              <Icons.Menu />
+            </button>
           </div>
+
+          {/* Mobile Collapsible Navigation */}
+          {mobileMenuOpen && (
+            <div className="md:hidden mt-3 pt-3 border-t border-slate-100 flex flex-col gap-3 font-semibold text-sm text-slate-700">
+              <a href="#map-view" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 hover:text-emerald-700">Geospatial Map</a>
+              <a href="#projects" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 hover:text-emerald-700">FMR Projects</a>
+              <a href="#features" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 hover:text-emerald-700">Platform Features</a>
+              <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1.5 hover:text-emerald-700">How It Works</a>
+              <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                <Link to="/signin" className="w-full text-center py-2 rounded-lg border border-slate-200 font-semibold text-slate-800">Sign In</Link>
+                <Link to="/signup" className="w-full text-center py-2 rounded-lg bg-emerald-700 text-white font-bold">Get Started</Link>
+              </div>
+            </div>
+          )}
         </div>
       </nav>
 
-      {/* Hero Section - Clean & Centered */}
-      <header className="relative bg-gradient-to-b from-slate-900 via-slate-800 to-emerald-950" style={{ overflow: 'hidden' }}>
-        {/* Background Elements */}
-        <div className="absolute inset-0" style={{ overflow: 'hidden' }}>
-          <div className="absolute inset-0 opacity-[0.04]" style={{
-            backgroundImage: 'linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px)',
-            backgroundSize: '60px 60px'
-          }}></div>
-          <div className="absolute top-1/3 left-1/4 w-72 h-72 bg-emerald-500/8 rounded-full" style={{ filter: 'blur(100px)' }}></div>
-          <div className="absolute bottom-1/4 right-1/4 w-56 h-56 bg-teal-500/8 rounded-full" style={{ filter: 'blur(100px)' }}></div>
-        </div>
-        
-        <div className="relative max-w-4xl mx-auto px-6 sm:px-8 lg:px-10 py-28 sm:py-36 lg:py-44">
-          <div className="text-center">
-            <div className="text-white">
-              <p className="text-xs sm:text-sm font-semibold text-emerald-400 uppercase tracking-widest mb-6">Farm-to-Market Road Transparency Portal</p>
-              
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold mb-6 leading-tight tracking-tight">
-                Track Rural Road<br />Infrastructure{' '}
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">
-                  With Full Transparency
-                </span>
-              </h1>
-              
-              <p className="text-base sm:text-lg text-slate-400 mb-10 leading-relaxed max-w-xl mx-auto">
-                Monitor farm-to-market road projects in real-time. Access progress updates, budget data, and community reports — all in one platform.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link
-                  to="/signup"
-                  className="inline-flex items-center justify-center bg-white text-slate-900 px-8 py-4 rounded-xl font-semibold hover:bg-slate-100 transition shadow-lg hover:shadow-xl group"
-                >
-                  Start Tracking Projects
-                  <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
-                </Link>
-                <Link
-                  to="/report-portal"
-                  className="inline-flex items-center justify-center border-2 border-white/50 text-white px-8 py-4 rounded-xl font-semibold hover:bg-white/15 hover:border-white transition group bg-white/5 backdrop-blur-sm"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Report Without Login
-                </Link>
-              </div>
+      {/* Hero Section */}
+      <header className="relative bg-slate-900 text-white overflow-hidden">
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 text-center">
+          {/* Tag Pill */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 text-xs font-semibold mb-6">
+            <Icons.Sprout />
+            <span>Farm-to-Market Road Oversight & Supply Chain Intelligence</span>
+          </div>
 
+          <h1 className="text-3xl sm:text-4xl font-bold mb-5 tracking-tight leading-snug">
+            Empowering Rural Roads With <br className="hidden sm:inline" />
+            <span className="text-emerald-400">Complete Transparency</span>
+          </h1>
+
+          <p className="text-sm sm:text-base text-slate-300 mb-8 leading-relaxed max-w-2xl mx-auto font-normal">
+            Monitor DA Region VI farm-to-market road developments, visualize rural supply chains, inspect real-time physical accomplishments, and submit community reports.
+          </p>
+
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <Link
+              to="/signup"
+              className="w-full sm:w-auto inline-flex items-center justify-center bg-emerald-700 text-white px-7 py-3 rounded-xl font-bold text-sm hover:bg-emerald-600 transition-colors shadow-xs group"
+            >
+              Start Tracking Projects
+              <Icons.ArrowRight />
+            </Link>
+            <Link
+              to="/report-portal"
+              className="w-full sm:w-auto inline-flex items-center justify-center border border-slate-700 text-slate-200 px-7 py-3 rounded-xl font-semibold text-sm hover:bg-slate-800 transition-colors"
+            >
+              <Icons.Warning />
+              <span className="ml-2">Report Road Issue</span>
+            </Link>
+          </div>
+
+          {/* Key Quick Stats Banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-12 pt-8 border-t border-slate-800 text-left max-w-4xl mx-auto">
+            <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <p className="text-xl sm:text-2xl font-bold text-emerald-400">100%</p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">DA-RAED Transparency</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <p className="text-xl sm:text-2xl font-bold text-emerald-400">Region VI</p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Iloilo FMR Coverage</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <p className="text-xl sm:text-2xl font-bold text-sky-400">Live GPS</p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Geospatial Routing</p>
+            </div>
+            <div className="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              <p className="text-xl sm:text-2xl font-bold text-amber-400">24/7</p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Citizen Road Reporting</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Embedded FMR Projects (public landing) */}
-      <section id="projects" className="py-16 sm:py-20 px-6 sm:px-8 lg:px-10 bg-white border-b border-slate-100">
-        <UserFMRProjects embedded />
-      </section>
-
-      {/* Embedded Map View (public landing) */}
-      <section id="map-view" className="py-16 sm:py-20 px-6 sm:px-8 lg:px-10 bg-slate-50 border-b border-slate-100">
-        <UserMapView embedded />
-      </section>
-
-      {/* Key Features */}
-      <section id="features" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col items-center mb-20">
-            <p className="text-sm font-medium text-emerald-600 uppercase tracking-wider mb-4">Features</p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4 text-center">
-              Tools for transparency and accountability
+      {/* 1. MAP VIEW SECTION (Moved above FMR Projects as requested) */}
+      <section id="map-view" className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 bg-slate-900 border-b border-slate-800">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <div className="text-center max-w-3xl mx-auto space-y-3">
+            <span className="px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
+              Geospatial Intelligence
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight">
+              Interactive Rural Road Network Map
             </h2>
-            <p className="text-lg text-slate-600 max-w-lg text-center">
-              Everything you need to track, monitor, and engage with rural infrastructure projects
+            <p className="text-sm sm:text-base text-slate-400 leading-relaxed">
+              Explore Farm-to-Market Road alignments across Region VI. View live accomplishment statuses, verified coordinates, and supply path routes.
             </p>
           </div>
-          
+
+          <div className="rounded-3xl border border-slate-800 bg-slate-950/60 overflow-hidden shadow-2xl backdrop-blur-md">
+            <UserMapView embedded />
+          </div>
+        </div>
+      </section>
+
+      {/* 2. FMR PROJECTS SECTION (Moved BELOW the Map View) */}
+      <section id="projects" className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 bg-white border-b border-slate-200/80">
+        <div className="max-w-7xl mx-auto space-y-8">
+          <div className="text-center max-w-3xl mx-auto space-y-3">
+            <span className="px-3.5 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-700 text-xs font-bold uppercase tracking-wider">
+              Public Infrastructure Directory
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight">
+              Farm-to-Market Road Projects
+            </h2>
+            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+              Browse complete records of proposed, ongoing, and completed FMR projects funded by DA-RAED Region VI and local LGUs.
+            </p>
+          </div>
+
+          <UserFMRProjects embedded />
+        </div>
+      </section>
+
+      {/* 3. KEY FEATURES / PLATFORM CAPABILITIES */}
+      <section id="features" className="py-20 sm:py-28 px-4 sm:px-6 lg:px-8 bg-slate-50">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col items-center mb-16 text-center max-w-2xl mx-auto">
+            <span className="px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 text-xs font-bold uppercase tracking-wider mb-3">
+              Platform Features
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">
+              Tools Built for Transparency & Accountability
+            </h2>
+            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+              Comprehensive tools designed for citizens, farmers, LGU officers, and DA regional engineers.
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
             {/* Feature 1 */}
-            <div className="flex flex-col bg-slate-50 rounded-2xl p-8 lg:p-10 hover:bg-slate-100/80 transition-colors border border-slate-100">
-              <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center mb-5">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+            <div className="flex flex-col bg-white rounded-2xl p-6 shadow-xs border border-slate-200 group">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-800 rounded-xl flex items-center justify-center mb-5 shrink-0">
+                <Icons.Chart />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Progress Tracking</h3>
-              <p className="text-slate-500 text-sm leading-relaxed">
-                Monitor construction milestones, budget utilization, and completion status with real-time dashboard updates.
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Real-Time Progress Tracking</h3>
+              <p className="text-slate-600 text-xs sm:text-sm leading-relaxed">
+                Monitor physical accomplishment percentages, budget allocations, target completion dates, and official engineer inspection reports.
               </p>
             </div>
-            
+
             {/* Feature 2 */}
-            <div className="flex flex-col bg-slate-50 rounded-2xl p-8 lg:p-10 hover:bg-slate-100/80 transition-colors border border-slate-100">
-              <div className="w-12 h-12 bg-teal-600 rounded-xl flex items-center justify-center mb-5">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
+            <div className="flex flex-col bg-white rounded-2xl p-6 shadow-xs border border-slate-200 group">
+              <div className="w-12 h-12 bg-sky-100 text-sky-800 rounded-xl flex items-center justify-center mb-5 shrink-0">
+                <Icons.Road />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Interactive Maps</h3>
-              <p className="text-slate-500 text-sm leading-relaxed">
-                Visualize road networks with geospatial data and see project locations across all regions.
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Supply Chain Mapping</h3>
+              <p className="text-slate-600 text-xs sm:text-sm leading-relaxed">
+                Route farm coordinates to linked FMR roads and agricultural trading posts, calculating logistics distances to nearest markets.
               </p>
             </div>
-            
+
             {/* Feature 3 */}
-            <div className="flex flex-col bg-slate-50 rounded-2xl p-8 lg:p-10 hover:bg-slate-100/80 transition-colors border border-slate-100">
-              <div className="w-12 h-12 bg-slate-700 rounded-xl flex items-center justify-center mb-5">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
+            <div className="flex flex-col bg-white rounded-2xl p-6 shadow-xs border border-slate-200 group">
+              <div className="w-12 h-12 bg-amber-100 text-amber-800 rounded-xl flex items-center justify-center mb-5 shrink-0">
+                <Icons.Warning />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">Community Reports</h3>
-              <p className="text-slate-500 text-sm leading-relaxed">
-                Submit feedback, report issues, and track resolution status through transparent citizen engagement.
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Citizen & Farmer Reporting</h3>
+              <p className="text-slate-600 text-xs sm:text-sm leading-relaxed">
+                Submit damage reports, pothole alerts, and bridge washouts with auto-detected GPS coordinates and photo evidence.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
-      <section id="how-it-works" className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-slate-50 border-t border-slate-100">
+      {/* 4. HOW IT WORKS */}
+      <section id="how-it-works" className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 bg-white border-t border-slate-200">
         <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col items-center mb-16">
-            <p className="text-sm font-medium text-teal-600 uppercase tracking-wider mb-4">Getting Started</p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4 text-center">
-              Start tracking today in three steps
+          <div className="flex flex-col items-center mb-12 text-center max-w-2xl mx-auto">
+            <span className="px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold uppercase tracking-wider mb-2">
+              Simple Workflow
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mb-2">
+              Start Tracking in Three Easy Steps
             </h2>
-            <p className="text-lg text-slate-600 max-w-lg text-center">
-              Three simple steps to start tracking farm-to-market road projects or reporting issues
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Getting started on KalsaTrack takes less than a minute.
             </p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 lg:gap-16">
-            <div className="text-center">
-              <div className="w-14 h-14 bg-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm">
-                <span className="text-xl font-bold text-white">1</span>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+            <div className="text-center p-6 rounded-2xl bg-slate-50 border border-slate-200/80">
+              <div className="w-12 h-12 bg-emerald-700 text-white rounded-xl flex items-center justify-center mx-auto mb-4 font-bold text-lg">
+                1
               </div>
-              <h3 className="font-semibold text-slate-900 text-base mb-2">Create Account</h3>
-              <p className="text-slate-500 text-sm leading-relaxed max-w-[240px] mx-auto">
-                Sign up with your email and select your role as citizen, official, or stakeholder.
+              <h3 className="font-bold text-slate-900 text-base mb-1.5">Access Platform</h3>
+              <p className="text-slate-600 text-xs leading-relaxed">
+                Log in as a citizen, farmer, LGU officer, or DA engineer to access custom dashboards.
               </p>
             </div>
-            <div className="text-center">
-              <div className="w-14 h-14 bg-teal-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm">
-                <span className="text-xl font-bold text-white">2</span>
+
+            <div className="text-center p-6 rounded-2xl bg-slate-50 border border-slate-200/80">
+              <div className="w-12 h-12 bg-emerald-700 text-white rounded-xl flex items-center justify-center mx-auto mb-4 font-bold text-lg">
+                2
               </div>
-              <h3 className="font-semibold text-slate-900 text-base mb-2">Browse Projects</h3>
-              <p className="text-slate-500 text-sm leading-relaxed max-w-[240px] mx-auto">
-                Explore active road projects in your region using the interactive map and filters.
+              <h3 className="font-bold text-slate-900 text-base mb-1.5">Explore Road Networks</h3>
+              <p className="text-slate-600 text-xs leading-relaxed">
+                Locate FMR projects by municipality, surface type, fiscal year, or accomplishment state.
               </p>
             </div>
-            <div className="text-center">
-              <div className="w-14 h-14 bg-slate-700 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-sm">
-                <span className="text-xl font-bold text-white">3</span>
+
+            <div className="text-center p-6 rounded-2xl bg-slate-50 border border-slate-200/80">
+              <div className="w-12 h-12 bg-emerald-700 text-white rounded-xl flex items-center justify-center mx-auto mb-4 font-bold text-lg">
+                3
               </div>
-              <h3 className="font-semibold text-slate-900 text-base mb-2">Track & Report</h3>
-              <p className="text-slate-500 text-sm leading-relaxed max-w-[240px] mx-auto">
-                Monitor progress, submit feedback, and receive updates on project milestones.
+              <h3 className="font-bold text-slate-900 text-base mb-1.5">Report & Monitor</h3>
+              <p className="text-slate-600 text-xs leading-relaxed">
+                Submit damage alerts, log actual crop yields, or track resolution milestones in real time.
               </p>
             </div>
           </div>
@@ -244,89 +307,88 @@ export default function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 sm:py-32 px-6 sm:px-8 lg:px-10 bg-slate-50 border-t border-slate-100">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-            Ready to make an impact?
+      <section className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 bg-slate-900 text-white border-t border-slate-800">
+        <div className="max-w-3xl mx-auto text-center space-y-4">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">
+            Ready to Drive Infrastructure Transparency?
           </h2>
-          
-          <p className="text-lg text-slate-600 mb-8 max-w-xl mx-auto">
-            Join communities across the Philippines in building transparent infrastructure. Start tracking projects or report issues today — no registration required to report.
+
+          <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto leading-relaxed font-normal">
+            Join agricultural communities across Region VI in monitoring farm-to-market road progress.
           </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-2">
             <Link
               to="/signup"
-              className="inline-flex items-center justify-center bg-emerald-600 text-white px-8 py-3.5 rounded-lg font-semibold hover:bg-emerald-700 transition group"
+              className="w-full sm:w-auto inline-flex items-center justify-center bg-emerald-700 text-white px-7 py-3 rounded-xl font-bold text-sm hover:bg-emerald-600 transition-colors shadow-xs"
             >
-              Create Free Account
-              <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
+              Create Account
+              <Icons.ArrowRight />
             </Link>
             <Link
               to="/report-portal"
-              className="inline-flex items-center justify-center border border-slate-300 text-slate-700 px-8 py-3.5 rounded-lg font-semibold hover:bg-slate-50 transition"
+              className="w-full sm:w-auto inline-flex items-center justify-center border border-slate-700 text-slate-200 px-7 py-3 rounded-xl font-semibold text-sm hover:bg-slate-800 transition-colors"
             >
               Report an Issue
             </Link>
           </div>
-
-
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-slate-950 text-slate-400 border-t border-slate-800">
-        <div className="max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-14">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
-            <div className="col-span-2 md:col-span-1">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">K</span>
+      <footer className="bg-slate-950 text-slate-400 border-t border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+            <div className="col-span-2 md:col-span-1 space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+                  <span className="text-white text-lg font-black">K</span>
                 </div>
-                <span className="text-lg font-bold text-white">KalsaTrack</span>
+                <span className="text-lg font-extrabold text-white tracking-tight">KalsaTrack</span>
               </div>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Transparent farm-to-market road infrastructure tracking.
+              <p className="text-slate-400 text-xs sm:text-sm leading-relaxed">
+                Department of Agriculture RAED Region VI — Farm-to-Market Road Infrastructure Transparency Portal.
               </p>
             </div>
 
             <div>
-              <h4 className="font-semibold text-white mb-4">Platform</h4>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#features" className="hover:text-white transition">Features</a></li>
-                <li><a href="#projects" className="hover:text-white transition">Live Projects</a></li>
-                <li><a href="#how-it-works" className="hover:text-white transition">How It Works</a></li>
+              <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Platform</h4>
+              <ul className="space-y-2.5 text-xs sm:text-sm">
+                <li><a href="#map-view" className="hover:text-emerald-400 transition">Geospatial Map</a></li>
+                <li><a href="#projects" className="hover:text-emerald-400 transition">FMR Projects</a></li>
+                <li><a href="#features" className="hover:text-emerald-400 transition">Features</a></li>
+                <li><a href="#how-it-works" className="hover:text-emerald-400 transition">How It Works</a></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-semibold text-white mb-4">Quick Access</h4>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/signin" className="hover:text-white transition">Sign In</Link></li>
-                <li><Link to="/signup" className="hover:text-white transition">Create Account</Link></li>
-                <li><Link to="/admin" className="hover:text-white transition">Admin Sign In</Link></li>
-                <li><Link to="/signin" className="hover:text-white transition">User Sign In</Link></li>
+              <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Portals Sign In</h4>
+              <ul className="space-y-2 text-xs sm:text-sm">
+                <li><Link to="/farmer/login" className="text-emerald-400 hover:text-emerald-300 font-bold transition">🌾 Farmer Sign In</Link></li>
+                <li><Link to="/lgu/login" className="hover:text-white transition">LGU Officer Sign In</Link></li>
                 <li><Link to="/field-engineer/login" className="hover:text-white transition">Field Engineer Sign In</Link></li>
                 <li><Link to="/contractor/login" className="hover:text-white transition">Contractor Sign In</Link></li>
-                <li><Link to="/lgu/login" className="hover:text-white transition">LGU Sign In</Link></li>
+                <li><Link to="/admin" className="hover:text-white transition">DA Admin Sign In</Link></li>
               </ul>
             </div>
 
             <div>
-              <h4 className="font-semibold text-white mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm">
+              <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Legal & Support</h4>
+              <ul className="space-y-2.5 text-xs sm:text-sm">
+                <li><Link to="/report-portal" className="hover:text-white transition">Public Issue Report</Link></li>
                 <li><a href="#" className="hover:text-white transition">Privacy Policy</a></li>
                 <li><a href="#" className="hover:text-white transition">Terms of Service</a></li>
               </ul>
             </div>
           </div>
 
-          <div className="border-t border-slate-800 pt-8">
-            <p className="text-sm text-slate-500 text-center">
-              © 2026 KalsaTrack. All rights reserved.
-            </p>
+          <div className="border-t border-slate-800/80 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-500">
+            <p>© 2026 KalsaTrack — DA Region VI. All rights reserved.</p>
+            <div className="flex gap-4">
+              <span>Department of Agriculture</span>
+              <span>•</span>
+              <span>RAED Region VI</span>
+            </div>
           </div>
         </div>
       </footer>
