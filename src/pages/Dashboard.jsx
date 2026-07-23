@@ -48,6 +48,7 @@ import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
 import PriorityTab from '../components/admin/PriorityTab';
 import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
+import ProjectSchedulingTab from '../components/admin/ProjectSchedulingTab';
 import { computePriorityScores } from '../lib/priorityScoring';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
@@ -63,9 +64,9 @@ function normalizeFmrStatus(s) {
 function getFmrStatusColor(status) {
   switch (normalizeFmrStatus(status)) {
     case 'Completed': return { fill: '#10b981', stroke: '#059669' };
-    case 'On-Going':  return { fill: '#f59e0b', stroke: '#d97706' };
-    case 'Proposed':  return { fill: '#3b82f6', stroke: '#2563eb' };
-    default:          return { fill: '#6b7280', stroke: '#4b5563' };
+    case 'On-Going': return { fill: '#f59e0b', stroke: '#d97706' };
+    case 'Proposed': return { fill: '#3b82f6', stroke: '#2563eb' };
+    default: return { fill: '#6b7280', stroke: '#4b5563' };
   }
 }
 
@@ -273,7 +274,7 @@ function AdminFitBounds({ points, filterKey }) {
 
   useEffect(() => {
     if (!points || points.length === 0) return;
-    
+
     if (filterKey === undefined || lastKeyRef.current !== filterKey) {
       if (filterKey !== undefined) {
         lastKeyRef.current = filterKey;
@@ -327,7 +328,7 @@ function FarmerHeatmapLayer({ visible, points }) {
 
   useEffect(() => {
     if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
-    
+
     const layer = window.L.heatLayer(points, {
       radius: 30,
       blur: 20,
@@ -381,7 +382,7 @@ function EmptyState({ title, description, buttonLabel, onButtonClick }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  
+
   // State management
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -401,7 +402,7 @@ export default function Dashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [notification, setNotification] = useState(null);
   const projectsPerPage = 5;
-  
+
   // Public reports state (admin view)
   const [publicReports, setPublicReports] = useState([]);
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
@@ -486,7 +487,7 @@ export default function Dashboard() {
   }, [cropFilteredFarmerBeneficiaries]);
 
   // Project Management tab states
-  const [pmSubTab, setPmSubTab] = useState('board');
+  const [pmSubTab, setPmSubTab] = useState('budget');
   const [pmSearchInput, setPmSearchInput] = useState('');
   const [pmSearch, setPmSearch] = useState('');
   const [pmMunicipalityFilter, setPmMunicipalityFilter] = useState('All');
@@ -494,10 +495,6 @@ export default function Dashboard() {
   const [pmStatusFilter, setPmStatusFilter] = useState('All');
   const [selectedFmrPmProject, setSelectedFmrPmProject] = useState(null);
   const [pmBudgetPage, setPmBudgetPage] = useState(1);
-  const [pmCalMonth, setPmCalMonth] = useState(new Date().getMonth());
-  const [pmCalYear, setPmCalYear] = useState(new Date().getFullYear());
-  const [pmCalView, setPmCalView] = useState('month'); // 'month' | 'week' | 'agenda'
-  const [pmCalSelectedDate, setPmCalSelectedDate] = useState(new Date());
 
 
   // FMR CRUD state (edit / delete)
@@ -836,9 +833,9 @@ export default function Dashboard() {
         .from('projects')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (fetchErr) throw fetchErr;
-      
+
       setProjects(data || []);
     } catch (err) {
       console.error('Error fetching projects:', err.message);
@@ -1471,8 +1468,8 @@ export default function Dashboard() {
     });
     const waypoints = Array.isArray(proposal.route_waypoints)
       ? proposal.route_waypoints
-          .map((w) => ({ lat: Number(w?.lat ?? w?.[0]), lng: Number(w?.lng ?? w?.[1]) }))
-          .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
+        .map((w) => ({ lat: Number(w?.lat ?? w?.[0]), lng: Number(w?.lng ?? w?.[1]) }))
+        .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
       : [];
     setNewProjectRouteWaypoints(waypoints);
     setNewProjectContractorId('');
@@ -2212,7 +2209,7 @@ export default function Dashboard() {
                 // Provide a default offset endpoint so route building works
                 end_latitude: coords[0] + 0.0005,
                 end_longitude: coords[1] + 0.0005,
-                remarks: project.remarks 
+                remarks: project.remarks
                   ? `${project.remarks} (Auto-geocoded to Barangay center)`
                   : 'Auto-geocoded to Barangay center'
               })
@@ -2247,7 +2244,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!fmrProjects || fmrProjects.length === 0) return undefined;
-    
+
     let cancelled = false;
     async function snapAdminRoutes() {
       const toSnap = fmrProjects.filter((p) => {
@@ -2379,8 +2376,8 @@ export default function Dashboard() {
         normalizedStatus === 'On-Going'
           ? 'In Progress'
           : normalizedStatus === 'Proposed'
-          ? 'Planning'
-          : normalizedStatus;
+            ? 'Planning'
+            : normalizedStatus;
 
       const startLat = Number(p.start_latitude);
       const startLng = Number(p.start_longitude);
@@ -2423,9 +2420,9 @@ export default function Dashboard() {
         project.municipality?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.contractor?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         project.source?.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
-      
+
       return matchesSearch && matchesStatus;
     });
 
@@ -2857,7 +2854,7 @@ export default function Dashboard() {
 
   const handleEditProject = async (e) => {
     e.preventDefault();
-    
+
     // Build update payload — exclude `id` and `created_at` (identity/system columns)
     const updatedProject = {
       projectName: formData.projectName,
@@ -2922,6 +2919,7 @@ export default function Dashboard() {
     setFormData({
       ...project,
       totalBudget: project.totalBudget?.toString() || '',
+
       disbursedAmount: project.disbursedAmount?.toString() || '',
       roadLength: project.roadLength?.toString() || '',
       roadWidth: project.roadWidth?.toString() || '',
@@ -2953,7 +2951,7 @@ export default function Dashboard() {
     const { name, value } = e.target;
     setFmrFormData(prev => {
       const next = { ...prev, [name]: value };
-      
+
       if (
         name === 'start_latitude' ||
         name === 'start_longitude' ||
@@ -2964,7 +2962,7 @@ export default function Dashboard() {
         const sLng = parseCoordinate(name === 'start_longitude' ? value : next.start_longitude);
         const eLat = parseCoordinate(name === 'end_latitude' ? value : next.end_latitude);
         const eLng = parseCoordinate(name === 'end_longitude' ? value : next.end_longitude);
-        
+
         if (!Number.isNaN(sLat) && !Number.isNaN(sLng) && !Number.isNaN(eLat) && !Number.isNaN(eLng)) {
           if (fmrRouteWaypoints && fmrRouteWaypoints.length > 0) {
             const points = [[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]];
@@ -2976,7 +2974,7 @@ export default function Dashboard() {
           next.project_length_km = '';
         }
       }
-      
+
       return next;
     });
   };
@@ -3098,12 +3096,12 @@ export default function Dashboard() {
     const waypointsRaw = route?.route_points || route?.waypoints || route?.points || [];
     const waypoints = Array.isArray(waypointsRaw)
       ? waypointsRaw
-          .map((point) => {
-            const lat = Number(point?.lat ?? point?.latitude ?? point?.[0]);
-            const lng = Number(point?.lng ?? point?.longitude ?? point?.[1]);
-            return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-          })
-          .filter(Boolean)
+        .map((point) => {
+          const lat = Number(point?.lat ?? point?.latitude ?? point?.[0]);
+          const lng = Number(point?.lng ?? point?.longitude ?? point?.[1]);
+          return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+        })
+        .filter(Boolean)
       : [];
     setFmrRouteWaypoints(waypoints);
 
@@ -3284,9 +3282,8 @@ export default function Dashboard() {
     <div className="min-h-screen flex bg-gradient-to-br from-slate-50 to-slate-100">
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium transition-all ${
-          notification.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
-        }`}>
+        <div className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium transition-all ${notification.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
+          }`}>
           {notification.message}
         </div>
       )}
@@ -3309,16 +3306,15 @@ export default function Dashboard() {
 
       {/* Sidebar Overlay (Mobile) */}
       {showSidebar && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"
           onClick={() => setShowSidebar(false)}
         />
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gradient-to-b from-slate-950 to-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${
-        showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      } border-r border-slate-800/60 shadow-xl`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gradient-to-b from-slate-950 to-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } border-r border-slate-800/60 shadow-xl`}>
         {/* Logo */}
         <div className="px-5 py-6 border-b border-slate-800/60">
           <div className="flex items-center justify-between">
@@ -3326,9 +3322,8 @@ export default function Dashboard() {
               <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-black text-lg shadow-md shadow-teal-500/25 flex-shrink-0 text-white select-none transition-transform duration-300 group-hover:scale-105">
                 K
               </div>
-              <div className={`transition-all duration-300 ease-in-out flex flex-col ${
-                sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-40 opacity-100'
-              }`}>
+              <div className={`transition-all duration-300 ease-in-out flex flex-col ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-40 opacity-100'
+                }`}>
                 <h1 className="text-base font-extrabold tracking-tight text-white leading-tight">KalsaTrack</h1>
                 <p className="text-[10px] font-bold text-slate-500 mt-0.5 tracking-wider uppercase">FMR Portal v1.0</p>
               </div>
@@ -3348,9 +3343,8 @@ export default function Dashboard() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${
-            sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
-          }`}>
+          <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
+            }`}>
             Main Menu
           </p>
           <div className="space-y-1.5">
@@ -3361,34 +3355,30 @@ export default function Dashboard() {
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
                   title={sidebarCollapsed ? item.label : undefined}
-                  className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${
-                    isActive
+                  className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${isActive
                       ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
                       : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
-                  }`}
+                    }`}
                 >
                   {/* Left Indicator Stripe */}
-                  <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${
-                    isActive ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
-                  }`} />
-                  
+                  <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${isActive ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
+                    }`} />
+
                   <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive ? 2.25 : 1.75} d={item.icon} />
                   </svg>
-                  
-                  <span className={`text-[13.5px] font-medium flex-grow flex items-center justify-between transition-all duration-300 ease-in-out ${
-                    sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
-                  }`}>
+
+                  <span className={`text-[13.5px] font-medium flex-grow flex items-center justify-between transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
+                    }`}>
                     <span className="truncate">{item.label}</span>
                     {item.badgeCount > 0 && (
-                      <span className={`min-w-[18px] h-4.5 px-1.5 flex items-center justify-center text-[9px] font-extrabold rounded-full transition-all duration-200 ${
-                        isActive ? 'bg-white text-teal-600' : 'bg-red-500 text-white'
-                      }`}>
+                      <span className={`min-w-[18px] h-4.5 px-1.5 flex items-center justify-center text-[9px] font-extrabold rounded-full transition-all duration-200 ${isActive ? 'bg-white text-teal-600' : 'bg-red-500 text-white'
+                        }`}>
                         {item.badgeCount}
                       </span>
                     )}
                   </span>
-                  
+
                   {sidebarCollapsed && item.badgeCount > 0 && (
                     <span className="absolute top-1.5 right-1.5 min-w-[15px] h-4 flex items-center justify-center text-[8px] font-black bg-red-500 text-white rounded-full shadow border border-slate-950 animate-pulse">
                       {item.badgeCount}
@@ -3399,32 +3389,28 @@ export default function Dashboard() {
             })}
 
             <div className="my-5 border-t border-slate-800/60 mx-2"></div>
-            <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${
-              sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
-            }`}>
+            <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
+              }`}>
               System
             </p>
 
             <button
               onClick={() => setActiveTab('settings')}
               title={sidebarCollapsed ? 'Settings' : undefined}
-              className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3 mt-1.5' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${
-                activeTab === 'settings'
+              className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3 mt-1.5' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${activeTab === 'settings'
                   ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
                   : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
-              }`}
+                }`}
             >
-              <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${
-                activeTab === 'settings' ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
-              }`} />
-              
+              <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${activeTab === 'settings' ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
+                }`} />
+
               <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span className={`text-[13.5px] font-medium transition-all duration-300 ease-in-out ${
-                sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
-              }`}>
+              <span className={`text-[13.5px] font-medium transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
+                }`}>
                 Settings
               </span>
             </button>
@@ -3437,26 +3423,23 @@ export default function Dashboard() {
             <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-extrabold text-sm shadow-md shadow-teal-500/20 flex-shrink-0 text-white select-none">
               {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
             </div>
-            <div className={`transition-all duration-300 ease-in-out flex flex-col ${
-              sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100 flex-grow'
-            }`}>
+            <div className={`transition-all duration-300 ease-in-out flex flex-col ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100 flex-grow'
+              }`}>
               <p className="font-bold text-[13.5px] text-white truncate leading-snug">{adminIdentity.full_name}</p>
               <p className="text-[11px] text-slate-500 mt-0.5 truncate">{adminIdentity.email}</p>
             </div>
           </div>
-          <button 
+          <button
             onClick={handleSignOut}
             title={sidebarCollapsed ? 'Sign Out' : undefined}
-            className={`w-full mt-3 bg-slate-800 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-all duration-300 text-xs font-bold border border-slate-700/50 hover:border-red-500/20 flex items-center justify-center ${
-              sidebarCollapsed ? 'px-2 py-3 gap-0' : 'px-4 py-2.5 gap-2'
-            }`}
+            className={`w-full mt-3 bg-slate-800 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-all duration-300 text-xs font-bold border border-slate-700/50 hover:border-red-500/20 flex items-center justify-center ${sidebarCollapsed ? 'px-2 py-3 gap-0' : 'px-4 py-2.5 gap-2'
+              }`}
           >
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            <span className={`transition-all duration-300 ease-in-out ${
-              sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden max-w-0' : 'w-auto opacity-100 max-w-[200px]'
-            }`}>
+            <span className={`transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden max-w-0' : 'w-auto opacity-100 max-w-[200px]'
+              }`}>
               Sign Out
             </span>
           </button>
@@ -3629,9 +3612,8 @@ export default function Dashboard() {
                     <ul className="mt-3 space-y-2">
                       {topPriorityProjects.map((entry) => {
                         const scoreNum = Number(entry.score) || 0;
-                        const badgeClasses = `inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${
-                          scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
-                        }`;
+                        const badgeClasses = `inline-flex items-center justify-center w-6 h-6 rounded-lg text-xs font-bold ${scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                          }`;
                         const scoreClasses = `${scoreNum >= 80 ? 'text-orange-700 font-bold' : scoreNum >= 60 ? 'text-amber-700 font-semibold' : 'text-slate-500 font-semibold'}`;
                         const barColor = entry.rank === 1 ? 'bg-red-500' : entry.rank === 2 ? 'bg-orange-500' : 'bg-yellow-400';
 
@@ -3815,10 +3797,9 @@ export default function Dashboard() {
                                     <span className="font-bold text-slate-700">{project.progress}%</span>
                                   </div>
                                   <div className="w-28 bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                                    <div 
-                                      className={`h-2.5 rounded-full transition-all duration-500 ${
-                                        project.progress === 100 ? 'bg-emerald-500' : 'bg-teal-500'
-                                      }`} 
+                                    <div
+                                      className={`h-2.5 rounded-full transition-all duration-500 ${project.progress === 100 ? 'bg-emerald-500' : 'bg-teal-500'
+                                        }`}
                                       style={{ width: `${project.progress}%` }}
                                     />
                                   </div>
@@ -3837,7 +3818,7 @@ export default function Dashboard() {
                                   >
                                     View
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (project._source === 'fmr' && project._raw) {
@@ -3846,14 +3827,14 @@ export default function Dashboard() {
                                         openEditModal(project);
                                       }
                                     }}
-                                    className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-150" 
+                                    className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-150"
                                     title="Edit"
                                   >
                                     <svg className="w-4.5 h-4.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                     </svg>
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (project._source === 'fmr' && project._raw) {
@@ -3862,7 +3843,7 @@ export default function Dashboard() {
                                         openDeleteModal(project);
                                       }
                                     }}
-                                    className="p-2.5 hover:bg-red-50 rounded-xl transition-colors duration-150" 
+                                    className="p-2.5 hover:bg-red-50 rounded-xl transition-colors duration-150"
                                     title="Delete"
                                   >
                                     <svg className="w-4.5 h-4.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3904,11 +3885,10 @@ export default function Dashboard() {
                             <button
                               key={page}
                               onClick={() => setCurrentPage(page)}
-                              className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                                currentPage === page
+                              className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${currentPage === page
                                   ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
                                   : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                              }`}
+                                }`}
                             >
                               {page}
                             </button>
@@ -4006,7 +3986,7 @@ export default function Dashboard() {
             const municipalityCounts = {};
             const mapEntities = mapFiltered.map((project) => {
               const route = buildRoutePoints(project, routeByProjectId[project.id]);
-              
+
               const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
               let coordinates = null;
               let isApproximate = false;
@@ -4052,747 +4032,742 @@ export default function Dashboard() {
             };
 
             return (
-            <div className="space-y-6">
-              {/* Map View Integration */}
-              <div className="space-y-4">
-                {/* Filters */}
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-                    </svg>
-                    <input type="text" value={adminMapSearch} onChange={e => setAdminMapSearch(e.target.value)} placeholder="Search by name, municipality..."
-                      className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none animate-none" />
-                  </div>
-                  <select value={adminMapYearFilter} onChange={e => setAdminMapYearFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                    <option value="All">All Years</option>
-                    {mapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
-                  </select>
-                  <select value={adminMapMunicipalityFilter} onChange={e => setAdminMapMunicipalityFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
-                    <option value="All">All Municipalities</option>
-                    {mapMunicipalityOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <button
-                    onClick={() => setAdminMapShowOverdueOnly((prev) => !prev)}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                      adminMapShowOverdueOnly
-                        ? 'bg-red-600 border-red-600 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    Show Overdue Only
-                  </button>
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {['On-Going', 'Proposed', 'Completed', 'All'].map(s => (
-                      <button key={s} onClick={() => setAdminMapStatusFilter(s)}
-                        className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                          adminMapStatusFilter === s
-                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                        }`}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Geocoding Progress Alert */}
-                {geocodingStatus && (
-                  <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-xs font-semibold animate-pulse flex items-center gap-2.5 shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-teal-500 inline-block animate-ping" />
-                    <span>{geocodingStatus}</span>
-                  </div>
-                )}
-
-                {/* Stats row */}
-                <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-                  <span>{mapStats.mapped} projects mapped ({mapStats.geocoded} geocoded, {mapStats.centroids} centroids)</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> {mapStats.proposed} Proposed</span>
-                </div>
-
-                {/* Mini Map Container */}
-                <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '350px' }}>
-                  {/* Map Search Overlay */}
-                  <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
-                    <input
-                      type="text"
-                      placeholder="Search location (e.g. Bucari, Leon)..."
-                      value={projectsMapSearchQuery}
-                      onChange={(e) => setProjectsMapSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleProjectsMapSearch();
-                        }
-                      }}
-                      className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
-                    />
+              <div className="space-y-6">
+                {/* Map View Integration */}
+                <div className="space-y-4">
+                  {/* Filters */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                      </svg>
+                      <input type="text" value={adminMapSearch} onChange={e => setAdminMapSearch(e.target.value)} placeholder="Search by name, municipality..."
+                        className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none animate-none" />
+                    </div>
+                    <select value={adminMapYearFilter} onChange={e => setAdminMapYearFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="All">All Years</option>
+                      {mapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
+                    </select>
+                    <select value={adminMapMunicipalityFilter} onChange={e => setAdminMapMunicipalityFilter(e.target.value)}
+                      className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none">
+                      <option value="All">All Municipalities</option>
+                      {mapMunicipalityOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
                     <button
-                      type="button"
-                      onClick={handleProjectsMapSearch}
-                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                      onClick={() => setAdminMapShowOverdueOnly((prev) => !prev)}
+                      className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${adminMapShowOverdueOnly
+                          ? 'bg-red-600 border-red-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
                     >
-                      Go
+                      Show Overdue Only
                     </button>
+                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                      {['On-Going', 'Proposed', 'Completed', 'All'].map(s => (
+                        <button key={s} onClick={() => setAdminMapStatusFilter(s)}
+                          className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${adminMapStatusFilter === s
+                              ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
+                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                            }`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <MapSearchController searchCoords={projectsMapSearchCoords} />
-                    {projectsMapSearchCoords && (
-                      <Marker position={projectsMapSearchCoords}>
-                        <Popup>
-                          <span className="text-xs font-semibold text-slate-800">Search: {projectsMapSearchQuery}</span>
-                        </Popup>
-                      </Marker>
-                    )}
-                    <AdminFitBounds points={mapBoundsPoints} filterKey="projects-tab-minimap" />
-                    <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
-                    {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
-                      const theme = getRouteStatusTheme(project.status);
-                      const isSelected = adminMapSelectedProject?.id === project.id;
-                      const progress = Number(project.accomplishment || 0);
-                      const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
-                      const reportCount = reportCountByProjectId[project.id] || 0;
+                  {/* Geocoding Progress Alert */}
+                  {geocodingStatus && (
+                    <div className="p-3.5 rounded-xl border border-teal-200 bg-teal-50 text-teal-800 text-xs font-semibold animate-pulse flex items-center gap-2.5 shadow-sm">
+                      <span className="w-2 h-2 rounded-full bg-teal-500 inline-block animate-ping" />
+                      <span>{geocodingStatus}</span>
+                    </div>
+                  )}
 
-                      return (
-                        <div key={project.id}>
-                          {route.hasPolyline && !isCentroidFallback && (
-                            <>
-                              <Polyline
-                                positions={adminSnappedRouteByProjectId[project.id] || route.points}
-                                pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
-                                eventHandlers={{ click: () => openProjectDetailModal(project) }}
-                              />
-                              <Polyline
-                                positions={adminSnappedRouteByProjectId[project.id] || route.points}
-                                pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
+                  {/* Stats row */}
+                  <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
+                    <span>{mapStats.mapped} projects mapped ({mapStats.geocoded} geocoded, {mapStats.centroids} centroids)</span>
+                    <span className="text-slate-300">|</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> {mapStats.completed} Completed</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> {mapStats.ongoing} On-Going</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> {mapStats.proposed} Proposed</span>
+                  </div>
+
+                  {/* Mini Map Container */}
+                  <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '350px' }}>
+                    {/* Map Search Overlay */}
+                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
+                      <input
+                        type="text"
+                        placeholder="Search location (e.g. Bucari, Leon)..."
+                        value={projectsMapSearchQuery}
+                        onChange={(e) => setProjectsMapSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleProjectsMapSearch();
+                          }
+                        }}
+                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleProjectsMapSearch}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
+                      >
+                        Go
+                      </button>
+                    </div>
+
+                    <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <MapSearchController searchCoords={projectsMapSearchCoords} />
+                      {projectsMapSearchCoords && (
+                        <Marker position={projectsMapSearchCoords}>
+                          <Popup>
+                            <span className="text-xs font-semibold text-slate-800">Search: {projectsMapSearchQuery}</span>
+                          </Popup>
+                        </Marker>
+                      )}
+                      <AdminFitBounds points={mapBoundsPoints} filterKey="projects-tab-minimap" />
+                      <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
+                      {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
+                        const theme = getRouteStatusTheme(project.status);
+                        const isSelected = adminMapSelectedProject?.id === project.id;
+                        const progress = Number(project.accomplishment || 0);
+                        const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
+                        const reportCount = reportCountByProjectId[project.id] || 0;
+
+                        return (
+                          <div key={project.id}>
+                            {route.hasPolyline && !isCentroidFallback && (
+                              <>
+                                <Polyline
+                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
+                                  pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
+                                  eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                                />
+                                <Polyline
+                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
+                                  pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
+                                  eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                                >
+                                  <Tooltip sticky>
+                                    {project.project_name}
+                                  </Tooltip>
+                                </Polyline>
+
+                                {route.startPoint && (
+                                  <CircleMarker
+                                    center={route.startPoint}
+                                    radius={8}
+                                    pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
+                                  >
+                                    <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
+                                  </CircleMarker>
+                                )}
+
+                                {route.endPoint && (
+                                  <Marker
+                                    position={route.endPoint}
+                                    icon={L.divIcon({
+                                      className: 'route-end-marker-admin',
+                                      html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
+                                      iconSize: [16, 16],
+                                      iconAnchor: [8, 8],
+                                    })}
+                                  />
+                                )}
+                              </>
+                            )}
+
+                            {hasFallbackPin && coordinates && (
+                              <CircleMarker
+                                center={coordinates}
+                                radius={isSelected ? 11 : 8}
+                                pathOptions={{
+                                  fillColor: theme.line,
+                                  color: theme.stroke,
+                                  weight: isSelected ? 3.5 : 2,
+                                  fillOpacity: 0.9,
+                                  dashArray: isCentroidFallback ? '3, 4' : undefined
+                                }}
                                 eventHandlers={{ click: () => openProjectDetailModal(project) }}
                               >
-                                <Tooltip sticky>
-                                  {project.project_name}
+                                <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                                  <div className="p-1">
+                                    <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
+                                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                                      {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                    </span>
+                                  </div>
                                 </Tooltip>
-                              </Polyline>
-
-                              {route.startPoint && (
-                                <CircleMarker
-                                  center={route.startPoint}
-                                  radius={8}
-                                  pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
-                                >
-                                  <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
-                                </CircleMarker>
-                              )}
-
-                              {route.endPoint && (
-                                <Marker
-                                  position={route.endPoint}
-                                  icon={L.divIcon({
-                                    className: 'route-end-marker-admin',
-                                    html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
-                                    iconSize: [16, 16],
-                                    iconAnchor: [8, 8],
-                                  })}
-                                />
-                              )}
-                            </>
-                          )}
-
-                          {hasFallbackPin && coordinates && (
-                            <CircleMarker
-                              center={coordinates}
-                              radius={isSelected ? 11 : 8}
-                              pathOptions={{
-                                fillColor: theme.line,
-                                color: theme.stroke,
-                                weight: isSelected ? 3.5 : 2,
-                                fillOpacity: 0.9,
-                                dashArray: isCentroidFallback ? '3, 4' : undefined
-                              }}
-                              eventHandlers={{ click: () => openProjectDetailModal(project) }}
-                            >
-                              <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
-                                <div className="p-1">
-                                  <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
-                                  <span className="text-[10px] text-slate-500 block mt-0.5">
-                                    {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
-                                  </span>
-                                </div>
-                              </Tooltip>
-                            </CircleMarker>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {/* Farmer Heatmap Layer */}
-                    <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
-
-                    {/* Markets Layer */}
-                    {showMarketsMap && (markets || []).map(m => (
-                      <Marker
-                        key={`market-${m.id}`}
-                        position={[Number(m.latitude), Number(m.longitude)]}
-                        icon={new L.DivIcon({
-                          className: 'custom-market-pin',
-                          html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
-                          iconSize: [30, 30],
-                          iconAnchor: [15, 15],
-                        })}
-                      >
-                        <Popup>
-                          <div className="p-1 space-y-1 text-slate-800">
-                            <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
-                            <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
-                            <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
-                            {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
-                            {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
-                            {m.commodities_accepted?.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {m.commodities_accepted.map(c => (
-                                  <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
-                                ))}
-                              </div>
+                              </CircleMarker>
                             )}
                           </div>
-                        </Popup>
-                      </Marker>
-                    ))}
+                        );
+                      })}
+                      {/* Farmer Heatmap Layer */}
+                      <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
 
-                    {/* Farmers Layer */}
-                    {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
-                      const lat = f.farmLatitude || f.gps?.lat;
-                      const lng = f.farmLongitude || f.gps?.lng;
-                      if (!lat || !lng) return null;
-                      
-                      const cropColor = 
-                        f.crop === 'Rice' ? '#10b981' :
-                        f.crop === 'Corn' ? '#f59e0b' :
-                        f.crop === 'Sugarcane' ? '#8b5cf6' :
-                        f.crop === 'Coconut' ? '#3b82f6' :
-                        f.crop === 'Vegetables' ? '#ec4899' :
-                        '#64748b';
-
-                      return (
-                        <CircleMarker
-                          key={`farmer-${f.id}`}
-                          center={[Number(lat), Number(lng)]}
-                          radius={6}
-                          pathOptions={{
-                            fillColor: cropColor,
-                            fillOpacity: 0.9,
-                            color: '#ffffff',
-                            weight: 1.5
-                          }}
+                      {/* Markets Layer */}
+                      {showMarketsMap && (markets || []).map(m => (
+                        <Marker
+                          key={`market-${m.id}`}
+                          position={[Number(m.latitude), Number(m.longitude)]}
+                          icon={new L.DivIcon({
+                            className: 'custom-market-pin',
+                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15],
+                          })}
                         >
                           <Popup>
                             <div className="p-1 space-y-1 text-slate-800">
-                              <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
-                              <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
-                              <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
-                                <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
-                                <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
-                                <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
-                                {f.nearestMarketId && (
-                                  <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
-                                )}
-                                {f.distanceToFmrKm && (
-                                  <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
-                                )}
-                              </div>
-                              <button 
-                                type="button" 
-                                onClick={() => setSelectedFarmerForPath(f)} 
-                                className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
-                              >
-                                Show Supply Chain Links
-                              </button>
+                              <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
+                              <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
+                              <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
+                              {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
+                              {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
+                              {m.commodities_accepted?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {m.commodities_accepted.map(c => (
+                                    <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </Popup>
-                        </CircleMarker>
-                      );
-                    })}
+                        </Marker>
+                      ))}
 
-                    {/* Supply Chain Connection Lines */}
-                    {(() => {
-                      if (!selectedFarmerForPath) return null;
-                      const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
-                      const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
-                      if (!farmLat || !farmLng) return null;
+                      {/* Farmers Layer */}
+                      {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
+                        const lat = f.farmLatitude || f.gps?.lat;
+                        const lng = f.farmLongitude || f.gps?.lng;
+                        if (!lat || !lng) return null;
 
-                      const connectionPoints = [];
-                      connectionPoints.push([Number(farmLat), Number(farmLng)]);
-
-                      const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
-                      if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
-                        connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
-                        if (linkedProj.end_latitude && linkedProj.end_longitude) {
-                          connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
-                        }
-                      }
-
-                      const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
-                      if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
-                        connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
-                      }
-
-                      if (connectionPoints.length < 2) return null;
-
-                      return (
-                        <Polyline
-                          positions={connectionPoints}
-                          pathOptions={{
-                            color: '#fb7185',
-                            weight: 3.5,
-                            dashArray: '5, 8',
-                            opacity: 0.95
-                          }}
-                        />
-                      );
-                    })()}
-                  </MapContainer>
-
-                  <div className="absolute bottom-4 left-4 z-[500]">
-                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
-                      <p className="font-semibold text-slate-900">Map Legend</p>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
-                      </div>
-                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
-                          <span>Barangay Geocoded</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
-                          <span>Centroid Fallback (No GPS)</span>
-                        </div>
-                      </div>
-                      <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={adminMapShowHeatmap}
-                          onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Report Heatmap
-                      </label>
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showFarmerDots}
-                          onChange={(e) => {
-                            setShowFarmerDots(e.target.checked);
-                            if (!e.target.checked) setSelectedFarmerForPath(null);
-                          }}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Farmers (Dots)
-                      </label>
-                      {showFarmerDots && (
-                        <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <span className="shrink-0">Crop:</span>
-                          <select
-                            value={farmerCropFilter}
-                            onChange={(e) => setFarmerCropFilter(e.target.value)}
-                            className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
-                          >
-                            {farmerCropOptions.map((crop) => (
-                              <option key={crop} value={crop}>{crop}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showFarmerHeatmap}
-                          onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Farmer Density
-                      </label>
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showMarketsMap}
-                          onChange={(e) => setShowMarketsMap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Markets (Icons)
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Summary Stat Chips */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-50 to-cyan-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.all}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Total FMR Projects</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.completed}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Completed</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.ongoing}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">On-Going</p>
-                </div>
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-50 to-sky-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-50 to-violet-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 tracking-tight">{metrics.totalReports}</p>
-                  <p className="text-xs text-slate-500 mt-1 font-medium">Public Reports Submitted</p>
-                  <p className="text-xs text-slate-400 mt-1">{pendingPublicReportsCount} pending review</p>
-                </div>
-
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
-                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">Top 3 Prioritized Projects</p>
-                  {topPriorityProjects.length === 0 ? (
-                    <p className="text-xs text-slate-400 mt-2">Not enough data to rank projects yet.</p>
-                  ) : (
-                    <ul className="mt-2 space-y-2 text-xs text-slate-600">
-                      {topPriorityProjects.map((entry) => {
-                        const scoreNum = Number(entry.score) || 0;
-                        const badgeClasses = `inline-flex items-center justify-center w-5 h-5 rounded-md text-xs font-bold ${
-                          scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
-                        }`;
-                        const scoreClasses = `${scoreNum >= 80 ? 'text-orange-700 font-bold' : scoreNum >= 60 ? 'text-amber-700 font-semibold' : 'text-slate-500 font-semibold'}`;
-                        const barColor = entry.rank === 1 ? 'bg-red-500' : entry.rank === 2 ? 'bg-orange-500' : 'bg-yellow-400';
+                        const cropColor =
+                          f.crop === 'Rice' ? '#10b981' :
+                            f.crop === 'Corn' ? '#f59e0b' :
+                              f.crop === 'Sugarcane' ? '#8b5cf6' :
+                                f.crop === 'Coconut' ? '#3b82f6' :
+                                  f.crop === 'Vegetables' ? '#ec4899' :
+                                    '#64748b';
 
                         return (
-                          <li key={entry.project?.id || entry.rank} className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="flex items-center gap-2"><span className={badgeClasses}>#{entry.rank}</span> {entry.project?.project_name || 'Unnamed project'}</span>
-                              <span className={scoreClasses}>{`${entry.score}%`}</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                              <div className={`${barColor} h-full`} style={{ width: `${scoreNum}%` }} />
-                            </div>
-                          </li>
+                          <CircleMarker
+                            key={`farmer-${f.id}`}
+                            center={[Number(lat), Number(lng)]}
+                            radius={6}
+                            pathOptions={{
+                              fillColor: cropColor,
+                              fillOpacity: 0.9,
+                              color: '#ffffff',
+                              weight: 1.5
+                            }}
+                          >
+                            <Popup>
+                              <div className="p-1 space-y-1 text-slate-800">
+                                <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
+                                <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
+                                <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
+                                  <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
+                                  <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
+                                  <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
+                                  {f.nearestMarketId && (
+                                    <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
+                                  )}
+                                  {f.distanceToFmrKm && (
+                                    <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedFarmerForPath(f)}
+                                  className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
+                                >
+                                  Show Supply Chain Links
+                                </button>
+                              </div>
+                            </Popup>
+                          </CircleMarker>
                         );
                       })}
-                    </ul>
-                  )}
-                </div>
-              </div>
 
-              {/* Filters Bar */}
-              <div className="bg-white border border-slate-200/70 rounded-3xl shadow-sm p-4 sm:p-5 lg:p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 lg:gap-4 items-end">
-                  {/* Search */}
-                  <div className="relative md:col-span-2 xl:col-span-4">
-                    <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-                    </svg>
-                    <input type="text" value={fmrProjectSearch} onChange={e => setFmrProjectSearch(e.target.value)} placeholder="Search by name, location, municipality..."
-                      className="h-12 w-full pl-11 pr-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm transition-all" />
-                  </div>
-                  {/* Year Filter */}
-                  <select value={fmrProjectYearFilter} onChange={e => setFmrProjectYearFilter(e.target.value)}
-                    className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2">
-                    <option value="All">All Years</option>
-                    {fmrYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
-                  </select>
-                  <select
-                    value={fmrProjectSortBy}
-                    onChange={(e) => setFmrProjectSortBy(e.target.value)}
-                    className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
-                  >
-                    <option value="latest">Sort: Latest</option>
-                    <option value="name-asc">Sort: Name A-Z</option>
-                    <option value="name-desc">Sort: Name Z-A</option>
-                    <option value="progress-desc">Sort: Progress High-Low</option>
-                    <option value="progress-asc">Sort: Progress Low-High</option>
-                  </select>
-                  <div className="w-full xl:col-span-2">
-                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
-                    <input
-                      type="date"
-                      value={fmrProjectDateFrom}
-                      onChange={(e) => setFmrProjectDateFrom(e.target.value)}
-                      max={fmrProjectDateTo || undefined}
-                      aria-label="Start date"
-                      title="Start date"
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
-                    />
-                  </div>
-                  <div className="w-full xl:col-span-2">
-                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
-                    <input
-                      type="date"
-                      value={fmrProjectDateTo}
-                      onChange={(e) => setFmrProjectDateTo(e.target.value)}
-                      min={fmrProjectDateFrom || undefined}
-                      aria-label="End date"
-                      title="End date"
-                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
-                    />
-                  </div>
-                </div>
-                <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
-                  <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
-                    {['On-Going', 'Proposed', 'Completed'].map(s => (
-                      <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
-                        className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
-                          fmrProjectStatusFilter === s
-                            ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
-                            : 'text-slate-600 hover:text-slate-800'
-                        }`}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                      {/* Supply Chain Connection Lines */}
+                      {(() => {
+                        if (!selectedFarmerForPath) return null;
+                        const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+                        const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+                        if (!farmLat || !farmLng) return null;
 
-                  <div className="lg:col-span-4 flex items-center justify-between lg:justify-end gap-4">
-                    {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
-                      <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
-                        className="text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors">
-                        Clear filters
-                      </button>
-                    )}
-                    <button
-                      onClick={exportFilteredFmr}
-                      className="h-12 px-5 rounded-2xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/25 transition-all"
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                </div>
-                {/* Results count */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <p className="text-xs sm:text-sm text-slate-500 tracking-tight">
-                    Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of <span className="font-semibold text-slate-700">{fmrProjects.length}</span> projects
-                  </p>
-                </div>
-              </div>
+                        const connectionPoints = [];
+                        connectionPoints.push([Number(farmLat), Number(farmLng)]);
 
-              {/* Project Cards */}
-              {fmrLoading ? (
-                <div className="bg-white border border-slate-200/60 rounded-2xl p-12 text-center">
-                  <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-sm text-slate-500 font-medium">Loading FMR projects...</p>
-                </div>
-              ) : filteredFmr.length === 0 ? (
-                <div className="bg-white border border-slate-200/60 rounded-2xl">
-                  <EmptyState
-                    title="No projects found"
-                    description="Try adjusting search, fiscal year, or status filters."
-                    buttonLabel="Reset Filters"
-                    onButtonClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectCurrentPage(1); }}
-                  />
-                </div>
-              ) : (
-                <>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                  {paginatedFilteredFmr.map(project => {
-                    const status = normalizeFmrStatus(project.status);
-                    const displayStatus = status;
-                    const statusStyle = status === 'Completed'
-                      ? { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' }
-                      : status === 'On-Going'
-                      ? { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' }
-                      : { badge: 'bg-sky-50 text-sky-700 border-sky-200', bar: 'bg-sky-500', dot: 'bg-sky-500' };
-                    return (
-                      <div
-                        key={project.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => openProjectDetailModal(project)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            openProjectDetailModal(project);
+                        const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
+                        if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
+                          connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
+                          if (linkedProj.end_latitude && linkedProj.end_longitude) {
+                            connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
                           }
-                        }}
-                        className="group cursor-pointer bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:shadow-lg hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all duration-300 flex flex-col"
-                        title="Click to view project details"
-                      >
-                        {/* Card Header Accent */}
-                        <div className={`h-1 ${statusStyle.bar}`} />
-                        <div className="p-6 flex-1 flex flex-col">
-                          {/* Status & Year */}
-                          <div className="flex items-center justify-between mb-4">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold ${statusStyle.badge}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-                              {displayStatus}
-                            </span>
-                            {project.year_funded && (
-                              <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">FY {project.year_funded}</span>
-                            )}
+                        }
+
+                        const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
+                        if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
+                          connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+                        }
+
+                        if (connectionPoints.length < 2) return null;
+
+                        return (
+                          <Polyline
+                            positions={connectionPoints}
+                            pathOptions={{
+                              color: '#fb7185',
+                              weight: 3.5,
+                              dashArray: '5, 8',
+                              opacity: 0.95
+                            }}
+                          />
+                        );
+                      })()}
+                    </MapContainer>
+
+                    <div className="absolute bottom-4 left-4 z-[500]">
+                      <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
+                        <p className="font-semibold text-slate-900">Map Legend</p>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
+                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
+                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
+                        </div>
+                        <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
+                            <span>Barangay Geocoded</span>
                           </div>
-
-                          {/* Project Name */}
-                          <h3 className="font-bold text-base text-slate-900 mb-2 line-clamp-2 leading-snug group-hover:text-teal-700 transition-colors">{project.project_name}</h3>
-
-                          {/* Location */}
-                          <div className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
-                            <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
-                            <span className="truncate">{project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}</span>
-                          </div>
-
-                          {/* Accomplishment Progress */}
-                          {status !== 'Proposed' && (
-                            <div className="mb-4">
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-slate-500 font-medium">Accomplishment</span>
-                                <span className="text-xs font-bold text-slate-700">{project.accomplishment || 0}%</span>
-                              </div>
-                              <div className="w-full bg-slate-100 rounded-full h-2">
-                                <div className={`h-2 rounded-full transition-all duration-700 ease-out ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Meta Info */}
-                          <div className="flex items-center gap-4 text-xs text-slate-400 mt-auto mb-5">
-                            {project.project_length_km > 0 && (
-                              <span className="flex items-center gap-1">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
-                                {project.project_length_km} km
-                              </span>
-                            )}
-                            {project.date_completed && (
-                              <span className="flex items-center gap-1">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v9.75" /></svg>
-                                {project.date_completed}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex gap-2 pt-4 border-t border-slate-100 flex-wrap">
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openFmrEditModal(project);
-                              }}
-                              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
-                              Edit
-                            </button>
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setAssignContractorModal(project);
-                                setSelectedContractorId(project.contractor_id || '');
-                              }}
-                              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl text-sm font-semibold text-amber-700 transition-all duration-200"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
-                              Assign
-                            </button>
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openFmrDeleteModal(project);
-                              }}
-                              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200/60 rounded-xl text-sm font-semibold text-red-600 transition-all duration-200"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                              Delete
-                            </button>
+                          <div className="flex items-center gap-2">
+                            <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
+                            <span>Centroid Fallback (No GPS)</span>
                           </div>
                         </div>
+                        <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={adminMapShowHeatmap}
+                            onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                          />
+                          Show Report Heatmap
+                        </label>
+                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={showFarmerDots}
+                            onChange={(e) => {
+                              setShowFarmerDots(e.target.checked);
+                              if (!e.target.checked) setSelectedFarmerForPath(null);
+                            }}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                          />
+                          Show Farmers (Dots)
+                        </label>
+                        {showFarmerDots && (
+                          <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                            <span className="shrink-0">Crop:</span>
+                            <select
+                              value={farmerCropFilter}
+                              onChange={(e) => setFarmerCropFilter(e.target.value)}
+                              className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+                            >
+                              {farmerCropOptions.map((crop) => (
+                                <option key={crop} value={crop}>{crop}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={showFarmerHeatmap}
+                            onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                          />
+                          Show Farmer Density
+                        </label>
+                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={showMarketsMap}
+                            onChange={(e) => setShowMarketsMap(e.target.checked)}
+                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                          />
+                          Show Markets (Icons)
+                        </label>
                       </div>
-                    );
-                  })}
+                    </div>
+                  </div>
                 </div>
-                {fmrTotalPages > 1 && (
-                  <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <p className="text-sm text-slate-500">
-                      Page <span className="font-semibold text-slate-700">{safeFmrPage}</span> of <span className="font-semibold text-slate-700">{fmrTotalPages}</span>
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setFmrProjectCurrentPage((p) => Math.max(1, p - 1))}
-                        disabled={safeFmrPage === 1}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Previous
-                      </button>
-                      {getPaginationRange(safeFmrPage, fmrTotalPages).map((page, idx) => {
-                        if (page === '...') {
+
+                {/* Summary Stat Chips */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-50 to-cyan-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.all}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Total FMR Projects</p>
+                  </div>
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.completed}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Completed</p>
+                  </div>
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.ongoing}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">On-Going</p>
+                  </div>
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-50 to-sky-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-50 to-violet-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{metrics.totalReports}</p>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Public Reports Submitted</p>
+                    <p className="text-xs text-slate-400 mt-1">{pendingPublicReportsCount} pending review</p>
+                  </div>
+
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">Top 3 Prioritized Projects</p>
+                    {topPriorityProjects.length === 0 ? (
+                      <p className="text-xs text-slate-400 mt-2">Not enough data to rank projects yet.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2 text-xs text-slate-600">
+                        {topPriorityProjects.map((entry) => {
+                          const scoreNum = Number(entry.score) || 0;
+                          const badgeClasses = `inline-flex items-center justify-center w-5 h-5 rounded-md text-xs font-bold ${scoreNum >= 80 ? 'bg-orange-100 text-orange-800' : scoreNum >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                            }`;
+                          const scoreClasses = `${scoreNum >= 80 ? 'text-orange-700 font-bold' : scoreNum >= 60 ? 'text-amber-700 font-semibold' : 'text-slate-500 font-semibold'}`;
+                          const barColor = entry.rank === 1 ? 'bg-red-500' : entry.rank === 2 ? 'bg-orange-500' : 'bg-yellow-400';
+
                           return (
-                            <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">
-                              ...
-                            </span>
+                            <li key={entry.project?.id || entry.rank} className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-2"><span className={badgeClasses}>#{entry.rank}</span> {entry.project?.project_name || 'Unnamed project'}</span>
+                                <span className={scoreClasses}>{`${entry.score}%`}</span>
+                              </div>
+                              <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`${barColor} h-full`} style={{ width: `${scoreNum}%` }} />
+                              </div>
+                            </li>
                           );
-                        }
-                        return (
-                          <button
-                            key={page}
-                            onClick={() => setFmrProjectCurrentPage(page)}
-                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                              safeFmrPage === page
-                                ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                                : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        );
-                      })}
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filters Bar */}
+                <div className="bg-white border border-slate-200/70 rounded-3xl shadow-sm p-4 sm:p-5 lg:p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-3 lg:gap-4 items-end">
+                    {/* Search */}
+                    <div className="relative md:col-span-2 xl:col-span-4">
+                      <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                      </svg>
+                      <input type="text" value={fmrProjectSearch} onChange={e => setFmrProjectSearch(e.target.value)} placeholder="Search by name, location, municipality..."
+                        className="h-12 w-full pl-11 pr-4 border border-slate-200 rounded-2xl text-sm text-slate-700 placeholder:text-slate-400 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm transition-all" />
+                    </div>
+                    {/* Year Filter */}
+                    <select value={fmrProjectYearFilter} onChange={e => setFmrProjectYearFilter(e.target.value)}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2">
+                      <option value="All">All Years</option>
+                      {fmrYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
+                    </select>
+                    <select
+                      value={fmrProjectSortBy}
+                      onChange={(e) => setFmrProjectSortBy(e.target.value)}
+                      className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm xl:col-span-2"
+                    >
+                      <option value="latest">Sort: Latest</option>
+                      <option value="name-asc">Sort: Name A-Z</option>
+                      <option value="name-desc">Sort: Name Z-A</option>
+                      <option value="progress-desc">Sort: Progress High-Low</option>
+                      <option value="progress-asc">Sort: Progress Low-High</option>
+                    </select>
+                    <div className="w-full xl:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
+                      <input
+                        type="date"
+                        value={fmrProjectDateFrom}
+                        onChange={(e) => setFmrProjectDateFrom(e.target.value)}
+                        max={fmrProjectDateTo || undefined}
+                        aria-label="Start date"
+                        title="Start date"
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
+                      />
+                    </div>
+                    <div className="w-full xl:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
+                      <input
+                        type="date"
+                        value={fmrProjectDateTo}
+                        onChange={(e) => setFmrProjectDateTo(e.target.value)}
+                        min={fmrProjectDateFrom || undefined}
+                        aria-label="End date"
+                        title="End date"
+                        className="h-12 w-full px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                    <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
+                      {['On-Going', 'Proposed', 'Completed'].map(s => (
+                        <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
+                          className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${fmrProjectStatusFilter === s
+                              ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
+                              : 'text-slate-600 hover:text-slate-800'
+                            }`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="lg:col-span-4 flex items-center justify-between lg:justify-end gap-4">
+                      {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
+                        <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
+                          className="text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors">
+                          Clear filters
+                        </button>
+                      )}
                       <button
-                        onClick={() => setFmrProjectCurrentPage((p) => Math.min(fmrTotalPages, p + 1))}
-                        disabled={safeFmrPage === fmrTotalPages}
-                        className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={exportFilteredFmr}
+                        className="h-12 px-5 rounded-2xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm shadow-emerald-600/25 transition-all"
                       >
-                        Next
+                        Export CSV
                       </button>
                     </div>
                   </div>
+                  {/* Results count */}
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-xs sm:text-sm text-slate-500 tracking-tight">
+                      Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of <span className="font-semibold text-slate-700">{fmrProjects.length}</span> projects
+                    </p>
+                  </div>
+                </div>
+
+                {/* Project Cards */}
+                {fmrLoading ? (
+                  <div className="bg-white border border-slate-200/60 rounded-2xl p-12 text-center">
+                    <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-sm text-slate-500 font-medium">Loading FMR projects...</p>
+                  </div>
+                ) : filteredFmr.length === 0 ? (
+                  <div className="bg-white border border-slate-200/60 rounded-2xl">
+                    <EmptyState
+                      title="No projects found"
+                      description="Try adjusting search, fiscal year, or status filters."
+                      buttonLabel="Reset Filters"
+                      onButtonClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectCurrentPage(1); }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                      {paginatedFilteredFmr.map(project => {
+                        const status = normalizeFmrStatus(project.status);
+                        const displayStatus = status;
+                        const statusStyle = status === 'Completed'
+                          ? { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' }
+                          : status === 'On-Going'
+                            ? { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' }
+                            : { badge: 'bg-sky-50 text-sky-700 border-sky-200', bar: 'bg-sky-500', dot: 'bg-sky-500' };
+                        return (
+                          <div
+                            key={project.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openProjectDetailModal(project)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                openProjectDetailModal(project);
+                              }
+                            }}
+                            className="group cursor-pointer bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:shadow-lg hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all duration-300 flex flex-col"
+                            title="Click to view project details"
+                          >
+                            {/* Card Header Accent */}
+                            <div className={`h-1 ${statusStyle.bar}`} />
+                            <div className="p-6 flex-1 flex flex-col">
+                              {/* Status & Year */}
+                              <div className="flex items-center justify-between mb-4">
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold ${statusStyle.badge}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                                  {displayStatus}
+                                </span>
+                                {project.year_funded && (
+                                  <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg">FY {project.year_funded}</span>
+                                )}
+                              </div>
+
+                              {/* Project Name */}
+                              <h3 className="font-bold text-base text-slate-900 mb-2 line-clamp-2 leading-snug group-hover:text-teal-700 transition-colors">{project.project_name}</h3>
+
+                              {/* Location */}
+                              <div className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
+                                <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" /></svg>
+                                <span className="truncate">{project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}</span>
+                              </div>
+
+                              {/* Accomplishment Progress */}
+                              {status !== 'Proposed' && (
+                                <div className="mb-4">
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-xs text-slate-500 font-medium">Accomplishment</span>
+                                    <span className="text-xs font-bold text-slate-700">{project.accomplishment || 0}%</span>
+                                  </div>
+                                  <div className="w-full bg-slate-100 rounded-full h-2">
+                                    <div className={`h-2 rounded-full transition-all duration-700 ease-out ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Meta Info */}
+                              <div className="flex items-center gap-4 text-xs text-slate-400 mt-auto mb-5">
+                                {project.project_length_km > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+                                    {project.project_length_km} km
+                                  </span>
+                                )}
+                                {project.date_completed && (
+                                  <span className="flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v9.75" /></svg>
+                                    {project.date_completed}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex gap-2 pt-4 border-t border-slate-100 flex-wrap">
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openFmrEditModal(project);
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setAssignContractorModal(project);
+                                    setSelectedContractorId(project.contractor_id || '');
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl text-sm font-semibold text-amber-700 transition-all duration-200"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
+                                  Assign
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openFmrDeleteModal(project);
+                                  }}
+                                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200/60 rounded-xl text-sm font-semibold text-red-600 transition-all duration-200"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {fmrTotalPages > 1 && (
+                      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <p className="text-sm text-slate-500">
+                          Page <span className="font-semibold text-slate-700">{safeFmrPage}</span> of <span className="font-semibold text-slate-700">{fmrTotalPages}</span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setFmrProjectCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={safeFmrPage === 1}
+                            className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          {getPaginationRange(safeFmrPage, fmrTotalPages).map((page, idx) => {
+                            if (page === '...') {
+                              return (
+                                <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">
+                                  ...
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                key={page}
+                                onClick={() => setFmrProjectCurrentPage(page)}
+                                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${safeFmrPage === page
+                                    ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                                    : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                                  }`}
+                              >
+                                {page}
+                              </button>
+                            );
+                          })}
+                          <button
+                            onClick={() => setFmrProjectCurrentPage((p) => Math.min(fmrTotalPages, p + 1))}
+                            disabled={safeFmrPage === fmrTotalPages}
+                            className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
-                </>
-              )}
-            </div>
+              </div>
             );
           })()}
 
@@ -4818,7 +4793,7 @@ export default function Dashboard() {
             const municipalityCounts = {};
             const mapEntities = mapFiltered.map((project) => {
               const route = buildRoutePoints(project, routeByProjectId[project.id]);
-              
+
               const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
               let coordinates = null;
               let isApproximate = false;
@@ -4890,22 +4865,20 @@ export default function Dashboard() {
                   </select>
                   <button
                     onClick={() => setAdminMapShowOverdueOnly((prev) => !prev)}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                      adminMapShowOverdueOnly
+                    className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${adminMapShowOverdueOnly
                         ? 'bg-red-600 border-red-600 text-white'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     Show Overdue Only
                   </button>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {['On-Going', 'Proposed', 'Completed', 'All'].map(s => (
                       <button key={s} onClick={() => setAdminMapStatusFilter(s)}
-                        className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                          adminMapStatusFilter === s
+                        className={`px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${adminMapStatusFilter === s
                             ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
                             : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                        }`}>
+                          }`}>
                         {s}
                       </button>
                     ))}
@@ -5002,11 +4975,10 @@ export default function Dashboard() {
                                     <div className="space-y-3 min-w-[280px]">
                                       <div className="flex items-start justify-between gap-3">
                                         <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
-                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                          normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                                          normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
-                                          'bg-sky-100 text-sky-700'
-                                        }`}>{normalizeFmrStatus(project.status)}</span>
+                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                                            normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                              'bg-sky-100 text-sky-700'
+                                          }`}>{normalizeFmrStatus(project.status)}</span>
                                       </div>
 
                                       <div>
@@ -5110,11 +5082,10 @@ export default function Dashboard() {
                                           {isCentroidFallback ? 'MUNICIPAL CENTROID PIN' : 'BARANGAY CENTER GEOTAG'}
                                         </p>
                                       </div>
-                                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                        normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                                        normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
-                                        'bg-sky-100 text-sky-700'
-                                      }`}>{normalizeFmrStatus(project.status)}</span>
+                                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${normalizeFmrStatus(project.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                                          normalizeFmrStatus(project.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                            'bg-sky-100 text-sky-700'
+                                        }`}>{normalizeFmrStatus(project.status)}</span>
                                     </div>
 
                                     <div>
@@ -5162,132 +5133,132 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
-                    {/* Farmer Heatmap Layer */}
-                    <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
+                      {/* Farmer Heatmap Layer */}
+                      <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
 
-                    {/* Markets Layer */}
-                    {showMarketsMap && (markets || []).map(m => (
-                      <Marker
-                        key={`market-${m.id}`}
-                        position={[Number(m.latitude), Number(m.longitude)]}
-                        icon={new L.DivIcon({
-                          className: 'custom-market-pin',
-                          html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
-                          iconSize: [30, 30],
-                          iconAnchor: [15, 15],
-                        })}
-                      >
-                        <Popup>
-                          <div className="p-1 space-y-1 text-slate-800">
-                            <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
-                            <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
-                            <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
-                            {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
-                            {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
-                            {m.commodities_accepted?.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {m.commodities_accepted.map(c => (
-                                  <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
-
-                    {/* Farmers Layer */}
-                    {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
-                      const lat = f.farmLatitude || f.gps?.lat;
-                      const lng = f.farmLongitude || f.gps?.lng;
-                      if (!lat || !lng) return null;
-                      
-                      const cropColor = 
-                        f.crop === 'Rice' ? '#10b981' :
-                        f.crop === 'Corn' ? '#f59e0b' :
-                        f.crop === 'Sugarcane' ? '#8b5cf6' :
-                        f.crop === 'Coconut' ? '#3b82f6' :
-                        f.crop === 'Vegetables' ? '#ec4899' :
-                        '#64748b';
-
-                      return (
-                        <CircleMarker
-                          key={`farmer-${f.id}`}
-                          center={[Number(lat), Number(lng)]}
-                          radius={6}
-                          pathOptions={{
-                            fillColor: cropColor,
-                            fillOpacity: 0.9,
-                            color: '#ffffff',
-                            weight: 1.5
-                          }}
+                      {/* Markets Layer */}
+                      {showMarketsMap && (markets || []).map(m => (
+                        <Marker
+                          key={`market-${m.id}`}
+                          position={[Number(m.latitude), Number(m.longitude)]}
+                          icon={new L.DivIcon({
+                            className: 'custom-market-pin',
+                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15],
+                          })}
                         >
                           <Popup>
                             <div className="p-1 space-y-1 text-slate-800">
-                              <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
-                              <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
-                              <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
-                                <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
-                                <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
-                                <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
-                                {f.nearestMarketId && (
-                                  <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
-                                )}
-                                {f.distanceToFmrKm && (
-                                  <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
-                                )}
-                              </div>
-                              <button 
-                                type="button" 
-                                onClick={() => setSelectedFarmerForPath(f)} 
-                                className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
-                              >
-                                Show Supply Chain Links
-                              </button>
+                              <p className="font-bold text-sm text-indigo-700">{m.market_name}</p>
+                              <p className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded w-fit">{m.market_type}</p>
+                              <p className="text-xs"><span className="font-medium text-slate-500">Location:</span> {m.barangay || ''}, {m.municipality}</p>
+                              {m.operating_days && <p className="text-xs"><span className="font-medium text-slate-500">Days:</span> {m.operating_days}</p>}
+                              {m.operating_hours && <p className="text-xs"><span className="font-medium text-slate-500">Hours:</span> {m.operating_hours}</p>}
+                              {m.commodities_accepted?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {m.commodities_accepted.map(c => (
+                                    <span key={c} className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{c}</span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </Popup>
-                        </CircleMarker>
-                      );
-                    })}
+                        </Marker>
+                      ))}
 
-                    {/* Supply Chain Connection Lines */}
-                    {(() => {
-                      if (!selectedFarmerForPath) return null;
-                      const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
-                      const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
-                      if (!farmLat || !farmLng) return null;
+                      {/* Farmers Layer */}
+                      {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
+                        const lat = f.farmLatitude || f.gps?.lat;
+                        const lng = f.farmLongitude || f.gps?.lng;
+                        if (!lat || !lng) return null;
 
-                      const connectionPoints = [];
-                      connectionPoints.push([Number(farmLat), Number(farmLng)]);
+                        const cropColor =
+                          f.crop === 'Rice' ? '#10b981' :
+                            f.crop === 'Corn' ? '#f59e0b' :
+                              f.crop === 'Sugarcane' ? '#8b5cf6' :
+                                f.crop === 'Coconut' ? '#3b82f6' :
+                                  f.crop === 'Vegetables' ? '#ec4899' :
+                                    '#64748b';
 
-                      const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
-                      if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
-                        connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
-                        if (linkedProj.end_latitude && linkedProj.end_longitude) {
-                          connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
+                        return (
+                          <CircleMarker
+                            key={`farmer-${f.id}`}
+                            center={[Number(lat), Number(lng)]}
+                            radius={6}
+                            pathOptions={{
+                              fillColor: cropColor,
+                              fillOpacity: 0.9,
+                              color: '#ffffff',
+                              weight: 1.5
+                            }}
+                          >
+                            <Popup>
+                              <div className="p-1 space-y-1 text-slate-800">
+                                <p className="font-bold text-sm text-slate-900">{f.fullName}</p>
+                                <p className="text-xs font-mono text-slate-500">{f.beneficiaryId || ''} • {f.rsbsaNumber}</p>
+                                <div className="text-xs pt-1 border-t border-slate-100 space-y-0.5">
+                                  <p><span className="font-semibold text-slate-500">Crop:</span> {f.crop} ({f.farmAreaHa ? f.farmAreaHa.toFixed(2) : '0.00'} ha)</p>
+                                  <p><span className="font-semibold text-slate-500">Barangay:</span> {f.barangay}</p>
+                                  <p><span className="font-semibold text-slate-500">Linked Road:</span> {f.linkedProject || 'N/A'}</p>
+                                  {f.nearestMarketId && (
+                                    <p><span className="font-semibold text-slate-500">Nearest Market:</span> {markets.find(m => m.id === f.nearestMarketId)?.market_name || 'N/A'}</p>
+                                  )}
+                                  {f.distanceToFmrKm && (
+                                    <p><span className="font-semibold text-slate-500">Road Distance:</span> {f.distanceToFmrKm} km</p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedFarmerForPath(f)}
+                                  className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 underline block mt-1.5"
+                                >
+                                  Show Supply Chain Links
+                                </button>
+                              </div>
+                            </Popup>
+                          </CircleMarker>
+                        );
+                      })}
+
+                      {/* Supply Chain Connection Lines */}
+                      {(() => {
+                        if (!selectedFarmerForPath) return null;
+                        const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+                        const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+                        if (!farmLat || !farmLng) return null;
+
+                        const connectionPoints = [];
+                        connectionPoints.push([Number(farmLat), Number(farmLng)]);
+
+                        const linkedProj = fmrProjects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
+                        if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
+                          connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
+                          if (linkedProj.end_latitude && linkedProj.end_longitude) {
+                            connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
+                          }
                         }
-                      }
 
-                      const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
-                      if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
-                        connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
-                      }
+                        const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
+                        if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
+                          connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+                        }
 
-                      if (connectionPoints.length < 2) return null;
+                        if (connectionPoints.length < 2) return null;
 
-                      return (
-                        <Polyline
-                          positions={connectionPoints}
-                          pathOptions={{
-                            color: '#fb7185',
-                            weight: 3.5,
-                            dashArray: '5, 8',
-                            opacity: 0.95
-                          }}
-                        />
-                      );
-                    })()}
-                  </MapContainer>
+                        return (
+                          <Polyline
+                            positions={connectionPoints}
+                            pathOptions={{
+                              color: '#fb7185',
+                              weight: 3.5,
+                              dashArray: '5, 8',
+                              opacity: 0.95
+                            }}
+                          />
+                        );
+                      })()}
+                    </MapContainer>
                   )}
 
                   <div className="absolute bottom-4 left-4 z-[500]">
@@ -5380,11 +5351,10 @@ export default function Dashboard() {
                           <p className="text-sm text-slate-500 mt-1">DA-RAED Region VI &middot; FMR Development Program</p>
                         </div>
                         <div className="flex items-center gap-2.5">
-                          <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                            normalizeFmrStatus(adminMapSelectedProject.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
-                            normalizeFmrStatus(adminMapSelectedProject.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
-                            'bg-blue-100 text-blue-700'
-                          }`}>{normalizeFmrStatus(adminMapSelectedProject.status)}</span>
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-semibold ${normalizeFmrStatus(adminMapSelectedProject.status) === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                              normalizeFmrStatus(adminMapSelectedProject.status) === 'On-Going' ? 'bg-amber-100 text-amber-700' :
+                                'bg-blue-100 text-blue-700'
+                            }`}>{normalizeFmrStatus(adminMapSelectedProject.status)}</span>
                           <button onClick={() => setAdminMapSelectedProject(null)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
                             <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                           </button>
@@ -5443,7 +5413,7 @@ export default function Dashboard() {
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
                         {adminMapSelectedProject.start_latitude && adminMapSelectedProject.end_latitude && (
                           <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -5516,9 +5486,9 @@ export default function Dashboard() {
           {activeTab === 'project-mgmt' && (() => {
             // ── helpers ──────────────────────────────────────────────
             const pmStatusMap = {
-              'Completed':  { col: 'completed', label: 'Completed',  color: 'emerald', line: '#10b981', bg: 'bg-emerald-500', border: 'border-l-emerald-500', pill: 'bg-emerald-100 text-emerald-700' },
-              'On-Going':   { col: 'ongoing',   label: 'On-Going',   color: 'amber',   line: '#f59e0b', bg: 'bg-amber-400',   border: 'border-l-amber-400',   pill: 'bg-amber-100 text-amber-700'   },
-              'Proposed':   { col: 'proposed',  label: 'Proposed',   color: 'blue',    line: '#3b82f6', bg: 'bg-blue-500',    border: 'border-l-blue-500',    pill: 'bg-blue-100 text-blue-700'    },
+              'Completed': { col: 'completed', label: 'Completed', color: 'emerald', line: '#10b981', bg: 'bg-emerald-500', border: 'border-l-emerald-500', pill: 'bg-emerald-100 text-emerald-700' },
+              'On-Going': { col: 'ongoing', label: 'On-Going', color: 'amber', line: '#f59e0b', bg: 'bg-amber-400', border: 'border-l-amber-400', pill: 'bg-amber-100 text-amber-700' },
+              'Proposed': { col: 'proposed', label: 'Proposed', color: 'blue', line: '#3b82f6', bg: 'bg-blue-500', border: 'border-l-blue-500', pill: 'bg-blue-100 text-blue-700' },
             };
             const getPmStatus = (s) => {
               const n = normalizeFmrStatus(s);
@@ -5543,9 +5513,9 @@ export default function Dashboard() {
               // 2026 ₱15M/km indicative rate (see src/lib/budgetEstimate.js).
               const { amount: estimatedCost } = estimateProjectBudget(p);
 
-              // Implementing Mode: deterministic based on ID
+              // Implementing Mode: locked to DA
               const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
-              const mode = isDpwh ? 'DPWH (Inter-agency)' : 'LGU (MOA-Downloaded)';
+              const mode = 'DA';
 
               // Prefer the real, admin-released tranches (project_tranches) once
               // they've been initialized for this project; otherwise fall back
@@ -5591,11 +5561,8 @@ export default function Dashboard() {
               ].some(field => String(field || '').toLowerCase().includes(q));
 
               const matchesMuni = pmMunicipalityFilter === 'All' || p.municipality === pmMunicipalityFilter;
-              
-              const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
-              const matchesMode = pmModeFilter === 'All' || 
-                (pmModeFilter === 'DPWH' && isDpwh) ||
-                (pmModeFilter === 'LGU' && !isDpwh);
+
+              const matchesMode = true;
 
               const matchesStatus = pmStatusFilter === 'All' || normalizeFmrStatus(p.status) === pmStatusFilter;
 
@@ -5604,42 +5571,9 @@ export default function Dashboard() {
 
             // ── Kanban groups from filtered list ───────────────────────
             const kanbanGroups = {
-              proposed:  filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed'),
-              ongoing:   filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going'),
+              proposed: filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed'),
+              ongoing: filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going'),
               completed: filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed'),
-            };
-
-            // ── Timeline: group by target-completion month ─────────────
-            const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            const currentYear = new Date().getFullYear();
-            
-            const getTimelineColumns = (p) => {
-              const start = p.created_at ? new Date(p.created_at) : new Date(currentYear, 0, 1);
-              const end = p.target_completion_date ? new Date(p.target_completion_date) : p.date_completed ? new Date(p.date_completed) : new Date(currentYear, 11, 31);
-              
-              let startCol = 1;
-              if (start.getFullYear() === currentYear) {
-                startCol = start.getMonth() + 1;
-              } else if (start.getFullYear() < currentYear) {
-                startCol = 1;
-              } else {
-                startCol = 12;
-              }
-
-              let endCol = 12;
-              if (end.getFullYear() === currentYear) {
-                endCol = end.getMonth() + 1;
-              } else if (end.getFullYear() > currentYear) {
-                endCol = 12;
-              } else {
-                endCol = 1;
-              }
-              
-              if (endCol < startCol) {
-                endCol = startCol;
-              }
-              
-              return { startCol, endCol };
             };
 
             // ── Activity Feed: merge progressUpdates + publicReports ───
@@ -5674,10 +5608,10 @@ export default function Dashboard() {
 
             // ── Sub-tab pills ──────────────────────────────────────────
             const pmSubTabs = [
-              { id: 'board',    label: 'Board',        icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg> },
-              { id: 'timeline', label: 'Timeline',     icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
-              { id: 'budget',   label: 'Budget Audit', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-              { id: 'activity', label: 'Activity',     icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> },
+              { id: 'budget', label: 'Budget Audit', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+              { id: 'board', label: 'Board', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg> },
+              { id: 'timeline', label: 'Timeline', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
+              { id: 'activity', label: 'Activity', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> },
             ];
 
             return (
@@ -5691,8 +5625,8 @@ export default function Dashboard() {
                   {/* KPI pills row */}
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { label: 'Proposed',  val: kanbanGroups.proposed.length,  cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-                      { label: 'On-Going',  val: kanbanGroups.ongoing.length,   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+                      { label: 'Proposed', val: kanbanGroups.proposed.length, cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+                      { label: 'On-Going', val: kanbanGroups.ongoing.length, cls: 'bg-amber-50 text-amber-700 border-amber-200' },
                       { label: 'Completed', val: kanbanGroups.completed.length, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
                     ].map(k => (
                       <span key={k.label} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border ${k.cls}`}>
@@ -5708,11 +5642,10 @@ export default function Dashboard() {
                     <button
                       key={tab.id}
                       onClick={() => { setPmSubTab(tab.id); setPmBudgetPage(1); }}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                        pmSubTab === tab.id
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${pmSubTab === tab.id
                           ? 'bg-white text-slate-900 shadow-sm'
                           : 'text-slate-500 hover:text-slate-700'
-                      }`}
+                        }`}
                     >
                       {tab.icon(`w-3.5 h-3.5 ${pmSubTab === tab.id ? 'text-teal-600' : 'text-slate-400'}`)}
                       <span>{tab.label}</span>
@@ -5729,23 +5662,12 @@ export default function Dashboard() {
                     </div>
                     {/* Mode Selector */}
                     <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-                      {[
-                        { id: 'All', label: 'All Modes' },
-                        { id: 'LGU', label: 'LGU (MOA)' },
-                        { id: 'DPWH', label: 'DPWH' }
-                      ].map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => { setPmModeFilter(m.id); setPmBudgetPage(1); }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                            pmModeFilter === m.id
-                              ? 'bg-white text-slate-900 shadow-sm'
-                              : 'text-slate-500 hover:text-slate-800'
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
+                      <button
+                        disabled
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-900 shadow-sm cursor-default"
+                      >
+                        Implementing Agency: DA
+                      </button>
                     </div>
                   </div>
 
@@ -5761,7 +5683,7 @@ export default function Dashboard() {
                       />
                       <span className="absolute left-3 top-3 text-slate-400 text-xs">🔍</span>
                       {pmSearchInput && (
-                        <button 
+                        <button
                           onClick={() => { setPmSearchInput(''); setPmBudgetPage(1); }}
                           className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-semibold"
                         >
@@ -5802,9 +5724,9 @@ export default function Dashboard() {
                 {pmSubTab === 'board' && (
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     {[
-                      { key: 'proposed',  label: 'Proposed',   dot: 'bg-blue-500',    header: 'bg-blue-50 border-blue-200',    count: kanbanGroups.proposed.length },
-                      { key: 'ongoing',   label: 'On-Going',   dot: 'bg-amber-400',   header: 'bg-amber-50 border-amber-200',   count: kanbanGroups.ongoing.length },
-                      { key: 'completed', label: 'Completed',  dot: 'bg-emerald-500', header: 'bg-emerald-50 border-emerald-200', count: kanbanGroups.completed.length },
+                      { key: 'proposed', label: 'Proposed', dot: 'bg-blue-500', header: 'bg-blue-50 border-blue-200', count: kanbanGroups.proposed.length },
+                      { key: 'ongoing', label: 'On-Going', dot: 'bg-amber-400', header: 'bg-amber-50 border-amber-200', count: kanbanGroups.ongoing.length },
+                      { key: 'completed', label: 'Completed', dot: 'bg-emerald-500', header: 'bg-emerald-50 border-emerald-200', count: kanbanGroups.completed.length },
                     ].map(col => {
                       const projects = kanbanGroups[col.key];
                       return (
@@ -5815,7 +5737,7 @@ export default function Dashboard() {
                               <span className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
                               <span className="text-sm font-bold text-slate-800">{col.label}</span>
                             </div>
-                            <span className="min-w-[22px] h-5.5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-black bg-white border border-slate-200 text-slate-600 shadow-sm" style={{height:'22px'}}>
+                            <span className="min-w-[22px] h-5.5 px-1.5 flex items-center justify-center rounded-full text-[11px] font-black bg-white border border-slate-200 text-slate-600 shadow-sm" style={{ height: '22px' }}>
                               {col.count}
                             </span>
                           </div>
@@ -5851,10 +5773,8 @@ export default function Dashboard() {
                                   </div>
                                   {/* Footer badges */}
                                   <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                                      budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'
-                                    }`}>
-                                      {budget.isDpwh ? 'DPWH' : 'LGU (MOA)'}
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-teal-50 text-teal-700 border-teal-200">
+                                      DA
                                     </span>
                                     <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-800 border border-slate-200">
                                       {formatPeso(budget.estimatedCost)}
@@ -5881,520 +5801,16 @@ export default function Dashboard() {
                 )}
 
                 {/* ════════════════════════════════════════════════════ */}
-                {/* TIMELINE VIEW                                        */}
+                {/* PROJECT SCHEDULING (Calendar / Gantt / Table)         */}
                 {/* ════════════════════════════════════════════════════ */}
-                {pmSubTab === 'timeline' && (() => {
-                  const CAL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-                  const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-                  
-                  // Local timezone-safe project milestone date resolver
-                  const getProjectMilestoneDate = (proj) => {
-                    const statusNormal = normalizeFmrStatus(proj.status);
-                    const dateStr = statusNormal === 'Completed'
-                      ? (proj.date_completed || proj.target_completion_date || proj.created_at)
-                      : (proj.target_completion_date || proj.created_at);
-                    
-                    if (!dateStr) return null;
-                    const isoStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
-                    const parts = isoStr.split('-');
-                    if (parts.length !== 3) return null;
-                    
-                    const [y, m, d] = parts.map(Number);
-                    return new Date(y, m - 1, d);
-                  };
-
-                  // Navigation handlers
-                  const handlePrev = () => {
-                    if (pmCalView === 'week') {
-                      const newDate = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - 7);
-                      setPmCalSelectedDate(newDate);
-                      setPmCalMonth(newDate.getMonth());
-                      setPmCalYear(newDate.getFullYear());
-                    } else {
-                      if (pmCalMonth === 0) {
-                        setPmCalMonth(11);
-                        setPmCalYear(y => y - 1);
-                      } else {
-                        setPmCalMonth(m => m - 1);
-                      }
-                    }
-                  };
-                  
-                  const handleNext = () => {
-                    if (pmCalView === 'week') {
-                      const newDate = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() + 7);
-                      setPmCalSelectedDate(newDate);
-                      setPmCalMonth(newDate.getMonth());
-                      setPmCalYear(newDate.getFullYear());
-                    } else {
-                      if (pmCalMonth === 11) {
-                        setPmCalMonth(0);
-                        setPmCalYear(y => y + 1);
-                      } else {
-                        setPmCalMonth(m => m + 1);
-                      }
-                    }
-                  };
-                  
-                  const handleToday = () => {
-                    const today = new Date();
-                    setPmCalSelectedDate(today);
-                    setPmCalMonth(today.getMonth());
-                    setPmCalYear(today.getFullYear());
-                  };
-                  
-                  const todayObj = new Date();
-                  const todayDay = todayObj.getDate();
-                  const todayMonth = todayObj.getMonth();
-                  const todayYear = todayObj.getFullYear();
-                  
-                  // View Title Label
-                  let calendarHeaderTitle = `${CAL_MONTHS[pmCalMonth]} ${pmCalYear}`;
-                  if (pmCalView === 'week') {
-                    const startOfWeek = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - pmCalSelectedDate.getDay());
-                    const endOfWeek = new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + 6);
-                    calendarHeaderTitle = `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-                  }
-                  
-                  return (
-                    <div className="space-y-6">
-                      {/* ── Monday.com Calendar Component ─────────────────── */}
-                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
-                        <div className="px-6 py-4.5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
-                          <div>
-                            <h3 className="text-base font-bold text-slate-900">Project Calendar</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Day-to-day schedule and project allocation view</p>
-                          </div>
-                          
-                          {/* Calendar Controls & Navigation */}
-                          <div className="flex flex-wrap items-center gap-3">
-                            {/* View Switcher Toggle */}
-                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shadow-inner">
-                              {[
-                                { id: 'month', label: 'Month' },
-                                { id: 'week',  label: 'Week' },
-                                { id: 'agenda', label: 'Agenda' }
-                              ].map(v => (
-                                <button
-                                  key={v.id}
-                                  onClick={() => setPmCalView(v.id)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 ${
-                                    pmCalView === v.id
-                                      ? 'bg-white text-slate-900 shadow-sm'
-                                      : 'text-slate-550 hover:text-slate-800'
-                                  }`}
-                                >
-                                  {v.label}
-                                </button>
-                              ))}
-                            </div>
-
-                            <button
-                              onClick={handleToday}
-                              className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 shadow-sm transition-all"
-                            >
-                              Today
-                            </button>
-                            
-                            <div className="flex items-center border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden">
-                              <button
-                                onClick={handlePrev}
-                                className="px-2.5 py-1.5 hover:bg-slate-50 text-slate-500 transition-colors border-r border-slate-150"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                                </svg>
-                              </button>
-                              <span className="px-3 text-xs font-bold text-slate-700 min-w-[130px] text-center">
-                                {calendarHeaderTitle}
-                              </span>
-                              <button
-                                onClick={handleNext}
-                                className="px-2.5 py-1.5 hover:bg-slate-50 text-slate-500 transition-colors border-l border-slate-150"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* View Contents */}
-                        <div className="p-4 bg-white">
-                          
-                          {/* MONTH VIEW */}
-                          {pmCalView === 'month' && (() => {
-                            const firstDayIndex = new Date(pmCalYear, pmCalMonth, 1).getDay();
-                            const totalDays = new Date(pmCalYear, pmCalMonth + 1, 0).getDate();
-                            const prevMonthTotalDays = new Date(pmCalYear, pmCalMonth, 0).getDate();
-                            
-                            const cells = [];
-                            // Previous Month Padding
-                            for (let i = firstDayIndex - 1; i >= 0; i--) {
-                              cells.push({
-                                day: prevMonthTotalDays - i,
-                                month: pmCalMonth === 0 ? 11 : pmCalMonth - 1,
-                                year: pmCalMonth === 0 ? pmCalYear - 1 : pmCalYear,
-                                isCurrentMonth: false,
-                              });
-                            }
-                            // Current Month Days
-                            for (let d = 1; d <= totalDays; d++) {
-                              cells.push({
-                                day: d,
-                                month: pmCalMonth,
-                                year: pmCalYear,
-                                isCurrentMonth: true,
-                              });
-                            }
-                            // Next Month Padding
-                            const totalCells = cells.length;
-                            const remainingSquares = totalCells <= 35 ? 35 - totalCells : 42 - totalCells;
-                            for (let d = 1; d <= remainingSquares; d++) {
-                              cells.push({
-                                day: d,
-                                month: pmCalMonth === 11 ? 0 : pmCalMonth + 1,
-                                year: pmCalMonth === 11 ? pmCalYear + 1 : pmCalYear,
-                                isCurrentMonth: false,
-                              });
-                            }
-
-                            return (
-                              <div className="grid grid-cols-7 gap-1.5 animate-fadeIn">
-                                {DAYS_OF_WEEK.map(d => (
-                                  <div key={d} className="text-center py-2 text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                                    {d}
-                                  </div>
-                                ))}
-                                {cells.map((cell, idx) => {
-                                  const isToday = cell.day === todayDay && cell.month === todayMonth && cell.year === todayYear;
-                                  
-                                  const activeProjects = filteredFmrProjects.filter(p => {
-                                    const mDate = getProjectMilestoneDate(p);
-                                    if (!mDate) return false;
-                                    return mDate.getFullYear() === cell.year &&
-                                           mDate.getMonth() === cell.month &&
-                                           mDate.getDate() === cell.day;
-                                  });
-
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className={`min-h-[90px] p-2 border border-slate-100 rounded-xl flex flex-col justify-between transition-all ${
-                                        cell.isCurrentMonth 
-                                          ? 'bg-slate-50/30 hover:bg-slate-50/60' 
-                                          : 'bg-slate-100/40 text-slate-400 opacity-60'
-                                      } ${isToday ? 'ring-2 ring-teal-500/20 border-teal-500 bg-teal-50/5' : ''}`}
-                                    >
-                                      <div className="flex justify-between items-start">
-                                        <span className={`text-[10px] font-extrabold ${
-                                          isToday 
-                                            ? 'bg-teal-600 text-white w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-sm shadow-teal-600/20' 
-                                            : cell.isCurrentMonth ? 'text-slate-700' : 'text-slate-400'
-                                        }`}>
-                                          {cell.day}
-                                        </span>
-                                        {activeProjects.length > 0 && cell.isCurrentMonth && (
-                                          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 inline-block shadow-sm shadow-teal-500/30" />
-                                        )}
-                                      </div>
-
-                                      {/* Stack of events (Scrollable) */}
-                                      <div className="mt-1.5 space-y-1 overflow-y-auto max-h-[60px] pr-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                                        {activeProjects.map(p => {
-                                          const statusNormal = normalizeFmrStatus(p.status);
-                                          return (
-                                            <div
-                                              key={p.id}
-                                              onClick={(e) => { e.stopPropagation(); openProjectDetailModal(p); }}
-                                              className={`text-[9px] px-1.5 py-0.5 rounded-md border truncate cursor-pointer transition-all hover:scale-[1.02] font-semibold ${
-                                                statusNormal === 'Completed'
-                                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-150 hover:bg-emerald-100'
-                                                  : statusNormal === 'On-Going'
-                                                    ? 'bg-amber-50 text-amber-700 border-amber-150 hover:bg-amber-100'
-                                                    : 'bg-blue-50 text-blue-700 border-blue-150 hover:bg-blue-100'
-                                              }`}
-                                              title={`${p.project_name} (${p.accomplishment || 0}% accomplishment)`}
-                                            >
-                                              {p.project_name}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-
-                          {/* WEEK VIEW */}
-                          {pmCalView === 'week' && (() => {
-                            const startOfWeek = new Date(pmCalSelectedDate.getFullYear(), pmCalSelectedDate.getMonth(), pmCalSelectedDate.getDate() - pmCalSelectedDate.getDay());
-                            const weekCells = [];
-                            for (let i = 0; i < 7; i++) {
-                              const dayDate = new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate() + i);
-                              weekCells.push({
-                                date: dayDate,
-                                dayName: DAYS_OF_WEEK[i],
-                                dayNum: dayDate.getDate(),
-                                month: dayDate.getMonth(),
-                                year: dayDate.getFullYear()
-                              });
-                            }
-
-                            return (
-                              <div className="grid grid-cols-1 md:grid-cols-7 gap-3 animate-fadeIn">
-                                {weekCells.map((wCell, idx) => {
-                                  const isToday = wCell.dayNum === todayDay && wCell.month === todayMonth && wCell.year === todayYear;
-                                  
-                                  const activeProjects = filteredFmrProjects.filter(p => {
-                                    const mDate = getProjectMilestoneDate(p);
-                                    if (!mDate) return false;
-                                    return mDate.getFullYear() === wCell.year &&
-                                           mDate.getMonth() === wCell.month &&
-                                           mDate.getDate() === wCell.dayNum;
-                                  });
-
-                                  return (
-                                    <div
-                                      key={idx}
-                                      className={`min-h-[220px] p-3 border border-slate-100 rounded-2xl flex flex-col justify-start gap-3 bg-slate-50/20 shadow-sm ${
-                                        isToday ? 'ring-2 ring-teal-500/20 border-teal-500 bg-teal-50/5' : ''
-                                      }`}
-                                    >
-                                      {/* Header Date details */}
-                                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
-                                          {wCell.dayName}
-                                        </span>
-                                        <span className={`text-xs font-black w-6 h-6 rounded-full flex items-center justify-center ${
-                                          isToday 
-                                            ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/25' 
-                                            : 'text-slate-800'
-                                        }`}>
-                                          {wCell.dayNum}
-                                        </span>
-                                      </div>
-
-                                      {/* Active projects list */}
-                                      <div className="space-y-2 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                                        {activeProjects.length === 0 ? (
-                                          <p className="text-[10px] text-slate-350 italic mt-4 text-center">No assignments</p>
-                                        ) : activeProjects.map(p => {
-                                          const statusNormal = normalizeFmrStatus(p.status);
-                                          return (
-                                            <div
-                                              key={p.id}
-                                              onClick={() => openProjectDetailModal(p)}
-                                              className="p-2 border border-slate-100 rounded-xl bg-white shadow-xs cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all text-left space-y-1.5"
-                                            >
-                                              <p className="text-[10px] font-bold text-slate-800 line-clamp-2 leading-normal">
-                                                {p.project_name}
-                                              </p>
-                                              <p className="text-[9px] text-slate-400">
-                                                {p.municipality} · {p.project_length_km || 1.5}km
-                                              </p>
-                                              <div className="flex items-center gap-1.5">
-                                                <span className={`text-[8px] px-1.5 py-0.5 rounded font-black uppercase ${
-                                                  statusNormal === 'Completed'
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : statusNormal === 'On-Going'
-                                                      ? 'bg-amber-50 text-amber-700'
-                                                      : 'bg-blue-50 text-blue-700'
-                                                }`}>
-                                                  {statusNormal}
-                                                </span>
-                                                <span className="text-[9px] font-bold text-slate-650">
-                                                  {Number(p.accomplishment || 0).toFixed(0)}%
-                                                </span>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-
-                          {/* AGENDA VIEW */}
-                          {pmCalView === 'agenda' && (() => {
-                            const monthStart = new Date(pmCalYear, pmCalMonth, 1);
-                            const monthEnd = new Date(pmCalYear, pmCalMonth + 1, 0);
-                            
-                            const agendaProjects = filteredFmrProjects.filter(p => {
-                              const mDate = getProjectMilestoneDate(p);
-                              if (!mDate) return false;
-                              return mDate.getFullYear() === pmCalYear &&
-                                     mDate.getMonth() === pmCalMonth;
-                            });
-                            agendaProjects.sort((a, b) => {
-                              const dA = getProjectMilestoneDate(a);
-                              const dB = getProjectMilestoneDate(b);
-                              return (dA?.getTime() || 0) - (dB?.getTime() || 0);
-                            });
-
-                            return (
-                              <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 animate-fadeIn [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full">
-                                {agendaProjects.length === 0 ? (
-                                  <div className="py-16 text-center text-slate-400">
-                                    <svg className="w-12 h-12 text-slate-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2-2v12a2 2 0 002 2z" />
-                                    </svg>
-                                    <p className="text-sm font-semibold text-slate-800">No Projects on the Agenda</p>
-                                    <p className="text-xs text-slate-400 mt-0.5">No FMR projects are scheduled or active during this month</p>
-                                  </div>
-                                ) : agendaProjects.map(p => {
-                                  const statusNormal = normalizeFmrStatus(p.status);
-                                  const progress = Number(p.accomplishment || 0);
-                                  const mDate = getProjectMilestoneDate(p);
-                                  const startStr = p.created_at ? new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Jan 1';
-                                  const targetStr = mDate ? mDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Undated';
-                                  
-                                  return (
-                                    <div
-                                      key={p.id}
-                                      onClick={() => openProjectDetailModal(p)}
-                                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border border-slate-150/60 rounded-2xl hover:bg-slate-50/50 cursor-pointer hover:shadow-sm transition-all"
-                                    >
-                                      <div className="flex items-start gap-4">
-                                        {/* Duration Strip */}
-                                        <div className="bg-slate-100 rounded-xl p-2.5 min-w-[110px] text-center shadow-xs border border-slate-150">
-                                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Milestone</p>
-                                          <p className="text-[11px] font-bold text-slate-700 mt-0.5">{targetStr}</p>
-                                        </div>
-                                        
-                                        <div className="min-w-0">
-                                          <h4 className="text-sm font-bold text-slate-800 hover:text-teal-700 transition-colors line-clamp-1">
-                                            {p.project_name}
-                                          </h4>
-                                          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-                                            <span className="font-semibold text-slate-650">{p.municipality}</span>
-                                            <span className="text-slate-200">|</span>
-                                            <span>{p.project_length_km || 1.5} km length</span>
-                                            <span className="text-slate-200">|</span>
-                                            <span>Start: {startStr}</span>
-                                          </p>
-                                        </div>
-                                      </div>
-                                      
-                                      <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
-                                        <div className="text-left sm:text-right">
-                                          <span className={`inline-flex px-2 py-0.5 rounded-full font-bold text-[9px] border ${
-                                            statusNormal === 'Completed'
-                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-250'
-                                              : statusNormal === 'On-Going'
-                                                ? 'bg-amber-50 text-amber-700 border-amber-250'
-                                                : 'bg-blue-50 text-blue-700 border-blue-250'
-                                          }`}>
-                                            {statusNormal}
-                                          </span>
-                                          <p className="text-[10px] text-slate-400 mt-1 font-bold">
-                                            {progress.toFixed(0)}% Complete
-                                          </p>
-                                        </div>
-                                        
-                                        <div className="w-24 flex-shrink-0">
-                                          <div className="h-2 bg-slate-150 rounded-full overflow-hidden">
-                                            <div className={`h-full rounded-full transition-all duration-500 ${
-                                              statusNormal === 'Completed'
-                                                ? 'bg-emerald-500'
-                                                : statusNormal === 'On-Going'
-                                                  ? 'bg-amber-400'
-                                                  : 'bg-blue-500'
-                                            }`} style={{ width: `${progress}%` }} />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* ── Gantt Chart Timeline ───────────────────────────── */}
-                      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
-                        <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                          <div>
-                            <h3 className="text-base font-bold text-slate-900">Project Gantt Timeline</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Physical schedule mapped across the 12 fiscal months of {currentYear}</p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> Completed</span>
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> On-Going</span>
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" /> Proposed</span>
-                          </div>
-                        </div>
-
-                        <div className="overflow-x-auto">
-                          <div className="min-w-[900px] divide-y divide-slate-150">
-                            {/* Calendar header row */}
-                            <div className="grid grid-cols-12 gap-1 bg-slate-50 py-3 text-center text-[10px] font-extrabold uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                              <div className="col-span-4 text-left pl-6">Project details</div>
-                              <div className="col-span-8 grid grid-cols-12 gap-1 pl-4 pr-6">
-                                {MONTHS.map(m => (
-                                  <div key={m} className="text-center">{m}</div>
-                                ))}
-                              </div>
-                            </div>
-                            
-                            {/* Project Rows */}
-                            <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                              {filteredFmrProjects.length === 0 ? (
-                                <div className="py-12 text-center text-slate-400 text-sm font-medium">No projects match the selected filters</div>
-                              ) : filteredFmrProjects.map(p => {
-                                const st = getPmStatus(p.status);
-                                const progress = Number(p.accomplishment || 0);
-                                const { startCol, endCol } = getTimelineColumns(p);
-                                
-                                return (
-                                  <div key={p.id} className="grid grid-cols-12 gap-1 py-3 items-center hover:bg-slate-50/50 transition-colors">
-                                    {/* Project title col */}
-                                    <div className="col-span-4 pl-6 pr-4 cursor-pointer" onClick={() => openProjectDetailModal(p)}>
-                                      <p className="text-[13px] font-semibold text-slate-800 line-clamp-1 hover:text-teal-700 transition-colors">{p.project_name}</p>
-                                      <p className="text-[10px] text-slate-400 font-medium">{p.municipality} · {p.project_length_km || 1.5} km</p>
-                                    </div>
-                                    
-                                    {/* Gantt Bar col */}
-                                    <div className="col-span-8 grid grid-cols-12 gap-1 items-center relative pl-4 pr-6 h-10">
-                                      {/* Vertical grid guide lines in background */}
-                                      {Array.from({ length: 12 }).map((_, i) => (
-                                        <div key={i} className="absolute top-0 bottom-0 border-r border-slate-100/60" style={{ left: `${(i + 1) * (100 / 12)}%`, zIndex: 0 }} />
-                                      ))}
-                                      
-                                      {/* Gantt Bar Span */}
-                                      <div 
-                                        className="relative h-7 rounded-xl flex items-center justify-between px-3 text-[10px] font-bold text-white shadow-sm hover:scale-[1.01] cursor-pointer transition-all z-10 group overflow-hidden" 
-                                        onClick={() => openProjectDetailModal(p)}
-                                        style={{ 
-                                          gridColumnStart: startCol, 
-                                          gridColumnEnd: endCol + 1,
-                                          backgroundColor: `${st.line}cc`
-                                        }}
-                                      >
-                                        {/* Progress fill overlay */}
-                                        <div className="absolute inset-y-0 left-0 bg-white/20 transition-all duration-500" style={{ width: `${progress}%`, zIndex: -1 }} />
-                                        <span className="truncate pr-2">{progress.toFixed(0)}% Done</span>
-                                        <span className="text-[9px] opacity-95 font-medium hidden sm:inline">{fmtDateShort(p.target_completion_date || p.date_completed) || 'Undated'}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
+                {pmSubTab === 'timeline' && (
+                  <ProjectSchedulingTab
+                    fmrProjects={filteredFmrProjects}
+                    contractors={contractors}
+                    progressUpdates={progressUpdates}
+                    showNotification={showNotification}
+                  />
+                )}
 
                 {/* ════════════════════════════════════════════════════ */}
                 {/* BUDGET AUDIT VIEW                                    */}
@@ -6430,13 +5846,12 @@ export default function Dashboard() {
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Liquidation Compliance</p>
                           <div className="flex items-center justify-between mt-2">
                             <p className="text-2xl font-bold text-slate-900">{programLiquidationCompliance.toFixed(1)}%</p>
-                            <span className={`text-[9px] px-2 py-0.5 rounded font-black border ${
-                              programLiquidationCompliance >= 80 
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-250' 
-                                : programLiquidationCompliance >= 40 
-                                  ? 'bg-amber-50 text-amber-700 border-amber-250' 
+                            <span className={`text-[9px] px-2 py-0.5 rounded font-black border ${programLiquidationCompliance >= 80
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-250'
+                                : programLiquidationCompliance >= 40
+                                  ? 'bg-amber-50 text-amber-700 border-amber-250'
                                   : 'bg-red-50 text-red-700 border-red-250'
-                            }`}>
+                              }`}>
                               {programLiquidationCompliance >= 80 ? 'HIGH COMPLIANCE' : programLiquidationCompliance >= 40 ? 'ONGOING AUDIT' : 'CRITICAL PEN'}
                             </span>
                           </div>
@@ -6471,18 +5886,18 @@ export default function Dashboard() {
                                   ) : paginatedAuditProjects.map(p => {
                                     const budget = getDaBudgetDetails(p);
                                     const isSelected = selectedFmrPmProject && selectedFmrPmProject.id === p.id;
-                                    
+
                                     // Auditing status pill
                                     let auditPill = { text: 'Fully Audited', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                                     if (budget.liquidationRate < 100) {
-                                      auditPill = budget.liquidationRate > 0 
+                                      auditPill = budget.liquidationRate > 0
                                         ? { text: 'Auditing Out', cls: 'bg-amber-50 text-amber-700 border-amber-200' }
                                         : { text: 'Pending Audit', cls: 'bg-red-50 text-red-700 border-red-200' };
                                     }
-                                    
+
                                     return (
-                                      <tr 
-                                        key={p.id} 
+                                      <tr
+                                        key={p.id}
                                         onClick={() => setSelectedFmrPmProject(p)}
                                         className={`cursor-pointer hover:bg-slate-50/50 transition-colors ${isSelected ? 'bg-teal-50/40 hover:bg-teal-50/60' : ''}`}
                                       >
@@ -6491,10 +5906,8 @@ export default function Dashboard() {
                                           <p className="text-[10px] text-slate-400 font-medium">{p.municipality} · {p.project_length_km || 1.5} km</p>
                                         </td>
                                         <td className="py-3 px-4">
-                                          <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] ${
-                                            budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border border-indigo-150' : 'bg-teal-50 text-teal-700 border border-teal-150'
-                                          }`}>
-                                            {budget.isDpwh ? 'DPWH' : 'LGU (MOA)'}
+                                          <span className="inline-flex px-2 py-0.5 rounded-full font-semibold text-[10px] bg-teal-50 text-teal-700 border border-teal-150">
+                                            DA
                                           </span>
                                         </td>
                                         <td className="py-3 px-4 font-semibold text-slate-800">{formatPeso(budget.estimatedCost)}</td>
@@ -6533,11 +5946,10 @@ export default function Dashboard() {
                                   <button
                                     key={page}
                                     onClick={() => setPmBudgetPage(page)}
-                                    className={`min-w-[24px] h-6 rounded-lg text-[10px] font-semibold border transition-all ${
-                                      safeAuditPage === page
+                                    className={`min-w-[24px] h-6 rounded-lg text-[10px] font-semibold border transition-all ${safeAuditPage === page
                                         ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
                                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                                    }`}
+                                      }`}
                                   >
                                     {page}
                                   </button>
@@ -6568,7 +5980,7 @@ export default function Dashboard() {
                             const p = selectedFmrPmProject;
                             const budget = getDaBudgetDetails(p);
                             const progress = Number(p.accomplishment || 0);
-                            
+
                             return (
                               <div className="space-y-6">
                                 <div>
@@ -6577,7 +5989,7 @@ export default function Dashboard() {
                                       <h3 className="text-sm font-extrabold text-slate-900 leading-snug break-words">{p.project_name}</h3>
                                       <p className="text-[10px] text-slate-400 mt-0.5">{p.municipality} · {p.barangay ? `${p.barangay}, ` : ''}FMR</p>
                                     </div>
-                                    <button 
+                                    <button
                                       onClick={() => setSelectedFmrPmProject(null)}
                                       className="text-slate-400 hover:text-slate-650 font-bold text-xs p-1 hover:bg-slate-100 rounded transition-all flex-shrink-0"
                                     >
@@ -6586,10 +5998,8 @@ export default function Dashboard() {
                                   </div>
 
                                   <div className="mt-3 flex flex-wrap gap-2">
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
-                                      budget.isDpwh ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'
-                                    }`}>
-                                      {budget.mode}
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold border bg-teal-50 text-teal-700 border-teal-200">
+                                      DA
                                     </span>
                                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 border border-slate-200">
                                       {p.project_length_km || 1.5} km
@@ -6612,9 +6022,8 @@ export default function Dashboard() {
                                 <div className="space-y-4">
                                   <div className="flex items-center justify-between">
                                     <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">DA FMRDP Release Lifecycle</h4>
-                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                                      budget.isReal ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                                    }`}>
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${budget.isReal ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}>
                                       {budget.isReal ? 'OFFICIAL RECORD' : 'ESTIMATE ONLY'}
                                     </span>
                                   </div>
@@ -6628,12 +6037,12 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             );
-                        })()}
+                          })()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
                 {/* ════════════════════════════════════════════════════ */}
                 {/* ACTIVITY FEED                                        */}
@@ -6651,9 +6060,8 @@ export default function Dashboard() {
                           <div className="py-16 text-center text-slate-400 text-sm">No recent activity found</div>
                         ) : activityItems.map((item) => (
                           <div key={item.id} className="flex items-start gap-4 px-6 py-4 hover:bg-slate-50/60 transition-colors">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                              item.type === 'progress' ? 'bg-teal-50 text-teal-600' : 'bg-blue-50 text-blue-600'
-                            }`}>
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${item.type === 'progress' ? 'bg-teal-50 text-teal-600' : 'bg-blue-50 text-blue-600'
+                              }`}>
                               {item.type === 'progress' ? (
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -6684,8 +6092,8 @@ export default function Dashboard() {
                         <div className="space-y-3">
                           {[
                             { label: 'Completed', val: kanbanGroups.completed.length, total: filteredFmrProjects.length, color: 'bg-emerald-500' },
-                            { label: 'On-Going',  val: kanbanGroups.ongoing.length,   total: filteredFmrProjects.length, color: 'bg-amber-400' },
-                            { label: 'Proposed',  val: kanbanGroups.proposed.length,  total: filteredFmrProjects.length, color: 'bg-blue-500' },
+                            { label: 'On-Going', val: kanbanGroups.ongoing.length, total: filteredFmrProjects.length, color: 'bg-amber-400' },
+                            { label: 'Proposed', val: kanbanGroups.proposed.length, total: filteredFmrProjects.length, color: 'bg-blue-500' },
                           ].map(item => {
                             const pct = filteredFmrProjects.length > 0 ? Math.round((item.val / filteredFmrProjects.length) * 100) : 0;
                             return (
@@ -6842,7 +6250,7 @@ export default function Dashboard() {
           {/* Reports Tab */}
           {activeTab === 'reports' && (() => {
             const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
-            const today = new Date(); today.setHours(0,0,0,0);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
 
             const reportsYearOptions = [...new Set((fmrProjects || [])
               .map((p) => Number(p.year_funded))
@@ -6924,97 +6332,97 @@ export default function Dashboard() {
               const pagedList = list.slice(start, start + reportsPerSectionPage);
 
               return (
-              <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-                <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r ${colorStyles.gradient} to-white flex items-center justify-between`}>
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${colorStyles.iconBg} ${colorStyles.iconText}`}>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    </span>
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-                      <p className="text-sm text-slate-500">{list.length} project{list.length !== 1 ? 's' : ''} total</p>
-                    </div>
-                  </div>
-                </div>
-                {list.length === 0 ? (
-                  <EmptyState title="No records" description={emptyMsg} />
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[700px]">
-                        <thead>
-                          <tr className="bg-slate-50/50">
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Year Funded</th>
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Completion</th>
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Accomplishment</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {pagedList.map((p) => {
-                            const status = normalizeFmrStatus(p.status);
-                            const accomplishment = Number(p.accomplishment || 0);
-                            const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
-                            const isOverdue = !isCompleted && isPastDate(p.target_completion_date, today);
-                            return (
-                              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="px-6 py-4">
-                                  <p className="font-semibold text-sm text-slate-900">{p.project_name}</p>
-                                  <p className="text-xs text-slate-400 font-mono mt-0.5">{p.id ? `ID-${p.id}` : 'FMR'}</p>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-slate-700">{p.location || `${p.municipality || 'N/A'}, ${p.province || 'Iloilo'}`}</td>
-                                <td className="px-6 py-4 text-sm text-slate-600">{p.year_funded || '—'}</td>
-                                <td className="px-6 py-4">
-                                  <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>{fmtDateShort(p.target_completion_date)}</span>
-                                  {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
-                                </td>
-                                <td className="px-6 py-4">
-                                  {renderStatusPill(status)}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
-                                      <div className={`h-2 rounded-full ${(p.accomplishment || 0) >= 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${Math.min(p.accomplishment || 0, 100)}%` }} />
-                                    </div>
-                                    <span className="text-xs font-bold text-slate-700">{p.accomplishment || 0}%</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="px-6 sm:px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <p className="text-xs sm:text-sm text-slate-500">
-                        Showing <span className="font-bold text-slate-700">{start + 1}</span> to{' '}
-                        <span className="font-bold text-slate-700">{Math.min(start + reportsPerSectionPage, list.length)}</span> of{' '}
-                        <span className="font-bold text-slate-700">{list.length}</span>
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.max(1, currentPage - 1) }))}
-                          disabled={currentPage === 1}
-                          className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Previous
-                        </button>
-                        <span className="text-xs sm:text-sm font-semibold text-slate-600 min-w-[78px] text-center">Page {currentPage} / {totalPages}</span>
-                        <button
-                          onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.min(totalPages, currentPage + 1) }))}
-                          disabled={currentPage === totalPages}
-                          className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Next
-                        </button>
+                <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                  <div className={`px-6 sm:px-8 py-5 border-b border-slate-200/60 bg-gradient-to-r ${colorStyles.gradient} to-white flex items-center justify-between`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${colorStyles.iconBg} ${colorStyles.iconText}`}>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      </span>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+                        <p className="text-sm text-slate-500">{list.length} project{list.length !== 1 ? 's' : ''} total</p>
                       </div>
                     </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                  {list.length === 0 ? (
+                    <EmptyState title="No records" description={emptyMsg} />
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[700px]">
+                          <thead>
+                            <tr className="bg-slate-50/50">
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Year Funded</th>
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Completion</th>
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                              <th className="px-6 py-4 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Accomplishment</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {pagedList.map((p) => {
+                              const status = normalizeFmrStatus(p.status);
+                              const accomplishment = Number(p.accomplishment || 0);
+                              const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
+                              const isOverdue = !isCompleted && isPastDate(p.target_completion_date, today);
+                              return (
+                                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-6 py-4">
+                                    <p className="font-semibold text-sm text-slate-900">{p.project_name}</p>
+                                    <p className="text-xs text-slate-400 font-mono mt-0.5">{p.id ? `ID-${p.id}` : 'FMR'}</p>
+                                  </td>
+                                  <td className="px-6 py-4 text-sm text-slate-700">{p.location || `${p.municipality || 'N/A'}, ${p.province || 'Iloilo'}`}</td>
+                                  <td className="px-6 py-4 text-sm text-slate-600">{p.year_funded || '—'}</td>
+                                  <td className="px-6 py-4">
+                                    <span className={`text-sm ${isOverdue ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>{fmtDateShort(p.target_completion_date)}</span>
+                                    {isOverdue && <p className="text-[11px] text-red-500 mt-0.5">Overdue</p>}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    {renderStatusPill(status)}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
+                                        <div className={`h-2 rounded-full ${(p.accomplishment || 0) >= 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${Math.min(p.accomplishment || 0, 100)}%` }} />
+                                      </div>
+                                      <span className="text-xs font-bold text-slate-700">{p.accomplishment || 0}%</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="px-6 sm:px-8 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <p className="text-xs sm:text-sm text-slate-500">
+                          Showing <span className="font-bold text-slate-700">{start + 1}</span> to{' '}
+                          <span className="font-bold text-slate-700">{Math.min(start + reportsPerSectionPage, list.length)}</span> of{' '}
+                          <span className="font-bold text-slate-700">{list.length}</span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.max(1, currentPage - 1) }))}
+                            disabled={currentPage === 1}
+                            className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Previous
+                          </button>
+                          <span className="text-xs sm:text-sm font-semibold text-slate-600 min-w-[78px] text-center">Page {currentPage} / {totalPages}</span>
+                          <button
+                            onClick={() => setReportsPageBySection((prev) => ({ ...prev, [key]: Math.min(totalPages, currentPage + 1) }))}
+                            disabled={currentPage === totalPages}
+                            className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               );
             };
 
@@ -7119,11 +6527,10 @@ export default function Dashboard() {
                               setReportsSectionFilter(key);
                               setReportsPageBySection((prev) => ({ ...prev, [key]: 1 }));
                             }}
-                            className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${
-                              isActive
+                            className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${isActive
                                 ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
                                 : 'text-slate-600 hover:text-slate-800'
-                            }`}
+                              }`}
                           >
                             {section.title} ({section.list.length})
                           </button>
@@ -7486,51 +6893,51 @@ export default function Dashboard() {
                   const reportDate = rpt.updated_at || rpt.created_at;
                   const formattedReportDate = reportDate
                     ? new Date(reportDate).toLocaleString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })
                     : 'No date';
 
                   return (
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      {verifyBadge(rpt.verification)}
-                      {statusBadge(rpt.status)}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          {verifyBadge(rpt.verification)}
+                          {statusBadge(rpt.status)}
+                          {rpt.photo_url && (
+                            <span className="flex items-center gap-1 text-xs text-slate-400">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
+                              Photo
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
+                          {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
+                        <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} · {formattedReportDate}</p>
+                          {rpt.assigned_engineer_name && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                              {rpt.assigned_engineer_name}
+                            </span>
+                          )}
+                          {rpt.contractor_remark && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                              Contractor responded
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       {rpt.photo_url && (
-                        <span className="flex items-center gap-1 text-xs text-slate-400">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
-                          Photo
-                        </span>
+                        <img src={rpt.photo_url} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0" />
                       )}
                     </div>
-                    <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
-                      {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">{rpt.barangay}, {rpt.municipality}{rpt.street ? ` — ${rpt.street}` : ''}</p>
-                    <p className="text-sm text-slate-500 line-clamp-2 mt-0.5">{rpt.description}</p>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <p className="text-xs text-slate-400">{rpt.full_name || 'Anonymous'} · {formattedReportDate}</p>
-                      {rpt.assigned_engineer_name && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                          {rpt.assigned_engineer_name}
-                        </span>
-                      )}
-                      {rpt.contractor_remark && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                          Contractor responded
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {rpt.photo_url && (
-                    <img src={rpt.photo_url} alt="" className="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0" />
-                  )}
-                </div>
                   );
                 })()}
               </button>
@@ -7829,7 +7236,7 @@ export default function Dashboard() {
                   return (
                     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200" onClick={() => setSelectedPublicReport(null)}>
                       <div className="bg-white rounded-2xl shadow-2xl w-[98vw] lg:w-[90vw] max-w-7xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200/80" onClick={e => e.stopPropagation()}>
-                        
+
                         {/* Top Government Case Header */}
                         <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between shrink-0 border-b border-emerald-900/50">
                           <div className="flex items-center gap-3.5">
@@ -7857,7 +7264,7 @@ export default function Dashboard() {
 
                         {/* Main 2-Column Case Body */}
                         <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-100/60">
-                          
+
                           {/* LEFT COLUMN: Evidence & Geolocation (Col 7) */}
                           <div className="lg:col-span-7 space-y-4">
 
@@ -7998,91 +7405,90 @@ export default function Dashboard() {
 
                             {/* Field Engineer Findings Review */}
                             {selectedPublicReport.assigned_engineer_id && (
-                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                                  Field Engineer Findings Review
-                                </span>
-                                {selectedPublicReport.engineer_status && (
-                                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
-                                    selectedPublicReport.engineer_status === 'validated' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                    selectedPublicReport.engineer_status === 'rejected' ? 'bg-red-100 text-red-700 border-red-200' :
-                                    selectedPublicReport.engineer_status === 'inspected' ? 'bg-violet-100 text-violet-700 border-violet-200' :
-                                    'bg-slate-100 text-slate-600 border-slate-200'
-                                  }`}>
-                                    {selectedPublicReport.engineer_status.replace('_', ' ').toUpperCase()}
+                              <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                    Field Engineer Findings Review
                                   </span>
-                                )}
-                              </div>
-
-                              {selectedFieldFinding ? (
-                                <div className="space-y-2 text-xs bg-slate-50 rounded-lg border border-slate-200 p-3">
-                                  <div>
-                                    <span className="text-slate-500 block font-medium">Condition Observed</span>
-                                    <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.condition_observed}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-slate-500 block font-medium">Recommended Action</span>
-                                    <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.recommended_action}</p>
-                                  </div>
-                                  {selectedFieldFinding.estimated_cost_range && (
-                                    <div>
-                                      <span className="text-slate-500 block font-medium">Estimated Cost</span>
-                                      <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.estimated_cost_range}</p>
-                                    </div>
-                                  )}
-                                  {selectedFieldFinding.field_photo_url && (
-                                    <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-36 object-cover rounded-lg border border-slate-200" />
+                                  {selectedPublicReport.engineer_status && (
+                                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${selectedPublicReport.engineer_status === 'validated' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                        selectedPublicReport.engineer_status === 'rejected' ? 'bg-red-100 text-red-700 border-red-200' :
+                                          selectedPublicReport.engineer_status === 'inspected' ? 'bg-violet-100 text-violet-700 border-violet-200' :
+                                            'bg-slate-100 text-slate-600 border-slate-200'
+                                      }`}>
+                                      {selectedPublicReport.engineer_status.replace('_', ' ').toUpperCase()}
+                                    </span>
                                   )}
                                 </div>
-                              ) : (
-                                <p className="text-xs text-slate-400 italic">No field engineer findings submitted yet.</p>
-                              )}
 
-                              {selectedFieldFinding && selectedPublicReport.engineer_status !== 'validated' && (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                      onClick={() => validateFieldFinding(selectedPublicReport.id)}
-                                      disabled={findingActionSaving}
-                                      className="py-2 rounded-lg text-xs font-bold border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 transition-all"
-                                    >
-                                      Validate Finding
-                                    </button>
-                                    <button
-                                      onClick={() => setShowRejectReason((v) => !v)}
-                                      disabled={findingActionSaving}
-                                      className="py-2 rounded-lg text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 transition-all"
-                                    >
-                                      Reject & Send Back
-                                    </button>
+                                {selectedFieldFinding ? (
+                                  <div className="space-y-2 text-xs bg-slate-50 rounded-lg border border-slate-200 p-3">
+                                    <div>
+                                      <span className="text-slate-500 block font-medium">Condition Observed</span>
+                                      <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.condition_observed}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-500 block font-medium">Recommended Action</span>
+                                      <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.recommended_action}</p>
+                                    </div>
+                                    {selectedFieldFinding.estimated_cost_range && (
+                                      <div>
+                                        <span className="text-slate-500 block font-medium">Estimated Cost</span>
+                                        <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.estimated_cost_range}</p>
+                                      </div>
+                                    )}
+                                    {selectedFieldFinding.field_photo_url && (
+                                      <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-36 object-cover rounded-lg border border-slate-200" />
+                                    )}
                                   </div>
-                                  {showRejectReason && (
-                                    <div className="space-y-2">
-                                      <textarea
-                                        value={rejectReasonDraft}
-                                        onChange={(e) => setRejectReasonDraft(e.target.value)}
-                                        rows={2}
-                                        placeholder="Reason for rejection (required) — what needs to be re-inspected?"
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-red-500/20"
-                                      />
+                                ) : (
+                                  <p className="text-xs text-slate-400 italic">No field engineer findings submitted yet.</p>
+                                )}
+
+                                {selectedFieldFinding && selectedPublicReport.engineer_status !== 'validated' && (
+                                  <div className="space-y-2">
+                                    <div className="grid grid-cols-2 gap-2">
                                       <button
-                                        onClick={() => rejectFieldFinding(selectedPublicReport.id, rejectReasonDraft)}
-                                        disabled={findingActionSaving || !rejectReasonDraft.trim()}
-                                        className="w-full py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-all"
+                                        onClick={() => validateFieldFinding(selectedPublicReport.id)}
+                                        disabled={findingActionSaving}
+                                        className="py-2 rounded-lg text-xs font-bold border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 transition-all"
                                       >
-                                        Confirm Rejection
+                                        Validate Finding
+                                      </button>
+                                      <button
+                                        onClick={() => setShowRejectReason((v) => !v)}
+                                        disabled={findingActionSaving}
+                                        className="py-2 rounded-lg text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 transition-all"
+                                      >
+                                        Reject & Send Back
                                       </button>
                                     </div>
-                                  )}
-                                </div>
-                              )}
-                              {selectedPublicReport.engineer_status === 'validated' && (
-                                <p className="text-[11px] text-emerald-700 font-semibold">
-                                  Findings validated — resolution can now be issued below.
-                                </p>
-                              )}
-                            </div>
+                                    {showRejectReason && (
+                                      <div className="space-y-2">
+                                        <textarea
+                                          value={rejectReasonDraft}
+                                          onChange={(e) => setRejectReasonDraft(e.target.value)}
+                                          rows={2}
+                                          placeholder="Reason for rejection (required) — what needs to be re-inspected?"
+                                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white outline-none focus:ring-2 focus:ring-red-500/20"
+                                        />
+                                        <button
+                                          onClick={() => rejectFieldFinding(selectedPublicReport.id, rejectReasonDraft)}
+                                          disabled={findingActionSaving || !rejectReasonDraft.trim()}
+                                          className="w-full py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-all"
+                                        >
+                                          Confirm Rejection
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {selectedPublicReport.engineer_status === 'validated' && (
+                                  <p className="text-[11px] text-emerald-700 font-semibold">
+                                    Findings validated — resolution can now be issued below.
+                                  </p>
+                                )}
+                              </div>
                             )}
 
                             {/* Workflow Controls (Priority, Field Engineer Assignment & Availability, Resolution) */}
@@ -8175,9 +7581,8 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setPublicReportViewMode('grid')}
-                            className={`p-1.5 rounded-md transition-all ${
-                              publicReportViewMode === 'grid' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-                            }`}
+                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'grid' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                              }`}
                             title="Grid of Cards"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
@@ -8185,9 +7590,8 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setPublicReportViewMode('list')}
-                            className={`p-1.5 rounded-md transition-all ${
-                              publicReportViewMode === 'list' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
-                            }`}
+                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'list' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                              }`}
                             title="Detailed List"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -8204,9 +7608,8 @@ export default function Dashboard() {
                             <button
                               key={option.key}
                               onClick={() => setPublicReportFilter(option.key)}
-                              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                                publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                              }`}
+                              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                }`}
                             >
                               {option.label}
                             </button>
@@ -8246,10 +7649,10 @@ export default function Dashboard() {
                             const reportDate = rpt.updated_at || rpt.created_at;
                             const formattedReportDate = reportDate
                               ? new Date(reportDate).toLocaleString('en-US', {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                })
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              })
                               : 'No date';
 
                             return (
@@ -8388,17 +7791,15 @@ export default function Dashboard() {
                             <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
                               <button
                                 onClick={() => setPublicReportsTrendView('weekly')}
-                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                                  publicReportsTrendView === 'weekly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
-                                }`}
+                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${publicReportsTrendView === 'weekly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                                  }`}
                               >
                                 Weekly
                               </button>
                               <button
                                 onClick={() => setPublicReportsTrendView('monthly')}
-                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                                  publicReportsTrendView === 'monthly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
-                                }`}
+                                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${publicReportsTrendView === 'monthly' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+                                  }`}
                               >
                                 Monthly
                               </button>
@@ -8501,7 +7902,7 @@ export default function Dashboard() {
 
           {/* Progress Updates Tab */}
           {activeTab === 'progress-updates' && (() => {
-            const pendingUpdatesCount  = progressUpdates.filter(u => u.status === 'pending').length;
+            const pendingUpdatesCount = progressUpdates.filter(u => u.status === 'pending').length;
             const approvedUpdatesCount = progressUpdates.filter(u => u.status === 'approved').length;
             const rejectedUpdatesCount = progressUpdates.filter(u => u.status === 'rejected').length;
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -8888,9 +8289,9 @@ export default function Dashboard() {
                     <form onSubmit={async (e) => {
                       e.preventDefault();
                       const fd = new FormData(e.target);
-                      const ctEmail    = fd.get('ct_email')?.toString().trim();
-                      const ctName     = fd.get('ct_name')?.toString().trim();
-                      const ctPhone    = fd.get('ct_phone')?.toString().trim();
+                      const ctEmail = fd.get('ct_email')?.toString().trim();
+                      const ctName = fd.get('ct_name')?.toString().trim();
+                      const ctPhone = fd.get('ct_phone')?.toString().trim();
                       const ctPassword = fd.get('ct_password')?.toString().trim();
                       if (!ctEmail || !ctPassword) { showNotification('Email and password are required', 'error'); return; }
                       try {
@@ -8914,9 +8315,9 @@ export default function Dashboard() {
 
                           // Try 1: SECURITY DEFINER RPC (bypasses RLS)
                           const { error: rpcErr } = await supabase.rpc('create_contractor_profile', {
-                            user_id:    signUpData.user.id,
+                            user_id: signUpData.user.id,
                             user_email: ctEmail,
-                            user_name:  ctName || '',
+                            user_name: ctName || '',
                             user_phone: ctPhone || '',
                           });
                           if (!rpcErr) {
@@ -9265,26 +8666,26 @@ export default function Dashboard() {
                           {label}
                         </button>
                       ))}
-                       <button
+                      <button
                         type="button"
                         onClick={async () => {
                           const sLat = parseCoordinate(formData.startLatitude);
                           const sLng = parseCoordinate(formData.startLongitude);
                           const eLat = parseCoordinate(formData.endLatitude);
                           const eLng = parseCoordinate(formData.endLongitude);
-                          
+
                           if (Number.isNaN(sLat) || Number.isNaN(sLng) || Number.isNaN(eLat) || Number.isNaN(eLng)) {
                             showNotification('Please set both Start and End coordinates first.', 'error');
                             return;
                           }
-                          
+
                           try {
                             const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
                             if (snappedPoints && snappedPoints.length >= 2) {
                               const first = snappedPoints[0];
                               const last = snappedPoints[snappedPoints.length - 1];
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
-                              
+
                               setNewProjectRouteWaypoints(middle);
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFormData(prev => ({
@@ -9653,7 +9054,7 @@ export default function Dashboard() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
-              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{width: '72px', height: '72px'}}>
+              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ width: '72px', height: '72px' }}>
                 <svg className="w-9 h-9 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
@@ -9663,13 +9064,13 @@ export default function Dashboard() {
                 Are you sure you want to delete <span className="font-semibold text-slate-700">{selectedProject?.projectName}</span>? This action cannot be undone.
               </p>
               <div className="flex gap-4">
-                <button 
+                <button
                   onClick={() => { setShowDeleteModal(false); setSelectedProject(null); }}
                   className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleDeleteProject}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
                 >
@@ -9885,26 +9286,26 @@ export default function Dashboard() {
                           {label}
                         </button>
                       ))}
-                       <button
+                      <button
                         type="button"
                         onClick={async () => {
                           const sLat = parseCoordinate(fmrFormData.start_latitude);
                           const sLng = parseCoordinate(fmrFormData.start_longitude);
                           const eLat = parseCoordinate(fmrFormData.end_latitude);
                           const eLng = parseCoordinate(fmrFormData.end_longitude);
-                          
+
                           if (Number.isNaN(sLat) || Number.isNaN(sLng) || Number.isNaN(eLat) || Number.isNaN(eLng)) {
                             showNotification('Please set both Start and End coordinates first.', 'error');
                             return;
                           }
-                          
+
                           try {
                             const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
                             if (snappedPoints && snappedPoints.length >= 2) {
                               const first = snappedPoints[0];
                               const last = snappedPoints[snappedPoints.length - 1];
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
-                              
+
                               setFmrRouteWaypoints(middle);
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFmrFormData(prev => ({
@@ -10117,7 +9518,7 @@ export default function Dashboard() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <div className="text-center">
-              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{width: '72px', height: '72px'}}>
+              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ width: '72px', height: '72px' }}>
                 <svg className="w-9 h-9 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
@@ -10127,13 +9528,13 @@ export default function Dashboard() {
                 Are you sure you want to delete <span className="font-semibold text-slate-700">{selectedFmrProject?.project_name}</span>? This action cannot be undone.
               </p>
               <div className="flex gap-4">
-                <button 
+                <button
                   onClick={() => { setShowFmrDeleteModal(false); setSelectedFmrProject(null); }}
                   className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleDeleteFmrProject}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
                 >

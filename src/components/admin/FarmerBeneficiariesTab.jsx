@@ -77,7 +77,7 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
 
   const filteredBeneficiaries = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return beneficiaries.filter((item) => {
+    const filtered = beneficiaries.filter((item) => {
       const matchesSearch = !query || [
         item.beneficiaryId,
         item.id,
@@ -97,6 +97,9 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
         && (projectFilter === 'All' || item.linkedProject === projectFilter)
         && (lguFilter === 'All' || item.submittedByLgu === lguFilter);
     });
+
+    // Sort descending by farm area (more coverage to lowest)
+    return [...filtered].sort((a, b) => Number(b.farmAreaHa || 0) - Number(a.farmAreaHa || 0));
   }, [beneficiaries, search, municipalityFilter, barangayFilter, cropFilter, projectFilter, lguFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBeneficiaries.length / rowsPerPage));
@@ -116,10 +119,30 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
     return { total, hectares, topCrop, activeProjects };
   }, [filteredBeneficiaries]);
 
-  const cropDistribution = useMemo(() => BENEFICIARY_CROPS.map((crop) => ({
-    name: crop,
-    value: filteredBeneficiaries.filter((item) => item.crop === crop).length,
-  })), [filteredBeneficiaries]);
+  const cropDistribution = useMemo(() => {
+    const raw = BENEFICIARY_CROPS.map((crop) => ({
+      name: crop,
+      value: filteredBeneficiaries.filter((item) => item.crop === crop).length,
+    })).filter((item) => item.value > 0);
+
+    // Sort descending by beneficiary count
+    raw.sort((a, b) => b.value - a.value);
+
+    // Group items beyond the top 5 into "Others"
+    if (raw.length > 6) {
+      const top5 = raw.slice(0, 5);
+      const remainingSum = raw.slice(5).reduce((sum, item) => sum + item.value, 0);
+      if (remainingSum > 0) {
+        top5.push({
+          name: 'Others',
+          value: remainingSum,
+        });
+      }
+      return top5;
+    }
+
+    return raw;
+  }, [filteredBeneficiaries]);
 
   const beneficiariesPerMunicipality = useMemo(() => {
     const counts = filteredBeneficiaries.reduce((acc, item) => {
@@ -348,18 +371,22 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
           <h3 className="text-lg font-bold text-slate-900">Commodity Distribution</h3>
           <p className="mb-4 text-sm text-slate-500">Share of beneficiaries per main commodity</p>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={cropDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                  {cropDistribution.map((entry, index) => {
-                    const palette = ['#0d9488', '#22c55e', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444'];
-                    return <Cell key={`crop-${entry.name}`} fill={palette[index % palette.length]} />;
-                  })}
-                </Pie>
-                <Legend verticalAlign="bottom" height={36} />
-                <RechartsTooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {cropDistribution.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No commodity data available</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={cropDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
+                    {cropDistribution.map((entry, index) => {
+                      const palette = ['#0d9488', '#22c55e', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444'];
+                      return <Cell key={`crop-${entry.name}`} fill={palette[index % palette.length]} />;
+                    })}
+                  </Pie>
+                  <Legend verticalAlign="bottom" height={36} />
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -367,15 +394,19 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
           <h3 className="text-lg font-bold text-slate-900">Beneficiaries per Municipality</h3>
           <p className="mb-4 text-sm text-slate-500">Top municipalities by submitted beneficiaries</p>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={beneficiariesPerMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                <RechartsTooltip />
-                <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {beneficiariesPerMunicipality.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No municipality data available</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={beneficiariesPerMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                  <RechartsTooltip />
+                  <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -383,21 +414,25 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
           <h3 className="text-lg font-bold text-slate-900">LGU Submissions by Year</h3>
           <p className="mb-4 text-sm text-slate-500">Beneficiary registry submission trend</p>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={submissionsByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                <defs>
-                  <linearGradient id="beneficiarySubmissionGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
-                    <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                <RechartsTooltip />
-                <Area type="monotone" dataKey="beneficiaries" stroke="#0d9488" fill="url(#beneficiarySubmissionGradient)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {submissionsByYear.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No submission history available</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={submissionsByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="beneficiarySubmissionGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
+                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
+                  <RechartsTooltip />
+                  <Area type="monotone" dataKey="beneficiaries" stroke="#0d9488" fill="url(#beneficiarySubmissionGradient)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -405,21 +440,25 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
           <h3 className="text-lg font-bold text-slate-900">Farm Area Served by Year</h3>
           <p className="mb-4 text-sm text-slate-500">Hectares connected to FMR service areas</p>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={hectaresByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                <defs>
-                  <linearGradient id="beneficiaryHectareGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.06} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                <RechartsTooltip formatter={(value) => [`${value} ha`, 'Farm Area Served']} />
-                <Area type="monotone" dataKey="hectares" stroke="#0ea5e9" fill="url(#beneficiaryHectareGradient)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
+            {hectaresByYear.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No farm area history available</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hectaresByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="beneficiaryHectareGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.06} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <RechartsTooltip formatter={(value) => [`${value} ha`, 'Farm Area Served']} />
+                  <Area type="monotone" dataKey="hectares" stroke="#0ea5e9" fill="url(#beneficiaryHectareGradient)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

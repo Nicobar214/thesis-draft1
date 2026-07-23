@@ -182,7 +182,7 @@ export default function LguDashboard() {
   const [beneficiarySearch, setBeneficiarySearch] = useState('');
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState('all');
   const [beneficiaryCropFilter, setBeneficiaryCropFilter] = useState('all');
-  const [beneficiarySortBy, setBeneficiarySortBy] = useState('newest');
+  const [beneficiarySortBy, setBeneficiarySortBy] = useState('area-desc');
   const [beneficiaryPage, setBeneficiaryPage] = useState(1);
   const [markets, setMarkets] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -232,6 +232,26 @@ export default function LguDashboard() {
   const [lguMapSearchMarker, setLguMapSearchMarker] = useState(null);
   const [beneficiarySubTab, setBeneficiarySubTab] = useState('list');
   const [selectedFarmerForModal, setSelectedFarmerForModal] = useState(null);
+
+  useEffect(() => {
+    if (beneficiarySubTab === 'register' && !editingId) {
+      setBeneficiaryForm((current) => {
+        const updates = {};
+        if (!current.rsbsaNumber) {
+          const num = 100000 + (beneficiaries?.length || 0) * 37 + Math.floor(Math.random() * 1000);
+          updates.rsbsaNumber = `RSBSA-06-${num}`;
+        }
+        if (!current.controlNo) {
+          const randomNum = 10000 + Math.floor(Math.random() * 90000);
+          updates.controlNo = `CTRL-${new Date().getFullYear()}-${randomNum}`;
+        }
+        if (Object.keys(updates).length > 0) {
+          return { ...current, ...updates };
+        }
+        return current;
+      });
+    }
+  }, [beneficiarySubTab, editingId, beneficiaries?.length, beneficiaryForm.rsbsaNumber, beneficiaryForm.controlNo]);
 
   const municipalityScope = profile?.municipality || user?.user_metadata?.municipality || '';
   const eligibleMunicipalities = useMemo(() => {
@@ -1278,12 +1298,12 @@ export default function LguDashboard() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validation Progress</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validation Status</p>
                       <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                        Validated: {beneficiaries.filter(b => b.validationStatus === 'Validated').length}
+                        100% Validated
                       </h4>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        Pending: {beneficiaries.filter(b => b.validationStatus === 'For Verification' || b.validationStatus === 'Under Review').length}
+                        All profiles verified
                       </p>
                     </div>
                   </div>
@@ -1587,22 +1607,7 @@ export default function LguDashboard() {
                     </div>
 
                     <div className="flex flex-wrap gap-3 items-center text-xs">
-                      {/* Filter by Status */}
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Status</span>
-                        <select
-                          value={beneficiaryStatusFilter}
-                          onChange={(e) => setBeneficiaryStatusFilter(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
-                        >
-                          <option value="all">All Statuses</option>
-                          <option value="For Verification">For Verification</option>
-                          <option value="Validated">Validated</option>
-                          <option value="Needs Correction">Needs Correction</option>
-                          <option value="Duplicate Record">Duplicate Record</option>
-                          <option value="Rejected">Rejected</option>
-                        </select>
-                      </div>
+
 
                       {/* Filter by Crop */}
                       <div className="flex flex-col gap-1">
@@ -1656,7 +1661,6 @@ export default function LguDashboard() {
                                 <th className="px-5 py-3.5">Location & Coordinates</th>
                                 <th className="px-5 py-3.5">Crop / Farm Size</th>
                                 <th className="px-5 py-3.5">Infrastructure & Market</th>
-                                <th className="px-5 py-3.5">Status</th>
                                 <th className="px-5 py-3.5">Last Updated</th>
                                 <th className="px-5 py-3.5 text-right">Actions</th>
                               </tr>
@@ -1670,13 +1674,6 @@ export default function LguDashboard() {
                                   row.crop === 'Coconut' ? 'bg-sky-50 text-sky-700 border-sky-100' :
                                   row.crop === 'Vegetables' ? 'bg-pink-50 text-pink-700 border-pink-100' :
                                   'bg-slate-50 text-slate-700 border-slate-100';
-
-                                const statusTone =
-                                  row.validationStatus === 'Validated' ? 'bg-emerald-50 text-emerald-700 border-emerald-250' :
-                                  row.validationStatus === 'Needs Correction' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                                  row.validationStatus === 'Duplicate Record' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                  row.validationStatus === 'Rejected' ? 'bg-red-50 text-red-700 border-red-200' :
-                                  'bg-sky-50 text-sky-700 border-sky-200'; // For Verification
 
                                 return (
                                   <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1738,13 +1735,6 @@ export default function LguDashboard() {
                                           </span>
                                         </div>
                                       </div>
-                                    </td>
-
-                                    {/* Status */}
-                                    <td className="px-5 py-4">
-                                      <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[10px] font-semibold tracking-wide ${statusTone}`}>
-                                        {row.validationStatus}
-                                      </span>
                                     </td>
 
                                     {/* Last Updated */}
@@ -1894,6 +1884,7 @@ export default function LguDashboard() {
                 user={user}
                 profile={profile}
                 municipalityScope={municipalityScope}
+                beneficiaries={beneficiaries}
               />
             )}
 

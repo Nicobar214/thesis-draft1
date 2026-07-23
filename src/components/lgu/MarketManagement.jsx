@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import { supabase } from '../../lib/supabase';
 import { getBarangays, getMunicipalities } from '../../data/iloiloLocations';
 import { getMunicipalityCentroid } from '../../lib/mapRouteUtils';
+import { BENEFICIARY_CROPS } from '../../utils/farmerBeneficiaryData';
 
 // Leaflet map helper subcomponents
 function MapClickPicker({ onPick }) {
@@ -28,7 +29,11 @@ function MapCenterController({ center }) {
 }
 
 const MARKET_TYPES = ['Public Market', 'Trading Post', 'Collection Center', 'Warehouse', 'Others'];
-const COMMODITY_OPTIONS = ['Rice', 'Corn', 'Sugarcane', 'Coconut', 'Vegetables', 'Banana', 'Livestock', 'Poultry', 'Others'];
+const COMMODITY_OPTIONS = [
+  ...BENEFICIARY_CROPS,
+  'Livestock',
+  'Others'
+];
 
 export default function MarketManagement({ user, profile, municipalityScope }) {
   const [marketsList, setMarketsList] = useState([]);

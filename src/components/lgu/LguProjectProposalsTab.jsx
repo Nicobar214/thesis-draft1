@@ -80,7 +80,7 @@ const emptyForm = {
   end_longitude: '',
 };
 
-export default function LguProjectProposalsTab({ user, profile, municipalityScope }) {
+export default function LguProjectProposalsTab({ user, profile, municipalityScope, beneficiaries = [] }) {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -199,7 +199,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     setEditingId(proposal.id);
     setForm({
       project_name: proposal.project_name || '',
-      road_type: proposal.road_type || 'Concreting',
+      road_type: 'Concreting',
       justification: proposal.justification || '',
       description: proposal.description || '',
       estimated_length_km: proposal.estimated_length_km ? String(proposal.estimated_length_km) : '',
@@ -500,19 +500,34 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Road Type</label>
-                  <select
-                    value={form.road_type}
-                    onChange={(e) => setForm((c) => ({ ...c, road_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none"
-                  >
-                    {ROAD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input
+                    type="text"
+                    disabled
+                    value="Concreting"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500 outline-none cursor-not-allowed font-medium"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Barangay</label>
                   <select
                     value={form.barangay}
-                    onChange={(e) => setForm((c) => ({ ...c, barangay: e.target.value }))}
+                    onChange={(e) => {
+                      const selectedBrgy = e.target.value;
+                      const brgyFarmers = beneficiaries.filter(
+                        (b) =>
+                          String(b.barangay || '').toLowerCase() === String(selectedBrgy || '').toLowerCase() &&
+                          String(b.municipality || '').toLowerCase() === String(municipalityScope || '').toLowerCase()
+                      );
+                      const totalFarmers = brgyFarmers.length;
+                      const totalArea = brgyFarmers.reduce((sum, b) => sum + Number(b.farmAreaHa || 0), 0);
+
+                      setForm((c) => ({
+                        ...c,
+                        barangay: selectedBrgy,
+                        beneficiary_farmers_count: String(totalFarmers),
+                        beneficiary_households_count: totalArea > 0 ? totalArea.toFixed(2) : '',
+                      }));
+                    }}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none"
                   >
                     <option value="">Select Barangay</option>
@@ -589,9 +604,9 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Beneficiary Households</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Total Farm Area Served (ha)</label>
                   <input
-                    type="number" min="0"
+                    type="number" step="any" min="0"
                     value={form.beneficiary_households_count}
                     onChange={(e) => setForm((c) => ({ ...c, beneficiary_households_count: e.target.value }))}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none"
@@ -1085,8 +1100,10 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                   <p className="mt-1 text-xl font-extrabold text-slate-800">{selectedProposalForModal.beneficiary_farmers_count || '0'}</p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Beneficiary Households</p>
-                  <p className="mt-1 text-xl font-extrabold text-slate-800">{selectedProposalForModal.beneficiary_households_count || '0'}</p>
+                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Farm Area Served</p>
+                  <p className="mt-1 text-xl font-extrabold text-slate-800">
+                    {selectedProposalForModal.beneficiary_households_count ? `${selectedProposalForModal.beneficiary_households_count} ha` : '0 ha'}
+                  </p>
                 </div>
               </div>
 

@@ -220,7 +220,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
             <InfoCard label="Requested Budget" value={proposal.estimated_budget ? formatPeso(proposal.estimated_budget) : 'Not specified'} />
             <InfoCard label="Target Funding Year" value={proposal.target_funding_year || 'N/A'} />
             <InfoCard label="Beneficiary Farmers" value={proposal.beneficiary_farmers_count || 0} />
-            <InfoCard label="Beneficiary Households" value={proposal.beneficiary_households_count || 0} />
+            <InfoCard label="Total Farm Area Served" value={proposal.beneficiary_households_count ? `${proposal.beneficiary_households_count} ha` : '0 ha'} />
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -293,45 +293,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
             </div>
           )}
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">Decision Support &mdash; Agricultural Context</p>
-            <p className="mt-1 text-sm text-amber-900">
-              {proposal.municipality}: {cropData.primary_crop}, {cropData.hectares.toLocaleString()} ha, priority score {cropData.score}
-              {cropData.score >= 70 ? ' (high-value agricultural area)' : cropData.score >= 50 ? ' (moderate agricultural value)' : ''}.
-            </p>
-            <p className="mt-1 text-[11px] text-amber-700">Simulated crop data &mdash; replace with real fmr_crop_data when available.</p>
-          </div>
 
-          {priorityEntry?.score != null && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-4">
-                <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Priority Score</h4>
-                <span className={`h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold ${rankTone(priorityEntry.rank)}`}>
-                  #{priorityEntry.rank}
-                </span>
-              </div>
-              <p className={`mt-2 text-3xl font-bold ${scoreTone(priorityEntry.score)}`}>{priorityEntry.score}%</p>
-              <div className="mt-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-                <div className={`h-full ${scoreTone(priorityEntry.score)} bg-current`} style={{ width: `${priorityEntry.score}%` }} />
-              </div>
-              <p className="mt-2 text-sm text-slate-500 italic">{priorityEntry.reason}</p>
-              <div className="mt-3 space-y-2">
-                {[
-                  { key: 'U', label: 'Urgency', value: priorityEntry.U },
-                  { key: 'B', label: 'Beneficiaries', value: priorityEntry.B },
-                  { key: 'C', label: 'Crop Value', value: priorityEntry.C },
-                ].map((factor) => (
-                  <div key={factor.key} className="flex items-center gap-2">
-                    <span className="w-24 text-xs font-semibold text-slate-500">{factor.label}</span>
-                    <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-full ${factorBarTone(factor.key)}`} style={{ width: `${factor.value}%` }} />
-                    </div>
-                    <span className="text-xs text-slate-500 w-8 text-right">{factor.value}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Activity History</h4>
@@ -510,7 +472,6 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="newest">Sort: Newest First</option>
               <option value="oldest_pending">Sort: Oldest Pending First</option>
-              <option value="priority">Sort: Priority Score</option>
             </select>
           </div>
         </div>
@@ -522,15 +483,9 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
         <div className="space-y-3">
           {sorted.map((p) => {
             const pendingChip = getPendingDaysChip(p.submitted_at, p.status);
-            const priorityEntry = priorityByProposalId.get(p.id);
             return (
               <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 flex items-center gap-3">
-                  {priorityEntry?.score != null && (
-                    <span className={`h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-xs font-bold ${rankTone(priorityEntry.rank)}`} title={priorityEntry.reason}>
-                      #{priorityEntry.rank}
-                    </span>
-                  )}
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900 truncate">{p.project_name}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
