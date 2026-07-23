@@ -45,6 +45,7 @@ import AdminWorkflowControls from '../components/publicReports/AdminWorkflowCont
 import LguEscalationPanel from '../components/publicReports/LguEscalationPanel';
 import PriorityTab from '../components/admin/PriorityTab';
 import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
+import LguProposalsTab from '../components/admin/LguProposalsTab';
 import { computePriorityScores } from '../lib/priorityScoring';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
@@ -568,15 +569,27 @@ export default function Dashboard() {
   const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
   const [farmerBeneficiariesLoading, setFarmerBeneficiariesLoading] = useState(false);
 
+  const [farmerCropFilter, setFarmerCropFilter] = useState('All');
+
+  const farmerCropOptions = useMemo(() => {
+    const crops = new Set((farmerBeneficiaries || []).map((f) => f.crop).filter(Boolean));
+    return ['All', ...[...crops].sort()];
+  }, [farmerBeneficiaries]);
+
+  const cropFilteredFarmerBeneficiaries = useMemo(() => {
+    if (farmerCropFilter === 'All') return farmerBeneficiaries || [];
+    return (farmerBeneficiaries || []).filter((f) => f.crop === farmerCropFilter);
+  }, [farmerBeneficiaries, farmerCropFilter]);
+
   const farmerHeatPoints = useMemo(() => {
-    return (farmerBeneficiaries || [])
+    return cropFilteredFarmerBeneficiaries
       .map((f) => {
         const lat = f.farmLatitude || f.gps?.lat;
         const lng = f.farmLongitude || f.gps?.lng;
         return lat && lng ? [Number(lat), Number(lng), 1.0] : null;
       })
       .filter(Boolean);
-  }, [farmerBeneficiaries]);
+  }, [cropFilteredFarmerBeneficiaries]);
 
   // Budget allocation state
   const [budgetSearchInput, setBudgetSearchInput] = useState('');
@@ -747,6 +760,9 @@ export default function Dashboard() {
   const [progressUpdates, setProgressUpdates] = useState([]);
   const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
   const [progressUpdatesLastSyncedAt, setProgressUpdatesLastSyncedAt] = useState(null);
+  const [lguProposals, setLguProposals] = useState([]);
+  const [lguProposalsLoading, setLguProposalsLoading] = useState(false);
+  const [pendingProposalLink, setPendingProposalLink] = useState(null);
   const [assignContractorModal, setAssignContractorModal] = useState(null); // holds fmr project
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState('');
@@ -1322,6 +1338,23 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch all LGU project proposals
+  const fetchLguProposals = useCallback(async () => {
+    setLguProposalsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('lgu_project_proposals')
+        .select('*')
+        .order('submitted_at', { ascending: false });
+      if (error) throw error;
+      setLguProposals(data || []);
+    } catch (err) {
+      console.error('Error fetching LGU project proposals:', err.message);
+    } finally {
+      setLguProposalsLoading(false);
+    }
+  }, []);
+
   // Fetch all progress_updates with project info
   const fetchProgressUpdates = useCallback(async () => {
     setProgressUpdatesLoading(true);
@@ -1399,6 +1432,142 @@ export default function Dashboard() {
       console.error('Reject error:', err.message);
       if (err.message?.includes('reject_progress_update_admin')) {
         showNotification('Failed: run supabase_progress_update_admin_actions.sql in Supabase SQL Editor, then try again.', 'error');
+      } else {
+        showNotification(`Failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  // Notify a single LGU user (the proposal's submitter) rather than the
+  // whole municipality — createLguNotification (below) is municipality-wide.
+  const notifyProposalSubmitter = async (proposal, type, title, message) => {
+    try {
+      await supabase.from('notifications').insert({
+        user_id: proposal.submitted_by,
+        type,
+        title,
+        message,
+        proposal_id: proposal.id,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      });
+    } catch {
+      // Keep admin workflows running if the notification path is unavailable.
+    }
+  };
+
+  // Approve an LGU project proposal: creates the real, publicly-visible
+  // fmr_projects row (status chosen by the admin) and links the proposal to it.
+  // Opens the standard "Add New Project" form pre-filled from a validated
+  // LGU proposal, and remembers the proposal so handleAddProject can link
+  // it back once the officer actually submits the form (see pendingProposalLink).
+  const openAddProjectFromProposal = (proposal) => {
+    setFormData({
+      ...emptyForm,
+      projectName: proposal.project_name || '',
+      municipality: proposal.municipality || '',
+      barangay: proposal.barangay || '',
+      province: proposal.province || 'Iloilo',
+      startLatitude: proposal.start_latitude != null ? String(proposal.start_latitude) : '',
+      startLongitude: proposal.start_longitude != null ? String(proposal.start_longitude) : '',
+      endLatitude: proposal.end_latitude != null ? String(proposal.end_latitude) : '',
+      endLongitude: proposal.end_longitude != null ? String(proposal.end_longitude) : '',
+      roadLength: proposal.estimated_length_km ? String(proposal.estimated_length_km) : '',
+      totalBudget: proposal.estimated_budget ? String(proposal.estimated_budget) : '',
+      budgetSource: 'LGU Proposal',
+      expectedEndDate: proposal.target_funding_year ? `${proposal.target_funding_year}-12-31` : '',
+      roadType: proposal.road_type || '',
+      description: [proposal.justification, proposal.description].filter(Boolean).join(' — '),
+    });
+    const waypoints = Array.isArray(proposal.route_waypoints)
+      ? proposal.route_waypoints
+          .map((w) => ({ lat: Number(w?.lat ?? w?.[0]), lng: Number(w?.lng ?? w?.[1]) }))
+          .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
+      : [];
+    setNewProjectRouteWaypoints(waypoints);
+    setNewProjectContractorId('');
+    setPendingProposalLink({ id: proposal.id, submitted_by: proposal.submitted_by, project_name: proposal.project_name });
+    setActiveTab('projects');
+    setShowAddModal(true);
+  };
+
+  // DA validates a proposal's feasibility. This does NOT create the
+  // fmr_projects row -- per the DA officer's actual process, validation and
+  // project creation are separate deliberate steps. It redirects the admin
+  // to the standard Add New Project form, pre-filled, so they log the
+  // official record themselves; the project only becomes public once they
+  // submit that form.
+  const validateLguProposal = async (proposal, notes) => {
+    try {
+      const { error } = await supabase.rpc('validate_lgu_project_proposal', {
+        p_proposal_id: proposal.id,
+        p_reviewer_notes: notes,
+      });
+      if (error) throw error;
+
+      await fetchLguProposals();
+      await notifyProposalSubmitter(
+        proposal,
+        'lgu_proposal_validated',
+        'Project proposal validated',
+        `Your proposal "${proposal.project_name}" passed DA feasibility validation. DA is now logging it as an official project.`
+      );
+      showNotification('Proposal validated. Complete the project details to publish it.');
+      openAddProjectFromProposal(proposal);
+    } catch (err) {
+      console.error('Validate proposal error:', err.message);
+      if (err.message?.includes('validate_lgu_project_proposal')) {
+        showNotification('Failed: run supabase_lgu_project_proposal_actions.sql in Supabase SQL Editor, then try again.', 'error');
+      } else {
+        showNotification(`Failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  const rejectLguProposal = async (proposal, notes) => {
+    try {
+      const { error } = await supabase.rpc('reject_lgu_project_proposal', {
+        p_proposal_id: proposal.id,
+        p_reviewer_notes: notes,
+      });
+      if (error) throw error;
+      await fetchLguProposals();
+      await notifyProposalSubmitter(
+        proposal,
+        'lgu_proposal_rejected',
+        'Project proposal rejected',
+        `Your proposal "${proposal.project_name}" was rejected by DA. Reason: ${notes}`
+      );
+      showNotification('Proposal rejected.');
+    } catch (err) {
+      console.error('Reject proposal error:', err.message);
+      if (err.message?.includes('reject_lgu_project_proposal')) {
+        showNotification('Failed: run supabase_lgu_project_proposal_actions.sql in Supabase SQL Editor, then try again.', 'error');
+      } else {
+        showNotification(`Failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  const requestLguProposalRevision = async (proposal, notes) => {
+    try {
+      const { error } = await supabase.rpc('request_lgu_project_proposal_revision', {
+        p_proposal_id: proposal.id,
+        p_reviewer_notes: notes,
+      });
+      if (error) throw error;
+      await fetchLguProposals();
+      await notifyProposalSubmitter(
+        proposal,
+        'lgu_proposal_revision_requested',
+        'Revision requested on your proposal',
+        `DA requested changes to "${proposal.project_name}": ${notes}`
+      );
+      showNotification('Revision requested from the LGU.');
+    } catch (err) {
+      console.error('Request revision error:', err.message);
+      if (err.message?.includes('request_lgu_project_proposal_revision')) {
+        showNotification('Failed: run supabase_lgu_project_proposal_actions.sql in Supabase SQL Editor, then try again.', 'error');
       } else {
         showNotification(`Failed: ${err.message}`, 'error');
       }
@@ -2135,6 +2304,7 @@ export default function Dashboard() {
       fetchContractors();
       fetchLgus();
       fetchProgressUpdates();
+      fetchLguProposals();
     });
 
     // Real-time subscription for projects
@@ -2183,6 +2353,12 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchProgressUpdates())
       .subscribe();
 
+    // Real-time subscription for LGU project proposals
+    const lguProposalsChannel = supabase
+      .channel('admin-lgu-proposals-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lgu_project_proposals' }, () => fetchLguProposals())
+      .subscribe();
+
     return () => {
       supabase.removeChannel(projectChannel);
       supabase.removeChannel(publicReportsChannel);
@@ -2192,8 +2368,9 @@ export default function Dashboard() {
       supabase.removeChannel(marketsChannel);
       supabase.removeChannel(profilesChannel);
       supabase.removeChannel(progressUpdatesChannel);
+      supabase.removeChannel(lguProposalsChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2771,6 +2948,33 @@ export default function Dashboard() {
       );
       await fetchFmrProjects();
       await fetchProjectRoutes();
+
+      if (pendingProposalLink && inserted?.id) {
+        try {
+          await supabase
+            .from('lgu_project_proposals')
+            .update({ fmr_project_id: inserted.id, updated_at: new Date().toISOString() })
+            .eq('id', pendingProposalLink.id);
+          await supabase.from('lgu_project_proposal_activity_logs').insert({
+            proposal_id: pendingProposalLink.id,
+            action_type: 'published',
+            description: `Created fmr_projects.id=${inserted.id} from validated proposal.`,
+            actor_name: adminIdentity.full_name || 'Administrator',
+            actor_email: adminIdentity.email || null,
+          });
+          await notifyProposalSubmitter(
+            pendingProposalLink,
+            'lgu_proposal_published',
+            'Your project is now live',
+            `"${pendingProposalLink.project_name}" has been created and is now visible to the public.`
+          );
+          await fetchLguProposals();
+        } catch (linkErr) {
+          console.error('Failed to link proposal to new project:', linkErr.message);
+        }
+        setPendingProposalLink(null);
+      }
+
       setShowAddModal(false);
       setFormData(emptyForm);
       setNewProjectContractorId('');
@@ -3198,6 +3402,7 @@ export default function Dashboard() {
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
     { id: 'progress-updates', label: 'Progress Updates', icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', badgeCount: progressUpdates.filter(u => u.status === 'pending').length },
+    { id: 'lgu-proposals', label: 'LGU Proposals', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', badgeCount: lguProposals.filter(p => p.status === 'Submitted' || p.status === 'Under Validation').length },
   ];
 
   // Handle sign out
@@ -3405,6 +3610,7 @@ export default function Dashboard() {
                 {activeTab === 'reports' && 'Reports'}
                 {activeTab === 'public-reports' && 'Public Reports'}
                 {activeTab === 'progress-updates' && 'Progress Updates'}
+                {activeTab === 'lgu-proposals' && 'LGU Proposals'}
                 {activeTab === 'settings' && 'Settings'}
               </h1>
               <p className="text-sm text-slate-600 mt-1">
@@ -3417,6 +3623,7 @@ export default function Dashboard() {
                 {activeTab === 'reports' && 'Generate and view project reports'}
                 {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
                 {activeTab === 'progress-updates' && 'Review contractor-submitted progress updates for FMR projects'}
+                {activeTab === 'lgu-proposals' && 'Validate LGU-submitted Farm-to-Market Road project proposals for feasibility'}
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
             </div>
@@ -4178,7 +4385,7 @@ export default function Dashboard() {
                     ))}
 
                     {/* Farmers Layer */}
-                    {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+                    {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
                       const lat = f.farmLatitude || f.gps?.lat;
                       const lng = f.farmLongitude || f.gps?.lng;
                       if (!lat || !lng) return null;
@@ -4309,6 +4516,20 @@ export default function Dashboard() {
                         />
                         Show Farmers (Dots)
                       </label>
+                      {showFarmerDots && (
+                        <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <span className="shrink-0">Crop:</span>
+                          <select
+                            value={farmerCropFilter}
+                            onChange={(e) => setFarmerCropFilter(e.target.value)}
+                            className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            {farmerCropOptions.map((crop) => (
+                              <option key={crop} value={crop}>{crop}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                         <input
                           type="checkbox"
@@ -5085,7 +5306,7 @@ export default function Dashboard() {
                     ))}
 
                     {/* Farmers Layer */}
-                    {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+                    {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
                       const lat = f.farmLatitude || f.gps?.lat;
                       const lng = f.farmLongitude || f.gps?.lng;
                       if (!lat || !lng) return null;
@@ -5217,6 +5438,20 @@ export default function Dashboard() {
                         />
                         Show Farmers (Dots)
                       </label>
+                      {showFarmerDots && (
+                        <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                          <span className="shrink-0">Crop:</span>
+                          <select
+                            value={farmerCropFilter}
+                            onChange={(e) => setFarmerCropFilter(e.target.value)}
+                            className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+                          >
+                            {farmerCropOptions.map((crop) => (
+                              <option key={crop} value={crop}>{crop}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                         <input
                           type="checkbox"
@@ -5370,6 +5605,19 @@ export default function Dashboard() {
               beneficiaries={farmerBeneficiaries}
               onExportCsv={exportRowsToCsv}
               loading={farmerBeneficiariesLoading}
+            />
+          )}
+
+          {/* LGU Project Proposals Tab */}
+          {activeTab === 'lgu-proposals' && (
+            <LguProposalsTab
+              proposals={lguProposals}
+              fmrProjects={fmrProjects}
+              loading={lguProposalsLoading}
+              onValidate={validateLguProposal}
+              onReject={rejectLguProposal}
+              onRequestRevision={requestLguProposalRevision}
+              onCreateProject={openAddProjectFromProposal}
             />
           )}
 
@@ -9065,13 +9313,18 @@ export default function Dashboard() {
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Road Project</h2>
                 <p className="text-sm text-slate-500 mt-1">Create a new farm-to-market road project</p>
               </div>
-              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setPendingProposalLink(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
             <form onSubmit={handleAddProject} className="flex-1 overflow-y-auto p-8">
+              {pendingProposalLink && (
+                <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
+                  Pre-filled from a validated LGU proposal: <strong>{pendingProposalLink.project_name}</strong>. Review the details, assign an official FMR Code and contractor, then create the project to publish it.
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Project Name *</label>
@@ -9423,7 +9676,7 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setPendingProposalLink(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
               <button type="submit" onClick={handleAddProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Create Project</button>
             </div>
           </div>

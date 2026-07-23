@@ -35,6 +35,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState('list');
 
   const [form, setForm] = useState({
     marketName: '',
@@ -153,6 +154,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
         remarks: ''
       });
       fetchMarkets();
+      setActiveSubTab('list');
     } catch (err) {
       alert(`Error saving market: ${err.message}`);
     }
@@ -184,10 +186,39 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Market form */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm h-fit">
+      {/* Clickable Sub-Nav Bar */}
+      <div className="flex border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('list')}
+          className={`border-b-2 px-6 py-3 text-sm font-bold transition-all flex items-center gap-2 ${
+            activeSubTab === 'list'
+              ? 'border-emerald-600 text-emerald-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <span>Market Locations</span>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+            activeSubTab === 'list' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {filteredMarkets.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('form')}
+          className={`border-b-2 px-6 py-3 text-sm font-bold transition-all ${
+            activeSubTab === 'form'
+              ? 'border-emerald-600 text-emerald-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {editingId ? 'Edit Market' : 'Register New Market'}
+        </button>
+      </div>
+
+      {activeSubTab === 'form' ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="border-b border-slate-100 pb-3 mb-4">
             <h3 className="text-lg font-semibold text-slate-900">
               {editingId ? 'Edit Market Location' : 'Register Market Location'}
@@ -197,246 +228,260 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Market Name *</label>
-              <input 
-                required 
-                type="text" 
-                value={form.marketName}
-                onChange={e => setForm(c => ({ ...c, marketName: e.target.value }))}
-                placeholder="e.g. Leon Public Market" 
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column of form */}
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Market Type *</label>
-                <select 
-                  required 
-                  value={form.marketType}
-                  onChange={e => setForm(c => ({ ...c, marketType: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                >
-                  {MARKET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Barangay *</label>
-                <select 
-                  required 
-                  value={form.barangay}
-                  onChange={e => setForm(c => ({ ...c, barangay: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                >
-                  <option value="">Select Barangay</option>
-                  {getBarangays(municipalityScope || form.municipality).map(b => <option key={b} value={b}>{b}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Operating Days</label>
-                <input 
-                  type="text" 
-                  value={form.operatingDays}
-                  onChange={e => setForm(c => ({ ...c, operatingDays: e.target.value }))}
-                  placeholder="e.g. Mon-Sat" 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Operating Hours</label>
-                <input 
-                  type="text" 
-                  value={form.operatingHours}
-                  onChange={e => setForm(c => ({ ...c, operatingHours: e.target.value }))}
-                  placeholder="e.g. 5:00 AM - 6:00 PM" 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Commodities Handled</label>
-              <div className="flex flex-wrap gap-1.5">
-                {COMMODITY_OPTIONS.map(c => {
-                  const isChecked = form.commoditiesAccepted.includes(c);
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => handleCommodityToggle(c)}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-all ${
-                        isChecked 
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Person</label>
-                <input 
-                  type="text" 
-                  value={form.contactPerson}
-                  onChange={e => setForm(c => ({ ...c, contactPerson: e.target.value }))}
-                  placeholder="e.g. Jose Cruz" 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Number</label>
-                <input 
-                  type="text" 
-                  value={form.contactNumber}
-                  onChange={e => setForm(c => ({ ...c, contactNumber: e.target.value }))}
-                  placeholder="e.g. 09123456789" 
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Latitude *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Market Name *</label>
                 <input 
                   required 
-                  type="number" 
-                  step="any"
-                  value={form.latitude}
-                  onChange={e => setForm(c => ({ ...c, latitude: e.target.value }))}
+                  type="text" 
+                  value={form.marketName}
+                  onChange={e => setForm(c => ({ ...c, marketName: e.target.value }))}
+                  placeholder="e.g. Leon Public Market" 
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Longitude *</label>
-                <input 
-                  required 
-                  type="number" 
-                  step="any"
-                  value={form.longitude}
-                  onChange={e => setForm(c => ({ ...c, longitude: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
 
-            {/* GIS Coordinates Picker Map */}
-            <div className="border border-slate-200 rounded-xl overflow-hidden mt-2">
-              <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Pin Market GPS Location *</span>
-                <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                  {form.latitude && form.longitude
-                    ? `${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}`
-                    : 'Click on the map or search'}
-                </span>
-              </div>
-              
-              {/* Search Bar inside Map */}
-              <div className="p-2.5 bg-white border-b border-slate-100 flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Search market address..."
-                  id="marketMapSearchInput"
-                  className="flex-1 px-3 py-1 border border-slate-200 rounded-lg text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const queryVal = document.getElementById('marketMapSearchInput')?.value?.trim();
-                    if (!queryVal) return;
-                    const fullQuery = `${queryVal}, ${municipalityScope || form.municipality || 'Iloilo'}, Iloilo`;
-                    try {
-                      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}`);
-                      const results = await res.json();
-                      if (results && results.length > 0) {
-                        const { lat, lon } = results[0];
-                        setForm(curr => ({
-                          ...curr,
-                          latitude: lat,
-                          longitude: lon
-                        }));
-                      } else {
-                        alert("No location found. Try adding a municipality or click on the map.");
-                      }
-                    } catch (err) {
-                      console.error(err);
-                    }
-                  }}
-                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"
-                >
-                  Search
-                </button>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Market Type *</label>
+                  <select 
+                    required 
+                    value={form.marketType}
+                    onChange={e => setForm(c => ({ ...c, marketType: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                  >
+                    {MARKET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Barangay *</label>
+                  <select 
+                    required 
+                    value={form.barangay}
+                    onChange={e => setForm(c => ({ ...c, barangay: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                  >
+                    <option value="">Select Barangay</option>
+                    {getBarangays(municipalityScope || form.municipality).map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
               </div>
 
-              <div style={{ height: '220px', width: '100%', position: 'relative' }}>
-                <MapContainer
-                  center={
-                    form.latitude && form.longitude
-                      ? [Number(form.latitude), Number(form.longitude)]
-                      : getMunicipalityCentroid(municipalityScope || form.municipality)
-                  }
-                  zoom={13}
-                  style={{ height: '100%', width: '100%' }}
-                  scrollWheelZoom={true}
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; OpenStreetMap contributors'
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Operating Days</label>
+                  <input 
+                    type="text" 
+                    value={form.operatingDays}
+                    onChange={e => setForm(c => ({ ...c, operatingDays: e.target.value }))}
+                    placeholder="e.g. Mon-Sat" 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
                   />
-                  <MapClickPicker
-                    onPick={(lat, lng) => {
-                      setForm(curr => ({
-                        ...curr,
-                        latitude: lat,
-                        longitude: lng
-                      }));
-                    }}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Operating Hours</label>
+                  <input 
+                    type="text" 
+                    value={form.operatingHours}
+                    onChange={e => setForm(c => ({ ...c, operatingHours: e.target.value }))}
+                    placeholder="e.g. 5:00 AM - 6:00 PM" 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
                   />
-                  <MapCenterController
-                    center={
-                      form.latitude && form.longitude
-                        ? [Number(form.latitude), Number(form.longitude)]
-                        : getMunicipalityCentroid(municipalityScope || form.municipality)
-                    }
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Commodities Handled</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {COMMODITY_OPTIONS.map(c => {
+                    const isChecked = form.commoditiesAccepted.includes(c);
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => handleCommodityToggle(c)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-all ${
+                          isChecked 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Person</label>
+                  <input 
+                    type="text" 
+                    value={form.contactPerson}
+                    onChange={e => setForm(c => ({ ...c, contactPerson: e.target.value }))}
+                    placeholder="e.g. Jose Cruz" 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
                   />
-                  {form.latitude && form.longitude && (
-                    <Marker
-                      position={[Number(form.latitude), Number(form.longitude)]}
-                      icon={new L.Icon({
-                        iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-                        shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-                        iconSize: [25, 41],
-                        iconAnchor: [12, 41],
-                      })}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Number</label>
+                  <input 
+                    type="text" 
+                    value={form.contactNumber}
+                    onChange={e => setForm(c => ({ ...c, contactNumber: e.target.value }))}
+                    placeholder="e.g. 09123456789" 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Remarks</label>
+                <textarea 
+                  value={form.remarks}
+                  onChange={e => setForm(c => ({ ...c, remarks: e.target.value }))}
+                  placeholder="Market details, landmark, or cooperative links..." 
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Right Column of form */}
+            <div className="space-y-4 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Latitude *</label>
+                    <input 
+                      required 
+                      type="number" 
+                      step="any"
+                      value={form.latitude}
+                      onChange={e => setForm(c => ({ ...c, latitude: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
                     />
-                  )}
-                </MapContainer>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Longitude *</label>
+                    <input 
+                      required 
+                      type="number" 
+                      step="any"
+                      value={form.longitude}
+                      onChange={e => setForm(c => ({ ...c, longitude: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* GIS Coordinates Picker Map */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden mt-2">
+                  <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700">Pin Market GPS Location *</span>
+                    <span className="text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                      {form.latitude && form.longitude
+                        ? `${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}`
+                        : 'Click on the map or search'}
+                    </span>
+                  </div>
+                  
+                  {/* Search Bar inside Map */}
+                  <div className="p-2.5 bg-white border-b border-slate-100 flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Search market address..."
+                      id="marketMapSearchInput"
+                      className="flex-1 px-3 py-1 border border-slate-200 rounded-lg text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const queryVal = document.getElementById('marketMapSearchInput')?.value?.trim();
+                        if (!queryVal) return;
+                        try {
+                          const query = `${queryVal}, Iloilo, Philippines`;
+                          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+                          const res = await fetch(url, {
+                            headers: {
+                              'Accept-Language': 'en',
+                              'User-Agent': 'KalsaTrack-Route-Builder-Search'
+                            }
+                          });
+                          if (!res.ok) throw new Error();
+                          const data = await res.json();
+                          if (data && data.length > 0) {
+                            const { lat, lon } = data[0];
+                            setForm(curr => ({
+                              ...curr,
+                              latitude: lat,
+                              longitude: lon
+                            }));
+                          } else {
+                            alert('Location not found. Try adding the municipality name.');
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          alert('Error searching location.');
+                        }
+                      }}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      Search
+                    </button>
+                  </div>
+
+                  <div style={{ height: '340px', width: '100%', position: 'relative' }}>
+                    <MapContainer
+                      center={
+                        form.latitude && form.longitude
+                          ? [Number(form.latitude), Number(form.longitude)]
+                          : getMunicipalityCentroid(municipalityScope || form.municipality)
+                      }
+                      zoom={13}
+                      style={{ height: '100%', width: '100%' }}
+                      scrollWheelZoom={true}
+                    >
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; OpenStreetMap contributors'
+                      />
+                      <MapClickPicker
+                        onPick={(lat, lng) => {
+                          setForm(curr => ({
+                            ...curr,
+                            latitude: lat,
+                            longitude: lng
+                          }));
+                        }}
+                      />
+                      <MapCenterController
+                        center={
+                          form.latitude && form.longitude
+                            ? [Number(form.latitude), Number(form.longitude)]
+                            : getMunicipalityCentroid(municipalityScope || form.municipality)
+                        }
+                      />
+                      {form.latitude && form.longitude && (
+                        <Marker
+                          position={[Number(form.latitude), Number(form.longitude)]}
+                          icon={new L.Icon({
+                            iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+                            shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41],
+                          })}
+                        />
+                      )}
+                    </MapContainer>
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Remarks</label>
-              <textarea 
-                value={form.remarks}
-                onChange={e => setForm(c => ({ ...c, remarks: e.target.value }))}
-                placeholder="Market details, landmark, or cooperative links..." 
-                rows={2}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-emerald-500 outline-none resize-none"
-              />
-            </div>
-
-            <div className="flex gap-2.5 justify-end">
-              {editingId && (
+              <div className="flex gap-2.5 justify-end pt-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -456,24 +501,25 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
                       contactNumber: '',
                       remarks: ''
                     });
+                    setActiveSubTab('list');
                   }}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-slate-700 text-sm font-semibold hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-200 rounded-xl text-slate-700 text-sm font-semibold hover:bg-slate-50 transition"
                 >
-                  Cancel Edit
+                  Cancel
                 </button>
-              )}
-              <button 
-                type="submit" 
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm"
-              >
-                {editingId ? 'Update Market' : 'Register Market'}
-              </button>
+                <button 
+                  type="submit" 
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition shadow-sm"
+                >
+                  {editingId ? 'Update Market' : 'Register Market'}
+                </button>
+              </div>
             </div>
           </form>
         </div>
-
-        {/* Markets List */}
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+      ) : (
+        /* Markets List */
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 mb-4 gap-3">
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Market Locations</h3>
@@ -554,6 +600,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
                               contactNumber: m.contact_number || '',
                               remarks: m.remarks || ''
                             });
+                            setActiveSubTab('form');
                           }}
                           className="text-xs font-semibold text-teal-600 hover:text-teal-800 transition-colors"
                         >
@@ -574,8 +621,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
             </table>
           </div>
         </div>
-
-      </div>
+      )}
     </div>
   );
 }

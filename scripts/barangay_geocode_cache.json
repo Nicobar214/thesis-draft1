@@ -1,0 +1,489 @@
+{
+  "Agboy Norte": {
+    "lat": 10.7734225,
+    "lng": 122.419426,
+    "source": "nominatim",
+    "query": "Agboy Norte, Leon, Iloilo, Philippines"
+  },
+  "Agboy Sur": {
+    "lat": 10.7686155,
+    "lng": 122.41132,
+    "source": "nominatim",
+    "query": "Agboy Sur, Leon, Iloilo, Philippines"
+  },
+  "Agta": {
+    "lat": 10.8288397,
+    "lng": 122.3401159,
+    "source": "nominatim",
+    "query": "Agta, Iloilo, Philippines"
+  },
+  "Ambulong": {
+    "lat": 10.7739469,
+    "lng": 122.3430204,
+    "source": "nominatim",
+    "query": "Ambulong, Leon, Iloilo, Philippines"
+  },
+  "Anonang": {
+    "lat": 10.7669107,
+    "lng": 122.4003794,
+    "source": "nominatim",
+    "query": "Anonang, Leon, Iloilo, Philippines"
+  },
+  "Apian": {
+    "lat": 10.8236243,
+    "lng": 122.347217,
+    "source": "nominatim",
+    "query": "Apian, Leon, Iloilo, Philippines"
+  },
+  "Avanzada": {
+    "lat": 10.7726134,
+    "lng": 122.3476058,
+    "source": "nominatim",
+    "query": "Avanzada, Leon, Iloilo, Philippines"
+  },
+  "Awis": {
+    "lat": 10.8122694,
+    "lng": 122.3725477,
+    "source": "nominatim",
+    "query": "Awis, Leon, Iloilo, Philippines"
+  },
+  "Ayabang": {
+    "lat": 10.8566318,
+    "lng": 122.3336953,
+    "source": "nominatim",
+    "query": "Ayabang, Leon, Iloilo, Philippines"
+  },
+  "Bacolod": {
+    "lat": 10.8653199,
+    "lng": 122.2963713,
+    "source": "nominatim",
+    "query": "Barangay Bacolod, Leon, Iloilo, Philippines"
+  },
+  "Banagan": {
+    "lat": 10.8736589,
+    "lng": 122.3470994,
+    "source": "nominatim",
+    "query": "Banagan, Leon, Iloilo, Philippines"
+  },
+  "Barangbang": {
+    "lat": 10.8169817,
+    "lng": 122.3310903,
+    "source": "nominatim",
+    "query": "Barangbang, Leon, Iloilo, Philippines"
+  },
+  "Barasan": {
+    "lat": 10.7870655,
+    "lng": 122.3738765,
+    "source": "nominatim",
+    "query": "Barasan, Leon, Iloilo, Philippines"
+  },
+  "Bayag Norte": {
+    "lat": 10.7696019,
+    "lng": 122.3496191,
+    "source": "nominatim",
+    "query": "Bayag Norte, Leon, Iloilo, Philippines"
+  },
+  "Bayag Sur": {
+    "lat": 10.7681531,
+    "lng": 122.3536031,
+    "source": "nominatim",
+    "query": "Bayag Sur, Leon, Iloilo, Philippines"
+  },
+  "Binolbog": {
+    "lat": 10.777978275188634,
+    "lng": 122.34174311005664,
+    "source": "fallback-centroid"
+  },
+  "Bobon": {
+    "lat": 10.8949365,
+    "lng": 122.2938803,
+    "source": "nominatim",
+    "query": "Bobon, Leon, Iloilo, Philippines"
+  },
+  "Bucari": {
+    "lat": 10.869241,
+    "lng": 122.2887895,
+    "source": "nominatim",
+    "query": "Bucari, Leon, Iloilo, Philippines"
+  },
+  "Buenavista": {
+    "lat": 10.7564993,
+    "lng": 122.4118402,
+    "source": "nominatim",
+    "query": "Buenavista, Leon, Iloilo, Philippines"
+  },
+  "Buga": {
+    "lat": 10.8086158,
+    "lng": 122.390721,
+    "source": "nominatim",
+    "query": "Buga, Leon, Iloilo, Philippines"
+  },
+  "Bulad": {
+    "lat": 10.8125937,
+    "lng": 122.3611881,
+    "source": "nominatim",
+    "query": "Bulad, Leon, Iloilo, Philippines"
+  },
+  "Bulwang": {
+    "lat": 10.8884668,
+    "lng": 122.3002516,
+    "source": "nominatim",
+    "query": "Bulwang, Leon, Iloilo, Philippines"
+  },
+  "Cabolo-an": {
+    "lat": 10.8875587,
+    "lng": 122.3148535,
+    "source": "nominatim",
+    "query": "Cabolo-an, Leon, Iloilo, Philippines"
+  },
+  "Cabunga-an": {
+    "lat": 10.8822565,
+    "lng": 122.308599,
+    "source": "nominatim",
+    "query": "Cabunga-an, Leon, Iloilo, Philippines"
+  },
+  "Cabutongan": {
+    "lat": 10.7828083,
+    "lng": 122.3490883,
+    "source": "nominatim",
+    "query": "Cabutongan, Leon, Iloilo, Philippines"
+  },
+  "Cagay": {
+    "lat": 10.8653199,
+    "lng": 122.2963713,
+    "source": "nominatim",
+    "query": "Barangay Cagay, Leon, Iloilo, Philippines"
+  },
+  "Camandag": {
+    "lat": 10.8876912,
+    "lng": 122.2932713,
+    "source": "nominatim",
+    "query": "Camandag, Leon, Iloilo, Philippines"
+  },
+  "Camando": {
+    "lat": 10.804779,
+    "lng": 122.3818622,
+    "source": "nominatim",
+    "query": "Camando, Leon, Iloilo, Philippines"
+  },
+  "Cananaman": {
+    "lat": 10.7952181,
+    "lng": 122.3346281,
+    "source": "nominatim",
+    "query": "Cananaman, Leon, Iloilo, Philippines"
+  },
+  "Capt. Fernando": {
+    "lat": 10.805224,
+    "lng": 122.3703123,
+    "source": "nominatim",
+    "query": "Capt. Fernando, Leon, Iloilo, Philippines"
+  },
+  "Carara-an": {
+    "lat": 10.8433477,
+    "lng": 122.3421507,
+    "source": "nominatim",
+    "query": "Carara-an, Leon, Iloilo, Philippines"
+  },
+  "Carolina": {
+    "lat": 10.7968332,
+    "lng": 122.3518608,
+    "source": "nominatim",
+    "query": "Carolina, Iloilo, Philippines"
+  },
+  "Cawilihan": {
+    "lat": 10.8415872,
+    "lng": 122.3135527,
+    "source": "nominatim",
+    "query": "Cawilihan, Leon, Iloilo, Philippines"
+  },
+  "Coyugan Norte": {
+    "lat": 10.8261945,
+    "lng": 122.3514023,
+    "source": "nominatim",
+    "query": "Coyugan Norte, Iloilo, Philippines"
+  },
+  "Coyugan Sur": {
+    "lat": 10.8142093,
+    "lng": 122.3375638,
+    "source": "nominatim",
+    "query": "Coyugan Sur, Iloilo, Philippines"
+  },
+  "Danao": {
+    "lat": 10.852499,
+    "lng": 122.2847794,
+    "source": "nominatim",
+    "query": "Danao, Leon, Iloilo, Philippines"
+  },
+  "Dorog": {
+    "lat": 10.8348958,
+    "lng": 122.3331944,
+    "source": "nominatim",
+    "query": "Dorog, Leon, Iloilo, Philippines"
+  },
+  "Dusacan": {
+    "lat": 10.8310595,
+    "lng": 122.3489139,
+    "source": "nominatim",
+    "query": "Dusacan, Iloilo, Philippines"
+  },
+  "Gines": {
+    "lat": 10.8565145,
+    "lng": 122.3423156,
+    "source": "nominatim",
+    "query": "Gines, Leon, Iloilo, Philippines"
+  },
+  "Gumboc": {
+    "lat": 10.8040275,
+    "lng": 122.3594477,
+    "source": "nominatim",
+    "query": "Gumboc, Leon, Iloilo, Philippines"
+  },
+  "Igcadios": {
+    "lat": 10.8478793,
+    "lng": 122.3377982,
+    "source": "nominatim",
+    "query": "Igcadios, Leon, Iloilo, Philippines"
+  },
+  "Ingay": {
+    "lat": 10.841611,
+    "lng": 122.2934121,
+    "source": "nominatim",
+    "query": "Ingay, Leon, Iloilo, Philippines"
+  },
+  "Isian Norte": {
+    "lat": 10.7670519,
+    "lng": 122.3663622,
+    "source": "nominatim",
+    "query": "Isian Norte, Leon, Iloilo, Philippines"
+  },
+  "Isian Victoria": {
+    "lat": 10.7916549,
+    "lng": 122.3578978,
+    "source": "nominatim",
+    "query": "Isian Victoria, Leon, Iloilo, Philippines"
+  },
+  "Jamog Gines": {
+    "lat": 10.7652056,
+    "lng": 122.3567421,
+    "source": "nominatim",
+    "query": "Jamog Gines, Leon, Iloilo, Philippines"
+  },
+  "Lampaya": {
+    "lat": 10.8775981,
+    "lng": 122.3249267,
+    "source": "nominatim",
+    "query": "Lampaya, Leon, Iloilo, Philippines"
+  },
+  "Lanag": {
+    "lat": 10.7964536,
+    "lng": 122.3939288,
+    "source": "nominatim",
+    "query": "Lanag, Leon, Iloilo, Philippines"
+  },
+  "Lang-og": {
+    "lat": 10.7964555,
+    "lng": 122.3657785,
+    "source": "nominatim",
+    "query": "Lang-og, Iloilo, Philippines"
+  },
+  "Ligtos": {
+    "lat": 10.8298103,
+    "lng": 122.364964,
+    "source": "nominatim",
+    "query": "Ligtos, Leon, Iloilo, Philippines"
+  },
+  "Lonoc": {
+    "lat": 10.7831366,
+    "lng": 122.3416899,
+    "source": "nominatim",
+    "query": "Lonoc, Leon, Iloilo, Philippines"
+  },
+  "Magcapay": {
+    "lat": 10.8163837,
+    "lng": 122.3603214,
+    "source": "nominatim",
+    "query": "Magcapay, Iloilo, Philippines"
+  },
+  "Maliao": {
+    "lat": 10.8730869,
+    "lng": 122.319127,
+    "source": "nominatim",
+    "query": "Maliao, Leon, Iloilo, Philippines"
+  },
+  "Malublub": {
+    "lat": 10.8394679,
+    "lng": 122.3643518,
+    "source": "nominatim",
+    "query": "Malublub, Leon, Iloilo, Philippines"
+  },
+  "Manampunay": {
+    "lat": 10.8044052,
+    "lng": 122.331625,
+    "source": "nominatim",
+    "query": "Manampunay, Leon, Iloilo, Philippines"
+  },
+  "Marirong": {
+    "lat": 10.8270003,
+    "lng": 122.3216665,
+    "source": "nominatim",
+    "query": "Marirong, Leon, Iloilo, Philippines"
+  },
+  "Mina": {
+    "lat": 10.774233,
+    "lng": 122.3426971,
+    "source": "nominatim",
+    "query": "Barangay Mina, Leon, Iloilo, Philippines"
+  },
+  "Mocol": {
+    "lat": 10.810499,
+    "lng": 122.3449789,
+    "source": "nominatim",
+    "query": "Mocol, Iloilo, Philippines"
+  },
+  "Nagbangi": {
+    "lat": 10.7863627,
+    "lng": 122.3997445,
+    "source": "nominatim",
+    "query": "Nagbangi, Iloilo, Philippines"
+  },
+  "Nalbang": {
+    "lat": 10.8236069,
+    "lng": 122.3354764,
+    "source": "nominatim",
+    "query": "Nalbang, Iloilo, Philippines"
+  },
+  "Odong-odong": {
+    "lat": 10.7895216,
+    "lng": 122.3503882,
+    "source": "nominatim",
+    "query": "Odong-odong, Iloilo, Philippines"
+  },
+  "Oluangan": {
+    "lat": 10.8220361,
+    "lng": 122.3693469,
+    "source": "nominatim",
+    "query": "Oluangan, Leon, Iloilo, Philippines"
+  },
+  "Omambong": {
+    "lat": 10.7519336,
+    "lng": 122.3939963,
+    "source": "nominatim",
+    "query": "Omambong, Leon, Iloilo, Philippines"
+  },
+  "Paga": {
+    "lat": 10.7994742,
+    "lng": 122.328431,
+    "source": "nominatim",
+    "query": "Paga, Leon, Iloilo, Philippines"
+  },
+  "Pandan": {
+    "lat": 10.7628228,
+    "lng": 122.4025214,
+    "source": "nominatim",
+    "query": "Pandan, Leon, Iloilo, Philippines"
+  },
+  "Panginman": {
+    "lat": 10.7777333,
+    "lng": 122.3789316,
+    "source": "nominatim",
+    "query": "Panginman, Iloilo, Philippines"
+  },
+  "Paoy": {
+    "lat": 10.8123462,
+    "lng": 122.3772292,
+    "source": "nominatim",
+    "query": "Paoy, Iloilo, Philippines"
+  },
+  "Pepe": {
+    "lat": 10.7893233,
+    "lng": 122.3359328,
+    "source": "nominatim",
+    "query": "Pepe, Leon, Iloilo, Philippines"
+  },
+  "Poblacion": {
+    "lat": 10.7800508,
+    "lng": 122.3865838,
+    "source": "nominatim",
+    "query": "Poblacion, Leon, Iloilo, Philippines"
+  },
+  "Samlague": {
+    "lat": 10.810698,
+    "lng": 122.3497611,
+    "source": "nominatim",
+    "query": "Samlague, Leon, Iloilo, Philippines"
+  },
+  "Siol Norte": {
+    "lat": 10.7761467,
+    "lng": 122.4052778,
+    "source": "nominatim",
+    "query": "Siol Norte, Leon, Iloilo, Philippines"
+  },
+  "Siol Sur": {
+    "lat": 10.7761467,
+    "lng": 122.4052778,
+    "source": "nominatim",
+    "query": "Siol Sur, Leon, Iloilo, Philippines"
+  },
+  "Tacuyong Norte": {
+    "lat": 10.8207161,
+    "lng": 122.3231067,
+    "source": "nominatim",
+    "query": "Tacuyong Norte, Leon, Iloilo, Philippines"
+  },
+  "Tacuyong Sur": {
+    "lat": 10.80546,
+    "lng": 122.3481504,
+    "source": "nominatim",
+    "query": "Tacuyong Sur, Leon, Iloilo, Philippines"
+  },
+  "Tagsing": {
+    "lat": 10.8479583,
+    "lng": 122.3278243,
+    "source": "nominatim",
+    "query": "Tagsing, Leon, Iloilo, Philippines"
+  },
+  "Talacuan": {
+    "lat": 10.947121814700694,
+    "lng": 122.37550392950438,
+    "source": "fallback-centroid"
+  },
+  "Ticuan": {
+    "lat": 10.8582148,
+    "lng": 122.3488635,
+    "source": "nominatim",
+    "query": "Ticuan, Leon, Iloilo, Philippines"
+  },
+  "Tina-an Norte": {
+    "lat": 10.827489,
+    "lng": 122.3750288,
+    "source": "nominatim",
+    "query": "Tina-an Norte, Leon, Iloilo, Philippines"
+  },
+  "Tina-an Sur": {
+    "lat": 10.7761105,
+    "lng": 122.3733446,
+    "source": "nominatim",
+    "query": "Tina-an Sur, Leon, Iloilo, Philippines"
+  },
+  "Tu-og": {
+    "lat": 10.7853765,
+    "lng": 122.4117877,
+    "source": "nominatim",
+    "query": "Tu-og, Leon, Iloilo, Philippines"
+  },
+  "Tunguan": {
+    "lat": 10.614070453965695,
+    "lng": 122.36683830990069,
+    "source": "fallback-centroid"
+  },
+  "Baje": {
+    "lat": 10.654696707574976,
+    "lng": 122.27427546229023,
+    "source": "fallback-centroid"
+  },
+  "Salngan": {
+    "lat": 10.614070453965695,
+    "lng": 122.36683830990069,
+    "source": "fallback-centroid"
+  }
+}

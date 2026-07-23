@@ -19,6 +19,16 @@ function FitToData({ points }) {
   return null;
 }
 
+function MapCenterFlyer({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center && center[0] && center[1]) {
+      map.flyTo(center, zoom || 14, { animate: true, duration: 1.5 });
+    }
+  }, [center, zoom, map]);
+  return null;
+}
+
 function HeatLayer({ points }) {
   const map = useMap();
 
@@ -80,12 +90,26 @@ export default function LguRouteMap({
   reports, 
   showHeat = false,
   farmerBeneficiaries = [],
-  markets = []
+  markets = [],
+  mapCenter = null,
+  mapZoom = 11,
+  searchMarker = null
 }) {
   const [showFarmerDots, setShowFarmerDots] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
   const [showMarketsMap, setShowMarketsMap] = useState(true);
   const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
+  const [farmerCropFilter, setFarmerCropFilter] = useState('All');
+
+  const farmerCropOptions = useMemo(() => {
+    const crops = new Set((farmerBeneficiaries || []).map((f) => f.crop).filter(Boolean));
+    return ['All', ...[...crops].sort()];
+  }, [farmerBeneficiaries]);
+
+  const cropFilteredFarmerBeneficiaries = useMemo(() => {
+    if (farmerCropFilter === 'All') return farmerBeneficiaries || [];
+    return (farmerBeneficiaries || []).filter((f) => f.crop === farmerCropFilter);
+  }, [farmerBeneficiaries, farmerCropFilter]);
 
   const municipalityCounts = {};
   const routeLayers = (projects || []).map((project) => {
@@ -131,18 +155,19 @@ export default function LguRouteMap({
   const heatPoints = reportPoints.map((row) => [row.lat, row.lng, row.status === 'resolved' ? 0.3 : 0.9]);
 
   const farmerHeatPoints = useMemo(() => {
-    return (farmerBeneficiaries || [])
+    return cropFilteredFarmerBeneficiaries
       .map((f) => {
         const lat = f.farmLatitude || f.gps?.lat;
         const lng = f.farmLongitude || f.gps?.lng;
         return lat && lng ? [Number(lat), Number(lng), 1.0] : null;
       })
       .filter(Boolean);
-  }, [farmerBeneficiaries]);
+  }, [cropFilteredFarmerBeneficiaries]);
 
   return (
-    <div className="relative h-[450px] w-full border border-slate-200 rounded-xl overflow-hidden shadow-inner">
+    <div className="relative h-[560px] w-full border border-slate-200 rounded-xl overflow-hidden shadow-inner">
       <MapContainer center={[10.7, 122.56]} zoom={11} style={{ width: '100%', height: '100%' }} scrollWheelZoom className="z-0">
+        <MapCenterFlyer center={mapCenter} zoom={mapZoom} />
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -229,7 +254,7 @@ export default function LguRouteMap({
         ))}
 
         {/* Farmers Layer */}
-        {showFarmerDots && (farmerBeneficiaries || []).map(f => {
+        {showFarmerDots && cropFilteredFarmerBeneficiaries.map(f => {
           const lat = f.farmLatitude || f.gps?.lat;
           const lng = f.farmLongitude || f.gps?.lng;
           if (!lat || !lng) return null;
@@ -321,6 +346,23 @@ export default function LguRouteMap({
         })()}
 
         {showHeat && <HeatLayer points={heatPoints} />}
+        {searchMarker && (
+          <Marker
+            position={searchMarker}
+            icon={new L.Icon({
+              iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+              shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+              iconSize: [25, 41],
+              iconAnchor: [12, 41],
+            })}
+          >
+            <Popup>
+              <div className="p-1 text-xs">
+                <p className="font-bold text-slate-800">Searched Location</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
         <FitToData points={fitPoints} />
       </MapContainer>
 
@@ -340,7 +382,22 @@ export default function LguRouteMap({
           />
           Show Farmers (Dots)
         </label>
-        
+
+        {showFarmerDots && (
+          <div className="flex items-center gap-2 pl-6 font-medium text-slate-600">
+            <span className="shrink-0">Crop:</span>
+            <select
+              value={farmerCropFilter}
+              onChange={(e) => setFarmerCropFilter(e.target.value)}
+              className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+            >
+              {farmerCropOptions.map((crop) => (
+                <option key={crop} value={crop}>{crop}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
           <input
             type="checkbox"

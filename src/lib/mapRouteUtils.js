@@ -143,6 +143,28 @@ export function getTargetDateChip(targetDate, completed) {
   };
 }
 
+// DA's informal turnaround target for validating an LGU project proposal.
+export const PROPOSAL_SLA_DAYS = 15;
+
+export function getPendingDaysChip(submittedAt, status) {
+  if (status !== 'Submitted' && status !== 'Under Validation') return null;
+  const submitted = new Date(submittedAt);
+  if (Number.isNaN(submitted.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  submitted.setHours(0, 0, 0, 0);
+  const diffDays = Math.max(0, Math.round((today.getTime() - submitted.getTime()) / 86400000));
+
+  if (diffDays > PROPOSAL_SLA_DAYS) {
+    return { className: 'bg-red-100 text-red-700', text: `Pending ${diffDays} days — SLA exceeded` };
+  }
+  if (diffDays >= PROPOSAL_SLA_DAYS - 5) {
+    return { className: 'bg-amber-100 text-amber-700', text: `Pending ${diffDays} day${diffDays === 1 ? '' : 's'}` };
+  }
+  return { className: 'bg-slate-100 text-slate-600', text: `Pending ${diffDays} day${diffDays === 1 ? '' : 's'}` };
+}
+
 export function isOverdueProject(project) {
   if (!project?.target_completion_date) return false;
   if (normalizeRouteStatus(project.status) === 'Completed') return false;

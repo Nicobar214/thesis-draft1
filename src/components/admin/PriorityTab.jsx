@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { computePriorityScores } from '../../lib/priorityScoring';
+import { computePriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
 
 const legendItems = [
   { label: 'Volume 40%', tone: 'bg-blue-100 text-blue-700', icon: '🟦' },
@@ -11,25 +11,6 @@ const legendItems = [
 function formatTimestamp(value) {
   if (!value) return 'Not calculated yet';
   return value.toLocaleString();
-}
-
-function scoreTone(score) {
-  if (score >= 70) return 'text-red-600';
-  if (score >= 40) return 'text-amber-600';
-  return 'text-emerald-600';
-}
-
-function rankTone(rank) {
-  if (rank === 1) return 'bg-amber-100 text-amber-800 border border-amber-300';
-  if (rank === 2) return 'bg-slate-200 text-slate-700 border border-slate-300';
-  if (rank === 3) return 'bg-orange-100 text-orange-700 border border-orange-300';
-  return 'bg-slate-100 text-slate-600 border border-slate-200';
-}
-
-function factorBarTone(key) {
-  if (key === 'V') return 'bg-blue-500';
-  if (key === 'S') return 'bg-red-500';
-  return 'bg-amber-500';
 }
 
 export default function PriorityTab({ projects, reports, escalations, onViewReports, onViewProjectDetail }) {

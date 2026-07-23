@@ -162,3 +162,85 @@ export function computePriorityScores(projects, reports, escalations) {
       reason: buildPlainReason(r.project, r.reportCount, r.bySeverity, r.cropData, i + 1),
     }));
 }
+
+// Shared score/rank/factor-bar tone helpers -- used by PriorityTab.jsx (real
+// projects) and the LGU proposal priority view below, so both look consistent.
+export function scoreTone(score) {
+  if (score >= 70) return 'text-red-600';
+  if (score >= 40) return 'text-amber-600';
+  return 'text-emerald-600';
+}
+
+export function rankTone(rank) {
+  if (rank === 1) return 'bg-amber-100 text-amber-800 border border-amber-300';
+  if (rank === 2) return 'bg-slate-200 text-slate-700 border border-slate-300';
+  if (rank === 3) return 'bg-orange-100 text-orange-700 border border-orange-300';
+  return 'bg-slate-100 text-slate-600 border border-slate-200';
+}
+
+export function factorBarTone(key) {
+  if (key === 'V' || key === 'U') return 'bg-blue-500';
+  if (key === 'S' || key === 'B') return 'bg-red-500';
+  return 'bg-amber-500';
+}
+
+function proposalPendingDays(proposal) {
+  const submitted = new Date(proposal.submitted_at);
+  if (Number.isNaN(submitted.getTime())) return 0;
+  return Math.max(0, Math.round((Date.now() - submitted.getTime()) / 86400000));
+}
+
+function buildProposalPriorityReason(proposal, pendingDays, beneficiaryTotal, cropData, rank) {
+  const parts = [`pending ${pendingDays} day${pendingDays === 1 ? '' : 's'}`];
+  if (beneficiaryTotal > 0) parts.push(`serves ${beneficiaryTotal} beneficiaries`);
+  if (cropData.score >= 70) parts.push(`high-value ${cropData.primary_crop} area (${cropData.hectares.toLocaleString()} ha)`);
+  else if (cropData.score >= 50) parts.push(`moderate crop area (${cropData.primary_crop})`);
+  return `Rank #${rank} — ${proposal.municipality || 'area'}: ${parts.join(', ')}.`;
+}
+
+/**
+ * Priority scoring for LGU project proposals still awaiting DA action.
+ * Only proposals in 'Submitted' / 'Under Validation' status are scored/ranked
+ * -- decided proposals (Approved/Rejected/Needs Revision) aren't triage
+ * candidates and come back with score/rank set to null.
+ *
+ * Factors (normalized 0-100 within the pending batch):
+ *  - U (Urgency / days pending)      40% -- how long DA has sat on it
+ *  - B (Beneficiary reach)           35% -- farmers + households claimed served
+ *  - C (Crop value, via getCropData) 25% -- same signal/weight as project scoring
+ */
+export function computeProposalPriorityScores(proposals) {
+  const safe = Array.isArray(proposals) ? proposals : [];
+
+  const raw = safe.map((proposal) => {
+    const isPending = proposal.status === 'Submitted' || proposal.status === 'Under Validation';
+    const pendingDays = isPending ? proposalPendingDays(proposal) : 0;
+    const beneficiaryTotal = (Number(proposal.beneficiary_farmers_count) || 0)
+      + (Number(proposal.beneficiary_households_count) || 0);
+    const cropData = getCropData(proposal.municipality);
+    return { proposal, isPending, pendingDays, beneficiaryTotal, cropData };
+  });
+
+  const pendingRaw = raw.filter((r) => r.isPending);
+  const maxPendingDays = Math.max(...pendingRaw.map((r) => r.pendingDays), 1);
+  const maxBeneficiaries = Math.max(...pendingRaw.map((r) => r.beneficiaryTotal), 1);
+
+  const scoredPending = pendingRaw.map((r) => {
+    const U = (r.pendingDays / maxPendingDays) * 100;
+    const B = (r.beneficiaryTotal / maxBeneficiaries) * 100;
+    const C = r.cropData.score;
+    const score = Math.round(U * 0.4 + B * 0.35 + C * 0.25);
+    return { ...r, score, U: Math.round(U), B: Math.round(B), C: Math.round(C) };
+  });
+
+  const ranked = scoredPending
+    .sort((a, b) => b.score - a.score)
+    .map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      reason: buildProposalPriorityReason(r.proposal, r.pendingDays, r.beneficiaryTotal, r.cropData, i + 1),
+    }));
+
+  const rankedById = new Map(ranked.map((r) => [r.proposal.id, r]));
+  return raw.map((r) => rankedById.get(r.proposal.id) || { ...r, score: null, rank: null, reason: null, U: null, B: null, C: null });
+}

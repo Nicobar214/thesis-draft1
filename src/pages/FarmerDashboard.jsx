@@ -316,13 +316,7 @@ export default function FarmerDashboard() {
     }
   }
 
-  // Format harvest logs for Recharts
-  const chartData = (harvestLogs || []).map(log => ({
-    date: new Date(log.harvest_date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    Yield: Number(log.quantity_kg),
-  }));
 
-  const totalHarvested = harvestLogs.reduce((acc, curr) => acc + Number(curr.quantity_kg), 0);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans pb-20 md:pb-6">
@@ -403,10 +397,6 @@ export default function FarmerDashboard() {
                 <span className="font-bold text-slate-800">{farmerRecord?.farm_area_ha ? `${farmerRecord.farm_area_ha} Ha` : "N/A"}</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:justify-between bg-slate-50 sm:bg-transparent p-2 sm:p-0 rounded-lg">
-                <span className="text-slate-500 text-[11px] sm:text-xs">Est. Yield/Ha:</span>
-                <span className="font-semibold text-slate-800">{farmerRecord?.estimated_yield ? `${farmerRecord.estimated_yield} tons` : "N/A"}</span>
-              </div>
-              <div className="flex flex-col sm:flex-row sm:justify-between bg-slate-50 sm:bg-transparent p-2 sm:p-0 rounded-lg">
                 <span className="text-slate-500 text-[11px] sm:text-xs">Contact Number:</span>
                 <span className="font-medium text-slate-800">{farmerRecord?.contact_number || "N/A"}</span>
               </div>
@@ -467,14 +457,6 @@ export default function FarmerDashboard() {
               }`}
             >
               🏪 Markets Directory
-            </button>
-            <button
-              onClick={() => setActiveTab("harvests")}
-              className={`py-2 px-3 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap ${
-                activeTab === "harvests" ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              🌾 Harvest Logs
             </button>
           </div>
 
@@ -857,154 +839,6 @@ export default function FarmerDashboard() {
               )}
             </div>
           )}
-
-          {/* TAB 5: HARVEST LOGS */}
-          {activeTab === "harvests" && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Form to submit logs */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-base sm:text-lg">Log Actual Harvest</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Submit records of your crop yields for official tracking and logistics reporting.</p>
-                  </div>
-
-                  <form onSubmit={handleHarvestSubmit} className="space-y-3.5 text-xs sm:text-sm">
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Harvested Crop</label>
-                      <select
-                        className="w-full h-11 px-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium bg-white"
-                        value={harvestForm.crop}
-                        onChange={(e) => setHarvestForm(prev => ({ ...prev, crop: e.target.value }))}
-                      >
-                        <option value="Rice">Rice</option>
-                        <option value="Corn">Corn</option>
-                        <option value="Sugarcane">Sugarcane</option>
-                        <option value="Coconut">Coconut</option>
-                        <option value="Vegetables">Vegetables</option>
-                        <option value="Banana">Banana</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Quantity (in Kilograms)</label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 2400"
-                        className="w-full h-11 px-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium bg-white"
-                        value={harvestForm.quantityKg}
-                        onChange={(e) => setHarvestForm(prev => ({ ...prev, quantityKg: e.target.value }))}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Harvesting Date</label>
-                      <input
-                        type="date"
-                        className="w-full h-11 px-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium bg-white"
-                        value={harvestForm.harvestDate}
-                        onChange={(e) => setHarvestForm(prev => ({ ...prev, harvestDate: e.target.value }))}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Remarks / Details</label>
-                      <textarea
-                        rows="3"
-                        placeholder="Provide details about quality, weather, or distribution notes..."
-                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium bg-white text-xs sm:text-sm"
-                        value={harvestForm.remarks}
-                        onChange={(e) => setHarvestForm(prev => ({ ...prev, remarks: e.target.value }))}
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={harvestLoading}
-                      className="w-full h-11 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition-colors disabled:opacity-50 text-xs sm:text-sm shadow-sm"
-                    >
-                      {harvestLoading ? "Logging Harvest..." : "Submit Harvest Log"}
-                    </button>
-                  </form>
-                </div>
-
-                {/* Performance Analytics chart */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 flex flex-col justify-between space-y-4">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-base sm:text-lg">Yield Statistics over Time</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Historical visualization of harvest outputs logged in your profile.</p>
-                  </div>
-
-                  {harvestLogs.length === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-slate-400 py-12">
-                      <p className="font-semibold text-slate-700 text-sm">No logs available</p>
-                      <p className="text-xs text-center mt-1">Submit your first harvest record to see statistical projections.</p>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col justify-between min-h-[220px]">
-                      <div className="h-[200px] w-full mt-2">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={chartData}>
-                            <defs>
-                              <linearGradient id="yieldGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                                <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="date" stroke="#94a3b8" fontSize={9} tickLine={false} />
-                            <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} />
-                            <RechartsTooltip contentStyle={{ fontSize: 10, borderRadius: 8 }} />
-                            <Area type="monotone" dataKey="Yield" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#yieldGrad)" />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 font-medium">
-                        <span>Total Registered Output:</span>
-                        <span className="text-emerald-700 font-bold">{(totalHarvested / 1000).toFixed(2)} tons ({totalHarvested.toLocaleString()} kg)</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Historical Logs List */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
-                <h4 className="font-bold text-slate-900 text-sm sm:text-base">Harvest Logs History</h4>
-                {harvestLogs.length === 0 ? (
-                  <div className="py-8 text-center text-slate-400 text-xs sm:text-sm">
-                    No historical logs recorded.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto text-xs">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-500 bg-slate-50">
-                          <th className="py-2.5 px-3 font-semibold">Date Logged</th>
-                          <th className="py-2.5 px-3 font-semibold">Crop</th>
-                          <th className="py-2.5 px-3 font-semibold">Quantity (kg)</th>
-                          <th className="py-2.5 px-3 font-semibold">Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                        {[...harvestLogs].reverse().map(log => (
-                          <tr key={log.id} className="hover:bg-slate-50/50">
-                            <td className="py-3 px-3">{new Date(log.harvest_date).toLocaleDateString()}</td>
-                            <td className="py-3 px-3 font-semibold text-emerald-700">{log.crop}</td>
-                            <td className="py-3 px-3 text-slate-900 font-bold">{log.quantity_kg.toLocaleString()} kg</td>
-                            <td className="py-3 px-3 text-slate-500">{log.remarks || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </section>
       </main>
 
@@ -1053,16 +887,6 @@ export default function FarmerDashboard() {
         >
           <Icons.Building />
           <span className="text-[10px]">Markets</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab("harvests")}
-          className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${
-            activeTab === "harvests" ? "text-emerald-800 font-bold" : "text-slate-500 font-medium"
-          }`}
-        >
-          <Icons.Sprout />
-          <span className="text-[10px]">Yields</span>
         </button>
       </nav>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 import roadInventory from '../../data/leonRoadInventory.json';
 
@@ -18,11 +18,21 @@ function getSurfaceBadgeTone(surfaceType) {
   return 'bg-slate-50 border-slate-200 text-slate-700';
 }
 
+function getConditionBadgeTone(condition) {
+  const cond = String(condition || '').toLowerCase();
+  if (cond === 'excellent' || cond === 'good') return 'bg-emerald-50 border-emerald-200 text-emerald-700';
+  if (cond === 'fair') return 'bg-amber-50 border-amber-200 text-amber-700';
+  if (cond === 'poor' || cond === 'critical') return 'bg-rose-50 border-rose-200 text-rose-700';
+  return 'bg-slate-50 border-slate-200 text-slate-700';
+}
+
 export default function RoadInventoryTab() {
   const [query, setQuery] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('all');
   const [surfaceFilter, setSurfaceFilter] = useState('all');
   const [conditionFilter, setConditionFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 6;
 
   const inventory = useMemo(() => (Array.isArray(roadInventory) ? roadInventory : []), []);
 
@@ -76,6 +86,16 @@ export default function RoadInventoryTab() {
   }, [filteredRows]);
 
   const hasFilters = query || barangayFilter !== 'all' || surfaceFilter !== 'all' || conditionFilter !== 'all';
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, barangayFilter, surfaceFilter, conditionFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedRows = useMemo(() => {
+    return filteredRows.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
+  }, [filteredRows, safePage]);
 
   return (
     <div className="space-y-4">
@@ -170,49 +190,110 @@ export default function RoadInventoryTab() {
           )}
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-200">
-          <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-slate-50">
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="px-4 py-3">Road Name</th>
-                <th className="px-4 py-3">Barangay</th>
-                <th className="px-4 py-3">Length</th>
-                <th className="px-4 py-3">Surface Type</th>
-                <th className="px-4 py-3">Condition</th>
-                <th className="px-4 py-3">ROW</th>
-                <th className="px-4 py-3">Year Constructed</th>
-                <th className="px-4 py-3">Surface Breakdown</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`} className="border-t border-slate-100 hover:bg-slate-50/70">
-                  <td className="px-4 py-3 font-medium text-slate-900">{row.roadName || 'N/A'}</td>
-                  <td className="px-4 py-3 text-slate-700">{row.barangay || 'N/A'}</td>
-                  <td className="px-4 py-3 text-slate-700">{formatNumber(row.lengthKm)} km</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getSurfaceBadgeTone(row.surfaceType)}`}>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {paginatedRows.map((row) => (
+            <div
+              key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
+              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors duration-200 line-clamp-2">
+                    {row.roadName || 'N/A'}
+                  </h3>
+                  <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold shrink-0 capitalize ${getConditionBadgeTone(row.condition)}`}>
+                    {row.condition || 'N/A'}
+                  </span>
+                </div>
+
+                <p className="mt-1.5 text-xs font-semibold text-slate-500 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {row.barangay || 'N/A'}
+                </p>
+
+                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs">
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-slate-500 font-medium">Length</p>
+                    <p className="mt-0.5 font-bold text-slate-800">{formatNumber(row.lengthKm)} km</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-slate-500 font-medium">Surface Type</p>
+                    <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold border ${getSurfaceBadgeTone(row.surfaceType)}`}>
                       {row.surfaceType || 'Unknown'}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700 capitalize">{row.condition || 'N/A'}</td>
-                  <td className="px-4 py-3 text-slate-700">{formatNumber(row.row, 2)} m</td>
-                  <td className="px-4 py-3 text-slate-700">{row.yearConstructed || 'N/A'}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    <div className="max-w-[28rem] text-xs leading-5">{row.surfaceSummary || 'N/A'}</div>
-                  </td>
-                </tr>
-              ))}
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td className="px-4 py-5 text-slate-500" colSpan={8}>
-                    No roads match the current filters.
-                  </td>
-                </tr>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-slate-500 font-medium">Right of Way</p>
+                    <p className="mt-0.5 font-bold text-slate-800">{formatNumber(row.row, 2)} m</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-2.5">
+                    <p className="text-slate-500 font-medium">Year Built</p>
+                    <p className="mt-0.5 font-bold text-slate-800">{row.yearConstructed || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {row.surfaceSummary && (
+                <div className="mt-4 border-t border-slate-100 pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Surface Breakdown</p>
+                  <p className="mt-1 text-xs text-slate-600 leading-relaxed line-clamp-3">
+                    {row.surfaceSummary}
+                  </p>
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          ))}
+          {filteredRows.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              No roads match the current filters.
+            </div>
+          )}
         </div>
+
+        {filteredRows.length > 0 && (
+          <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5 flex-wrap gap-4">
+            <p className="text-xs text-slate-500 font-semibold">
+              Showing <span className="text-slate-800">{((safePage - 1) * itemsPerPage) + 1}</span> to{' '}
+              <span className="text-slate-800">{Math.min(safePage * itemsPerPage, filteredRows.length)}</span> of{' '}
+              <span className="text-slate-800">{filteredRows.length}</span> roads
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  type="button"
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg text-[11px] font-extrabold transition ${
+                    safePage === page
+                      ? 'bg-emerald-600 text-white shadow shadow-emerald-500/20'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-[11px] font-bold bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
