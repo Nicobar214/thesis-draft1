@@ -47,6 +47,31 @@ export function buildDisbursementTranches(totalBudget, project) {
   }));
 }
 
+/**
+ * Adapts real `project_tranches` DB rows into the same shape
+ * buildDisbursementTranches() produces, so summarizeTranches() and any
+ * rendering code work unchanged whether the schedule is real (persisted,
+ * admin-released) or estimated (computed from progress %, never saved).
+ */
+export function realTranchesToScheduleShape(tranches) {
+  return (tranches || [])
+    .slice()
+    .sort((a, b) => a.tranche_order - b.tranche_order)
+    .map((t) => ({
+      id: t.id,
+      name: t.tranche_name,
+      percentage: Number(t.percentage),
+      amount: Number(t.status === 'Released' ? t.released_amount ?? t.amount : t.amount),
+      requiredProgress: Number(t.required_progress),
+      released: t.status === 'Released',
+      liquidated: t.status === 'Released',
+      date: t.released_date ? new Date(t.released_date) : null,
+      releasedByName: t.released_by_name || null,
+      notes: t.notes || null,
+      isReal: true,
+    }));
+}
+
 export function summarizeTranches(tranches, totalBudget) {
   const totalReleased = tranches.reduce((sum, t) => sum + (t.released ? t.amount : 0), 0);
   const totalLiquidated = tranches.reduce((sum, t) => sum + (t.liquidated ? t.amount : 0), 0);
@@ -78,9 +103,27 @@ export function estimateFundsUtilized(project, totalBudget) {
   };
 }
 
-/** Single entry point for citizen-facing views: total, released, remaining, and where each figure came from. */
-export function getProjectBudgetSummary(project) {
+/**
+ * Single entry point for citizen-facing views: total, released, remaining,
+ * and where each figure came from. Pass `tranches` (real project_tranches
+ * rows for this project, if any) to prefer the real, admin-released
+ * figures over the RA-9184 progress-based estimate.
+ */
+export function getProjectBudgetSummary(project, tranches = []) {
   const { amount: totalBudget, isEstimated: budgetIsEstimated } = estimateProjectBudget(project);
+
+  if (tranches && tranches.length > 0) {
+    const released = tranches.reduce((sum, t) => sum + (t.status === 'Released' ? Number(t.released_amount ?? t.amount) : 0), 0);
+    return {
+      totalBudget,
+      budgetIsEstimated,
+      released,
+      remaining: Math.max(totalBudget - released, 0),
+      utilizationIsEstimated: false,
+      fundingSource: project?.funding_source || null,
+    };
+  }
+
   const { released, remaining, isEstimated: utilizationIsEstimated } = estimateFundsUtilized(project, totalBudget);
   return {
     totalBudget,

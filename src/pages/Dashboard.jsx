@@ -21,7 +21,9 @@ import {
   estimateProjectBudget,
   buildDisbursementTranches,
   summarizeTranches,
+  realTranchesToScheduleShape,
 } from '../lib/budgetEstimate';
+import ProjectTrancheTimeline from '../components/budget/ProjectTrancheTimeline';
 import {
   ResponsiveContainer,
   BarChart,
@@ -353,115 +355,7 @@ function RouteEditorMapClick({ onPickPoint }) {
 
 const enterpriseCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
 
-const FARMER_FALLBACK_PROJECTS = [
-  'Iloilo North Farm-to-Market Road Package',
-  'Barotac Nuevo Access Road Upgrade',
-  'Central Iloilo Produce Corridor',
-  'Passi Agro-Logistics Connector',
-  'Western Iloilo Link Road',
-  'Janiuay Mountain Barangay Connector',
-];
-
-const FUNDING_SOURCES = [
-  'Department of Agriculture (DA)',
-  'LGU Counterpart Fund',
-  'Provincial Government',
-  'National Infrastructure Program',
-  'Farm-to-Market Road Grant',
-  'Disaster Rehabilitation Fund',
-];
-
-const BUDGET_STATUSES = ['Pending', 'Approved', 'Released', 'Delayed', 'Completed'];
-const BUDGET_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
-const PROCUREMENT_PHASES = ['Planning', 'Bidding', 'Awarded', 'Mobilization', 'Execution', 'Closeout'];
-const RISK_LEVELS = ['Low', 'Moderate', 'Elevated', 'High'];
-
-const seededRandom = (seed) => {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-};
-
-const pickFrom = (list, seed) => list[Math.floor(seededRandom(seed) * list.length) % list.length];
-
 const formatPeso = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
-
-const buildBudgetAllocations = (fmrProjects, size = 72) => {
-  const projectPool = (fmrProjects || []).map((p) => ({
-    id: p.id,
-    name: p.project_name || p.projectName || 'Unnamed FMR Project',
-    municipality: p.municipality || 'Iloilo City',
-    lengthKm: Number(p.project_length_km || p.roadLength || 0) || 6.5,
-  }));
-
-  const projects = projectPool.length
-    ? projectPool
-    : FARMER_FALLBACK_PROJECTS.map((name, idx) => ({
-      id: `fallback-${idx + 1}`,
-      name,
-      municipality: pickFrom(getMunicipalities(), idx + 11),
-      lengthKm: 5 + (idx % 5) * 1.2,
-    }));
-
-  return Array.from({ length: size }, (_, idx) => {
-    const seed = (idx + 5) * 41;
-    const project = projects[idx % projects.length];
-    const fundingSource = pickFrom(FUNDING_SOURCES, seed + 1);
-    const approvedBudget = Math.round((seededRandom(seed + 3) * 35 + 15) * 1000000);
-    const releasedAmount = Math.round(approvedBudget * (0.35 + seededRandom(seed + 7) * 0.55));
-    const remainingBalance = Math.max(approvedBudget - releasedAmount, 0);
-    const fiscalYear = 2018 + Math.floor(seededRandom(seed + 11) * 8);
-    const status = pickFrom(BUDGET_STATUSES, seed + 13);
-    const priority = pickFrom(BUDGET_PRIORITIES, seed + 17);
-    const approvedDate = new Date(fiscalYear, Math.floor(seededRandom(seed + 19) * 12), 1 + Math.floor(seededRandom(seed + 23) * 27));
-    const utilizationRate = approvedBudget ? Math.min(100, Math.round((releasedAmount / approvedBudget) * 100)) : 0;
-    const procurementPhase = pickFrom(PROCUREMENT_PHASES, seed + 29);
-    const risk = pickFrom(RISK_LEVELS, seed + 31);
-    const delayedRelease = status === 'Delayed' || seededRandom(seed + 37) > 0.86;
-    const costPerKm = approvedBudget / Math.max(project.lengthKm, 1);
-    const fundingHealthScore = Math.min(100, Math.round(60 + seededRandom(seed + 41) * 35 - (delayedRelease ? 15 : 0)));
-    const completionProbability = Math.min(98, Math.round(55 + seededRandom(seed + 43) * 40 + (utilizationRate / 10)));
-    const releaseHistory = Array.from({ length: 3 }, (_, step) => ({
-      tranche: `Tranche ${step + 1}`,
-      amount: Math.round(releasedAmount * (0.25 + seededRandom(seed + 50 + step) * 0.4)),
-      date: new Date(fiscalYear, Math.max(0, step * 3 + 1), 10 + step * 5),
-      status: step === 2 && delayedRelease ? 'Delayed' : 'Released',
-    }));
-
-    const contractorPayments = Array.from({ length: 3 }, (_, step) => ({
-      milestone: `Milestone ${step + 1}`,
-      paid: Math.round(releasedAmount * (0.2 + seededRandom(seed + 70 + step) * 0.35)),
-      date: new Date(fiscalYear, Math.min(11, step * 4 + 2), 12 + step * 4),
-      status: step === 2 && delayedRelease ? 'On Hold' : 'Paid',
-    }));
-
-    return {
-      allocation_id: `ALOC-${String(idx + 1).padStart(4, '0')}`,
-      project_id: project.id,
-      project_name: project.name,
-      municipality: project.municipality,
-      funding_source: fundingSource,
-      approved_budget: approvedBudget,
-      released_amount: releasedAmount,
-      remaining_balance: remainingBalance,
-      fiscal_year: fiscalYear,
-      allocation_status: status,
-      priority_level: priority,
-      date_approved: approvedDate,
-      utilization_rate: utilizationRate,
-      procurement_phase: procurementPhase,
-      delayed_release: delayedRelease,
-      cost_per_km: costPerKm,
-      funding_health_score: fundingHealthScore,
-      completion_probability: completionProbability,
-      release_history: releaseHistory,
-      contractor_payments: contractorPayments,
-      risk_level: risk,
-      disbursement_progress: Math.min(100, Math.round(utilizationRate + seededRandom(seed + 90) * 15)),
-      created_at: approvedDate.toISOString(),
-      updated_at: new Date(approvedDate.getTime() + 1000 * 60 * 60 * 24 * 90).toISOString(),
-    };
-  });
-};
 
 function EmptyState({ title, description, buttonLabel, onButtonClick }) {
   return (
@@ -591,16 +485,6 @@ export default function Dashboard() {
       .filter(Boolean);
   }, [cropFilteredFarmerBeneficiaries]);
 
-  // Budget allocation state
-  const [budgetSearchInput, setBudgetSearchInput] = useState('');
-  const [budgetSearch, setBudgetSearch] = useState('');
-  const [budgetStatusFilter, setBudgetStatusFilter] = useState('All');
-  const [budgetSourceFilter, setBudgetSourceFilter] = useState('All');
-  const [budgetPriorityFilter, setBudgetPriorityFilter] = useState('All');
-  const [budgetYearFilter, setBudgetYearFilter] = useState('All');
-  const [budgetPage, setBudgetPage] = useState(1);
-  const [budgetLoading, setBudgetLoading] = useState(true);
-  const [selectedBudgetAllocation, setSelectedBudgetAllocation] = useState(null);
   // Project Management tab states
   const [pmSubTab, setPmSubTab] = useState('board');
   const [pmSearchInput, setPmSearchInput] = useState('');
@@ -816,6 +700,52 @@ export default function Dashboard() {
     progress: 0,
     description: ''
   };
+
+  const generateNextProjectCode = () => {
+    const prefix = 'FMR-2026-R6-';
+    let maxNum = 0;
+    (projects || []).forEach(p => {
+      const code = p.project_code || '';
+      if (code.startsWith(prefix)) {
+        const numPart = code.substring(prefix.length);
+        const num = parseInt(numPart, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+    const nextNum = maxNum + 1;
+    const padded = String(nextNum).padStart(3, '0');
+    return `${prefix}${padded}`;
+  };
+
+  const getPaginationRange = (currentPage, totalPages) => {
+    const delta = 1;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    for (let i of range) {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l > 2) {
+          rangeWithDots.push('...');
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    }
+
+    return rangeWithDots;
+  };
+
   const [formData, setFormData] = useState(emptyForm);
 
   // Show notification helper
@@ -947,13 +877,24 @@ export default function Dashboard() {
       await Promise.all(
         criticalEntries.map(async (entry) => {
           try {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const { data: existingLog } = await supabase
+              .from('lgu_project_alert_logs')
+              .select('id')
+              .eq('project_key', entry.project_key)
+              .eq('threshold_value', 5)
+              .eq('alert_date', todayStr)
+              .maybeSingle();
+
+            if (existingLog) return;
+
             const { error: logErr } = await supabase
               .from('lgu_project_alert_logs')
               .insert({
                 project_key: entry.project_key,
                 municipality: entry.municipality,
                 threshold_value: 5,
-                alert_date: new Date().toISOString().slice(0, 10),
+                alert_date: todayStr,
               });
 
             if (logErr) return;
@@ -1197,6 +1138,50 @@ export default function Dashboard() {
       setFmrLoading(false);
     }
   }, []);
+
+  // Real, persisted budget release tranches (project_tranches table) --
+  // read-only fallback to the RA-9184 estimate in budgetEstimate.js is
+  // used per-project wherever these are empty for that project.
+  const [projectTranches, setProjectTranches] = useState([]);
+
+  const fetchProjectTranches = useCallback(async () => {
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('project_tranches')
+        .select('*')
+        .order('tranche_order', { ascending: true });
+      if (fetchErr) throw fetchErr;
+      setProjectTranches(data || []);
+    } catch (err) {
+      console.error('Error fetching project tranches:', err.message);
+    }
+  }, []);
+
+  const tranchesByProjectId = useMemo(() => {
+    const map = {};
+    (projectTranches || []).forEach((t) => {
+      if (!map[t.project_id]) map[t.project_id] = [];
+      map[t.project_id].push(t);
+    });
+    return map;
+  }, [projectTranches]);
+
+  const handleInitializeTranches = useCallback(async (projectId) => {
+    const { error: rpcErr } = await supabase.rpc('initialize_project_tranches', { p_project_id: projectId });
+    if (rpcErr) throw rpcErr;
+    await fetchProjectTranches();
+  }, [fetchProjectTranches]);
+
+  const handleReleaseTranche = useCallback(async (trancheId, { amount, date, notes }) => {
+    const { error: rpcErr } = await supabase.rpc('release_project_tranche', {
+      p_tranche_id: trancheId,
+      p_released_amount: amount,
+      p_released_date: date,
+      p_notes: notes || null,
+    });
+    if (rpcErr) throw rpcErr;
+    await Promise.all([fetchProjectTranches(), fetchFmrProjects()]);
+  }, [fetchProjectTranches, fetchFmrProjects]);
 
   const fetchProjectRoutes = useCallback(async () => {
     try {
@@ -1462,9 +1447,14 @@ export default function Dashboard() {
   // LGU proposal, and remembers the proposal so handleAddProject can link
   // it back once the officer actually submits the form (see pendingProposalLink).
   const openAddProjectFromProposal = (proposal) => {
+    const lengthKm = Number(proposal.estimated_length_km || 0);
+    const calculatedBudget = lengthKm > 0 ? String(Math.round(lengthKm * 15000000)) : (proposal.estimated_budget ? String(proposal.estimated_budget) : '');
+    const nextCode = generateNextProjectCode();
+
     setFormData({
       ...emptyForm,
       projectName: proposal.project_name || '',
+      projectCode: nextCode,
       municipality: proposal.municipality || '',
       barangay: proposal.barangay || '',
       province: proposal.province || 'Iloilo',
@@ -1473,10 +1463,10 @@ export default function Dashboard() {
       endLatitude: proposal.end_latitude != null ? String(proposal.end_latitude) : '',
       endLongitude: proposal.end_longitude != null ? String(proposal.end_longitude) : '',
       roadLength: proposal.estimated_length_km ? String(proposal.estimated_length_km) : '',
-      totalBudget: proposal.estimated_budget ? String(proposal.estimated_budget) : '',
-      budgetSource: 'LGU Proposal',
+      totalBudget: calculatedBudget,
+      budgetSource: 'DA',
       expectedEndDate: proposal.target_funding_year ? `${proposal.target_funding_year}-12-31` : '',
-      roadType: proposal.road_type || '',
+      roadType: 'Concrete',
       description: [proposal.justification, proposal.description].filter(Boolean).join(' — '),
     });
     const waypoints = Array.isArray(proposal.route_waypoints)
@@ -2296,6 +2286,7 @@ export default function Dashboard() {
       fetchPublicReports();
       fetchEscalations();
       fetchFmrProjects();
+      fetchProjectTranches();
       fetchFarmerBeneficiaries();
       fetchMarkets();
       fetchProjectRoutes();
@@ -2329,6 +2320,7 @@ export default function Dashboard() {
       .channel('admin-fmr-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => { fetchFmrProjects(); fetchMapReportData(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, () => fetchProjectRoutes())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, () => fetchProjectTranches())
       .subscribe();
 
     const farmerBeneficiariesChannel = supabase
@@ -2370,7 +2362,7 @@ export default function Dashboard() {
       supabase.removeChannel(progressUpdatesChannel);
       supabase.removeChannel(lguProposalsChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectTranches, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2641,144 +2633,10 @@ export default function Dashboard() {
     showNotification('CSV export complete.');
   };
 
-  const budgetRowsPerPage = 8;
-  const budgetDataset = useMemo(() => buildBudgetAllocations(fmrProjects, 72), [fmrProjects]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => setBudgetSearch(budgetSearchInput.trim()), 350);
-    return () => clearTimeout(handle);
-  }, [budgetSearchInput]);
-
   useEffect(() => {
     const handle = setTimeout(() => setPmSearch(pmSearchInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [pmSearchInput]);
-
-  useEffect(() => {
-    setBudgetLoading(true);
-    const handle = setTimeout(() => setBudgetLoading(false), 450);
-    return () => clearTimeout(handle);
-  }, [budgetDataset]);
-
-  const budgetYearOptions = useMemo(() => {
-    return [...new Set(budgetDataset.map((b) => b.fiscal_year))].sort((a, b) => b - a);
-  }, [budgetDataset]);
-
-  const filteredBudgetAllocations = useMemo(() => {
-    const q = budgetSearch.toLowerCase();
-    return budgetDataset.filter((allocation) => {
-      const matchesSearch = !q || [
-        allocation.allocation_id,
-        allocation.project_name,
-        allocation.municipality,
-        allocation.funding_source,
-      ].some((field) => String(field || '').toLowerCase().includes(q));
-
-      const matchesStatus = budgetStatusFilter === 'All' || allocation.allocation_status === budgetStatusFilter;
-      const matchesSource = budgetSourceFilter === 'All' || allocation.funding_source === budgetSourceFilter;
-      const matchesPriority = budgetPriorityFilter === 'All' || allocation.priority_level === budgetPriorityFilter;
-      const matchesYear = budgetYearFilter === 'All' || String(allocation.fiscal_year) === String(budgetYearFilter);
-
-      return matchesSearch && matchesStatus && matchesSource && matchesPriority && matchesYear;
-    });
-  }, [budgetDataset, budgetSearch, budgetStatusFilter, budgetSourceFilter, budgetPriorityFilter, budgetYearFilter]);
-
-  const budgetTotalPages = Math.max(1, Math.ceil(filteredBudgetAllocations.length / budgetRowsPerPage));
-  const safeBudgetPage = Math.min(budgetPage, budgetTotalPages);
-  const paginatedBudgetAllocations = filteredBudgetAllocations.slice(
-    (safeBudgetPage - 1) * budgetRowsPerPage,
-    safeBudgetPage * budgetRowsPerPage
-  );
-
-  const budgetKpis = useMemo(() => {
-    const totalBudget = filteredBudgetAllocations.reduce((sum, a) => sum + a.approved_budget, 0);
-    const allocatedBudget = filteredBudgetAllocations.reduce((sum, a) => sum + a.approved_budget, 0);
-    const releasedFunds = filteredBudgetAllocations.reduce((sum, a) => sum + a.released_amount, 0);
-    const remainingBalance = filteredBudgetAllocations.reduce((sum, a) => sum + a.remaining_balance, 0);
-    const utilizationRate = allocatedBudget ? Math.round((releasedFunds / allocatedBudget) * 100) : 0;
-    const activeFundingSources = new Set(filteredBudgetAllocations.map((a) => a.funding_source)).size;
-
-    return {
-      totalBudget,
-      allocatedBudget,
-      releasedFunds,
-      remainingBalance,
-      utilizationRate,
-      activeFundingSources,
-    };
-  }, [filteredBudgetAllocations]);
-
-  const budgetUtilizationTrend = useMemo(() => {
-    const byYear = filteredBudgetAllocations.reduce((acc, a) => {
-      const key = a.fiscal_year;
-      if (!acc[key]) acc[key] = { year: key, approved: 0, released: 0 };
-      acc[key].approved += a.approved_budget;
-      acc[key].released += a.released_amount;
-      return acc;
-    }, {});
-    return Object.values(byYear).sort((a, b) => a.year - b.year);
-  }, [filteredBudgetAllocations]);
-
-  const budgetByMunicipality = useMemo(() => {
-    const byMunicipality = filteredBudgetAllocations.reduce((acc, a) => {
-      acc[a.municipality] = (acc[a.municipality] || 0) + a.approved_budget;
-      return acc;
-    }, {});
-    return Object.entries(byMunicipality)
-      .map(([municipality, budget]) => ({ municipality, budget }))
-      .sort((a, b) => b.budget - a.budget)
-      .slice(0, 10);
-  }, [filteredBudgetAllocations]);
-
-  const budgetBySource = useMemo(() => {
-    return FUNDING_SOURCES.map((source) => ({
-      name: source,
-      value: filteredBudgetAllocations.filter((a) => a.funding_source === source).length,
-    }));
-  }, [filteredBudgetAllocations]);
-
-  const allocationGrowthByYear = useMemo(() => {
-    const byYear = filteredBudgetAllocations.reduce((acc, a) => {
-      acc[a.fiscal_year] = (acc[a.fiscal_year] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.keys(byYear)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((year) => ({ year, allocations: byYear[year] }));
-  }, [filteredBudgetAllocations]);
-
-  const projectCostEfficiency = useMemo(() => {
-    const grouped = filteredBudgetAllocations.reduce((acc, a) => {
-      if (!acc[a.project_name]) {
-        acc[a.project_name] = { project: a.project_name, costPerKm: a.cost_per_km };
-      }
-      return acc;
-    }, {});
-    return Object.values(grouped).sort((a, b) => a.costPerKm - b.costPerKm).slice(0, 8);
-  }, [filteredBudgetAllocations]);
-
-  const budgetReleaseProgress = useMemo(() => {
-    return filteredBudgetAllocations
-      .map((a) => ({ project: a.project_name, released: a.released_amount, approved: a.approved_budget }))
-      .slice(0, 8);
-  }, [filteredBudgetAllocations]);
-
-  const exportFilteredBudgets = () => {
-    const rows = filteredBudgetAllocations.map((a) => ({
-      allocation_id: a.allocation_id,
-      project_name: a.project_name,
-      municipality: a.municipality,
-      funding_source: a.funding_source,
-      approved_budget: a.approved_budget,
-      released_amount: a.released_amount,
-      remaining_balance: a.remaining_balance,
-      fiscal_year: a.fiscal_year,
-      allocation_status: a.allocation_status,
-      priority_level: a.priority_level,
-      date_approved: new Date(a.date_approved).toLocaleDateString(),
-    }));
-    exportRowsToCsv(rows, 'budget_allocations.csv');
-  };
 
 
 
@@ -2873,8 +2731,19 @@ export default function Dashboard() {
         ) {
           const computedKm = calculateRoadLengthKm(startLat, startLng, endLat, endLng);
           next.roadLength = computedKm.toFixed(2);
+          next.totalBudget = String(Math.round(computedKm * 15000000));
         } else {
           next.roadLength = '';
+          next.totalBudget = '';
+        }
+      }
+
+      if (name === 'roadLength') {
+        const lengthKm = Number(value || 0);
+        if (lengthKm > 0) {
+          next.totalBudget = String(Math.round(lengthKm * 15000000));
+        } else {
+          next.totalBudget = '';
         }
       }
 
@@ -2926,10 +2795,10 @@ export default function Dashboard() {
       contractor_id: newProjectContractorId || null,
       total_budget: formData.totalBudget ? parseFloat(formData.totalBudget) : null,
       funds_released: formData.disbursedAmount ? parseFloat(formData.disbursedAmount) : null,
-      funding_source: formData.budgetSource || null,
+      funding_source: 'DA',
       remarks: [
         `FMR Code: ${enteredCode}`,
-        formData.roadType ? `Road Type: ${formData.roadType}` : null,
+        `Road Type: Concrete`,
         formData.contractor ? `Contractor: ${formData.contractor}` : null,
         formData.description ? `Description: ${formData.description}` : null,
       ].filter(Boolean).join(' | '),
@@ -3605,7 +3474,6 @@ export default function Dashboard() {
                 {activeTab === 'map' && 'Map View'}
                 {activeTab === 'analytics' && 'Analytics'}
                 {activeTab === 'farmers' && 'Farmer Beneficiaries'}
-                {activeTab === 'budget' && 'Budget Allocation'}
                 {activeTab === 'priorities' && 'Priorities'}
                 {activeTab === 'reports' && 'Reports'}
                 {activeTab === 'public-reports' && 'Public Reports'}
@@ -3618,7 +3486,6 @@ export default function Dashboard() {
                 {activeTab === 'map' && 'Geographic visualization of projects'}
                 {activeTab === 'analytics' && 'Project performance metrics and trends'}
                 {activeTab === 'farmers' && 'LGU-submitted farmer beneficiaries linked to FMR project service areas for DA review'}
-                {activeTab === 'budget' && 'Track allocations, releases, and funding health for FMR infrastructure'}
                 {activeTab === 'priorities' && 'Weighted ranking of FMR project urgency'}
                 {activeTab === 'reports' && 'Generate and view project reports'}
                 {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
@@ -3630,7 +3497,13 @@ export default function Dashboard() {
             {activeTab === 'projects' && (
               <button
                 onClick={() => {
-                  setFormData({ ...emptyForm, projectCode: '' });
+                  const nextCode = generateNextProjectCode();
+                  setFormData({
+                    ...emptyForm,
+                    projectCode: nextCode,
+                    roadType: 'Concrete',
+                    budgetSource: 'DA',
+                  });
                   setNewProjectRouteWaypoints([]);
                   setNewProjectRouteMode('waypoint');
                   setShowAddModal(true);
@@ -4019,19 +3892,28 @@ export default function Dashboard() {
                         >
                           Previous
                         </button>
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                          <button
-                            key={page}
-                            onClick={() => setCurrentPage(page)}
-                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                              currentPage === page
-                                ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                                : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        ))}
+                        {getPaginationRange(currentPage, totalPages).map((page, idx) => {
+                          if (page === '...') {
+                            return (
+                              <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">
+                                ...
+                              </span>
+                            );
+                          }
+                          return (
+                            <button
+                              key={page}
+                              onClick={() => setCurrentPage(page)}
+                              className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                                currentPage === page
+                                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                                  : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          );
+                        })}
                         <button
                           onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                           disabled={currentPage === totalPages}
@@ -4876,19 +4758,28 @@ export default function Dashboard() {
                       >
                         Previous
                       </button>
-                      {Array.from({ length: fmrTotalPages }, (_, i) => i + 1).map((page) => (
-                        <button
-                          key={page}
-                          onClick={() => setFmrProjectCurrentPage(page)}
-                          className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                            safeFmrPage === page
-                              ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                              : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                          }`}
-                        >
-                          {page}
-                        </button>
-                      ))}
+                      {getPaginationRange(safeFmrPage, fmrTotalPages).map((page, idx) => {
+                        if (page === '...') {
+                          return (
+                            <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">
+                              ...
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => setFmrProjectCurrentPage(page)}
+                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                              safeFmrPage === page
+                                ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                                : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        );
+                      })}
                       <button
                         onClick={() => setFmrProjectCurrentPage((p) => Math.min(fmrTotalPages, p + 1))}
                         disabled={safeFmrPage === fmrTotalPages}
@@ -5656,11 +5547,16 @@ export default function Dashboard() {
               const isDpwh = p.id && String(p.id).charCodeAt(0) % 2 === 0;
               const mode = isDpwh ? 'DPWH (Inter-agency)' : 'LGU (MOA-Downloaded)';
 
-              // Tranche releases (15% Mobilization / 35% + 40% Progress / 10% Retention)
-              const tranches = buildDisbursementTranches(estimatedCost, p).map((t) => ({
-                ...t,
-                label: `${t.name} (${t.percentage}%)`,
-              }));
+              // Prefer the real, admin-released tranches (project_tranches) once
+              // they've been initialized for this project; otherwise fall back
+              // to the RA-9184 estimate computed from physical progress.
+              const realTranches = tranchesByProjectId[p.id] || [];
+              const isReal = realTranches.length > 0;
+              const tranches = (isReal ? realTranchesToScheduleShape(realTranches) : buildDisbursementTranches(estimatedCost, p))
+                .map((t) => ({
+                  ...t,
+                  label: `${t.name} (${t.percentage}%)`,
+                }));
 
               const {
                 totalReleased,
@@ -5674,6 +5570,7 @@ export default function Dashboard() {
                 estimatedCost,
                 mode,
                 isDpwh,
+                isReal,
                 tranches,
                 totalReleased,
                 totalLiquidated,
@@ -6713,49 +6610,24 @@ export default function Dashboard() {
 
                                 {/* Tranches Flow */}
                                 <div className="space-y-4">
-                                  <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">DA FMRDP Release Lifecycle</h4>
-                                  <div className="relative pl-6 space-y-4 border-l border-slate-200 ml-3">
-                                    {budget.tranches.map((t) => {
-                                      return (
-                                        <div key={t.id} className="relative">
-                                          {/* Connector dot */}
-                                          <span className={`absolute -left-9 top-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] border shadow-sm ${
-                                            t.released 
-                                              ? 'bg-teal-500 border-teal-600 text-white font-bold' 
-                                              : 'bg-white border-slate-200 text-slate-400'
-                                          }`}>
-                                            {t.released ? '✓' : t.id}
-                                          </span>
-                                          
-                                          <div className="bg-white border border-slate-200/80 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                                            <div className="flex justify-between items-start gap-2">
-                                              <div>
-                                                <p className="text-xs font-bold text-slate-800">{t.name}</p>
-                                                <p className="text-[10px] text-slate-400 mt-0.5">Required Progress: {t.requiredProgress}%</p>
-                                              </div>
-                                              <span className="text-xs font-semibold text-slate-800">{formatPeso(t.amount)}</span>
-                                            </div>
-                                            
-                                            <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2 text-[10px]">
-                                              <span className={`font-semibold ${t.released ? 'text-teal-600' : 'text-slate-400'}`}>
-                                                {t.released ? `Released on ${t.date.toLocaleDateString()}` : 'Pending Accomplishment'}
-                                              </span>
-                                              {t.released && (
-                                                <span className={`font-bold px-1.5 py-0.5 rounded ${
-                                                  t.liquidated ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                                                }`}>
-                                                  {t.liquidated ? 'COA Liquidated' : 'Pending LGU Audit'}
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">DA FMRDP Release Lifecycle</h4>
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      budget.isReal ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    }`}>
+                                      {budget.isReal ? 'OFFICIAL RECORD' : 'ESTIMATE ONLY'}
+                                    </span>
+                                  </div>
+                                  <ProjectTrancheTimeline
+                                    project={p}
+                                    tranches={tranchesByProjectId[p.id] || []}
+                                    canManage
+                                    onInitialize={handleInitializeTranches}
+                                    onRelease={handleReleaseTranche}
+                                  />
                                 </div>
                               </div>
-                            </div>
-                          );
+                            );
                         })()}
                       </div>
                     </div>
@@ -9605,11 +9477,8 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Type *</label>
-                  <select name="roadType" value={formData.roadType} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
-                    <option value="">Select type</option>
+                  <select name="roadType" value="Concrete" disabled className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700 focus:outline-none">
                     <option value="Concrete">Concrete</option>
-                    <option value="Asphalt">Asphalt</option>
-                    <option value="Gravel">Gravel</option>
                   </select>
                 </div>
                 <div>
@@ -9618,12 +9487,8 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Funding Source *</label>
-                  <select name="budgetSource" value={formData.budgetSource} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
-                    <option value="">Select source</option>
-                    <option value="National">National Government</option>
-                    <option value="Provincial">Provincial</option>
-                    <option value="Municipal">Municipal</option>
-                    <option value="Mixed">Mixed</option>
+                  <select name="budgetSource" value="DA" disabled className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700 focus:outline-none">
+                    <option value="DA">DA</option>
                   </select>
                 </div>
                 <div>
@@ -10454,132 +10319,6 @@ export default function Dashboard() {
           </div>
         );
       })()}
-
-      {selectedBudgetAllocation && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedBudgetAllocation(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Allocation</p>
-                <h3 className="text-2xl font-bold text-slate-900 mt-1">{selectedBudgetAllocation.project_name}</h3>
-                <p className="text-sm text-slate-500 mt-1">{selectedBudgetAllocation.allocation_id} • {selectedBudgetAllocation.municipality}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                {renderStatusPill(selectedBudgetAllocation.allocation_status)}
-                {renderStatusPill(selectedBudgetAllocation.priority_level)}
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Funding Source</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.funding_source}</p>
-                  <p className="text-sm text-slate-500 mt-1">Fiscal Year {selectedBudgetAllocation.fiscal_year}</p>
-                </div>
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Budget Breakdown</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{formatPeso(selectedBudgetAllocation.approved_budget)}</p>
-                  <p className="text-sm text-slate-500 mt-1">Released {formatPeso(selectedBudgetAllocation.released_amount)}</p>
-                </div>
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Utilization</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.utilization_rate}%</p>
-                  <p className="text-sm text-slate-500 mt-1">Remaining {formatPeso(selectedBudgetAllocation.remaining_balance)}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <h4 className="text-lg font-bold text-slate-900">Release History</h4>
-                  <div className="mt-4 space-y-3">
-                    {selectedBudgetAllocation.release_history.map((entry) => (
-                      <div key={entry.tranche} className="flex items-center justify-between text-sm">
-                        <div>
-                          <p className="font-semibold text-slate-900">{entry.tranche}</p>
-                          <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-slate-900">{formatPeso(entry.amount)}</p>
-                          <p className="text-xs text-slate-500">{entry.status}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <h4 className="text-lg font-bold text-slate-900">Contractor Payment Tracking</h4>
-                  <div className="mt-4 space-y-3">
-                    {selectedBudgetAllocation.contractor_payments.map((entry) => (
-                      <div key={entry.milestone} className="flex items-center justify-between text-sm">
-                        <div>
-                          <p className="font-semibold text-slate-900">{entry.milestone}</p>
-                          <p className="text-xs text-slate-500">{entry.date.toLocaleDateString()}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-slate-900">{formatPeso(entry.paid)}</p>
-                          <p className="text-xs text-slate-500">{entry.status}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Procurement Phase</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.procurement_phase}</p>
-                  <p className="text-sm text-slate-500 mt-1">Cost per km {formatPeso(selectedBudgetAllocation.cost_per_km)}</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Risk Assessment</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.risk_level}</p>
-                  <p className="text-sm text-slate-500 mt-1">Funding health {selectedBudgetAllocation.funding_health_score}/100</p>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <p className="text-xs text-slate-500 uppercase tracking-widest">Completion Probability</p>
-                  <p className="text-lg font-semibold text-slate-900 mt-2">{selectedBudgetAllocation.completion_probability}%</p>
-                  <p className="text-sm text-slate-500 mt-1">Disbursement {selectedBudgetAllocation.disbursement_progress}%</p>
-                </div>
-              </div>
-
-              {selectedBudgetAllocation.delayed_release && (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-                  Delayed release warning: One or more tranches are behind schedule. Review procurement and release schedule.
-                </div>
-              )}
-
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                <h4 className="text-lg font-bold text-slate-900">Disbursement Progress</h4>
-                <div className="mt-4">
-                  <div className="flex items-center justify-between text-sm text-slate-500">
-                    <span>Released</span>
-                    <span>{selectedBudgetAllocation.utilization_rate}%</span>
-                  </div>
-                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mt-2">
-                    <div
-                      className="h-3 bg-emerald-500"
-                      style={{ width: `${selectedBudgetAllocation.utilization_rate}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedBudgetAllocation(null)}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {projectFeedbackModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>

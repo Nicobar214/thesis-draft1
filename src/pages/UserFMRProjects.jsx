@@ -79,7 +79,7 @@ function StatCard({ icon, value, label, variant = 'default' }) {
 }
 
 /* ——— Project List Card ——— */
-function FMRProjectCard({ project, onClick }) {
+function FMRProjectCard({ project, onClick, tranches = [] }) {
   const normalizedStatus = normalizeUserProjectStatus(project.status);
   const style = getStatusStyle(normalizedStatus);
   const name = normalizeProjectName(project);
@@ -87,7 +87,7 @@ function FMRProjectCard({ project, onClick }) {
   const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
   const overdue = isProjectOverdue(project);
   const accomplishment = Number(project.accomplishment) || (normalizedStatus === 'Completed' ? 100 : 0);
-  const budget = getProjectBudgetSummary(project);
+  const budget = getProjectBudgetSummary(project, tranches);
 
   return (
     <button
@@ -207,11 +207,11 @@ function DetailItem({ icon, label, value }) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    FMR PROJECT DETAIL VIEW
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function FMRProjectDetail({ project, onBack }) {
+function FMRProjectDetail({ project, onBack, tranches = [] }) {
   const style = getStatusStyle(project.status);
   const hasCoords = project.start_latitude && project.start_longitude;
   const name = normalizeProjectName(project);
-  const budget = getProjectBudgetSummary(project);
+  const budget = getProjectBudgetSummary(project, tranches);
   const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
 
   return (
@@ -393,6 +393,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [reportCountByProject, setReportCountByProject] = useState({});
+  const [tranchesByProjectId, setTranchesByProjectId] = useState({});
   const projectsPerPage = embedded ? 6 : 9;
 
   const getProjectDate = (project) => {
@@ -429,6 +430,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     const channel = supabase
       .channel('user-fmr-projects')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchFMRProjects)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, fetchFMRProjects)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
@@ -458,7 +460,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   async function fetchFMRProjects() {
     try {
       setFetchError(null);
-      const [{ data, error }, { data: reportsData, error: reportsError }] = await Promise.all([
+      const [{ data, error }, { data: reportsData, error: reportsError }, { data: tranchesData }] = await Promise.all([
         supabase
           .from('fmr_projects')
           .select('*')
@@ -467,6 +469,10 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         supabase
           .from('public_reports')
           .select('project_name'),
+        supabase
+          .from('project_tranches')
+          .select('*')
+          .order('tranche_order', { ascending: true }),
       ]);
 
       if (error) {
@@ -483,6 +489,13 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         }, {});
         setReportCountByProject(counts);
       }
+
+      const tMap = {};
+      (tranchesData || []).forEach((t) => {
+        if (!tMap[t.project_id]) tMap[t.project_id] = [];
+        tMap[t.project_id].push(t);
+      });
+      setTranchesByProjectId(tMap);
 
       setProjects(data || []);
     } catch (e) {
@@ -614,7 +627,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   if (selectedProject) {
     return (
       <UserLayout {...layoutProps}>
-        <FMRProjectDetail project={selectedProject} onBack={() => setSelectedProject(null)} />
+        <FMRProjectDetail project={selectedProject} onBack={() => setSelectedProject(null)} tranches={tranchesByProjectId[selectedProject.id] || []} />
       </UserLayout>
     );
   }
@@ -869,7 +882,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
             </div>
           ) : (
             paginatedProjects.map(p => (
-              <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} />
+              <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} tranches={tranchesByProjectId[p.id] || []} />
             ))
           )}
         </div>

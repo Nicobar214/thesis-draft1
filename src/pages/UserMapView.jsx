@@ -131,6 +131,7 @@ function getYearOptions(projects) {
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 export default function UserMapView({ embedded = false } = {}) {
   const [projects, setProjects] = useState([]);
+  const [tranchesByProjectId, setTranchesByProjectId] = useState({});
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
@@ -184,6 +185,7 @@ export default function UserMapView({ embedded = false } = {}) {
     fetchProjectReportCounts();
     fetchFarmerBeneficiaries();
     fetchMarkets();
+    fetchProjectTranches();
 
     const channel = supabase
       .channel('map-view-fmr')
@@ -192,6 +194,7 @@ export default function UserMapView({ embedded = false } = {}) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchProjectReportCounts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, fetchFarmerBeneficiaries)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, fetchMarkets)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, fetchProjectTranches)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
@@ -238,6 +241,24 @@ export default function UserMapView({ embedded = false } = {}) {
       console.error('Error fetching projects for map:', e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchProjectTranches() {
+    try {
+      const { data, error } = await supabase
+        .from('project_tranches')
+        .select('*')
+        .order('tranche_order', { ascending: true });
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach((t) => {
+        if (!map[t.project_id]) map[t.project_id] = [];
+        map[t.project_id].push(t);
+      });
+      setTranchesByProjectId(map);
+    } catch (e) {
+      console.error('Error fetching project tranches:', e);
     }
   }
 
@@ -641,7 +662,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   const isNearby = nearbyProjects.has(project.id);
                   const normalizedStatus = normalizeStatus(project.status);
                   const progress = Number(project.accomplishment || 0);
-                  const budget = getProjectBudgetSummary(project);
+                  const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
                   const reportsCount = reportCountByProjectId[project.id] || 0;
                   const targetChip = getTargetDateChip(project.target_completion_date, normalizedStatus === 'Completed');
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
@@ -1096,7 +1117,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 </div>
               )}
               {(() => {
-                const budget = getProjectBudgetSummary(selectedProject);
+                const budget = getProjectBudgetSummary(selectedProject, tranchesByProjectId[selectedProject.id] || []);
                 return (
                   <div className="p-3 bg-slate-50 rounded-xl">
                     <div className="flex items-center justify-between mb-0.5">
@@ -1125,7 +1146,7 @@ export default function UserMapView({ embedded = false } = {}) {
 
             {/* Funds utilized / remaining */}
             {(() => {
-              const budget = getProjectBudgetSummary(selectedProject);
+              const budget = getProjectBudgetSummary(selectedProject, tranchesByProjectId[selectedProject.id] || []);
               const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
               return (
                 <div className="mt-4 p-3.5 bg-white border border-slate-200 rounded-xl">

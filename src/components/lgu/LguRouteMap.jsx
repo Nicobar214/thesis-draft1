@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
 import { buildRoutePoints, boundsFromPoints, getJitteredCentroid } from '../../lib/mapRouteUtils';
+import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 
 function FitToData({ points }) {
   const map = useMap();
@@ -84,10 +85,11 @@ const endIcon = new L.DivIcon({
   iconAnchor: [11, 11],
 });
 
-export default function LguRouteMap({ 
-  projects, 
-  routesByProjectId, 
-  reports, 
+export default function LguRouteMap({
+  projects,
+  routesByProjectId,
+  tranchesByProjectId = {},
+  reports,
   showHeat = false,
   farmerBeneficiaries = [],
   markets = [],
@@ -178,18 +180,25 @@ export default function LguRouteMap({
             {routeData.points?.length >= 2 && (
               <Polyline positions={routeData.points} pathOptions={{ color: '#0f766e', weight: 4, opacity: 0.75 }} />
             )}
-            {coordinates && (
-              <Marker position={coordinates} icon={startIcon}>
-                <Popup>
-                  <div className="p-1 space-y-0.5 text-xs text-slate-800">
-                    <p className="font-bold text-teal-700">{project.project_name}</p>
-                    <p><span className="font-semibold text-slate-500">Status:</span> {project.status || project.project_status || 'Completed'}</p>
-                    <p><span className="font-semibold text-slate-500">Length:</span> {project.project_length_km || project.length_km || 0} km</p>
-                    <p><span className="font-semibold text-slate-500">Source:</span> {project.source || 'DA'}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            )}
+            {coordinates && (() => {
+              const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
+              return (
+                <Marker position={coordinates} icon={startIcon}>
+                  <Popup>
+                    <div className="p-1 space-y-0.5 text-xs text-slate-800">
+                      <p className="font-bold text-teal-700">{project.project_name}</p>
+                      <p><span className="font-semibold text-slate-500">Status:</span> {project.status || project.project_status || 'Completed'}</p>
+                      <p><span className="font-semibold text-slate-500">Length:</span> {project.project_length_km || project.length_km || 0} km</p>
+                      <p><span className="font-semibold text-slate-500">Source:</span> {project.source || 'DA'}</p>
+                      <p className="pt-1 border-t border-slate-100">
+                        <span className="font-semibold text-slate-500">Budget:</span> {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
+                        {' · '}Released {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
+                      </p>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })()}
             {routeData.endPoint && !coordinates && (
               <Marker position={routeData.endPoint} icon={endIcon}>
                 <Popup>{project.project_name} (End)</Popup>

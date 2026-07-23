@@ -1,7 +1,7 @@
 /* ContractorDashboard.jsx – Main landing page for contractors
  * KPI stat cards + quick-action + recent activity list
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
@@ -41,6 +41,7 @@ export default function ContractorDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const isFirstLoadRef = useRef(true);
 
   // KPI data
   const [totalProjects, setTotalProjects]     = useState(0);
@@ -63,8 +64,12 @@ export default function ContractorDashboard() {
   // ── Fetch KPIs ──────────────────────────────────────────────
   const fetchKPIs = useCallback(async () => {
     if (!user) return;
-    if (!lastSyncedAt) setLoading(true);
-    else setRefreshing(true);
+    if (isFirstLoadRef.current) {
+      setLoading(true);
+      isFirstLoadRef.current = false;
+    } else {
+      setRefreshing(true);
+    }
     try {
       // 1. Total assigned projects
       const { count: projCount } = await supabase
@@ -125,7 +130,7 @@ export default function ContractorDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, lastSyncedAt]);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -136,15 +141,7 @@ export default function ContractorDashboard() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchKPIs)
         .subscribe();
 
-      const refreshOnFocus = () => fetchKPIs();
-      const pollId = window.setInterval(fetchKPIs, 15000);
-      window.addEventListener('focus', refreshOnFocus);
-      document.addEventListener('visibilitychange', refreshOnFocus);
-
       return () => {
-        window.clearInterval(pollId);
-        window.removeEventListener('focus', refreshOnFocus);
-        document.removeEventListener('visibilitychange', refreshOnFocus);
         supabase.removeChannel(channel);
       };
     }

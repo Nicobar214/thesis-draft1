@@ -129,15 +129,7 @@ export default function ContractorReports() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchData(false))
         .subscribe();
 
-      const refreshOnFocus = () => fetchData(false);
-      const pollId = window.setInterval(() => fetchData(false), 15000);
-      window.addEventListener('focus', refreshOnFocus);
-      document.addEventListener('visibilitychange', refreshOnFocus);
-
       return () => {
-        window.clearInterval(pollId);
-        window.removeEventListener('focus', refreshOnFocus);
-        document.removeEventListener('visibilitychange', refreshOnFocus);
         supabase.removeChannel(ch);
       };
     }

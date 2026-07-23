@@ -174,6 +174,7 @@ export default function LguDashboard() {
   const [reports, setReports] = useState([]);
   const [projects, setProjects] = useState([]);
   const [routesByProjectId, setRoutesByProjectId] = useState({});
+  const [projectTranches, setProjectTranches] = useState([]);
   const [escalations, setEscalations] = useState([]);
   const [findings, setFindings] = useState([]);
   const [beneficiaries, setBeneficiaries] = useState([]);
@@ -241,6 +242,15 @@ export default function LguDashboard() {
   const beneficiaryProjectOptions = useMemo(() => {
     return [...projects].sort((a, b) => String(a.project_name || '').localeCompare(String(b.project_name || '')));
   }, [projects]);
+
+  const tranchesByProjectId = useMemo(() => {
+    const map = {};
+    (projectTranches || []).forEach((t) => {
+      if (!map[t.project_id]) map[t.project_id] = [];
+      map[t.project_id].push(t);
+    });
+    return map;
+  }, [projectTranches]);
 
   const lguMapYearOptions = useMemo(() => {
     return [...new Set(projects.map(p => Number(p.year_funded)).filter(y => y && !isNaN(y)))].sort((a, b) => b - a);
@@ -655,9 +665,9 @@ export default function LguDashboard() {
     await fetchBeneficiaries();
   };
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (showSpinner = true) => {
     if (!user) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     try {
       let reportsQuery = supabase.from('public_reports').select('*').order('created_at', { ascending: false });
       let projectsQuery = supabase.from('fmr_projects').select('*').order('project_name', { ascending: true });
@@ -669,13 +679,14 @@ export default function LguDashboard() {
         escalationsQuery = escalationsQuery.eq('municipality', municipalityScope);
       }
 
-      const [reportsRes, projectsRes, escalationsRes, routesRes, findingsRes, marketsRes] = await Promise.all([
+      const [reportsRes, projectsRes, escalationsRes, routesRes, findingsRes, marketsRes, tranchesRes] = await Promise.all([
         reportsQuery,
         projectsQuery,
         escalationsQuery,
         supabase.from('project_routes').select('*'),
         supabase.from('public_report_field_findings').select('*').order('submitted_at', { ascending: false }),
         supabase.from('market_locations').select('*').order('market_name', { ascending: true }),
+        supabase.from('project_tranches').select('*').order('tranche_order', { ascending: true }),
       ]);
 
       setReports(reportsRes.data || []);
@@ -683,6 +694,7 @@ export default function LguDashboard() {
       setEscalations(escalationsRes.data || []);
       setFindings(findingsRes.data || []);
       setMarkets(marketsRes.data || []);
+      setProjectTranches(tranchesRes.data || []);
 
       const nextRoutes = {};
       (routesRes.data || []).forEach((row) => {
@@ -722,15 +734,16 @@ export default function LguDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    fetchAll();
+    fetchAll(true);
     fetchBeneficiaries();
 
     const channels = [
-      supabase.channel('lgu-reports').on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchAll).subscribe(),
-      supabase.channel('lgu-escalations').on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_lgu_escalations' }, fetchAll).subscribe(),
-      supabase.channel('lgu-decisions').on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_lgu_decisions' }, fetchAll).subscribe(),
+      supabase.channel('lgu-reports').on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchAll(false)).subscribe(),
+      supabase.channel('lgu-escalations').on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_lgu_escalations' }, () => fetchAll(false)).subscribe(),
+      supabase.channel('lgu-decisions').on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_lgu_decisions' }, () => fetchAll(false)).subscribe(),
       supabase.channel('lgu-beneficiaries').on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, fetchBeneficiaries).subscribe(),
-      supabase.channel('lgu-markets').on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, fetchAll).subscribe(),
+      supabase.channel('lgu-markets').on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, () => fetchAll(false)).subscribe(),
+      supabase.channel('lgu-project-tranches').on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, () => fetchAll(false)).subscribe(),
     ];
 
     return () => {
@@ -1171,6 +1184,7 @@ export default function LguDashboard() {
                   <LguRouteMap
                     projects={filteredMapProjects}
                     routesByProjectId={routesByProjectId}
+                    tranchesByProjectId={tranchesByProjectId}
                     reports={filteredReports}
                     showHeat={showHeat}
                     farmerBeneficiaries={beneficiaries}

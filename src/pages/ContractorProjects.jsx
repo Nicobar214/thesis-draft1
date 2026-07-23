@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import ContractorProgressForm from './ContractorProgressForm';
+import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 
 // ── FMR status badge ─────────────────────────────────────────
 function FmrStatusBadge({ status }) {
@@ -28,6 +29,7 @@ export default function ContractorProjects() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
   const [latestUpdates, setLatestUpdates] = useState({}); // { [fmr_project_id]: update }
+  const [tranchesByProjectId, setTranchesByProjectId] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null); // project for the modal
 
@@ -44,13 +46,13 @@ export default function ContractorProjects() {
   }, [navigate]);
 
   // ── Fetch projects + latest update per project ───────────────
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (showSpinner = true) => {
     if (!user) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     try {
       const { data: projs, error } = await supabase
         .from('fmr_projects')
-        .select('id, project_name, municipality, province, status, accomplishment, project_length_km')
+        .select('id, project_name, municipality, province, status, accomplishment, project_length_km, total_budget, funds_released, funding_source')
         .eq('contractor_id', user.id)
         .order('project_name', { ascending: true });
       if (error) throw error;
@@ -70,8 +72,21 @@ export default function ContractorProjects() {
           if (!map[upd.fmr_project_id]) map[upd.fmr_project_id] = upd;
         }
         setLatestUpdates(map);
+
+        const { data: tranches } = await supabase
+          .from('project_tranches')
+          .select('*')
+          .in('project_id', ids)
+          .order('tranche_order', { ascending: true });
+        const tMap = {};
+        (tranches || []).forEach((t) => {
+          if (!tMap[t.project_id]) tMap[t.project_id] = [];
+          tMap[t.project_id].push(t);
+        });
+        setTranchesByProjectId(tMap);
       } else {
         setLatestUpdates({});
+        setTranchesByProjectId({});
       }
     } catch (err) {
       console.error('ContractorProjects fetch error:', err);
@@ -82,22 +97,15 @@ export default function ContractorProjects() {
 
   useEffect(() => {
     if (user) {
-      fetchData();
+      fetchData(true);
       const updatesChannel = supabase
         .channel('contractor-projects-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, fetchData)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchData)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchData(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchData(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, () => fetchData(false))
         .subscribe();
 
-      const refreshOnFocus = () => fetchData();
-      const pollId = window.setInterval(fetchData, 15000);
-      window.addEventListener('focus', refreshOnFocus);
-      document.addEventListener('visibilitychange', refreshOnFocus);
-
       return () => {
-        window.clearInterval(pollId);
-        window.removeEventListener('focus', refreshOnFocus);
-        document.removeEventListener('visibilitychange', refreshOnFocus);
         supabase.removeChannel(updatesChannel);
       };
     }
@@ -143,6 +151,7 @@ export default function ContractorProjects() {
               const latest = latestUpdates[project.id];
               const hasPendingUpdate = latest?.status === 'pending';
               const accomplishment = Number(project.accomplishment || 0);
+              const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
 
               return (
                 <div key={project.id} className="bg-white border border-slate-200/60 rounded-2xl shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden">
@@ -184,6 +193,16 @@ export default function ContractorProjects() {
                           style={{ width: `${Math.min(accomplishment, 100)}%` }}
                         />
                       </div>
+                    </div>
+
+                    {/* Budget summary */}
+                    <div className="mb-5 flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">
+                        Budget {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
+                      </span>
+                      <span className="font-semibold text-slate-700">
+                        Released {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
+                      </span>
                     </div>
 
                     {/* Action button */}
