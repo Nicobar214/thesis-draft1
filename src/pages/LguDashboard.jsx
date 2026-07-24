@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
@@ -13,7 +13,8 @@ import LguProjectProposalsTab from '../components/lgu/LguProjectProposalsTab';
 import BeneficiaryCsvImport from '../components/lgu/BeneficiaryCsvImport';
 import { getBarangays, getMunicipalities } from '../data/iloiloLocations';
 import { BENEFICIARY_CROPS } from '../utils/farmerBeneficiaryData';
-import { getMunicipalityCentroid, buildRoutePoints } from '../lib/mapRouteUtils';
+import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from '../lib/mapRouteUtils';
+import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
 import roadInventory from '../data/leonRoadInventory.json';
 
 function normalizeRole(role) {
@@ -56,6 +57,33 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
             Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+// Best-known point for an FMR project marker: its own stored coordinates if
+// present, otherwise a geocoded fallback looked up by id from coordMap.
+function resolveProjectPoint(project, coordMap) {
+  const startLat = Number(project.start_latitude);
+  const startLng = Number(project.start_longitude);
+  if (startLat && startLng) return [startLat, startLng];
+  return coordMap[project.id] || null;
+}
+
+function suggestedRoadIcon(isExactMatch) {
+  return new L.DivIcon({
+    className: 'suggested-fmr-pin',
+    html: `<div style="background:#f59e0b;opacity:${isExactMatch ? 1 : 0.7};color:#fff;width:26px;height:26px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);font-size:12px">🛣️</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+}
+
+function beneficiaryMarketIcon(isNearest) {
+  return new L.DivIcon({
+    className: 'beneficiary-market-pin',
+    html: `<div style="background:${isNearest ? '#4338ca' : '#64748b'};color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:11px">🏪</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
 }
 
 function ModalMapController({ farmCoords, marketCoords, roadPoints }) {
@@ -207,7 +235,7 @@ export default function LguDashboard() {
     farmLongitude: '',
     benefitReason: '',
     createAccount: false,
-    accountEmail: '',
+    accountUsername: '',
     accountPassword: '',
   });
 
@@ -262,6 +290,224 @@ export default function LguDashboard() {
   const beneficiaryProjectOptions = useMemo(() => {
     return [...projects].sort((a, b) => String(a.project_name || '').localeCompare(String(b.project_name || '')));
   }, [projects]);
+
+  // --- Map-assisted road/market suggestions for the beneficiary registration form ---
+  // Suggest FMR projects that plausibly serve the selected barangay: exact
+  // text matches against the project's location/name first; if there are
+  // none, fall back to other same-municipality projects that already have
+  // stored coordinates (so the fallback never needs extra geocode calls).
+  const suggestedProjects = useMemo(() => {
+    const municipality = (beneficiaryForm.municipality || municipalityScope || '').trim();
+    const barangay = (beneficiaryForm.barangay || '').trim();
+    if (!municipality || !barangay) return { items: [], isFallback: false, truncatedCount: 0 };
+
+    const normMuni = municipality.toLowerCase();
+    const muniProjects = projects.filter((p) => String(p.municipality || '').trim().toLowerCase() === normMuni);
+
+    const normBarangay = barangay.toLowerCase();
+    const exact = muniProjects.filter((p) => {
+      const haystack = `${p.location || ''} ${p.project_name || ''}`.toLowerCase();
+      return haystack.includes(normBarangay);
+    });
+
+    if (exact.length > 0) {
+      return { items: exact.map((p) => ({ ...p, isExactMatch: true })), isFallback: false, truncatedCount: 0 };
+    }
+
+    const FALLBACK_CAP = 8;
+    const withCoords = muniProjects.filter((p) => Number(p.start_latitude) && Number(p.start_longitude));
+    const capped = withCoords.slice(0, FALLBACK_CAP);
+    return {
+      items: capped.map((p) => ({ ...p, isExactMatch: false })),
+      isFallback: true,
+      truncatedCount: Math.max(0, withCoords.length - capped.length),
+    };
+  }, [projects, beneficiaryForm.municipality, beneficiaryForm.barangay, municipalityScope]);
+
+  // Coordinates for exact-match suggestions that don't already have stored
+  // start/end points, resolved on demand via geocodeFmrLocation (cached).
+  const [suggestedProjectCoords, setSuggestedProjectCoords] = useState({});
+
+  useEffect(() => {
+    const toGeocode = suggestedProjects.items.filter((p) =>
+      p.isExactMatch &&
+      !(Number(p.start_latitude) && Number(p.start_longitude)) &&
+      !(p.id in suggestedProjectCoords)
+    );
+    if (toGeocode.length === 0) return undefined;
+
+    let cancelled = false;
+    Promise.all(
+      toGeocode.map(async (p) => [p.id, await geocodeFmrLocation(p.municipality, p.location || p.project_name)])
+    ).then((entries) => {
+      if (cancelled) return;
+      setSuggestedProjectCoords((prev) => {
+        const next = { ...prev };
+        entries.forEach(([id, coord]) => { next[id] = coord; });
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [suggestedProjects, suggestedProjectCoords]);
+
+  // Reference point used to rank suggestions and find the nearest market:
+  // the farm pin once placed, else the closest resolvable suggested
+  // project, else the municipality centroid (always available, no network call).
+  const suggestionReferencePoint = useMemo(() => {
+    const farmLat = Number(beneficiaryForm.farmLatitude);
+    const farmLng = Number(beneficiaryForm.farmLongitude);
+    if (farmLat && farmLng) return [farmLat, farmLng];
+
+    for (const p of suggestedProjects.items) {
+      const point = resolveProjectPoint(p, suggestedProjectCoords);
+      if (point) return point;
+    }
+
+    const municipality = beneficiaryForm.municipality || municipalityScope;
+    return municipality ? getMunicipalityCentroid(municipality) : null;
+  }, [beneficiaryForm.farmLatitude, beneficiaryForm.farmLongitude, beneficiaryForm.municipality, municipalityScope, suggestedProjects, suggestedProjectCoords]);
+
+  // Suggested projects with resolved points + distance from the reference
+  // point, closest first, for both display order and connector-line choice.
+  const rankedSuggestedProjects = useMemo(() => {
+    const [refLat, refLng] = suggestionReferencePoint || [];
+    return suggestedProjects.items
+      .map((p) => {
+        const point = resolveProjectPoint(p, suggestedProjectCoords);
+        const distanceMeters = (point && refLat && refLng)
+          ? haversineMeters(refLat, refLng, point[0], point[1])
+          : Infinity;
+        return { ...p, point, distanceMeters };
+      })
+      .sort((a, b) => a.distanceMeters - b.distanceMeters);
+  }, [suggestedProjects, suggestedProjectCoords, suggestionReferencePoint]);
+
+  const nearestSuggestedMarket = useMemo(() => {
+    if (!suggestionReferencePoint || markets.length === 0) return null;
+    const [refLat, refLng] = suggestionReferencePoint;
+    let nearest = null;
+    let bestDist = Infinity;
+    markets.forEach((m) => {
+      const mLat = Number(m.latitude);
+      const mLng = Number(m.longitude);
+      if (!mLat || !mLng) return;
+      const d = haversineMeters(refLat, refLng, mLat, mLng);
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = m;
+      }
+    });
+    return nearest ? { market: nearest, distanceMeters: bestDist } : null;
+  }, [suggestionReferencePoint, markets]);
+
+  // The project a road-to-market connector line is drawn for: whichever is
+  // currently linked in the form, else the closest suggestion.
+  const connectorProject = useMemo(() => {
+    if (beneficiaryForm.linkedProjectId) {
+      const selected = rankedSuggestedProjects.find((p) => String(p.id) === String(beneficiaryForm.linkedProjectId));
+      if (selected?.point) return selected;
+    }
+    return rankedSuggestedProjects.find((p) => p.point) || null;
+  }, [rankedSuggestedProjects, beneficiaryForm.linkedProjectId]);
+
+  const [connectorRoute, setConnectorRoute] = useState(null);
+
+  useEffect(() => {
+    const point = connectorProject?.point || null;
+    const marketPoint = nearestSuggestedMarket
+      ? [Number(nearestSuggestedMarket.market.latitude), Number(nearestSuggestedMarket.market.longitude)]
+      : null;
+
+    let cancelled = false;
+    const routePromise = (point && marketPoint)
+      ? fetchRoadAlignedPolyline([point, marketPoint])
+      : Promise.resolve(null);
+
+    routePromise.then((snapped) => {
+      if (cancelled) return;
+      setConnectorRoute(snapped ? {
+        points: snapped,
+        distanceKm: calculatePolylineDistanceKm(snapped),
+        projectId: connectorProject.id,
+      } : null);
+    });
+
+    return () => { cancelled = true; };
+  }, [connectorProject, nearestSuggestedMarket]);
+
+  // Auto-fill "Linked FMR project" with the closest suggestion once one is
+  // known, but never overwrite a value the officer chose themselves (via
+  // this dropdown, a map click, or one already present when editing an
+  // existing beneficiary) -- only a value this effect itself last set.
+  const autoLinkedProjectIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!beneficiaryForm.barangay || !beneficiaryForm.municipality) return;
+
+    const top = rankedSuggestedProjects.find((p) => p.point) || null;
+    const nextId = top ? String(top.id) : '';
+
+    setBeneficiaryForm((curr) => {
+      const isUntouchedSinceAutoFill = !curr.linkedProjectId || curr.linkedProjectId === autoLinkedProjectIdRef.current;
+      if (!isUntouchedSinceAutoFill || curr.linkedProjectId === nextId) return curr;
+      return { ...curr, linkedProjectId: nextId };
+    });
+    autoLinkedProjectIdRef.current = nextId || null;
+  }, [rankedSuggestedProjects, beneficiaryForm.barangay, beneficiaryForm.municipality]);
+
+  // Transient toast telling the officer how many roads were found for the
+  // selected barangay, so they don't have to notice the map/legend themselves.
+  const [roadSuggestionToast, setRoadSuggestionToast] = useState(null);
+
+  useEffect(() => {
+    if (!beneficiaryForm.barangay || !beneficiaryForm.municipality) return undefined;
+
+    // Don't announce a count until any exact-match geocoding has settled.
+    const stillResolving = suggestedProjects.items.some((p) =>
+      p.isExactMatch &&
+      !(Number(p.start_latitude) && Number(p.start_longitude)) &&
+      !(p.id in suggestedProjectCoords)
+    );
+    if (stillResolving) return undefined;
+
+    const count = rankedSuggestedProjects.filter((p) => p.point).length;
+    let text;
+    if (count > 0 && !suggestedProjects.isFallback) {
+      text = `${count} suggested road${count === 1 ? '' : 's'} found in ${beneficiaryForm.barangay}.`;
+    } else if (count > 0 && suggestedProjects.isFallback) {
+      text = `No road project directly in ${beneficiaryForm.barangay} — showing ${count} nearby road${count === 1 ? '' : 's'} in ${beneficiaryForm.municipality}.`;
+    } else {
+      text = `No FMR road project found near ${beneficiaryForm.barangay}, ${beneficiaryForm.municipality} — link one manually if needed.`;
+    }
+
+    setRoadSuggestionToast({ text, tone: count > 0 ? 'success' : 'warn' });
+    const timer = setTimeout(() => setRoadSuggestionToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, [beneficiaryForm.barangay, beneficiaryForm.municipality, suggestedProjects, suggestedProjectCoords, rankedSuggestedProjects]);
+
+  // Memoized so ModalMapController's bounds-fit effect (below) only re-runs
+  // when the underlying data actually changes, not on every keystroke
+  // elsewhere in this large form.
+  const beneficiaryFarmCoords = useMemo(() => {
+    const lat = Number(beneficiaryForm.farmLatitude);
+    const lng = Number(beneficiaryForm.farmLongitude);
+    return (lat && lng) ? [lat, lng] : null;
+  }, [beneficiaryForm.farmLatitude, beneficiaryForm.farmLongitude]);
+
+  const nearestSuggestedMarketCoords = useMemo(() => {
+    if (!nearestSuggestedMarket) return null;
+    return [Number(nearestSuggestedMarket.market.latitude), Number(nearestSuggestedMarket.market.longitude)];
+  }, [nearestSuggestedMarket]);
+
+  const suggestionMapPoints = useMemo(() => [
+    ...rankedSuggestedProjects.filter((p) => p.point).map((p) => p.point),
+    ...(connectorRoute?.points || []),
+  ], [rankedSuggestedProjects, connectorRoute]);
+
+  const agencyOptions = useMemo(() => {
+    return Array.from(new Set(beneficiaries.map((b) => b.agency).filter(Boolean))).sort();
+  }, [beneficiaries]);
 
   const tranchesByProjectId = useMemo(() => {
     const map = {};
@@ -593,14 +839,40 @@ export default function LguDashboard() {
       let userUuid = null;
 
       if (beneficiaryForm.createAccount) {
-        if (!beneficiaryForm.accountEmail || !beneficiaryForm.accountPassword) {
-          showNotification('Email and password are required for provisioning portal access', 'error');
+        if (!beneficiaryForm.accountUsername || !beneficiaryForm.accountPassword) {
+          showNotification('Username and password are required for provisioning portal access', 'error');
           return;
         }
 
+        const normalizedUsername = normalizeUsername(beneficiaryForm.accountUsername);
+        if (normalizedUsername.length < 3) {
+          showNotification('Username must be at least 3 characters (letters, numbers, underscore only).', 'error');
+          return;
+        }
+
+        // Pre-flight uniqueness check against our own data, BEFORE calling
+        // signUp, so a duplicate gets a clean message instead of whatever
+        // raw shape Supabase's auth error happens to take.
+        const { data: existingProfile, error: usernameCheckErr } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', normalizedUsername)
+          .maybeSingle();
+
+        if (usernameCheckErr) {
+          showNotification(`Could not verify username availability: ${usernameCheckErr.message}`, 'error');
+          return;
+        }
+        if (existingProfile) {
+          showNotification('Username already exists. Please choose another.', 'error');
+          return;
+        }
+
+        const syntheticEmail = usernameToSyntheticEmail(normalizedUsername);
+
         try {
           const { data: signUpData, error: signUpErr } = await supabaseAdmin.auth.signUp({
-            email: beneficiaryForm.accountEmail,
+            email: syntheticEmail,
             password: beneficiaryForm.accountPassword,
             options: {
               data: {
@@ -618,8 +890,10 @@ export default function LguDashboard() {
             throw signUpErr;
           }
 
+          // Defense-in-depth: the pre-flight check above should catch nearly
+          // all cases; this guards a race between the check and signUp.
           if (signUpData?.user?.identities?.length === 0) {
-            showNotification('A user account with this email already exists.', 'error');
+            showNotification('Username already exists. Please choose another.', 'error');
             return;
           }
 
@@ -628,7 +902,8 @@ export default function LguDashboard() {
 
             const { error: profErr } = await supabase.from('profiles').insert({
               id: userUuid,
-              email: beneficiaryForm.accountEmail,
+              email: syntheticEmail,
+              username: normalizedUsername,
               full_name: `${beneficiaryForm.firstName.trim()} ${beneficiaryForm.lastName.trim()}`,
               role: 'farmer',
               phone: beneficiaryForm.contactNumber
@@ -679,7 +954,7 @@ export default function LguDashboard() {
       farmLongitude: '',
       benefitReason: '',
       createAccount: false,
-      accountEmail: '',
+      accountUsername: '',
       accountPassword: '',
     });
     await fetchBeneficiaries();
@@ -889,6 +1164,17 @@ export default function LguDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 lg:flex">
+      {roadSuggestionToast && (
+        <div
+          className={`fixed top-4 right-4 z-[9999] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border max-w-xs transition-all duration-300 ${
+            roadSuggestionToast.tone === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-amber-50 text-amber-800 border-amber-200'
+          }`}
+        >
+          <span className="text-xs sm:text-sm font-semibold">{roadSuggestionToast.text}</span>
+        </div>
+      )}
       <aside className={`fixed inset-y-0 left-0 z-40 border-r border-slate-800 bg-slate-900 text-white shadow-2xl transition-all duration-300 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       } lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-80'}`}>
@@ -1356,15 +1642,35 @@ export default function LguDashboard() {
                     <input value={beneficiaryForm.middleName} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, middleName: e.target.value }))} placeholder="Middle Name" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     <input required value={beneficiaryForm.lastName} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, lastName: e.target.value }))} placeholder="Last Name *" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     <input value={beneficiaryForm.extName} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, extName: e.target.value }))} placeholder="Extension (Jr, Sr, III)" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                    <input required value={beneficiaryForm.rsbsaNumber} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, rsbsaNumber: e.target.value }))} placeholder="RSBSA number *" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                    <input value={beneficiaryForm.controlNo} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, controlNo: e.target.value }))} placeholder="Control number" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase pl-1">RSBSA Number (Auto-generated)</span>
+                      <input 
+                        required 
+                        readOnly 
+                        value={beneficiaryForm.rsbsaNumber} 
+                        placeholder="RSBSA number *" 
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed font-mono shadow-inner" 
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase pl-1">Control Number (Auto-generated)</span>
+                      <input 
+                        readOnly 
+                        value={beneficiaryForm.controlNo} 
+                        placeholder="Control number" 
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-slate-50 text-slate-500 cursor-not-allowed font-mono shadow-inner" 
+                      />
+                    </div>
                     <input value={beneficiaryForm.contactNumber} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, contactNumber: e.target.value }))} placeholder="Contact number" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     <input type="date" value={beneficiaryForm.birthday} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, birthday: e.target.value }))} placeholder="Birthday" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     <select required value={beneficiaryForm.gender} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, gender: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                     </select>
-                    <input value={beneficiaryForm.agency} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, agency: e.target.value }))} placeholder="Agency (e.g. DA)" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                    <input list="agency-options" value={beneficiaryForm.agency} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, agency: e.target.value }))} placeholder="Agency (e.g. DA)" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                    <datalist id="agency-options">
+                      {agencyOptions.map((agency) => <option key={agency} value={agency} />)}
+                    </datalist>
                     
                     <select required value={beneficiaryForm.municipality || municipalityScope} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, municipality: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                       <option value="">Select municipality *</option>
@@ -1403,7 +1709,38 @@ export default function LguDashboard() {
                             : 'Click on the map or search to place marker'}
                         </span>
                       </div>
-                      
+
+                      {/* Suggested FMR road / nearest market legend */}
+                      {beneficiaryForm.municipality && beneficiaryForm.barangay && (
+                        <div className="px-4 py-2 bg-amber-50/60 border-b border-amber-100 text-[11px] font-medium text-slate-600">
+                          {suggestedProjects.items.length === 0 ? (
+                            <span>No FMR road projects found for this barangay or municipality yet — link one manually using the dropdown above.</span>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white shadow-sm" />
+                                {suggestedProjects.isFallback ? 'Suggested road (nearby in municipality)' : 'Suggested road (this barangay)'}
+                              </span>
+                              {nearestSuggestedMarket && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full bg-indigo-700 inline-block border border-white shadow-sm" />
+                                  Nearest market
+                                </span>
+                              )}
+                              {connectorRoute && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-4 h-0.5 border-t-2 border-dashed border-pink-500 inline-block" />
+                                  Road → market route
+                                </span>
+                              )}
+                              {suggestedProjects.truncatedCount > 0 && (
+                                <span className="text-slate-400">+{suggestedProjects.truncatedCount} more in this municipality — refine using the dropdown above</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Search Bar inside Map */}
                       <div className="p-3 bg-white border-b border-slate-100 flex gap-2">
                         <input
@@ -1491,6 +1828,82 @@ export default function LguDashboard() {
                               })}
                             />
                           )}
+
+                          <ModalMapController
+                            farmCoords={beneficiaryFarmCoords}
+                            marketCoords={nearestSuggestedMarketCoords}
+                            roadPoints={suggestionMapPoints}
+                          />
+
+                          {/* Suggested FMR road markers -- click to link to this farmer */}
+                          {rankedSuggestedProjects.filter((project) => project.point).map((project) => (
+                            <Marker
+                              key={`suggested-project-${project.id}`}
+                              position={project.point}
+                              icon={suggestedRoadIcon(project.isExactMatch)}
+                            >
+                              <Popup>
+                                <div className="text-xs font-sans space-y-1">
+                                  <p className="font-bold text-amber-700">{project.project_name}</p>
+                                  <p className="text-slate-600">Status: {project.status}</p>
+                                  <p className="text-slate-500">
+                                    {project.isExactMatch ? 'Matches selected barangay' : 'Other road in this municipality'}
+                                    {Number.isFinite(project.distanceMeters) ? ` · ${(project.distanceMeters / 1000).toFixed(2)} km away` : ''}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setBeneficiaryForm((current) => ({ ...current, linkedProjectId: String(project.id) }))}
+                                    className="mt-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-semibold"
+                                  >
+                                    Link this road to farmer
+                                  </button>
+                                </div>
+                              </Popup>
+                            </Marker>
+                          ))}
+
+                          {/* Market pins -- click to set as this farmer's nearest market */}
+                          {markets.map((market) => {
+                            const mLat = Number(market.latitude);
+                            const mLng = Number(market.longitude);
+                            if (!mLat || !mLng) return null;
+                            const isNearest = nearestSuggestedMarket?.market.id === market.id;
+                            return (
+                              <Marker
+                                key={`beneficiary-market-${market.id}`}
+                                position={[mLat, mLng]}
+                                icon={beneficiaryMarketIcon(isNearest)}
+                              >
+                                <Popup>
+                                  <div className="text-xs font-sans space-y-1">
+                                    <p className="font-bold text-indigo-700">{market.market_name}</p>
+                                    <p className="text-slate-600">{market.market_type}</p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setBeneficiaryForm((current) => ({ ...current, nearestMarketId: String(market.id) }))}
+                                      className="mt-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-semibold"
+                                    >
+                                      Set as nearest market
+                                    </button>
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            );
+                          })}
+
+                          {/* Suggested road -> nearest market connector (road-network-aligned) */}
+                          {connectorRoute && connectorRoute.points.length >= 2 && (
+                            <Polyline
+                              positions={connectorRoute.points}
+                              pathOptions={{ color: '#ec4899', weight: 3, dashArray: '4, 6' }}
+                            >
+                              <Popup>
+                                <span className="text-xs font-sans font-semibold text-pink-700">
+                                  ~{connectorRoute.distanceKm.toFixed(2)} km by road to {nearestSuggestedMarket?.market.market_name}
+                                </span>
+                              </Popup>
+                            </Polyline>
+                          )}
                         </MapContainer>
                       </div>
                     </div>
@@ -1509,13 +1922,13 @@ export default function LguDashboard() {
                         {beneficiaryForm.createAccount && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                             <div className="flex flex-col gap-1.5">
-                              <label className="text-[11px] font-semibold text-slate-500">Account Login Email</label>
+                              <label className="text-[11px] font-semibold text-slate-500">Farmer Portal Username</label>
                               <input
-                                type="email"
+                                type="text"
                                 required
-                                value={beneficiaryForm.accountEmail}
-                                onChange={(e) => setBeneficiaryForm((current) => ({ ...current, accountEmail: e.target.value }))}
-                                placeholder="e.g. farmer.name@kalsatrack.gov.ph"
+                                value={beneficiaryForm.accountUsername}
+                                onChange={(e) => setBeneficiaryForm((current) => ({ ...current, accountUsername: e.target.value }))}
+                                placeholder="e.g. juan_delacruz"
                                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                               />
                             </div>
@@ -1563,7 +1976,7 @@ export default function LguDashboard() {
                               farmLongitude: '',
                               benefitReason: '',
                               createAccount: false,
-                              accountEmail: '',
+                              accountUsername: '',
                               accountPassword: '',
                             });
                             setBeneficiarySubTab('list');

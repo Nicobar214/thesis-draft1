@@ -195,6 +195,30 @@ export function boundsFromPoints(points) {
   ];
 }
 
+export function calculatePolylineDistanceKm(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  let totalMeters = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const lat1 = Number(Array.isArray(p1) ? p1[0] : (p1?.lat ?? p1?.latitude));
+    const lng1 = Number(Array.isArray(p1) ? p1[1] : (p1?.lng ?? p1?.longitude));
+    const lat2 = Number(Array.isArray(p2) ? p2[0] : (p2?.lat ?? p2?.latitude));
+    const lng2 = Number(Array.isArray(p2) ? p2[1] : (p2?.lng ?? p2?.longitude));
+    if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) continue;
+
+    const R = 6371;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    totalMeters += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 1000;
+  }
+  return totalMeters / 1000;
+}
+
 const roadSnapCache = new Map();
 
 export async function fetchRoadAlignedPolyline(points) {

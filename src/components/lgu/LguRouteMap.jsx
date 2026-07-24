@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
-import { buildRoutePoints, boundsFromPoints, getJitteredCentroid } from '../../lib/mapRouteUtils';
+import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline } from '../../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 
 function FitToData({ points }) {
@@ -102,6 +102,41 @@ export default function LguRouteMap({
   const [showMarketsMap, setShowMarketsMap] = useState(true);
   const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
   const [farmerCropFilter, setFarmerCropFilter] = useState('All');
+  const [snappedConnectionPoints, setSnappedConnectionPoints] = useState(null);
+
+  const connectionPoints = useMemo(() => {
+    if (!selectedFarmerForPath) return [];
+    const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+    const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+    if (!farmLat || !farmLng) return [];
+
+    const points = [[Number(farmLat), Number(farmLng)]];
+
+    const linkedProj = (projects || []).find(p => p.id === selectedFarmerForPath.linkedProjectId);
+    if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
+      points.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
+      if (linkedProj.end_latitude && linkedProj.end_longitude) {
+        points.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
+      }
+    }
+
+    const linkedMarket = (markets || []).find(m => m.id === selectedFarmerForPath.nearestMarketId);
+    if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
+      points.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+    }
+
+    return points;
+  }, [selectedFarmerForPath, projects, markets]);
+
+  // Snap the farmer's supply-chain connection line onto real road geometry
+  // (OSRM) instead of leaving it as a straight Euclidean line.
+  useEffect(() => {
+    let cancelled = false;
+    fetchRoadAlignedPolyline(connectionPoints).then((snapped) => {
+      if (!cancelled) setSnappedConnectionPoints(connectionPoints.length >= 2 ? snapped : null);
+    });
+    return () => { cancelled = true; };
+  }, [connectionPoints]);
 
   const farmerCropOptions = useMemo(() => {
     const crops = new Set((farmerBeneficiaries || []).map((f) => f.crop).filter(Boolean));
@@ -316,34 +351,13 @@ export default function LguRouteMap({
           );
         })}
 
-        {/* Supply Chain Connection Lines */}
+        {/* Supply Chain Connection Lines (road-network-aligned, falls back to a straight line while snapping) */}
         {(() => {
-          if (!selectedFarmerForPath) return null;
-          const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
-          const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
-          if (!farmLat || !farmLng) return null;
-
-          const connectionPoints = [];
-          connectionPoints.push([Number(farmLat), Number(farmLng)]);
-
-          const linkedProj = projects.find(p => p.id === selectedFarmerForPath.linkedProjectId);
-          if (linkedProj && linkedProj.start_latitude && linkedProj.start_longitude) {
-            connectionPoints.push([Number(linkedProj.start_latitude), Number(linkedProj.start_longitude)]);
-            if (linkedProj.end_latitude && linkedProj.end_longitude) {
-              connectionPoints.push([Number(linkedProj.end_latitude), Number(linkedProj.end_longitude)]);
-            }
-          }
-
-          const linkedMarket = markets.find(m => m.id === selectedFarmerForPath.nearestMarketId);
-          if (linkedMarket && linkedMarket.latitude && linkedMarket.longitude) {
-            connectionPoints.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
-          }
-
           if (connectionPoints.length < 2) return null;
 
           return (
             <Polyline
-              positions={connectionPoints}
+              positions={snappedConnectionPoints || connectionPoints}
               pathOptions={{
                 color: '#fb7185',
                 weight: 3.5,

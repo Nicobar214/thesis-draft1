@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline } from "react-leaflet";
 import L from "leaflet";
@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 
 import { supabase } from "../lib/supabase";
+import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from "../lib/mapRouteUtils";
 import PublicReportForm from "../components/PublicReportForm";
 import DAResolutionCertificate from "../components/publicReports/DAResolutionCertificate";
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
@@ -48,6 +49,8 @@ export default function FarmerDashboard() {
   const [myReports, setMyReports] = useState([]);
   const [harvestLoading, setHarvestLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [snappedFmrPath, setSnappedFmrPath] = useState(null);
+  const [snappedSupplyPath, setSnappedSupplyPath] = useState(null);
 
   const [harvestForm, setHarvestForm] = useState({
     crop: "",
@@ -241,6 +244,111 @@ export default function FarmerDashboard() {
     }
   };
 
+  // Compute stats and locations for mapping
+  const farmLat = farmerRecord?.farm_latitude;
+  const farmLng = farmerRecord?.farm_longitude;
+
+  // Find nearest FMR road (straight-line pre-filter -- cheap candidate
+  // selection; the actual displayed distance/route is road-snapped below)
+  const { nearestFmr, distToFmr } = useMemo(() => {
+    let nearest = null;
+    let dist = Infinity;
+    if (farmLat && farmLng && fmrProjects.length > 0) {
+      fmrProjects.forEach(p => {
+        const startLat = Number(p.start_latitude);
+        const startLng = Number(p.start_longitude);
+        const endLat = Number(p.end_latitude);
+        const endLng = Number(p.end_longitude);
+        if (startLat && startLng) {
+          const d1 = haversineMeters(farmLat, farmLng, startLat, startLng);
+          if (d1 < dist) {
+            dist = d1;
+            nearest = p;
+          }
+        }
+        if (endLat && endLng) {
+          const d2 = haversineMeters(farmLat, farmLng, endLat, endLng);
+          if (d2 < dist) {
+            dist = d2;
+            nearest = p;
+          }
+        }
+      });
+    }
+    return { nearestFmr: nearest, distToFmr: dist };
+  }, [farmLat, farmLng, fmrProjects]);
+
+  // Find nearest market (same straight-line pre-filter rationale as above)
+  const { nearestMarket, distToMarket } = useMemo(() => {
+    let nearest = null;
+    let dist = Infinity;
+    if (farmLat && farmLng && markets.length > 0) {
+      markets.forEach(m => {
+        const mLat = Number(m.latitude);
+        const mLng = Number(m.longitude);
+        if (mLat && mLng) {
+          const d = haversineMeters(farmLat, farmLng, mLat, mLng);
+          if (d < dist) {
+            dist = d;
+            nearest = m;
+          }
+        }
+      });
+    }
+    return { nearestMarket: nearest, distToMarket: dist };
+  }, [farmLat, farmLng, markets]);
+
+  // Build Supply Chain line path for leaflet mapping
+  const supplyChainPath = useMemo(() => {
+    const path = [];
+    if (farmLat && farmLng) {
+      path.push([farmLat, farmLng]);
+      if (nearestFmr) {
+        const startLat = Number(nearestFmr.start_latitude);
+        const startLng = Number(nearestFmr.start_longitude);
+        if (startLat && startLng) {
+          path.push([startLat, startLng]);
+        }
+      }
+      if (nearestMarket) {
+        path.push([Number(nearestMarket.latitude), Number(nearestMarket.longitude)]);
+      }
+    }
+    return path;
+  }, [farmLat, farmLng, nearestFmr, nearestMarket]);
+
+  // Snap the FMR access line and the supply-chain path onto real road
+  // geometry (OSRM) instead of leaving them as straight Euclidean lines.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function snapPaths() {
+      const fmrStartLat = Number(nearestFmr?.start_latitude);
+      const fmrStartLng = Number(nearestFmr?.start_longitude);
+      const fmrEndLat = Number(nearestFmr?.end_latitude);
+      const fmrEndLng = Number(nearestFmr?.end_longitude);
+
+      const fmrPromise = (nearestFmr && fmrStartLat && fmrStartLng && fmrEndLat && fmrEndLng)
+        ? fetchRoadAlignedPolyline([[fmrStartLat, fmrStartLng], [fmrEndLat, fmrEndLng]])
+        : Promise.resolve(null);
+
+      const supplyPromise = supplyChainPath.length > 1
+        ? fetchRoadAlignedPolyline(supplyChainPath)
+        : Promise.resolve(null);
+
+      const [fmrSnapped, supplySnapped] = await Promise.all([fmrPromise, supplyPromise]);
+      if (cancelled) return;
+      setSnappedFmrPath(fmrSnapped);
+      setSnappedSupplyPath(supplySnapped);
+    }
+
+    snapPaths();
+    return () => { cancelled = true; };
+  }, [nearestFmr, supplyChainPath]);
+
+  const roadDistToFmr = snappedFmrPath ? calculatePolylineDistanceKm(snappedFmrPath) * 1000 : distToFmr;
+  const roadDistToMarket = snappedSupplyPath ? calculatePolylineDistanceKm(snappedSupplyPath) * 1000 : distToMarket;
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-emerald-50">
@@ -252,70 +360,6 @@ export default function FarmerDashboard() {
       </div>
     );
   }
-
-  // Compute stats and locations for mapping
-  const farmLat = farmerRecord?.farm_latitude;
-  const farmLng = farmerRecord?.farm_longitude;
-
-  // Find nearest FMR road
-  let nearestFmr = null;
-  let distToFmr = Infinity;
-  if (farmLat && farmLng && fmrProjects.length > 0) {
-    fmrProjects.forEach(p => {
-      const startLat = Number(p.start_latitude);
-      const startLng = Number(p.start_longitude);
-      const endLat = Number(p.end_latitude);
-      const endLng = Number(p.end_longitude);
-      if (startLat && startLng) {
-        const d1 = haversineMeters(farmLat, farmLng, startLat, startLng);
-        if (d1 < distToFmr) {
-          distToFmr = d1;
-          nearestFmr = p;
-        }
-      }
-      if (endLat && endLng) {
-        const d2 = haversineMeters(farmLat, farmLng, endLat, endLng);
-        if (d2 < distToFmr) {
-          distToFmr = d2;
-          nearestFmr = p;
-        }
-      }
-    });
-  }
-
-  // Find nearest market
-  let nearestMarket = null;
-  let distToMarket = Infinity;
-  if (farmLat && farmLng && markets.length > 0) {
-    markets.forEach(m => {
-      const mLat = Number(m.latitude);
-      const mLng = Number(m.longitude);
-      if (mLat && mLng) {
-        const d = haversineMeters(farmLat, farmLng, mLat, mLng);
-        if (d < distToMarket) {
-          distToMarket = d;
-          nearestMarket = m;
-        }
-      }
-    });
-  }
-
-  // Build Supply Chain line path for leaflet mapping
-  const supplyChainPath = [];
-  if (farmLat && farmLng) {
-    supplyChainPath.push([farmLat, farmLng]);
-    if (nearestFmr) {
-      const startLat = Number(nearestFmr.start_latitude);
-      const startLng = Number(nearestFmr.start_longitude);
-      if (startLat && startLng) {
-        supplyChainPath.push([startLat, startLng]);
-      }
-    }
-    if (nearestMarket) {
-      supplyChainPath.push([Number(nearestMarket.latitude), Number(nearestMarket.longitude)]);
-    }
-  }
-
 
 
   return (
@@ -408,13 +452,13 @@ export default function FarmerDashboard() {
             <h4 className="text-xs uppercase tracking-wider font-bold text-emerald-200">Logistics Summary</h4>
             <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 sm:space-y-4 lg:gap-0">
               <div>
-                <p className="text-[11px] sm:text-xs text-emerald-100">Distance to FMR</p>
-                <p className="text-xl sm:text-2xl font-bold">{distToFmr !== Infinity ? `${(distToFmr / 1000).toFixed(2)} km` : "N/A"}</p>
+                <p className="text-[11px] sm:text-xs text-emerald-100">Distance to FMR (by road)</p>
+                <p className="text-xl sm:text-2xl font-bold">{roadDistToFmr !== Infinity ? `${(roadDistToFmr / 1000).toFixed(2)} km` : "N/A"}</p>
                 <p className="text-[10px] text-emerald-200/80 mt-0.5 truncate">{farmerRecord?.service_area || "N/A"}</p>
               </div>
               <div className="lg:pt-3 lg:border-t lg:border-white/10">
-                <p className="text-[11px] sm:text-xs text-emerald-100">Distance to Market</p>
-                <p className="text-xl sm:text-2xl font-bold">{distToMarket !== Infinity ? `${(distToMarket / 1000).toFixed(2)} km` : "N/A"}</p>
+                <p className="text-[11px] sm:text-xs text-emerald-100">Distance to Market (by road)</p>
+                <p className="text-xl sm:text-2xl font-bold">{roadDistToMarket !== Infinity ? `${(roadDistToMarket / 1000).toFixed(2)} km` : "N/A"}</p>
                 <p className="text-[10px] text-emerald-200/80 mt-0.5 truncate">{nearestMarket?.market_name || "N/A"}</p>
               </div>
             </div>
@@ -525,10 +569,10 @@ export default function FarmerDashboard() {
                           </Popup>
                         </Marker>
 
-                        {/* FMR Path (Dotted blue line showing FMR) */}
+                        {/* FMR Path (road-network-aligned, falls back to a straight line while snapping) */}
                         {nearestFmr.end_latitude && nearestFmr.end_longitude && (
                           <Polyline
-                            positions={[
+                            positions={snappedFmrPath || [
                               [Number(nearestFmr.start_latitude), Number(nearestFmr.start_longitude)],
                               [Number(nearestFmr.end_latitude), Number(nearestFmr.end_longitude)]
                             ]}
@@ -564,10 +608,10 @@ export default function FarmerDashboard() {
                       </Marker>
                     ))}
 
-                    {/* Supply Chain Connection Polyline (Pink line showing connection flow) */}
+                    {/* Supply Chain Connection Polyline (road-network-aligned, falls back to a straight line while snapping) */}
                     {supplyChainPath.length > 1 && (
                       <Polyline
-                        positions={supplyChainPath}
+                        positions={snappedSupplyPath || supplyChainPath}
                         pathOptions={{ color: "#ec4899", weight: 3, dashArray: "4, 6" }}
                       />
                     )}
