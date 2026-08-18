@@ -52,6 +52,8 @@ import ProjectSchedulingTab from '../components/admin/ProjectSchedulingTab';
 import { computePriorityScores } from '../lib/priorityScoring';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
+import Logo from '../components/Logo';
+import { getPaginationRange } from '../lib/paginationUtils';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -298,6 +300,57 @@ function MapSearchController({ searchCoords }) {
   return null;
 }
 
+function SelectedProjectMapController({ selectedProject }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const startLat = Number(selectedProject.start_latitude || selectedProject.startLatitude);
+    const startLng = Number(selectedProject.start_longitude || selectedProject.startLongitude);
+    const endLat = Number(selectedProject.end_latitude || selectedProject.endLatitude);
+    const endLng = Number(selectedProject.end_longitude || selectedProject.endLongitude);
+
+    if (Number.isFinite(startLat) && Number.isFinite(startLng)) {
+      if (Number.isFinite(endLat) && Number.isFinite(endLng)) {
+        const bounds = L.latLngBounds([startLat, startLng], [endLat, endLng]);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      } else {
+        map.flyTo([startLat, startLng], 15);
+      }
+    }
+  }, [selectedProject, map]);
+
+  return null;
+}
+
+function EditModalMapController({ projectId, startLat, startLng, endLat, endLng }) {
+  const map = useMap();
+  const lastIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!projectId || lastIdRef.current === projectId) return;
+    lastIdRef.current = projectId;
+
+    const sLat = parseFloat(startLat);
+    const sLng = parseFloat(startLng);
+    const eLat = parseFloat(endLat);
+    const eLng = parseFloat(endLng);
+
+    if (Number.isFinite(sLat) && Number.isFinite(sLng)) {
+      if (Number.isFinite(eLat) && Number.isFinite(eLng)) {
+        const bounds = L.latLngBounds([sLat, sLng], [eLat, eLng]);
+        map.fitBounds(bounds, { padding: [40, 40] });
+      } else {
+        map.setView([sLat, sLng], 14);
+      }
+    }
+  }, [projectId, startLat, startLng, endLat, endLng, map]);
+
+  return null;
+}
+
+
 function ReportHeatmapLayer({ visible, points }) {
   const map = useMap();
 
@@ -357,6 +410,152 @@ function RouteEditorMapClick({ onPickPoint }) {
 const enterpriseCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
 
 const formatPeso = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
+
+const ADMIN_FMR_VIEW_MODE_KEY = 'admin-fmr-projects-view';
+const FMR_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
+
+function getFmrStatusStyle(status) {
+  if (status === 'Completed') return { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' };
+  if (status === 'On-Going') return { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' };
+  return { badge: 'bg-sky-50 text-sky-700 border-sky-200', bar: 'bg-sky-500', dot: 'bg-sky-500' };
+}
+
+const fmrThClass = 'px-6 py-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
+
+/* Sortable header - writes into the same fmrProjectSortBy the sort dropdown uses. */
+function FmrSortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortChange }) {
+  const isAsc = sortBy === asc;
+  const isDesc = sortBy === desc;
+  const next = isAsc ? desc : isDesc ? asc : (defaultDir === 'asc' ? asc : desc);
+
+  return (
+    <th scope="col" className={fmrThClass}>
+      <button
+        type="button"
+        onClick={() => onSortChange(next)}
+        title={`Sort by ${label}`}
+        className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 transition-colors"
+      >
+        {label}
+        {(isAsc || isDesc) && <span className="text-teal-600">{isAsc ? '↑' : '↓'}</span>}
+      </button>
+    </th>
+  );
+}
+
+/* Admin FMR projects table - the default view for the Projects tab. */
+function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onAssign, onDelete }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1000px]">
+          <thead>
+            <tr className="bg-slate-50/60 border-b border-slate-200/70">
+              <FmrSortableTh label="Project" asc="name-asc" desc="name-desc" defaultDir="asc" sortBy={sortBy} onSortChange={onSortChange} />
+              <th scope="col" className={fmrThClass}>Status</th>
+              <FmrSortableTh label="Fiscal Year" asc="year-asc" desc="year-desc" defaultDir="desc" sortBy={sortBy} onSortChange={onSortChange} />
+              <FmrSortableTh label="Accomplishment" asc="progress-asc" desc="progress-desc" defaultDir="desc" sortBy={sortBy} onSortChange={onSortChange} />
+              <th scope="col" className={fmrThClass}>Length</th>
+              <th scope="col" className={fmrThClass}>Completed</th>
+              <th scope="col" className="px-6 py-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {projects.map((project) => {
+              const status = normalizeFmrStatus(project.status);
+              const statusStyle = getFmrStatusStyle(status);
+
+              return (
+                <tr
+                  key={project.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenDetail(project)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onOpenDetail(project);
+                    }
+                  }}
+                  title="Click to view project details"
+                  className="cursor-pointer transition-colors hover:bg-slate-50/60 focus:outline-none focus:bg-slate-50"
+                >
+                  <td className="px-6 py-4 max-w-[320px]">
+                    <p className="text-sm font-semibold text-slate-900 line-clamp-2 leading-snug">{project.project_name}</p>
+                    <p className="mt-0.5 text-xs text-slate-500 truncate">
+                      {project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}
+                    </p>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold whitespace-nowrap ${statusStyle.badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                      {status}
+                    </span>
+                  </td>
+
+                  <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                    {project.year_funded ? `FY ${project.year_funded}` : <span className="text-slate-300">—</span>}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    {status === 'Proposed' ? (
+                      <span className="text-slate-300">—</span>
+                    ) : (
+                      <div className="flex items-center gap-2 min-w-[130px]">
+                        <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700 tabular-nums w-9 text-right">{project.accomplishment || 0}%</span>
+                      </div>
+                    )}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                    {project.project_length_km > 0 ? `${project.project_length_km} km` : <span className="text-slate-300">—</span>}
+                  </td>
+
+                  <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                    {project.date_completed || <span className="text-slate-300">—</span>}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={(event) => { event.stopPropagation(); onEdit(project); }}
+                        title="Edit project"
+                        aria-label={`Edit ${project.project_name}`}
+                        className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                      </button>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); onAssign(project); }}
+                        title="Assign contractor"
+                        aria-label={`Assign contractor to ${project.project_name}`}
+                        className="p-2 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-amber-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
+                      </button>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); onDelete(project); }}
+                        title="Delete project"
+                        aria-label={`Delete ${project.project_name}`}
+                        className="p-2 bg-red-50 hover:bg-red-100 border border-red-200/60 rounded-lg text-red-600 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function EmptyState({ title, description, buttonLabel, onButtonClick }) {
   return (
@@ -632,7 +831,16 @@ export default function Dashboard() {
   const [fmrProjectDateTo, setFmrProjectDateTo] = useState('');
   const [fmrProjectSortBy, setFmrProjectSortBy] = useState('latest');
   const [fmrProjectCurrentPage, setFmrProjectCurrentPage] = useState(1);
-  const fmrProjectsPerPage = 9;
+  // Tabular is the default presentation for FMR records; cards remain opt-in.
+  const [fmrViewMode, setFmrViewMode] = useState(() => {
+    try {
+      return localStorage.getItem(ADMIN_FMR_VIEW_MODE_KEY) === 'cards' ? 'cards' : 'table';
+    } catch {
+      return 'table';
+    }
+  });
+  const [fmrRowsPerPage, setFmrRowsPerPage] = useState(10);
+  const fmrProjectsPerPage = fmrViewMode === 'table' ? fmrRowsPerPage : 9;
   const [selectedProjectDetail, setSelectedProjectDetail] = useState(null);
 
   // Contractor state
@@ -714,33 +922,6 @@ export default function Dashboard() {
     const nextNum = maxNum + 1;
     const padded = String(nextNum).padStart(3, '0');
     return `${prefix}${padded}`;
-  };
-
-  const getPaginationRange = (currentPage, totalPages) => {
-    const delta = 1;
-    const range = [];
-    const rangeWithDots = [];
-    let l;
-
-    for (let i = 1; i <= totalPages; i++) {
-      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
-        range.push(i);
-      }
-    }
-
-    for (let i of range) {
-      if (l) {
-        if (i - l === 2) {
-          rangeWithDots.push(l + 1);
-        } else if (i - l > 2) {
-          rangeWithDots.push('...');
-        }
-      }
-      rangeWithDots.push(i);
-      l = i;
-    }
-
-    return rangeWithDots;
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -2366,8 +2547,16 @@ export default function Dashboard() {
   }, [fmrProjects, fetchMapReportData]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_FMR_VIEW_MODE_KEY, fmrViewMode);
+    } catch {
+      // Storage unavailable (private mode) - the preference just won't persist.
+    }
+  }, [fmrViewMode]);
+
+  useEffect(() => {
     setFmrProjectCurrentPage(1);
-  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter, fmrProjectDateFrom, fmrProjectDateTo, fmrProjectSortBy]);
+  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter, fmrProjectDateFrom, fmrProjectDateTo, fmrProjectSortBy, fmrRowsPerPage, fmrViewMode]);
 
   const unifiedProjects = useMemo(() => {
     const mappedFmr = fmrProjects.map((p) => {
@@ -3319,14 +3508,14 @@ export default function Dashboard() {
         <div className="px-5 py-6 border-b border-slate-800/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3.5 overflow-hidden">
-              <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-black text-lg shadow-md shadow-teal-500/25 flex-shrink-0 text-white select-none transition-transform duration-300 group-hover:scale-105">
-                K
-              </div>
-              <div className={`transition-all duration-300 ease-in-out flex flex-col ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-40 opacity-100'
-                }`}>
-                <h1 className="text-base font-extrabold tracking-tight text-white leading-tight">KalsaTrack</h1>
-                <p className="text-[10px] font-bold text-slate-500 mt-0.5 tracking-wider uppercase">FMR Portal v1.0</p>
-              </div>
+              {sidebarCollapsed ? (
+                <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <Logo tone="light" className="h-8" />
+                  <p className="text-[10px] font-bold text-slate-500 tracking-wider uppercase">FMR Portal v1.0</p>
+                </div>
+              )}
             </div>
             {/* Collapse Toggle Button */}
             <button
@@ -3449,8 +3638,8 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className={`flex-1 min-h-screen transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
         {/* Header */}
-        <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
-          <div className="px-6 sm:px-10 py-6 sm:py-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+        <header className="bg-gradient-to-br from-slate-50 to-slate-100 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
+          <div className="px-6 sm:px-10 py-4 sm:py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="pl-12 lg:pl-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                 {activeTab === 'projects' && 'FMR Projects'}
@@ -3929,6 +4118,8 @@ export default function Dashboard() {
               if (fmrProjectSortBy === 'name-desc') return (b.project_name || '').localeCompare(a.project_name || '');
               if (fmrProjectSortBy === 'progress-desc') return (Number(b.accomplishment) || 0) - (Number(a.accomplishment) || 0);
               if (fmrProjectSortBy === 'progress-asc') return (Number(a.accomplishment) || 0) - (Number(b.accomplishment) || 0);
+              if (fmrProjectSortBy === 'year-desc') return (Number(b.year_funded) || 0) - (Number(a.year_funded) || 0);
+              if (fmrProjectSortBy === 'year-asc') return (Number(a.year_funded) || 0) - (Number(b.year_funded) || 0);
               const aTime = new Date(a.updated_at || a.created_at || a.date_completed || a.target_completion_date || 0).getTime() || 0;
               const bTime = new Date(b.updated_at || b.created_at || b.date_completed || b.target_completion_date || 0).getTime() || 0;
               return bTime - aTime;
@@ -4527,6 +4718,8 @@ export default function Dashboard() {
                       <option value="name-desc">Sort: Name Z-A</option>
                       <option value="progress-desc">Sort: Progress High-Low</option>
                       <option value="progress-asc">Sort: Progress Low-High</option>
+                      <option value="year-desc">Sort: Fiscal Year Newest</option>
+                      <option value="year-asc">Sort: Fiscal Year Oldest</option>
                     </select>
                     <div className="w-full xl:col-span-2">
                       <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
@@ -4581,11 +4774,31 @@ export default function Dashboard() {
                       </button>
                     </div>
                   </div>
-                  {/* Results count */}
-                  <div className="mt-4 pt-4 border-t border-slate-100">
+                  {/* Results count + view toggle */}
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs sm:text-sm text-slate-500 tracking-tight">
                       Showing <span className="font-semibold text-slate-700">{filteredFmr.length}</span> of <span className="font-semibold text-slate-700">{fmrProjects.length}</span> projects
                     </p>
+                    <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
+                      {[
+                        { id: 'table', label: 'Table', icon: <Icons.List /> },
+                        { id: 'cards', label: 'Cards', icon: <Icons.Dashboard /> },
+                      ].map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => setFmrViewMode(v.id)}
+                          aria-pressed={fmrViewMode === v.id}
+                          title={`${v.label} view`}
+                          className={`px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all duration-200 ${
+                            fmrViewMode === v.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                          }`}
+                        >
+                          {v.icon}
+                          {v.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -4606,6 +4819,20 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <>
+                    {fmrViewMode === 'table' ? (
+                      <AdminFmrProjectTable
+                        projects={paginatedFilteredFmr}
+                        sortBy={fmrProjectSortBy}
+                        onSortChange={setFmrProjectSortBy}
+                        onOpenDetail={openProjectDetailModal}
+                        onEdit={openFmrEditModal}
+                        onAssign={(project) => {
+                          setAssignContractorModal(project);
+                          setSelectedContractorId(project.contractor_id || '');
+                        }}
+                        onDelete={openFmrDeleteModal}
+                      />
+                    ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                       {paginatedFilteredFmr.map(project => {
                         const status = normalizeFmrStatus(project.status);
@@ -4721,12 +4948,30 @@ export default function Dashboard() {
                         );
                       })}
                     </div>
-                    {fmrTotalPages > 1 && (
-                      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    )}
+                    <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
                         <p className="text-sm text-slate-500">
-                          Page <span className="font-semibold text-slate-700">{safeFmrPage}</span> of <span className="font-semibold text-slate-700">{fmrTotalPages}</span>
+                          Showing <span className="font-semibold text-slate-700">{(safeFmrPage - 1) * fmrProjectsPerPage + 1}</span> to{' '}
+                          <span className="font-semibold text-slate-700">{Math.min(safeFmrPage * fmrProjectsPerPage, filteredFmr.length)}</span> of{' '}
+                          <span className="font-semibold text-slate-700">{filteredFmr.length}</span> projects
                         </p>
-                        <div className="flex items-center gap-2">
+                        {fmrViewMode === 'table' && (
+                          <select
+                            value={fmrRowsPerPage}
+                            onChange={(e) => setFmrRowsPerPage(Number(e.target.value))}
+                            aria-label="Rows per page"
+                            title="Rows per page"
+                            className="px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                          >
+                            {FMR_ROWS_PER_PAGE_OPTIONS.map((n) => (
+                              <option key={n} value={n}>{n} / page</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      {fmrTotalPages > 1 && (
+                        <div className="flex flex-wrap items-center justify-center gap-2">
                           <button
                             onClick={() => setFmrProjectCurrentPage((p) => Math.max(1, p - 1))}
                             disabled={safeFmrPage === 1}
@@ -4763,8 +5008,8 @@ export default function Dashboard() {
                             Next
                           </button>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -4950,6 +5195,7 @@ export default function Dashboard() {
                         </Marker>
                       )}
                       <AdminFitBounds points={mapBoundsPoints} filterKey={filterKey} />
+                      <SelectedProjectMapController selectedProject={adminMapSelectedProject} />
                       <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
@@ -5754,7 +6000,7 @@ export default function Dashboard() {
                                 <div
                                   key={p.id}
                                   onClick={() => openProjectDetailModal(p)}
-                                  className={`bg-white rounded-xl border-l-4 ${st.border} border border-slate-200/70 p-3.5 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all duration-205 group`}
+                                  className={`bg-white rounded-xl border-l-4 ${st.border} border border-slate-200/70 p-3.5 cursor-pointer hover:shadow-md hover:border-slate-300 transition-[box-shadow,border-color] duration-200 group`}
                                 >
                                   <p className="text-[13px] font-semibold text-slate-900 leading-snug line-clamp-2 group-hover:text-teal-700 transition-colors">{p.project_name}</p>
                                   <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
@@ -7659,7 +7905,7 @@ export default function Dashboard() {
                               <button
                                 key={rpt.id}
                                 onClick={() => setSelectedPublicReport(rpt)}
-                                className="group flex flex-col text-left bg-white rounded-2xl border border-slate-200/80 hover:border-teal-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden relative shadow-2xs"
+                                className="group flex flex-col text-left bg-white rounded-2xl border border-slate-200/80 hover:border-teal-500/50 hover:shadow-lg transition-[box-shadow,border-color] duration-200 overflow-hidden relative shadow-2xs"
                               >
                                 {/* Card Image Preview / Vector Placeholder */}
                                 <div className="h-40 w-full relative bg-slate-900 overflow-hidden shrink-0">
@@ -8601,7 +8847,24 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Project Name *</label>
-                  <input type="text" name="projectName" value={formData.projectName} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="e.g., Barangay Access Road" />
+                  <input
+                    type="text"
+                    name="projectName"
+                    value={formData.projectName}
+                    onChange={handleInputChange}
+                    required
+                    readOnly={!!pendingProposalLink}
+                    disabled={!!pendingProposalLink}
+                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 ${
+                      pendingProposalLink ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
+                    }`}
+                    placeholder="e.g., Barangay Access Road"
+                  />
+                  {pendingProposalLink && (
+                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                      🔒 Locked to match the validated LGU proposal name for traceability.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">FMR Code *</label>
@@ -9199,7 +9462,23 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Project Name *</label>
-                  <input type="text" name="project_name" value={fmrFormData.project_name} onChange={handleFmrInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <input
+                    type="text"
+                    name="project_name"
+                    value={fmrFormData.project_name}
+                    onChange={handleFmrInputChange}
+                    required
+                    readOnly={selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id)}
+                    disabled={selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id)}
+                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 ${
+                      (selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id)) ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
+                    }`}
+                  />
+                  {selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id) && (
+                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                      🔒 Locked to match the validated LGU proposal name for traceability.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Status *</label>
@@ -9378,6 +9657,13 @@ export default function Dashboard() {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
                       <MapSearchController searchCoords={editMapSearchCoords} />
+                      <EditModalMapController
+                        projectId={selectedFmrProject?.id}
+                        startLat={fmrFormData.start_latitude}
+                        startLng={fmrFormData.start_longitude}
+                        endLat={fmrFormData.end_latitude}
+                        endLng={fmrFormData.end_longitude}
+                      />
                       <RouteEditorMapClick onPickPoint={handleFmrRoutePick} />
                       {editMapSearchCoords && (
                         <Marker position={editMapSearchCoords}>

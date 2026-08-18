@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Logo from './Logo';
 
 const DISMISS_KEY = 'pwa-install-banner-dismissed';
 const UPDATE_EVENT = 'pwa-update-available';
@@ -127,11 +128,14 @@ export default function PWAInstallBanner() {
     <div className="fixed inset-x-0 bottom-0 z-[999] px-4 pb-4 sm:px-6 sm:pb-6">
       <div className="mx-auto max-w-3xl rounded-2xl border border-emerald-200 bg-white/95 backdrop-blur shadow-xl shadow-emerald-900/10">
         <div className="flex items-center justify-between gap-3 p-4 sm:p-5">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">Install KalsaTrack</p>
-            <p className="mt-1 text-xs sm:text-sm text-slate-600">
-              Add this app to your home screen for faster access and offline support.
-            </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <Logo variant="glyph" className="size-10 hidden sm:block" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Install KalsaTrack</p>
+              <p className="mt-1 text-xs sm:text-sm text-slate-600">
+                Add this app to your home screen for faster access and offline support.
+              </p>
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import { normalizeProjectName } from '../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
+import { getPaginationRange } from '../lib/paginationUtils';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 
 function normalizeUserProjectStatus(status) {
@@ -68,7 +70,7 @@ function StatCard({ icon, value, label, variant = 'default' }) {
   };
 
   return (
-    <article className="bg-white rounded-2xl p-5 border border-slate-200/60 hover:border-zinc-300 transition-colors">
+    <article className="bg-white rounded-2xl p-5 border border-slate-200/60 shadow-xs hover:shadow-md transition-shadow duration-300">
       <div className={`inline-flex items-center justify-center size-10 rounded-xl mb-3 ${variants[variant]}`}>
         {icon}
       </div>
@@ -91,14 +93,15 @@ function FMRProjectCard({ project, onClick, tranches = [] }) {
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="w-full text-left bg-white rounded-2xl border border-slate-200/80 p-5 hover:border-emerald-500/50 hover:shadow-md transition-all duration-200 group flex flex-col justify-between"
+      className="w-full text-left bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-shadow duration-300 ease-out flex flex-col justify-between"
     >
       <div className="space-y-3 w-full">
         {/* Top Header & Status Badge */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors line-clamp-2 text-sm sm:text-base leading-snug">
+            <h3 className="font-bold text-slate-900 line-clamp-2 text-sm sm:text-base leading-snug">
               {name}
             </h3>
             <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500 font-medium">
@@ -189,6 +192,163 @@ function ProjectSkeleton() {
   );
 }
 
+/* ——— Sortable Column Header ———
+   Writes into the same `sortBy` state the sort dropdown uses, so the two stay in sync. */
+const thClass = 'px-6 py-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
+
+function SortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortChange }) {
+  const isAsc = sortBy === asc;
+  const isDesc = sortBy === desc;
+  const next = isAsc ? desc : isDesc ? asc : (defaultDir === 'asc' ? asc : desc);
+
+  return (
+    <th scope="col" className={thClass}>
+      <button
+        type="button"
+        onClick={() => onSortChange(next)}
+        title={`Sort by ${label}`}
+        className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 transition-colors"
+      >
+        {label}
+        {(isAsc || isDesc) && <span className="text-teal-600">{isAsc ? '↑' : '↓'}</span>}
+      </button>
+    </th>
+  );
+}
+
+function PlainTh({ label }) {
+  return <th scope="col" className={thClass}>{label}</th>;
+}
+
+/* ——— Project Table (default view) ——— */
+function FMRProjectTable({ projects, loading, onSelect, tranchesByProjectId = {}, sortBy, onSortChange }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1100px]">
+          <thead>
+            <tr className="bg-slate-50/60 border-b border-slate-200/70">
+              <SortableTh label="Project" asc="name-asc" desc="name-desc" defaultDir="asc" sortBy={sortBy} onSortChange={onSortChange} />
+              <PlainTh label="Status" />
+              <SortableTh label="Progress" asc="progress-asc" desc="progress-desc" defaultDir="desc" sortBy={sortBy} onSortChange={onSortChange} />
+              <SortableTh label="Budget" asc="budget-asc" desc="budget-desc" defaultDir="desc" sortBy={sortBy} onSortChange={onSortChange} />
+              <SortableTh label="Fiscal Year" asc="year-asc" desc="year-desc" defaultDir="desc" sortBy={sortBy} onSortChange={onSortChange} />
+              <PlainTh label="Length" />
+              <PlainTh label="Timeline" />
+              <PlainTh label="Contractor" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-56 bg-zinc-200 rounded mb-2" />
+                      <div className="h-3 w-36 bg-zinc-200 rounded" />
+                    </td>
+                    <td className="px-6 py-4"><div className="h-5 w-20 bg-zinc-200 rounded-full" /></td>
+                    <td className="px-6 py-4"><div className="h-2 w-24 bg-zinc-200 rounded-full" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-12 bg-zinc-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-14 bg-zinc-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
+                    <td className="px-6 py-4"><div className="h-4 w-28 bg-zinc-200 rounded" /></td>
+                  </tr>
+                ))
+              : projects.map((project) => {
+                  const normalizedStatus = normalizeUserProjectStatus(project.status);
+                  const style = getStatusStyle(normalizedStatus);
+                  const name = normalizeProjectName(project);
+                  const contractorName = String(project.contractor || project.contractor_name || '').trim();
+                  const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
+                  const overdue = isProjectOverdue(project);
+                  const accomplishment = Number(project.accomplishment) || (normalizedStatus === 'Completed' ? 100 : 0);
+                  const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
+
+                  return (
+                    <tr
+                      key={project.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onSelect(project)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onSelect(project);
+                        }
+                      }}
+                      title="Click to view project details"
+                      className="cursor-pointer transition-colors hover:bg-slate-50/60 focus:outline-none focus:bg-slate-50"
+                    >
+                      <td className="px-6 py-4 max-w-[320px]">
+                        <p className="text-sm font-semibold text-slate-900 line-clamp-2 leading-snug">{name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500 truncate">
+                          {project.location ? `${project.location}, ` : ''}{project.municipality || 'Leon'}, {project.province || 'Iloilo'}
+                        </p>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${style.badge}`}>
+                          {normalizedStatus}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                            <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.min(accomplishment, 100)}%` }} />
+                          </div>
+                          <span className="text-xs font-bold text-slate-800 tabular-nums w-9 text-right">{accomplishment}%</span>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm font-bold text-slate-800 tabular-nums">{formatPeso(budget.totalBudget)}</span>
+                        <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {budget.budgetIsEstimated ? 'Est.' : 'Official'}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                        {project.year_funded ? `FY ${project.year_funded}` : <span className="text-slate-300">—</span>}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                        {project.project_length_km > 0 ? `${project.project_length_km} km` : <span className="text-slate-300">—</span>}
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {project.target_completion_date && (
+                          <p className="text-xs text-slate-600 tabular-nums">{project.target_completion_date}</p>
+                        )}
+                        {overdue ? (
+                          <span className="mt-1 inline-block px-2 py-0.5 rounded-lg bg-red-50 text-red-700 border border-red-200 font-bold text-[11px]">
+                            Overdue
+                          </span>
+                        ) : daysDelta !== null && normalizedStatus !== 'Completed' ? (
+                          <span className="mt-1 inline-block px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-semibold text-[11px]">
+                            {daysDelta}d left
+                          </span>
+                        ) : !project.target_completion_date ? (
+                          <span className="text-slate-300">—</span>
+                        ) : null}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700 max-w-[200px]">
+                        {contractorName
+                          ? <span className="line-clamp-2">{contractorName}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* â”€â”€â”€ Detail Item â”€â”€â”€ */
 function DetailItem({ icon, label, value }) {
   return (
@@ -207,19 +367,160 @@ function DetailItem({ icon, label, value }) {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    FMR PROJECT DETAIL VIEW
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function FMRProjectDetail({ project, onBack, tranches = [] }) {
+function FMRProjectDetail({ project, onBack, tranches = [], isModal = false }) {
   const style = getStatusStyle(project.status);
   const hasCoords = project.start_latitude && project.start_longitude;
   const name = normalizeProjectName(project);
   const budget = getProjectBudgetSummary(project, tranches);
   const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
 
+  if (isModal) {
+    return (
+      <div className="space-y-6 text-slate-800">
+        {/* Progress bar */}
+        {project.status !== 'Proposed' && (
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-slate-700">Accomplishment</span>
+              <span className="text-sm font-bold text-slate-900">{project.accomplishment || 0}%</span>
+            </div>
+            <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+              <div className={`h-full rounded-full ${style.bar} transition-all duration-500`} style={{ width: `${project.accomplishment || 0}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* Specifications Grid Card */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Specifications</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
+            <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
+            <DetailItem icon={<Icons.MapPinLg />} label="Province" value={`${project.province}, ${project.region}`} />
+            
+            {project.year_funded && (
+              <DetailItem icon={<Icons.Calendar />} label="Year Funded" value={project.year_funded} />
+            )}
+            {project.target_completion_date && (
+              <DetailItem icon={<Icons.Calendar />} label="Target Completion" value={project.target_completion_date} />
+            )}
+            {project.date_completed && (
+              <DetailItem icon={<Icons.Calendar />} label="Date Completed" value={project.date_completed} />
+            )}
+            {project.project_length_km > 0 && (
+              <DetailItem icon={<Icons.Ruler />} label="Road Length" value={`${project.project_length_km} km`} />
+            )}
+            {project.remarks && (
+              <DetailItem icon={<Icons.Lightbulb />} label="Remarks" value={project.remarks} />
+            )}
+          </div>
+        </div>
+
+        {/* Coordinates Section */}
+        {hasCoords && (
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
+            <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2 text-sm sm:text-base">
+              <Icons.MapPinLg /> GPS Coordinates
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                <p className="text-xs text-teal-600 font-medium uppercase tracking-wider mb-1">Start Point</p>
+                <p className="text-sm font-mono text-emerald-800">
+                  {project.start_latitude?.toFixed(6)}, {project.start_longitude?.toFixed(6)}
+                </p>
+              </div>
+              <div className="p-4 bg-rose-50 rounded-xl border border-rose-100">
+                <p className="text-xs text-rose-600 font-medium uppercase tracking-wider mb-1">End Point</p>
+                <p className="text-sm font-mono text-rose-800">
+                  {project.end_latitude?.toFixed(6)}, {project.end_longitude?.toFixed(6)}
+                </p>
+              </div>
+            </div>
+            <a
+              href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude},${project.end_longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white text-sm font-medium rounded-xl transition-colors shadow-xs"
+            >
+              <Icons.ExternalLink /> View Route on Google Maps
+            </a>
+          </div>
+        )}
+
+        {/* Project Budget */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
+              <Icons.Money /> Project Budget
+            </h2>
+            {project.funding_source && (
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+                {project.funding_source}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/60">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Total Budget</p>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {budget.budgetIsEstimated ? 'Estimated' : 'Official'}
+                </span>
+              </div>
+              <p className="text-base sm:text-lg font-bold text-slate-900">{formatPeso(budget.totalBudget)}</p>
+            </div>
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-amber-700 uppercase tracking-wider">Funds Utilized</p>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.utilizationIsEstimated ? 'bg-amber-200 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {budget.utilizationIsEstimated ? 'Estimated' : 'Official'}
+                </span>
+              </div>
+              <p className="text-base sm:text-lg font-bold text-amber-900">{formatPeso(budget.released)}</p>
+            </div>
+            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+              <p className="text-xs text-emerald-700 uppercase tracking-wider mb-1">Funds Remaining</p>
+              <p className="text-base sm:text-lg font-bold text-emerald-900">{formatPeso(budget.remaining)}</p>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between text-xs font-medium mb-1.5">
+              <span className="text-slate-500">Utilization</span>
+              <span className="text-slate-700 font-bold">{utilizationPct.toFixed(0)}%</span>
+            </div>
+            <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
+            </div>
+          </div>
+
+          {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Figures marked "Estimated" are computed from the DA-BAFE 2026 indicative rate of ₱15M per kilometer and this project's reported physical progress, following the standard government mobilization/progress/retention release schedule.
+            </p>
+          )}
+        </div>
+
+        {/* Source Info */}
+        <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
+          <p className="font-medium text-sky-900 mb-1">Data Source</p>
+          <p className="text-sm text-sky-700 leading-relaxed">
+            Department of Agriculture - Regional Agricultural Engineering Division (RAED), Regional Field Office VI - Western Visayas.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Back button */}
-      <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
-        <Icons.ArrowLeft /> Back to FMR Projects
-      </button>
+      {!isModal && (
+        <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
+          <Icons.ArrowLeft /> Back to FMR Projects
+        </button>
+      )}
 
       {/* Project Header Card */}
       <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
@@ -375,6 +676,9 @@ function FMRProjectDetail({ project, onBack, tranches = [] }) {
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
 const statusFilters = ['On-Going', 'Proposed', 'Completed', 'Overdue'];
 
+const VIEW_MODE_STORAGE_KEY = 'fmr-projects-view';
+const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
+
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN FMR PROJECTS PAGE
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
@@ -394,7 +698,16 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const [currentPage, setCurrentPage] = useState(1);
   const [reportCountByProject, setReportCountByProject] = useState({});
   const [tranchesByProjectId, setTranchesByProjectId] = useState({});
-  const projectsPerPage = embedded ? 6 : 9;
+  // Tabular is the default presentation for FMR records; cards remain opt-in.
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'cards' ? 'cards' : 'table';
+    } catch {
+      return 'table';
+    }
+  });
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const projectsPerPage = viewMode === 'table' ? rowsPerPage : (embedded ? 6 : 9);
 
   const getProjectDate = (project) => {
     const candidates = [
@@ -454,8 +767,16 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     : {};
 
   useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch {
+      // Storage unavailable (private mode) - the preference just won't persist.
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, yearFilter, municipalityFilter, dateFrom, dateTo, sortBy]);
+  }, [search, statusFilter, yearFilter, municipalityFilter, dateFrom, dateTo, sortBy, rowsPerPage, viewMode]);
 
   async function fetchFMRProjects() {
     try {
@@ -553,6 +874,16 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     if (sortBy === 'progress-asc') {
       return (Number(a.accomplishment) || 0) - (Number(b.accomplishment) || 0);
     }
+    if (sortBy === 'budget-desc' || sortBy === 'budget-asc') {
+      const aBudget = getProjectBudgetSummary(a, tranchesByProjectId[a.id] || []).totalBudget || 0;
+      const bBudget = getProjectBudgetSummary(b, tranchesByProjectId[b.id] || []).totalBudget || 0;
+      return sortBy === 'budget-desc' ? bBudget - aBudget : aBudget - bBudget;
+    }
+    if (sortBy === 'year-desc' || sortBy === 'year-asc') {
+      const aYear = Number(a.year_funded) || 0;
+      const bYear = Number(b.year_funded) || 0;
+      return sortBy === 'year-desc' ? bYear - aYear : aYear - bYear;
+    }
     if (sortBy === 'reported-desc') {
       return getReportedCount(b) - getReportedCount(a);
     }
@@ -623,14 +954,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     URL.revokeObjectURL(url);
   };
 
-  // If a project is selected, show detail view
-  if (selectedProject) {
-    return (
-      <UserLayout {...layoutProps}>
-        <FMRProjectDetail project={selectedProject} onBack={() => setSelectedProject(null)} tranches={tranchesByProjectId[selectedProject.id] || []} />
-      </UserLayout>
-    );
-  }
+  // If a project is selected, detail view will open in a modal overlay rendered below
 
   return (
     <UserLayout {...layoutProps}>
@@ -768,6 +1092,10 @@ export default function UserFMRProjects({ embedded = false } = {}) {
             <option value="name-desc">Sort: Name Z-A</option>
             <option value="progress-desc">Sort: Progress High to Low</option>
             <option value="progress-asc">Sort: Progress: Low to High</option>
+            <option value="budget-desc">Sort: Budget High to Low</option>
+            <option value="budget-asc">Sort: Budget Low to High</option>
+            <option value="year-desc">Sort: Fiscal Year Newest</option>
+            <option value="year-asc">Sort: Fiscal Year Oldest</option>
             <option value="reported-desc">Sort: Most Reported</option>
           </select>
 
@@ -859,68 +1187,122 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           )}
         </div>
 
-        {/* Results count */}
-        <p className="text-sm text-slate-400">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
-
-        {/* Projects List Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {loading ? (
-            Array.from({ length: 6 }).map((_, i) => <ProjectSkeleton key={i} />)
-          ) : filtered.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
-              <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-400 mb-3">
-                <Icons.Road />
-              </div>
-              <p className="font-medium text-slate-900">
-                {search || statusFilter !== 'On-Going' ? 'No matching FMR projects' : 'No FMR projects loaded'}
-              </p>
-              <p className="text-sm text-slate-500 mt-1">
-                {search || statusFilter !== 'On-Going'
-                  ? 'Try adjusting your search or filters'
-                  : 'Run the SQL migration to load DA-RAED data'}
-              </p>
-            </div>
-          ) : (
-            paginatedProjects.map(p => (
-              <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} tranches={tranchesByProjectId[p.id] || []} />
-            ))
-          )}
+        {/* Results count + view toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-400">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
+          <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
+            {[
+              { id: 'table', label: 'Table', icon: <Icons.List /> },
+              { id: 'cards', label: 'Cards', icon: <Icons.Dashboard /> },
+            ].map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setViewMode(v.id)}
+                aria-pressed={viewMode === v.id}
+                title={`${v.label} view`}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all duration-200 ${
+                  viewMode === v.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {v.icon}
+                {v.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {!loading && filtered.length > 0 && totalPages > 1 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-sm text-slate-500">
-              Page <span className="font-semibold text-slate-700">{safeCurrentPage}</span> of <span className="font-semibold text-slate-700">{totalPages}</span>
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={safeCurrentPage === 1}
-                className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                    safeCurrentPage === page
-                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                      : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={safeCurrentPage === totalPages}
-                className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+        {/* Projects list - tabular by default, cards on request */}
+        {!loading && filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
+            <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-400 mb-3">
+              <Icons.Road />
             </div>
+            <p className="font-medium text-slate-900">
+              {search || statusFilter !== 'On-Going' ? 'No matching FMR projects' : 'No FMR projects loaded'}
+            </p>
+            <p className="text-sm text-slate-500 mt-1">
+              {search || statusFilter !== 'On-Going'
+                ? 'Try adjusting your search or filters'
+                : 'Run the SQL migration to load DA-RAED data'}
+            </p>
+          </div>
+        ) : viewMode === 'table' ? (
+          <FMRProjectTable
+            projects={paginatedProjects}
+            loading={loading}
+            onSelect={setSelectedProject}
+            tranchesByProjectId={tranchesByProjectId}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {loading
+              ? Array.from({ length: 6 }).map((_, i) => <ProjectSkeleton key={i} />)
+              : paginatedProjects.map(p => (
+                  <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} tranches={tranchesByProjectId[p.id] || []} />
+                ))}
+          </div>
+        )}
+
+        {!loading && filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-slate-500">
+                Showing <span className="font-semibold text-slate-700">{(safeCurrentPage - 1) * projectsPerPage + 1}</span> to{' '}
+                <span className="font-semibold text-slate-700">{Math.min(safeCurrentPage * projectsPerPage, filtered.length)}</span> of{' '}
+                <span className="font-semibold text-slate-700">{filtered.length}</span> project{filtered.length !== 1 ? 's' : ''}
+              </p>
+              {viewMode === 'table' && (
+                <select
+                  value={rowsPerPage}
+                  onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                  aria-label="Rows per page"
+                  title="Rows per page"
+                  className="px-3 py-2 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                >
+                  {ROWS_PER_PAGE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n} / page</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={safeCurrentPage === 1}
+                  className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                {getPaginationRange(safeCurrentPage, totalPages).map((page, idx) => (
+                  page === '...' ? (
+                    <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">...</span>
+                  ) : (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                        safeCurrentPage === page
+                          ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                          : 'border border-slate-200 hover:bg-white hover:border-slate-300 shadow-sm'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  )
+                ))}
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safeCurrentPage === totalPages}
+                  className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-white hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -942,6 +1324,81 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           </button>
         )}
       </div>
+
+      {selectedProject && createPortal(
+        <>
+          <style>{`
+            @keyframes modal-backdrop-in {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes modal-content-in {
+              from { opacity: 0; transform: scale(0.96) translateY(12px); }
+              to { opacity: 1; transform: scale(1) translateY(0); }
+            }
+            .modal-backdrop-animate {
+              animation: modal-backdrop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            .modal-content-animate {
+              animation: modal-content-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+          `}</style>
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm modal-backdrop-animate"
+            onClick={() => setSelectedProject(null)}
+          >
+            <div
+              className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-slate-50 shadow-2xl relative modal-content-animate"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200/60 px-8 py-6 bg-white rounded-t-2xl">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Project Details</p>
+                  <h3 className="mt-1 text-xl sm:text-2xl font-bold text-slate-900 leading-snug">
+                    {normalizeProjectName(selectedProject)}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">DA-RAED Region VI &middot; Farm-to-Market Road Development Program</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border uppercase tracking-wider ${getStatusStyle(normalizeUserProjectStatus(selectedProject.status)).badge}`}>
+                    {normalizeUserProjectStatus(selectedProject.status)}
+                  </span>
+                  <button
+                    onClick={() => setSelectedProject(null)}
+                    className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors shadow-xs"
+                    aria-label="Close modal"
+                  >
+                    <Icons.X />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-8 space-y-6">
+                <FMRProjectDetail
+                  project={selectedProject}
+                  onBack={() => setSelectedProject(null)}
+                  tranches={tranchesByProjectId[selectedProject.id] || []}
+                  isModal={true}
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex justify-end gap-3 border-t border-slate-200/60 px-8 py-5 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setSelectedProject(null)}
+                  className="rounded-xl border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </UserLayout>
   );
 }

@@ -2,9 +2,18 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-/* ── Tailwind v4 Theme ── */
+/* ── Tailwind v4 Theme ──
+   NOTE: this is Tailwind v4, which does NOT read tailwind.config.js unless a
+   `@config` directive points at it. Theme tokens must live here. */
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Sampled from the KalsaTrack logo artwork. For surfaces that sit next to
+     the mark; the app's general UI stays on Tailwind's emerald. */
+  --color-brand: #2a6a12;
+  --color-brand-dark: #1d4a0c;
+  --color-brand-mid: #4d9e2a;
+  --color-brand-leaf: #77aa11;
 }
 
 /* ── Base Styles ── */

@@ -492,9 +492,18 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                   type="text"
                   value={form.project_name}
                   onChange={(e) => setForm((c) => ({ ...c, project_name: e.target.value }))}
+                  readOnly={!!editingId}
+                  disabled={!!editingId}
                   placeholder="e.g. Concreting of Brgy. Example FMR"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none"
+                  className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-1 focus:ring-teal-500 outline-none ${
+                    editingId ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-medium' : ''
+                  }`}
                 />
+                {editingId && (
+                  <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+                    🔒 Name is locked to ensure proposal traceability and duplicate check integrity.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

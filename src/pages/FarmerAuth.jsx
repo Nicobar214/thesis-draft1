@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { resolveLoginEmail } from "../lib/farmerAuth";
 import { useNavigate, Link } from "react-router-dom";
+import Logo from "../components/Logo";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -77,11 +78,18 @@ export default function FarmerAuth() {
   };
 
   return (
-    <div className="min-h-[100dvh] flex flex-col justify-between bg-gradient-to-br from-emerald-950 via-teal-900 to-slate-900 px-4 py-8 sm:py-12">
-      <div className="flex-1 flex items-center justify-center">
+    <div className="relative min-h-[100dvh] flex flex-col justify-between bg-gradient-to-br from-emerald-950 via-teal-900 to-slate-900 px-4 py-8 sm:py-12 overflow-hidden">
+      {/* Ambient background glow */}
+      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-24 -left-16 w-80 h-80 rounded-full bg-emerald-500/20 blur-[100px]" />
+        <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-teal-500/15 blur-[110px]" />
+      </div>
+
+      <div className="relative flex-1 flex items-center justify-center">
         <div className="max-w-md w-full">
           <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl p-6 sm:p-8 border border-emerald-500/20">
             <div className="text-center mb-6 sm:mb-8">
+              <Logo className="h-9 mx-auto mb-5" />
               <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100/90 rounded-2xl mb-3 shadow-inner">
                 <svg className="w-8 h-8 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125V21m0 0h4.5V3.545M12.75 21h7.5V10.75M2.25 21h1.5m18 0h-18M2.25 9l4.5-1.636M18.75 3l-1.5.545m0 6.205l3 1M5.25 10.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm10.5-1.125a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
@@ -124,7 +132,7 @@ export default function FarmerAuth() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-650 focus:outline-none transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
                   >
                     {showPassword ? (
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

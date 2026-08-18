@@ -16,6 +16,7 @@ import { BENEFICIARY_CROPS } from '../utils/farmerBeneficiaryData';
 import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from '../lib/mapRouteUtils';
 import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
 import roadInventory from '../data/leonRoadInventory.json';
+import Logo from '../components/Logo';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -1182,13 +1183,14 @@ export default function LguDashboard() {
           {/* Header logo block */}
           <div className="border-b border-slate-700/60 px-4 py-4 overflow-hidden shrink-0">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-500 text-white font-black text-xl shadow-lg shadow-teal-500/25">
-                K
-              </div>
-              <div className={`transition-all duration-300 ease-in-out origin-left whitespace-nowrap overflow-hidden ${sidebarCollapsed ? 'opacity-0 w-0 scale-95 pointer-events-none' : 'opacity-100 w-auto scale-100'}`}>
-                <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">LGU Oversight Portal</p>
-                <h1 className="text-sm font-bold text-white leading-tight">KalsaTrack LGU</h1>
-              </div>
+              {sidebarCollapsed ? (
+                <Logo variant="glyph" tone="light" className="h-10 w-10" alt="KalsaTrack LGU" />
+              ) : (
+                <div className="flex flex-col gap-1 overflow-hidden">
+                  <Logo tone="light" className="h-8" />
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">LGU Oversight Portal</p>
+                </div>
+              )}
             </div>
             
             <div className={`mt-3 rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 transition-all duration-300 ease-in-out whitespace-nowrap ${sidebarCollapsed ? 'opacity-0 h-0 py-0 border-none mt-0 overflow-hidden' : 'opacity-100 h-auto'}`}>

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import Icons from './Icons';
+import Logo from './Logo';
 
 const navItems = [
   { to: '/user', label: 'Dashboard', icon: Icons.Dashboard },
@@ -31,14 +32,11 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800 shrink-0">
-        <div className="size-9 bg-emerald-700 text-white rounded-lg flex items-center justify-center shrink-0">
-          <Icons.Sprout />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col min-w-0">
-            <span className="font-bold text-white text-base tracking-tight leading-tight truncate">
-              KalsaTrack
-            </span>
+        {collapsed ? (
+          <Logo variant="glyph" tone="light" className="size-9" alt="KalsaTrack" />
+        ) : (
+          <div className="flex flex-col gap-1 min-w-0">
+            <Logo tone="light" className="h-7" />
             <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider leading-none">
               Citizen Portal
             </span>

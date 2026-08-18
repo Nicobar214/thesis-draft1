@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import Icons from '../Icons';
+import Logo from '../Logo';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -65,6 +66,11 @@ export default function DAResolutionCertificate({
         <div ref={printRef} className="p-8 space-y-6 overflow-y-auto font-sans print:p-6 print:overflow-visible">
           {/* Government Header */}
           <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
+            {/* print-color-adjust keeps the logo's greens from dropping out in print */}
+            <Logo
+              className="h-10 mx-auto mb-3"
+              style={{ printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
+            />
             <p className="text-xs font-semibold text-slate-500 tracking-widest uppercase">Republic of the Philippines</p>
             <h2 className="text-lg font-bold text-slate-900 uppercase tracking-tight">DEPARTMENT OF AGRICULTURE — REGION VI</h2>
             <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Regional Agricultural Engineering Division (RAED)</p>

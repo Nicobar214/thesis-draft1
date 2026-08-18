@@ -13,7 +13,8 @@ export default defineConfig(({ command }) => ({
       srcDir: 'src',
       filename: 'sw.js',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,woff2,png,svg}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
       },
       devOptions: {
         enabled: false,
@@ -25,7 +26,7 @@ export default defineConfig(({ command }) => ({
         name: 'KalsaTrack - FMR Transparency Portal',
         short_name: 'KalsaTrack',
         description: 'Track Farm-to-Market Road Infrastructure with Full Transparency',
-        theme_color: '#059669',
+        theme_color: '#2a6a12',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',

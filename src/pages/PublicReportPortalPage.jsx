@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PublicReportForm from '../components/PublicReportForm';
 import { supabase } from '../lib/supabase';
+import Logo from '../components/Logo';
 
 export default function PublicReportPortalPage() {
   const observerRef = useRef(null);
@@ -44,11 +45,8 @@ export default function PublicReportPortalPage() {
       <nav className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition">
-              <div className="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center">
-                <span className="text-white text-lg font-bold">K</span>
-              </div>
-              <span className="text-lg font-bold text-slate-900">KalsaTrack</span>
+            <Link to="/" className="flex items-center hover:opacity-80 transition">
+              <Logo className="h-8" />
             </Link>
 
             <div className="flex items-center gap-3">
@@ -313,11 +311,8 @@ export default function PublicReportPortalPage() {
         <div className="max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-14">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
             <div className="col-span-2 md:col-span-1">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-lg font-bold">K</span>
-                </div>
-                <span className="text-lg font-bold text-white">KalsaTrack</span>
+              <div className="flex items-center mb-4">
+                <Logo tone="light" className="h-9" />
               </div>
               <p className="text-slate-400 text-sm leading-relaxed">
                 Transparent farm-to-market road infrastructure tracking.

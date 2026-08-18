@@ -194,7 +194,7 @@ export default function RoadInventoryTab() {
           {paginatedRows.map((row) => (
             <div
               key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
-              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md"
+              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-slate-300 hover:shadow-md"
             >
               <div>
                 <div className="flex items-start justify-between gap-3">

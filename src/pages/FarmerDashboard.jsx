@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
@@ -11,6 +11,7 @@ import PublicReportForm from "../components/PublicReportForm";
 import DAResolutionCertificate from "../components/publicReports/DAResolutionCertificate";
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
 import Icons from "../components/Icons";
+import Logo from "../components/Logo";
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
@@ -24,6 +25,26 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
+function FarmerMapCenterController({ farmLat, farmLng, nearestMarket }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!farmLat || !farmLng) return;
+
+    if (nearestMarket && nearestMarket.latitude && nearestMarket.longitude) {
+      const bounds = L.latLngBounds(
+        [farmLat, farmLng],
+        [Number(nearestMarket.latitude), Number(nearestMarket.longitude)]
+      );
+      map.fitBounds(bounds, { padding: [50, 50] });
+    } else {
+      map.setView([farmLat, farmLng], 14);
+    }
+  }, [farmLat, farmLng, nearestMarket, map]);
+
+  return null;
+}
+
 
 export default function FarmerDashboard() {
   const navigate = useNavigate();
@@ -381,9 +402,8 @@ export default function FarmerDashboard() {
       <header className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white shadow-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-xl flex items-center justify-center text-lg sm:text-xl shadow-inner">🌾</div>
-            <div>
-              <h1 className="text-base sm:text-lg font-extrabold tracking-tight">KalsaTrack</h1>
+            <div className="flex flex-col gap-1">
+              <Logo tone="light" className="h-7 sm:h-8" />
               <p className="text-[10px] sm:text-xs text-emerald-200 font-semibold uppercase tracking-wider">Farmer Oversight Portal</p>
             </div>
           </div>
@@ -524,6 +544,11 @@ export default function FarmerDashboard() {
                       attribution='&copy; OpenStreetMap contributors'
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
+                    <FarmerMapCenterController
+                       farmLat={farmLat}
+                       farmLng={farmLng}
+                       nearestMarket={nearestMarket}
+                     />
 
                     {/* Farmer Location Dot */}
                     <CircleMarker

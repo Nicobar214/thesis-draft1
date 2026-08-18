@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Logo from './Logo';
 
 const NAV_ITEMS = [
   { to: '/contractor',          label: 'Dashboard',   exact: true },
@@ -45,11 +46,9 @@ export default function ContractorLayout({ children }) {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <div className="flex items-center gap-2.5 shrink-0">
-              <div className="size-9 bg-teal-600 rounded-lg grid place-items-center">
-                <span className="text-white font-bold text-sm">K</span>
-              </div>
-              <span className="font-semibold text-slate-900 tracking-tight hidden sm:block">KalsaTrack</span>
+            <div className="flex items-center shrink-0">
+              <Logo variant="glyph" className="size-9 sm:hidden" alt="KalsaTrack" />
+              <Logo className="hidden sm:block h-8" />
             </div>
 
             {/* Desktop Nav */}

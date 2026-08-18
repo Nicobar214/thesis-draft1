@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
+import Logo from "../components/Logo";
 
 export default function AdminAuthPage() {
   const navigate = useNavigate();
@@ -50,32 +51,39 @@ export default function AdminAuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="max-w-md w-full mx-4">
-        <div className="bg-white rounded-xl shadow-2xl p-8">
+    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-rose-950 to-slate-900 px-4 overflow-hidden">
+      {/* Ambient background glow */}
+      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-rose-500/15 blur-[110px]" />
+        <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-slate-500/10 blur-[100px]" />
+      </div>
+
+      <div className="relative max-w-md w-full mx-4">
+        <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl p-6 sm:p-8 border border-rose-500/20">
           {/* Admin Badge */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4">
-              <svg className="w-8 h-8 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+          <div className="text-center mb-6 sm:mb-8">
+            <Logo className="h-9 mx-auto mb-5" />
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-rose-100/90 rounded-2xl mb-3 shadow-inner">
+              <svg className="w-8 h-8 text-rose-700" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
-            <p className="text-gray-500 text-sm mt-1">FMR Portal — Administrator Access</p>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Admin Login</h1>
+            <p className="text-rose-700 text-xs sm:text-sm mt-1 font-semibold uppercase tracking-wider">KalsaTrack Administrator Access</p>
           </div>
 
           {/* Error Alert */}
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm mb-6">
+            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-xl text-sm mb-6 animate-pulse">
               <p className="font-semibold">Access Denied</p>
-              <p>{error}</p>
+              <p className="text-xs sm:text-sm mt-0.5">{error}</p>
             </div>
           )}
 
           {/* Login Form */}
-          <form onSubmit={handleAdminLogin} className="space-y-5">
+          <form onSubmit={handleAdminLogin} className="space-y-4 sm:space-y-5">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
                 Admin Email
               </label>
               <input
@@ -83,13 +91,13 @@ export default function AdminAuthPage() {
                 placeholder="admin@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 transition"
+                className="w-full h-12 px-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition text-sm text-slate-900 bg-white"
                 disabled={loading}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
                 Password
               </label>
               <div className="relative">
@@ -98,13 +106,13 @@ export default function AdminAuthPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-4 pr-10 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 transition"
+                  className="w-full h-12 pl-4 pr-10 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 transition text-sm text-slate-900 bg-white"
                   disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-450 hover:text-slate-655 focus:outline-none transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
                 >
                   {showPassword ? (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,11 +131,11 @@ export default function AdminAuthPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-emerald-700 text-white py-3 rounded-lg font-semibold hover:bg-emerald-800 transition disabled:bg-gray-400"
+              className="w-full h-12 bg-gradient-to-r from-rose-700 to-slate-800 text-white rounded-xl font-bold hover:from-rose-800 hover:to-slate-900 active:scale-[0.99] transition-all shadow-lg shadow-rose-500/25 disabled:opacity-50 text-sm flex items-center justify-center"
             >
               {loading ? (
-                <span className="flex items-center justify-center">
-                  <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -140,7 +148,7 @@ export default function AdminAuthPage() {
           </form>
 
           {/* Footer */}
-          <p className="text-xs text-gray-400 text-center mt-8">
+          <p className="text-[11px] sm:text-xs text-slate-400 text-center mt-6 leading-relaxed">
             Authorized personnel only. Unauthorized access is prohibited.
           </p>
         </div>

@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { enqueueEngineerUpdate } from '../lib/offlineReports';
 import { requestBackgroundSync } from '../lib/offlineSync';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
+import Logo from '../components/Logo';
 
 /* ─── Engineer Status Helpers ─── */
 const engineerStatusStyles = {
@@ -453,14 +454,9 @@ export default function FieldEngineerDashboard() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center shadow-sm">
-              <span className="text-white font-bold text-sm">K</span>
-            </div>
-            <div className="hidden sm:block">
-              <h1 className="text-lg font-bold text-slate-900 tracking-tight">KalsaTrack</h1>
-              <p className="text-xs text-slate-500">Field Engineer Portal</p>
-            </div>
-            <span className="sm:hidden text-lg font-bold text-slate-900">KalsaTrack</span>
+            <Logo className="h-7 sm:h-8" />
+            <span className="hidden sm:block h-8 w-px bg-slate-200" aria-hidden="true" />
+            <p className="hidden sm:block text-xs text-slate-500">Field Engineer Portal</p>
           </div>
 
           <div className="flex items-center gap-3">

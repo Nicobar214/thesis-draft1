@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PublicReportForm from '../components/PublicReportForm';
+import Logo from '../components/Logo';
 
 /* ─── Icons ─── */
 const Icons = {
@@ -191,11 +192,8 @@ export default function PublicReportsPage() {
       {/* ── Navbar ── */}
       <nav className="bg-white/95 backdrop-blur-md border-b border-zinc-200 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center">
-              <span className="text-white text-lg font-bold">K</span>
-            </div>
-            <span className="text-lg font-bold text-zinc-900">KalsaTrack</span>
+          <Link to="/" className="flex items-center">
+            <Logo className="h-8" />
           </Link>
           <div className="flex items-center gap-3">
             <Link to="/" className="text-zinc-500 hover:text-zinc-900 transition text-sm font-medium">Home</Link>

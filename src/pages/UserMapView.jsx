@@ -96,6 +96,31 @@ function FitBounds({ points, filterKey }) {
   return null;
 }
 
+function SelectedProjectMapController({ selectedProject }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const startLat = Number(selectedProject.start_latitude || selectedProject.startLatitude);
+    const startLng = Number(selectedProject.start_longitude || selectedProject.startLongitude);
+    const endLat = Number(selectedProject.end_latitude || selectedProject.endLatitude);
+    const endLng = Number(selectedProject.end_longitude || selectedProject.endLongitude);
+
+    if (Number.isFinite(startLat) && Number.isFinite(startLng)) {
+      if (Number.isFinite(endLat) && Number.isFinite(endLng)) {
+        const bounds = L.latLngBounds([startLat, startLng], [endLat, endLng]);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      } else {
+        map.flyTo([startLat, startLng], 15);
+      }
+    }
+  }, [selectedProject, map]);
+
+  return null;
+}
+
+
 function FarmerHeatmapLayer({ visible, points }) {
   const map = useMap();
 
@@ -617,6 +642,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
                 <FitBounds points={mapBoundsPoints} filterKey={filterKey} />
+                <SelectedProjectMapController selectedProject={selectedProject} />
 
                 {/* User location: geofence zone + pulsing marker */}
                 {userLocation && (() => {

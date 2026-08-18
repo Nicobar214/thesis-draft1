@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 import Icons from '../components/Icons';
@@ -55,12 +55,13 @@ function ProjectListCard({ project, onClick }) {
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="w-full text-left bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-zinc-300 hover:shadow-sm transition-all group"
+      className="w-full text-left bg-white rounded-2xl border border-slate-200/60 p-5 shadow-xs hover:shadow-md transition-shadow duration-300 ease-out group"
     >
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900 group-hover:text-teal-700 transition-colors truncate">
+          <h3 className="font-semibold text-slate-900 truncate">
             {name}
           </h3>
           <div className="flex items-center gap-1.5 mt-1 text-sm text-slate-500">

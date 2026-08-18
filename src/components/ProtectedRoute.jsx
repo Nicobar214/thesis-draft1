@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Logo from './Logo';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -73,6 +74,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
+          <Logo className="h-10 mx-auto mb-6" />
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
         </div>
