@@ -1,13 +1,27 @@
-/* ContractorProjects.jsx – List of fmr_projects assigned to this contractor
- * Shows status badge, accomplishment %, and a Submit Update button per project.
- * If the latest update is 'pending', shows "Pending Review" pill instead.
+/* ContractorProjects.jsx – Table of fmr_projects assigned to this contractor
+ * Each row shows status, physical accomplishment, funds released and the latest
+ * submission. Clicking a row opens the full project detail (description,
+ * schedule, submission history); the Submit Update action stays inline.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import ContractorProgressForm from './ContractorProgressForm';
+import ContractorProjectDetailModal from '../components/contractor/ContractorProjectDetailModal';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
+import { getPaginationRange } from '../lib/paginationUtils';
+import { getWorkflowMeta } from '../lib/progressWorkflow';
+
+const ROWS_PER_PAGE = 10;
+
+const thClass = 'px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
+
+const fmtShortDate = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
 
 // ── FMR status badge ─────────────────────────────────────────
 function FmrStatusBadge({ status }) {
@@ -31,7 +45,9 @@ export default function ContractorProjects() {
   const [latestUpdates, setLatestUpdates] = useState({}); // { [fmr_project_id]: update }
   const [tranchesByProjectId, setTranchesByProjectId] = useState({});
   const [loading, setLoading] = useState(true);
-  const [selectedProject, setSelectedProject] = useState(null); // project for the modal
+  const [selectedProject, setSelectedProject] = useState(null); // project for the progress form
+  const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
+  const [page, setPage] = useState(1);
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -52,7 +68,7 @@ export default function ContractorProjects() {
     try {
       const { data: projs, error } = await supabase
         .from('fmr_projects')
-        .select('id, project_name, municipality, province, status, accomplishment, project_length_km, total_budget, funds_released, funding_source')
+        .select('id, project_name, municipality, province, location, status, accomplishment, project_length_km, total_budget, funds_released, funding_source, contract_amount, remarks, year_funded, date_started, target_completion_date, date_completed')
         .eq('contractor_id', user.id)
         .order('project_name', { ascending: true });
       if (error) throw error;
@@ -62,7 +78,7 @@ export default function ContractorProjects() {
         const ids = projs.map((p) => p.id);
         const { data: updates } = await supabase
           .from('progress_updates')
-          .select('id, fmr_project_id, status, reported_accomplishment, submitted_at')
+          .select('id, fmr_project_id, status, reported_accomplishment, certified_accomplishment, certification_status, submitted_at')
           .eq('contractor_id', user.id)
           .in('fmr_project_id', ids)
           .order('submitted_at', { ascending: false });
@@ -111,9 +127,23 @@ export default function ContractorProjects() {
     }
   }, [user, fetchData]);
 
+  const totalPages = Math.max(1, Math.ceil(projects.length / ROWS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const paginatedProjects = useMemo(
+    () => projects.slice((safePage - 1) * ROWS_PER_PAGE, safePage * ROWS_PER_PAGE),
+    [projects, safePage]
+  );
+
   const handleFormClose = () => {
     setSelectedProject(null);
     fetchData();
+  };
+
+  /* Opening the submit form from inside the detail modal: close the detail
+     first so the two dialogs never stack. */
+  const handleSubmitFromDetail = (project) => {
+    setDetailProject(null);
+    setSelectedProject(project);
   };
 
   if (loading) {
@@ -146,93 +176,194 @@ export default function ContractorProjects() {
             <p className="text-sm text-slate-500 mt-1">An administrator will assign projects to you.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {projects.map((project) => {
-              const latest = latestUpdates[project.id];
-              const hasPendingUpdate = latest?.status === 'pending';
-              const accomplishment = Number(project.accomplishment || 0);
-              const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
+          <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[880px]">
+                <thead>
+                  <tr className="bg-slate-50/60 border-b border-slate-100">
+                    <th className={thClass}>Project</th>
+                    <th className={thClass}>Status</th>
+                    <th className={thClass}>Physical</th>
+                    <th className={thClass}>Funds Released</th>
+                    <th className={thClass}>Latest Submission</th>
+                    <th className={`${thClass} text-right`}>Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedProjects.map((project) => {
+                    const latest = latestUpdates[project.id];
+                    const hasPendingUpdate = latest?.status === 'pending';
+                    const accomplishment = Number(project.accomplishment || 0);
+                    const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
+                    const contract = Number(project.contract_amount || project.total_budget || 0);
+                    const financialPct = contract > 0
+                      ? Math.min(100, (Number(budget.released || 0) / contract) * 100)
+                      : null;
 
-              return (
-                <div key={project.id} className="bg-white border border-slate-200/60 rounded-2xl shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden">
-                  {/* Status accent strip */}
-                  <div className={`h-1 ${
-                    (project.status || '').toLowerCase().includes('complet') ? 'bg-emerald-500' :
-                    (project.status || '').toLowerCase().includes('going') ? 'bg-amber-500' : 'bg-sky-500'
-                  }`} />
+                    return (
+                      <tr
+                        key={project.id}
+                        onClick={() => setDetailProject(project)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailProject(project); }
+                        }}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`View details for ${project.project_name}`}
+                        className="cursor-pointer transition-colors hover:bg-slate-50/70 focus:outline-none focus:bg-slate-50"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-slate-900 leading-snug line-clamp-1">
+                            {project.project_name || 'Unnamed Project'}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}
+                            {project.project_length_km ? ` · ${project.project_length_km} km` : ''}
+                          </p>
+                        </td>
 
-                  <div className="p-6 flex-1 flex flex-col">
-                    {/* Status + year-less badges */}
-                    <div className="flex items-center justify-between mb-3">
-                      <FmrStatusBadge status={project.status} />
-                    </div>
+                        <td className="px-5 py-4">
+                          <FmrStatusBadge status={project.status} />
+                        </td>
 
-                    {/* Project name */}
-                    <h3 className="font-bold text-base text-slate-900 mb-1.5 leading-snug line-clamp-2">
-                      {project.project_name || project.project_name || 'Unnamed Project'}
-                    </h3>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2 min-w-[120px]">
+                            <div className="flex-1 bg-slate-100 rounded-full h-2">
+                              <div
+                                className="h-2 rounded-full bg-teal-500 transition-all duration-500"
+                                style={{ width: `${Math.min(accomplishment, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-bold text-slate-700 font-mono w-11 text-right">
+                              {accomplishment.toFixed(0)}%
+                            </span>
+                          </div>
+                        </td>
 
-                    {/* Location */}
-                    <p className="text-sm text-slate-500 flex items-center gap-1.5 mb-4">
-                      <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                      </svg>
-                      {project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}
-                    </p>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-semibold text-slate-700">
+                            {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {financialPct === null
+                              ? `of ${formatPeso(budget.totalBudget)}`
+                              : `${financialPct.toFixed(0)}% of ${formatPeso(budget.totalBudget)}`}
+                            {budget.budgetIsEstimated ? ' (est.)' : ''}
+                          </p>
+                        </td>
 
-                    {/* Accomplishment bar */}
-                    <div className="mb-5">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs text-slate-500 font-medium">Current Accomplishment</span>
-                        <span className="text-xs font-bold text-slate-700 font-mono">{accomplishment}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2">
-                        <div
-                          className="h-2 rounded-full bg-teal-500 transition-all duration-500"
-                          style={{ width: `${Math.min(accomplishment, 100)}%` }}
-                        />
-                      </div>
-                    </div>
+                        <td className="px-5 py-4">
+                          {latest ? (
+                            (() => {
+                              const meta = getWorkflowMeta(latest);
+                              return (
+                                <>
+                                  <p className="text-sm text-slate-700">
+                                    {Number(latest.reported_accomplishment ?? 0).toFixed(0)}% claimed
+                                    {latest.certified_accomplishment != null && (
+                                      <span className="text-teal-700 font-semibold">
+                                        {' '}· {Number(latest.certified_accomplishment).toFixed(0)}% certified
+                                      </span>
+                                    )}
+                                  </p>
+                                  <span
+                                    title={meta.hint}
+                                    className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${meta.tone}`}
+                                  >
+                                    <span className={`w-1 h-1 rounded-full ${meta.dot}`} />
+                                    {meta.short}
+                                  </span>
+                                  <span className="text-xs text-slate-400 ml-1.5">{fmtShortDate(latest.submitted_at)}</span>
+                                </>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-xs text-slate-400">No submissions yet</span>
+                          )}
+                        </td>
 
-                    {/* Budget summary */}
-                    <div className="mb-5 flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium">
-                        Budget {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
-                      </span>
-                      <span className="font-semibold text-slate-700">
-                        Released {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
-                      </span>
-                    </div>
+                        <td className="px-5 py-4 text-right">
+                          {hasPendingUpdate ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Pending Review
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedProject(project); }}
+                              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 shadow-sm transition-colors whitespace-nowrap"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                              </svg>
+                              Submit Update
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-                    {/* Action button */}
-                    <div className="mt-auto pt-4 border-t border-slate-100">
-                      {hasPendingUpdate ? (
-                        <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200 w-full justify-center">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Pending Review
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => setSelectedProject(project)}
-                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 shadow-lg shadow-teal-500/25 transition-all"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                          Submit Update
-                        </button>
-                      )}
-                    </div>
-                  </div>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-5 py-3.5">
+              <p className="text-xs text-slate-500">
+                Showing <span className="font-bold text-slate-700">{(safePage - 1) * ROWS_PER_PAGE + 1}</span>–
+                <span className="font-bold text-slate-700">{Math.min(safePage * ROWS_PER_PAGE, projects.length)}</span> of{' '}
+                <span className="font-bold text-slate-700">{projects.length}</span>
+              </p>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={safePage === 1}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    Previous
+                  </button>
+                  {getPaginationRange(safePage, totalPages).map((p, idx) =>
+                    p === '...' ? (
+                      <span key={`dots-${idx}`} className="px-1.5 text-xs text-slate-400 select-none">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
+                        className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
+                          safePage === p
+                            ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-sm'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={safePage === totalPages}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    Next
+                  </button>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Project detail (opened by clicking a row) */}
+      {detailProject && (
+        <ContractorProjectDetailModal
+          project={detailProject}
+          tranches={tranchesByProjectId[detailProject.id] || []}
+          onClose={() => setDetailProject(null)}
+          onSubmitUpdate={handleSubmitFromDetail}
+        />
+      )}
 
       {/* Progress Update Modal */}
       {selectedProject && (

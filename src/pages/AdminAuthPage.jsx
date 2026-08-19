@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import Logo from "../components/Logo";
+import AuthBackground from "../components/AuthBackground";
 
 export default function AdminAuthPage() {
   const navigate = useNavigate();
@@ -51,12 +52,8 @@ export default function AdminAuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-rose-950 to-slate-900 px-4 overflow-hidden">
-      {/* Ambient background glow */}
-      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-rose-500/15 blur-[110px]" />
-        <div className="absolute bottom-0 right-0 w-80 h-80 rounded-full bg-slate-500/10 blur-[100px]" />
-      </div>
+    <div className="relative min-h-screen flex items-center justify-center bg-slate-950 px-4 overflow-hidden">
+      <AuthBackground accent="rose" />
 
       <div className="relative max-w-md w-full mx-4">
         <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl p-6 sm:p-8 border border-rose-500/20">

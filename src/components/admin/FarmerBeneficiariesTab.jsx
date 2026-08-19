@@ -18,6 +18,7 @@ import {
   BENEFICIARY_CROPS,
   LGU_SUBMITTERS,
 } from '../../utils/farmerBeneficiaryData';
+import { getPaginationRange } from '../../lib/paginationUtils';
 
 const rowsPerPage = 10;
 const cardClass = 'bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm';
@@ -346,19 +347,23 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
             <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage === 1} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50">
               Previous
             </button>
-            {Array.from({ length: totalPages }, (_, index) => index + 1).slice(0, 8).map((pageNumber) => (
-              <button
-                key={pageNumber}
-                onClick={() => setPage(pageNumber)}
-                className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
-                  safePage === pageNumber
-                    ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
-                    : 'border border-slate-200 shadow-sm hover:border-slate-300 hover:bg-white'
-                }`}
-              >
-                {pageNumber}
-              </button>
-            ))}
+            {getPaginationRange(safePage, totalPages).map((pageNumber, index) =>
+              pageNumber === '...' ? (
+                <span key={`dots-${index}`} className="px-2 text-sm text-slate-400 select-none">…</span>
+              ) : (
+                <button
+                  key={pageNumber}
+                  onClick={() => setPage(pageNumber)}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
+                    safePage === pageNumber
+                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-lg shadow-teal-500/25'
+                      : 'border border-slate-200 shadow-sm hover:border-slate-300 hover:bg-white'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              )
+            )}
             <button onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage === totalPages} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50">
               Next
             </button>

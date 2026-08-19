@@ -17,6 +17,7 @@ import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoa
 import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
 import roadInventory from '../data/leonRoadInventory.json';
 import Logo from '../components/Logo';
+import { getPaginationRange } from '../lib/paginationUtils';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -614,33 +615,6 @@ export default function LguDashboard() {
     const start = (beneficiaryPage - 1) * beneficiaryRowsPerPage;
     return filteredBeneficiaries.slice(start, start + beneficiaryRowsPerPage);
   }, [filteredBeneficiaries, beneficiaryPage]);
-
-  const getPaginationRange = (currentPage, totalPages) => {
-    const delta = 1;
-    const range = [];
-    const rangeWithDots = [];
-    let l;
-
-    for (let i = 1; i <= totalPages; i++) {
-      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
-        range.push(i);
-      }
-    }
-
-    for (let i of range) {
-      if (l) {
-        if (i - l === 2) {
-          rangeWithDots.push(l + 1);
-        } else if (i - l > 2) {
-          rangeWithDots.push('...');
-        }
-      }
-      rangeWithDots.push(i);
-      l = i;
-    }
-
-    return rangeWithDots;
-  };
 
   const showNotification = (message) => {
     window.alert(message);

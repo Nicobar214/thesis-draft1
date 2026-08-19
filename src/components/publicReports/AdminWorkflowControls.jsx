@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { supabase } from '../../lib/supabase';
+import BillingHoldControl from './BillingHoldControl';
 
 const priorityTone = {
   low: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -251,6 +252,15 @@ export default function AdminWorkflowControls({
         >
           {saving ? 'Updating...' : 'Save Priority & Target Date'}
         </button>
+      </div>
+
+      {/* DA item 7: a credible discrepancy raised by a citizen report may hold
+          the affected billing for verification — never automatically. */}
+      <div className="pt-3 border-t border-slate-100 space-y-2.5">
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+          Contractor Billings
+        </span>
+        <BillingHoldControl report={report} />
       </div>
 
       <div className="pt-3 border-t border-slate-100 space-y-2.5">

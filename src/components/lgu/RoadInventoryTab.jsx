@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 
 import roadInventory from '../../data/leonRoadInventory.json';
+import { getPaginationRange } from '../../lib/paginationUtils';
 
 function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || value === '') return 'N/A';
@@ -269,20 +270,24 @@ export default function RoadInventoryTab() {
               >
                 Previous
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  type="button"
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`w-7 h-7 flex items-center justify-center rounded-lg text-[11px] font-extrabold transition ${
-                    safePage === page
-                      ? 'bg-emerald-600 text-white shadow shadow-emerald-500/20'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {page}
-                </button>
-              ))}
+              {getPaginationRange(safePage, totalPages).map((page, idx) =>
+                page === '...' ? (
+                  <span key={`dots-${idx}`} className="px-1 text-[11px] text-slate-400 select-none">…</span>
+                ) : (
+                  <button
+                    type="button"
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-lg text-[11px] font-extrabold transition ${
+                      safePage === page
+                        ? 'bg-emerald-600 text-white shadow shadow-emerald-500/20'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                )
+              )}
               <button
                 type="button"
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}

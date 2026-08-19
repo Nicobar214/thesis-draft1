@@ -1,8 +1,37 @@
-/* AuthPage.jsx */
-import { useMemo, useState } from "react";
+/* AuthPage.jsx — citizen sign in / sign up.
+ *
+ * One page, three states (signin | signup | forgot) inside a split-screen
+ * shell. Switching between sign in and sign up slides the two panels past each
+ * other instead of navigating away, so nothing typed is lost — but the URL is
+ * still kept in sync, so /signin and /signup remain real, linkable routes.
+ *
+ * The Supabase calls, the profiles upsert and the role-based redirect are
+ * unchanged from the previous version; only the presentation, validation and
+ * error handling were reworked.
+ */
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { useLocation, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
+import AuthBackground from "../components/AuthBackground";
+import AuthField from "../components/auth/AuthField";
+import { toFriendlyAuthError, validateAuthFields } from "../lib/authErrors";
+
+const REMEMBER_KEY = "kalsatrack:remembered-email";
+
+/* localStorage throws in private browsing / blocked-cookie modes. Remembering
+   an email is a convenience, never a reason to break sign-in. */
+const safeStorage = {
+  get(key) {
+    try { return window.localStorage.getItem(key); } catch { return null; }
+  },
+  set(key, value) {
+    try { window.localStorage.setItem(key, value); } catch { /* ignore */ }
+  },
+  remove(key) {
+    try { window.localStorage.removeItem(key); } catch { /* ignore */ }
+  },
+};
 
 function normalizeRole(role) {
   return String(role || "")
@@ -20,74 +49,147 @@ function resolveEffectiveRole(profileRole, metadataRole) {
   return normalizedProfileRole || normalizedMetadataRole || "user";
 }
 
+/* Signed-in landing page per role. Kept identical to the previous behaviour so
+   an admin signing in here still reaches the DA dashboard. */
+function routeForRole(role) {
+  if (role === "admin") return "/dashboard";
+  if (role === "field_engineer") return "/field-engineer";
+  if (role === "contractor") return "/contractor";
+  if (role === "lgu") return "/lgu";
+  return "/user";
+}
+
+const BENEFITS = [
+  "Track infrastructure projects in real-time",
+  "Access accurate, verified road data",
+  "Report issues and contribute feedback",
+];
+
 export default function AuthPage({ mode = "signin" }) {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
-  const signupRole = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    const roleParam = normalizeRole(params.get('role'));
-    const allowed = ['user', 'field_engineer', 'contractor', 'lgu', 'admin'];
-    return allowed.includes(roleParam) ? roleParam : 'user';
-  }, [location.search]);
+  /* `mode` (from the route) seeds this, but internal state drives rendering so
+     the panels can animate without waiting on a navigation. */
+  const [activeMode, setActiveMode] = useState(mode);
+  const routeModeRef = useRef(mode);
+
+  const [email, setEmail] = useState(() => safeStorage.get(REMEMBER_KEY) || "");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(() => Boolean(safeStorage.get(REMEMBER_KEY)));
+
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [formError, setFormError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
+  /* Held true from a successful submit until the redirect fires, so the submit
+     button cannot be pressed a second time during the delay. */
+  const [redirecting, setRedirecting] = useState(false);
+
+  const isSignup = activeMode === "signup";
+  const isForgot = activeMode === "forgot";
+  const busy = loading || redirecting;
+
+  /* Re-sync when the route changes from outside the page (back button, a pasted
+     link). Guarded by the ref so it never fights the in-page toggle below. */
+  useEffect(() => {
+    if (mode !== routeModeRef.current) {
+      routeModeRef.current = mode;
+      setActiveMode(mode);
+    }
+  }, [mode]);
+
+  const clearMessages = () => {
+    setFieldErrors({});
+    setFormError("");
+    setSuccess("");
+  };
+
+  const switchMode = (next) => {
+    if (next === activeMode) return;
+    clearMessages();
+    setConfirmPassword("");
+    setActiveMode(next);
+
+    // 'forgot' is a variation of signing in, not its own route.
+    if (next === "signin" || next === "signup") {
+      routeModeRef.current = next;
+      navigate(next === "signin" ? "/signin" : "/signup", { replace: true });
+    }
+  };
 
   const handleGoogleSignIn = async () => {
-    setError("");
+    clearMessages();
     setLoading(true);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/user`,
-        },
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/user` },
       });
       if (error) throw error;
+      // On success the browser leaves for Google, so loading stays true.
     } catch (err) {
-      setError(err.message || "Google sign-in failed. Please try again.");
+      setFormError(toFriendlyAuthError(err, "signin").message);
       setLoading(false);
     }
   };
 
-  const validateForm = () => {
-    if (!email || !password) {
-      setError("Email and password are required");
-      return false;
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    clearMessages();
+
+    const errors = validateAuthFields({ email, password, mode: "forgot" });
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Please enter a valid email");
-      return false;
+
+    setLoading(true);
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/signin`,
+      });
+    } catch (err) {
+      // Deliberately swallowed: see the neutral message below.
+      console.error("Password reset request failed:", err);
+    } finally {
+      setLoading(false);
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return false;
-    }
-    return true;
+
+    /* Always the same confirmation whether or not the address is registered —
+       otherwise this form becomes a way to discover who has an account. */
+    setSuccess(
+      "If an account exists for that email, we've sent a password reset link. Please check your inbox."
+    );
   };
 
   const handleAuth = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    clearMessages();
 
-    if (!validateForm()) return;
+    const errors = validateAuthFields({ email, password, confirmPassword, mode: activeMode });
+    if (Object.keys(errors).length) {
+      setFieldErrors(errors);
+      return;
+    }
 
     setLoading(true);
 
     try {
+      const trimmedEmail = email.trim();
       let response;
-      if (mode === "signin") {
-        response = await supabase.auth.signInWithPassword({ email, password });
+
+      if (activeMode === "signin") {
+        response = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
       } else {
+        /* Public signup always creates a citizen account. The role used to come
+           from a ?role= query parameter, which meant /signup?role=admin minted
+           an administrator. Staff accounts are created by an admin in Settings
+           or through each portal's own login instead. */
         response = await supabase.auth.signUp({
-          email,
+          email: trimmedEmail,
           password,
-          options: { data: { role: signupRole } },
+          options: { data: { role: "user" } },
         });
       }
 
@@ -95,245 +197,315 @@ export default function AuthPage({ mode = "signin" }) {
 
       const user = response.data?.user;
 
-      if (mode === "signup" && user) {
-        // Create profile with the selected role on signup
-        await supabase.from('profiles').upsert({
+      if (activeMode === "signup" && user) {
+        await supabase.from("profiles").upsert({
           id: user.id,
           email: user.email,
-          role: signupRole,
-          created_at: new Date().toISOString()
+          role: "user",
+          created_at: new Date().toISOString(),
         });
       }
-      
-      setSuccess(`${mode === "signin" ? "Signed in" : "Account created"} successfully!`);
-      setEmail("");
-      setPassword("");
 
-      let targetRoute = '/user';
-      if (mode === 'signup') {
-        if (signupRole === 'admin') targetRoute = '/dashboard';
-        else if (signupRole === 'field_engineer') targetRoute = '/field-engineer';
-        else if (signupRole === 'contractor') targetRoute = '/contractor';
-        else if (signupRole === 'lgu') targetRoute = '/lgu';
-      } else if (mode === 'signin' && user) {
+      if (rememberMe) safeStorage.set(REMEMBER_KEY, trimmedEmail);
+      else safeStorage.remove(REMEMBER_KEY);
+
+      let targetRoute = "/user";
+      if (activeMode === "signin" && user) {
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
           .maybeSingle();
 
-        const role = resolveEffectiveRole(profile?.role, user.user_metadata?.role);
-        if (role === 'admin') targetRoute = '/dashboard';
-        else if (role === 'field_engineer') targetRoute = '/field-engineer';
-        else if (role === 'contractor') targetRoute = '/contractor';
-        else if (role === 'lgu') targetRoute = '/lgu';
+        targetRoute = routeForRole(
+          resolveEffectiveRole(profile?.role, user.user_metadata?.role)
+        );
       }
 
+      setSuccess(
+        activeMode === "signin" ? "Signed in successfully." : "Account created successfully."
+      );
+      setPassword("");
+      setConfirmPassword("");
+
+      /* Stay disabled across the delay — previously `finally` re-enabled the
+         button here, which allowed a second submit while the redirect waited. */
+      setRedirecting(true);
+      setLoading(false);
       setTimeout(() => navigate(targetRoute), 1500);
     } catch (err) {
-      setError(err.message || "An error occurred. Please try again.");
-    } finally {
+      const friendly = toFriendlyAuthError(err, activeMode);
+      if (friendly.field) setFieldErrors({ [friendly.field]: friendly.message });
+      else setFormError(friendly.message);
       setLoading(false);
     }
   };
 
+  const heading = isForgot ? "Reset your password" : isSignup ? "Create your account" : "Welcome back";
+  const subheading = isForgot
+    ? "Enter your email and we'll send you a reset link."
+    : isSignup
+      ? "Join the transparency movement in Region VI."
+      : "Sign in to track farm-to-market road projects.";
+
+  const submitLabel = isForgot ? "Send reset link" : isSignup ? "Create Account" : "Sign In";
+  const busyLabel = isForgot ? "Sending…" : isSignup ? "Creating account…" : "Signing in…";
+
   return (
-    <div className="relative min-h-screen flex flex-col bg-slate-50 overflow-hidden">
-      {/* Ambient background glow (subtle on light bg) */}
-      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-32 -right-24 w-96 h-96 rounded-full bg-emerald-400/10 blur-[110px]" />
-        <div className="absolute bottom-0 -left-24 w-80 h-80 rounded-full bg-teal-400/10 blur-[100px]" />
-      </div>
+    <div
+      className="relative min-h-[100dvh] bg-emerald-950 flex items-center justify-center overflow-hidden"
+      style={{
+        paddingTop: "max(1rem, env(safe-area-inset-top))",
+        paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+        paddingLeft: "max(1rem, env(safe-area-inset-left))",
+        paddingRight: "max(1rem, env(safe-area-inset-right))",
+      }}
+    >
+      {/* The panel slide uses a plain `transform` rather than Tailwind's
+          translate utilities. Tailwind v4 implements translate-x-* through a
+          `--tw-translate-x` custom property registered with syntax:"*", which
+          does not transition reliably — the class swaps but the panel stays
+          put. A direct transform on transform-only properties is both
+          deterministic and GPU-friendly. */}
+      <style>{`
+        @keyframes kt-auth-fade {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: none; }
+        }
+        .kt-auth-fade { animation: kt-auth-fade 340ms cubic-bezier(0.4, 0, 0.2, 1) both; }
+        .kt-panel { transition: transform 420ms cubic-bezier(0.4, 0, 0.2, 1); will-change: transform; }
+        @media (min-width: 64rem) {
+          .kt-panel-form.kt-is-signup  { transform: translateX(100%); }
+          .kt-panel-brand.kt-is-signup { transform: translateX(-100%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .kt-auth-fade { animation: none; }
+          .kt-panel { transition: none; }
+        }
+      `}</style>
 
-      {/* Header */}
-      {/* Deep green so the logo's own greens keep their contrast against it —
-          the mid-emerald it used to be washed the mark out. */}
-      <div className="relative bg-gradient-to-r from-emerald-900 to-emerald-800 text-white py-4 shadow-md">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
-          <Link to="/" className="flex items-center group">
-            <Logo tone="light" className="h-9 transition-opacity group-hover:opacity-85" />
-          </Link>
-          {mode === "signin" ? (
-            <p className="text-emerald-100 text-sm">Don't have an account? <button onClick={() => navigate("/signup")} className="font-bold hover:text-white transition">Sign Up</button></p>
-          ) : (
-            <p className="text-emerald-100 text-sm">Already have an account? <button onClick={() => navigate("/signin")} className="font-bold hover:text-white transition">Sign In</button></p>
-          )}
-        </div>
-      </div>
+      <AuthBackground accent="emerald" />
 
-      {/* Auth Form Container */}
-      <div className="relative flex-1 flex items-center justify-center px-4 py-12">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-6 sm:p-8">
-            {/* Logo/Icon */}
-            <div className="text-center mb-6 sm:mb-8">
-              <Logo className="h-12 sm:h-14 mx-auto mb-3" />
-              <p className="text-emerald-700 text-xs sm:text-sm mt-1 font-semibold uppercase tracking-wider">
-                {mode === "signin" ? "Welcome back" : "Join the transparency movement"}
-              </p>
-            </div>
+      <div className="relative w-full max-w-5xl">
+        {/* flex-col-reverse puts the brand strip above the form on mobile while
+            keeping the form first in the DOM, so it stays first in tab order. */}
+        <div className="relative flex flex-col-reverse lg:grid lg:grid-cols-2 rounded-3xl overflow-hidden shadow-2xl bg-white lg:min-h-[620px]">
 
-            {/* Form Title */}
-            <h2 className="text-lg font-bold text-slate-900 mb-5 text-center">
-              {mode === "signin" ? "Sign In" : "Create Account"}
-            </h2>
-
-            {/* Error Alert */}
-            {error && (
-              <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-xl text-sm mb-6 animate-pulse">
-                <p className="font-semibold">Error</p>
-                <p className="text-xs sm:text-sm mt-0.5">{error}</p>
-              </div>
-            )}
-
-            {/* Success Alert */}
-            {success && (
-              <div className="bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 p-4 rounded-xl text-sm mb-6">
-                <p className="font-semibold">Success!</p>
-                <p className="text-xs sm:text-sm mt-0.5">{success}</p>
-              </div>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleAuth} className="space-y-4 sm:space-y-5">
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="your@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full h-12 px-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition text-sm text-slate-900 bg-white"
-                  disabled={loading}
-                />
+          {/* ── Form panel ── */}
+          <div
+            className={`kt-panel kt-panel-form ${isSignup ? "kt-is-signup" : ""} relative z-10 bg-white flex items-center justify-center p-6 sm:p-10`}
+          >
+            <div key={activeMode} className="kt-auth-fade w-full max-w-sm">
+              <div className="lg:hidden mb-5">
+                <Logo className="h-8" />
               </div>
 
-              <div>
-                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full h-12 pl-4 pr-10 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition text-sm text-slate-900 bg-white"
-                    disabled={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
-                  >
-                    {showPassword ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.076m3.19-2.905A9.96 9.96 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21m-16-16l16 16M12 14a2 2 0 110-4 2 2 0 010 4z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                {mode === "signup" && (
-                  <p className="text-xs text-slate-500 mt-2">Minimum 6 characters for security</p>
-                )}
-              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                {heading}
+              </h1>
+              <p className="text-sm text-slate-500 mt-1.5">{subheading}</p>
 
-              {mode === "signin" && (
-                <div className="flex items-center justify-between text-sm">
-                  <label className="flex items-center">
-                    <input type="checkbox" className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                    <span className="ml-2 text-slate-600 text-xs sm:text-sm">Remember me</span>
-                  </label>
-                  <a href="#" className="text-emerald-700 text-xs sm:text-sm font-semibold hover:text-emerald-800">Forgot password?</a>
+              {formError && (
+                <div
+                  role="alert"
+                  className="mt-5 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm"
+                >
+                  <svg className="w-4 h-4 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path fillRule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-8-4a1 1 0 00-1 1v3a1 1 0 002 0V7a1 1 0 00-1-1zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                  <span>{formError}</span>
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50 text-sm flex items-center justify-center"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </span>
-                ) : (
-                  mode === "signin" ? "Sign In" : "Create Account"
+              {success && (
+                <div
+                  role="status"
+                  className="mt-5 flex items-start gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm"
+                >
+                  <svg className="w-4 h-4 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span>{success}</span>
+                </div>
+              )}
+
+              <form onSubmit={isForgot ? handleForgotPassword : handleAuth} className="mt-6 space-y-4" noValidate>
+                <AuthField
+                  label="Email address"
+                  name="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={setEmail}
+                  error={fieldErrors.email}
+                  disabled={busy}
+                />
+
+                {!isForgot && (
+                  <AuthField
+                    label="Password"
+                    name="password"
+                    type="password"
+                    revealable
+                    autoComplete={isSignup ? "new-password" : "current-password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={setPassword}
+                    error={fieldErrors.password}
+                    hint={isSignup ? "At least 6 characters." : undefined}
+                    disabled={busy}
+                  />
                 )}
-              </button>
-            </form>
 
-            {/* Divider */}
-            <div className="my-6 flex items-center">
-              <div className="flex-1 border-t border-slate-200"></div>
-              <span className="px-3 text-slate-400 text-xs font-semibold uppercase tracking-wider">or</span>
-              <div className="flex-1 border-t border-slate-200"></div>
+                {isSignup && (
+                  <AuthField
+                    label="Confirm password"
+                    name="confirmPassword"
+                    type="password"
+                    revealable
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    error={fieldErrors.confirmPassword}
+                    disabled={busy}
+                  />
+                )}
+
+                {activeMode === "signin" && (
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        name="rememberMe"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        disabled={busy}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500/30"
+                      />
+                      <span className="text-xs sm:text-sm text-slate-600">Remember my email</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => switchMode("forgot")}
+                      disabled={busy}
+                      className="text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 hover:underline focus:outline-none focus:ring-2 focus:ring-emerald-500/30 rounded px-1 py-0.5 disabled:opacity-50"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl font-bold hover:from-emerald-700 hover:to-teal-700 active:scale-[0.99] transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-60 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-2"
+                >
+                  {busy ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      {busyLabel}
+                    </>
+                  ) : (
+                    submitLabel
+                  )}
+                </button>
+              </form>
+
+              {isForgot ? (
+                <button
+                  type="button"
+                  onClick={() => switchMode("signin")}
+                  className="mt-5 w-full text-sm font-semibold text-slate-600 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 rounded-lg py-2"
+                >
+                  ← Back to sign in
+                </button>
+              ) : (
+                <>
+                  <div className="my-5 flex items-center">
+                    <div className="flex-1 border-t border-slate-200" />
+                    <span className="px-3 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">or</span>
+                    <div className="flex-1 border-t border-slate-200" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleSignIn}
+                    disabled={busy}
+                    className="w-full h-12 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-50 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    Continue with Google
+                  </button>
+
+                  <p className="text-center text-sm text-slate-500 mt-5">
+                    {isSignup ? "Already have an account?" : "New to KalsaTrack?"}{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode(isSignup ? "signin" : "signup")}
+                      className="font-bold text-emerald-700 hover:text-emerald-800 hover:underline focus:outline-none focus:ring-2 focus:ring-emerald-500/30 rounded px-1"
+                    >
+                      {isSignup ? "Sign in" : "Create one"}
+                    </button>
+                  </p>
+
+                  <p className="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
+                    By continuing, you agree to our{" "}
+                    <Link to="/reports" className="text-slate-500 hover:text-emerald-700 hover:underline">Terms</Link>{" "}
+                    and{" "}
+                    <Link to="/reports" className="text-slate-500 hover:text-emerald-700 hover:underline">Privacy Policy</Link>
+                  </p>
+                </>
+              )}
             </div>
-
-            {/* Google Sign In Button */}
-            <button
-              onClick={handleGoogleSignIn}
-              disabled={loading}
-              className="w-full h-12 flex items-center justify-center gap-3 bg-white border-2 border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-50 text-sm"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-              </svg>
-              Continue with Google
-            </button>
-
-            {/* Toggle */}
-            <div className="text-center mt-6">
-              <p className="text-slate-500 text-xs sm:text-sm mb-3">
-                {mode === "signin" ? "New to KalsaTrack?" : "Already have an account?"}
-              </p>
-              <button
-                onClick={() => navigate(mode === "signin" ? "/signup" : "/signin")}
-                className="w-full h-11 border-2 border-emerald-600 text-emerald-700 font-bold rounded-xl hover:bg-emerald-50 transition text-sm"
-              >
-                {mode === "signin" ? "Create an Account" : "Sign In Instead"}
-              </button>
-            </div>
-
-            {/* Footer Text */}
-            <p className="text-[11px] sm:text-xs text-slate-500 text-center mt-6 leading-relaxed">
-              By {mode === "signin" ? "signing in" : "creating an account"}, you agree to our{" "}
-              <a href="#" className="text-emerald-700 hover:underline font-medium">Terms</a> and{" "}
-              <a href="#" className="text-emerald-700 hover:underline font-medium">Privacy Policy</a>
-            </p>
           </div>
 
-          {/* Info Box */}
-          <div className="mt-6 bg-emerald-50/80 backdrop-blur-sm border border-emerald-200 rounded-2xl p-5 sm:p-6">
-            <h3 className="font-bold text-emerald-900 mb-3 text-sm sm:text-base">Why Join KalsaTrack?</h3>
-            <ul className="space-y-2 text-xs sm:text-sm text-emerald-800">
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
-                <span>Track infrastructure projects in real-time</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
-                <span>Access accurate, verified road data</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-emerald-600 font-bold">✓</span>
-                <span>Report issues and contribute feedback</span>
-              </li>
-            </ul>
+          {/* ── Brand panel ── */}
+          <div
+            className={`kt-panel kt-panel-brand ${isSignup ? "kt-is-signup" : ""} relative overflow-hidden bg-emerald-950 px-6 py-8 lg:p-10 flex flex-col justify-center`}
+          >
+            <AuthBackground accent="emerald" />
+
+            <div className="relative">
+              <Link to="/" className="hidden lg:inline-block mb-8 hover:opacity-85 transition-opacity">
+                <Logo tone="light" className="h-9" />
+              </Link>
+
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+                DA Region VI
+              </p>
+              <h2 className="text-xl lg:text-3xl font-extrabold text-white mt-2 leading-tight">
+                Farm-to-Market Road Transparency
+              </h2>
+
+              <ul className="hidden lg:block mt-8 space-y-3">
+                {BENEFITS.map((benefit) => (
+                  <li key={benefit} className="flex items-start gap-3 text-sm text-emerald-50/90">
+                    <svg className="w-5 h-5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span>{benefit}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                to="/"
+                className="hidden lg:inline-flex items-center gap-1.5 mt-10 text-xs font-semibold text-emerald-200 hover:text-white transition-colors"
+              >
+                ← Back to home
+              </Link>
+            </div>
           </div>
         </div>
       </div>

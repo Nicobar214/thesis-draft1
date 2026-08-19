@@ -24,6 +24,7 @@ import {
   realTranchesToScheduleShape,
 } from '../lib/budgetEstimate';
 import ProjectTrancheTimeline from '../components/budget/ProjectTrancheTimeline';
+import ProjectSCurvePanel from '../components/budget/ProjectSCurvePanel';
 import {
   ResponsiveContainer,
   BarChart,
@@ -54,6 +55,7 @@ import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
 import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
+import { getWorkflowMeta, canAdminApprove, approvalBlockedReason } from '../lib/progressWorkflow';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -414,6 +416,37 @@ const formatPeso = (amount) => `₱${Number(amount || 0).toLocaleString()}`;
 const ADMIN_FMR_VIEW_MODE_KEY = 'admin-fmr-projects-view';
 const FMR_ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
+/* Rolling windows for the crowdsourced issue heatmap. "All time" is offered but
+   is not the default: once an issue is fixed, an all-time view keeps showing a
+   hotspot that no longer exists. */
+const HEATMAP_INTERVALS = [
+  { id: 'week', label: '7d', title: 'Reports from the last 7 days', days: 7 },
+  { id: 'month', label: '30d', title: 'Reports from the last 30 days', days: 30 },
+  { id: 'all', label: 'All', title: 'All reports ever filed (can be misleading)', days: null },
+];
+
+/* Segmented control for the heatmap window. Rendered on both admin maps, which
+   share heatmapInterval state, so switching on one updates the other. */
+function HeatmapIntervalControl({ value, onChange }) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px]">
+      {HEATMAP_INTERVALS.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          onClick={() => onChange(option.id)}
+          title={option.title}
+          className={`px-2 py-0.5 rounded-md font-semibold transition-colors ${
+            value === option.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function getFmrStatusStyle(status) {
   if (status === 'Completed') return { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', dot: 'bg-emerald-500' };
   if (status === 'On-Going') return { badge: 'bg-amber-50 text-amber-700 border-amber-200', bar: 'bg-amber-500', dot: 'bg-amber-500' };
@@ -652,7 +685,10 @@ export default function Dashboard() {
   const [adminMapProgressEdit, setAdminMapProgressEdit] = useState(null);
   const [routeByProjectId, setRouteByProjectId] = useState({});
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
-  const [reportHeatPoints, setReportHeatPoints] = useState([]);
+  // Raw unresolved report locations (with created_at) rather than pre-baked heat
+  // points, so the heatmap can be re-filtered by time interval without refetching.
+  const [reportHeatRaw, setReportHeatRaw] = useState([]);
+  const [heatmapInterval, setHeatmapInterval] = useState('month');
   const [adminSnappedRouteByProjectId, setAdminSnappedRouteByProjectId] = useState({});
   const fmrProjectsRef = useRef([]);
   const [geocodingStatus, setGeocodingStatus] = useState('');
@@ -1384,7 +1420,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('public_reports')
-        .select('project_id, project_name, latitude, longitude, status');
+        .select('project_id, project_name, latitude, longitude, status, created_at');
       if (error) return;
 
       const byName = {};
@@ -1394,7 +1430,7 @@ export default function Dashboard() {
       });
 
       const counts = {};
-      const unresolvedByLocation = {};
+      const rawPoints = [];
       (data || []).forEach((report) => {
         let projectId = report.project_id;
         if (!projectId && report.project_name) {
@@ -1410,21 +1446,52 @@ export default function Dashboard() {
         const lng = Number(report.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-        const key = `${lat.toFixed(4)}:${lng.toFixed(4)}`;
-        unresolvedByLocation[key] = unresolvedByLocation[key] || { lat, lng, count: 0 };
-        unresolvedByLocation[key].count += 1;
+        // Keep each report individually so the interval filter can bucket by
+        // date; the density aggregation happens downstream in reportHeatPoints.
+        rawPoints.push({ lat, lng, createdAt: report.created_at || null });
       });
 
-      const maxCount = Math.max(1, ...Object.values(unresolvedByLocation).map((item) => item.count));
-      const heat = Object.values(unresolvedByLocation).map((item) => [item.lat, item.lng, Math.min(1, item.count / maxCount)]);
-
       setReportCountByProjectId(counts);
-      setReportHeatPoints(heat);
+      setReportHeatRaw(rawPoints);
     } catch {
       setReportCountByProjectId({});
-      setReportHeatPoints([]);
+      setReportHeatRaw([]);
     }
   }, []);
+
+  /* Crowdsourced issue heatmap, bucketed into a rolling time window.
+   *
+   * An all-time heatmap is misleading: a hotspot stays lit long after the
+   * potholes under it were repaired, so old resolved-then-reopened clusters
+   * dominate the map. Filtering to a recent window shows where problems are
+   * being reported NOW, which is what the map is actually for. */
+  const reportHeatPoints = useMemo(() => {
+    const option = HEATMAP_INTERVALS.find((o) => o.id === heatmapInterval) || HEATMAP_INTERVALS[1];
+
+    let cutoff = null;
+    if (option.days !== null) {
+      cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - option.days);
+      cutoff.setHours(0, 0, 0, 0);
+    }
+
+    const byLocation = {};
+    reportHeatRaw.forEach((point) => {
+      if (cutoff) {
+        if (!point.createdAt) return; // undated rows can't be placed in a window
+        const created = new Date(point.createdAt);
+        if (Number.isNaN(created.getTime()) || created < cutoff) return;
+      }
+      const key = `${point.lat.toFixed(4)}:${point.lng.toFixed(4)}`;
+      byLocation[key] = byLocation[key] || { lat: point.lat, lng: point.lng, count: 0 };
+      byLocation[key].count += 1;
+    });
+
+    const items = Object.values(byLocation);
+    if (!items.length) return [];
+    const maxCount = Math.max(1, ...items.map((item) => item.count));
+    return items.map((item) => [item.lat, item.lng, Math.min(1, item.count / maxCount)]);
+  }, [reportHeatRaw, heatmapInterval]);
 
   const upsertProjectRoute = useCallback(async (projectId, startLat, startLng, endLat, endLng, waypoints) => {
     if (!projectId) return;
@@ -1524,7 +1591,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('progress_updates')
-        .select('id, fmr_project_id, contractor_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
+        .select('id, fmr_project_id, contractor_id, reported_accomplishment, certified_accomplishment, certification_status, certification_remarks, certified_at, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
         .order('submitted_at', { ascending: false });
       if (error) throw error;
       setProgressUpdates(data || []);
@@ -4555,6 +4622,12 @@ export default function Dashboard() {
                           />
                           Show Report Heatmap
                         </label>
+                        {adminMapShowHeatmap && (
+                          <div className="pl-6 pt-1.5 flex items-center gap-2">
+                            <span className="text-[10px] text-slate-400 font-medium">Window</span>
+                            <HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
+                          </div>
+                        )}
                         <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                           <input
                             type="checkbox"
@@ -5534,6 +5607,12 @@ export default function Dashboard() {
                         />
                         Show Report Heatmap
                       </label>
+                      {adminMapShowHeatmap && (
+                        <div className="pl-6 pt-1.5 flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 font-medium">Window</span>
+                          <HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
+                        </div>
+                      )}
                       <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                         <input
                           type="checkbox"
@@ -6263,6 +6342,13 @@ export default function Dashboard() {
                                     <div className="h-full bg-teal-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
                                   </div>
                                 </div>
+
+                                {/* Physical vs Financial S-curve (DA monitoring requirement) */}
+                                <ProjectSCurvePanel
+                                  project={p}
+                                  progressUpdates={progressUpdates}
+                                  tranches={tranchesByProjectId[p.id] || []}
+                                />
 
                                 {/* Tranches Flow */}
                                 <div className="space-y-4">
@@ -8153,7 +8239,6 @@ export default function Dashboard() {
             const rejectedUpdatesCount = progressUpdates.filter(u => u.status === 'rejected').length;
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
-            const updateStatusCls = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
             return (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -8211,6 +8296,7 @@ export default function Dashboard() {
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Engineer Certified</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current %</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
@@ -8237,6 +8323,21 @@ export default function Dashboard() {
                                 </td>
                                 <td className="px-5 py-4">
                                   <span className="text-sm font-bold text-slate-900 font-mono">{upd.reported_accomplishment}%</span>
+                                  <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">claim</p>
+                                </td>
+                                <td className="px-5 py-4">
+                                  {upd.certified_accomplishment != null ? (
+                                    <>
+                                      <span className="text-sm font-bold text-teal-700 font-mono">
+                                        {Number(upd.certified_accomplishment).toFixed(2)}%
+                                      </span>
+                                      <p className="text-[10px] text-teal-600 font-semibold uppercase tracking-wide">certified</p>
+                                    </>
+                                  ) : upd.certification_status === 'disputed' ? (
+                                    <span className="text-xs font-semibold text-rose-600">Disputed</span>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">Not yet certified</span>
+                                  )}
                                 </td>
                                 <td className="px-5 py-4 whitespace-nowrap">
                                   <span className="text-sm font-semibold text-slate-700 font-mono">{Number(upd.fmr_projects?.accomplishment || 0).toFixed(2)}%</span>
@@ -8253,9 +8354,23 @@ export default function Dashboard() {
                                   ) : <span className="text-xs text-slate-400">—</span>}
                                 </td>
                                 <td className="px-5 py-4">
-                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${updateStatusCls[upd.status] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                                    {upd.status?.charAt(0).toUpperCase() + upd.status?.slice(1)}
-                                  </span>
+                                  {(() => {
+                                    const meta = getWorkflowMeta(upd);
+                                    return (
+                                      <>
+                                        <span
+                                          title={meta.hint}
+                                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border whitespace-nowrap ${meta.tone}`}
+                                        >
+                                          <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                                          {meta.label}
+                                        </span>
+                                        {meta.actor && (
+                                          <p className="text-[10px] text-slate-400 mt-1">Next: {meta.actor}</p>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="px-5 py-4 whitespace-nowrap">
                                   <span className="text-xs text-slate-500">{fmtDateTime(upd.submitted_at)}</span>
@@ -8266,9 +8381,14 @@ export default function Dashboard() {
                                 <td className="px-5 py-4">
                                   {upd.status === 'pending' && (
                                     <div className="flex gap-2">
+                                      {/* Mirrors the database gate: approval is only possible once the
+                                          supervising engineer has certified. The RPC enforces this too —
+                                          this just explains it before the click. */}
                                       <button
                                         onClick={() => approveProgressUpdate(upd)}
-                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                                        disabled={!canAdminApprove(upd)}
+                                        title={approvalBlockedReason(upd) || 'Approve the engineer-certified accomplishment as official'}
+                                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
                                       >
                                         Approve
                                       </button>

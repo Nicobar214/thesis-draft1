@@ -3,6 +3,7 @@ import { useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
+import AuthBackground from "../components/AuthBackground";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -77,12 +78,8 @@ export default function LguAuth() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col justify-between bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 px-4 py-8 sm:py-12 overflow-hidden">
-      {/* Ambient background glow */}
-      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-indigo-500/20 blur-[100px]" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 rounded-full bg-blue-500/10 blur-[110px]" />
-      </div>
+    <div className="relative min-h-screen flex flex-col justify-between bg-slate-950 px-4 py-8 sm:py-12 overflow-hidden">
+      <AuthBackground accent="indigo" />
 
       <div className="relative flex-1 flex items-center justify-center">
         <div className="max-w-md w-full">

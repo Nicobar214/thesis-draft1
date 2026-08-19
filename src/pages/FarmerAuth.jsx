@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { resolveLoginEmail } from "../lib/farmerAuth";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
+import AuthBackground from "../components/AuthBackground";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -78,12 +79,8 @@ export default function FarmerAuth() {
   };
 
   return (
-    <div className="relative min-h-[100dvh] flex flex-col justify-between bg-gradient-to-br from-emerald-950 via-teal-900 to-slate-900 px-4 py-8 sm:py-12 overflow-hidden">
-      {/* Ambient background glow */}
-      <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute -top-24 -left-16 w-80 h-80 rounded-full bg-emerald-500/20 blur-[100px]" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-teal-500/15 blur-[110px]" />
-      </div>
+    <div className="relative min-h-[100dvh] flex flex-col justify-between bg-emerald-950 px-4 py-8 sm:py-12 overflow-hidden">
+      <AuthBackground accent="emerald" />
 
       <div className="relative flex-1 flex items-center justify-center">
         <div className="max-w-md w-full">

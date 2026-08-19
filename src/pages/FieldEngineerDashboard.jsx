@@ -9,6 +9,7 @@ import { enqueueEngineerUpdate } from '../lib/offlineReports';
 import { requestBackgroundSync } from '../lib/offlineSync';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
+import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 
 /* ─── Engineer Status Helpers ─── */
 const engineerStatusStyles = {
@@ -83,6 +84,7 @@ export default function FieldEngineerDashboard() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('assigned');
+  const [certifyCount, setCertifyCount] = useState(0);
   const [selectedReport, setSelectedReport] = useState(null);
   const [engineerNotes, setEngineerNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -517,6 +519,7 @@ export default function FieldEngineerDashboard() {
             { id: 'needs-rework', label: 'Needs Rework', count: metrics.needsRework },
             { id: 'completed', label: 'Completed', count: metrics.completed },
             { id: 'all', label: 'All', count: metrics.total },
+            { id: 'certify', label: 'Certify Progress', count: certifyCount },
           ].map(tab => (
             <button
               key={tab.id}
@@ -535,8 +538,13 @@ export default function FieldEngineerDashboard() {
           ))}
         </div>
 
-        {/* Reports List */}
-        {loading ? (
+        {/* Progress certification queue (DA: engineer must certify before payment) */}
+        {activeTab === 'certify' ? (
+          <ProgressCertificationPanel
+            onCountChange={setCertifyCount}
+            showNotification={showNotification}
+          />
+        ) : loading ? (
           <div className="bg-white rounded-2xl border border-slate-200/60 p-12 text-center">
             <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
             <p className="text-sm text-slate-400">Loading reports...</p>
