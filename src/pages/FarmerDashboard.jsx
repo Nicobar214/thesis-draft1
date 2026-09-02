@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 
-import { supabase } from "../lib/supabase";
+import { supabaseFarmer as supabase } from "../lib/supabase";
 import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from "../lib/mapRouteUtils";
 import PublicReportForm from "../components/PublicReportForm";
 import DAResolutionCertificate from "../components/publicReports/DAResolutionCertificate";

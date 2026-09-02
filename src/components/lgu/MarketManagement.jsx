@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-lea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { supabase } from '../../lib/supabase';
+import { supabaseLgu as supabase } from '../../lib/supabase';
 import { getBarangays, getMunicipalities } from '../../data/iloiloLocations';
 import { getMunicipalityCentroid } from '../../lib/mapRouteUtils';
 import { BENEFICIARY_CROPS } from '../../utils/farmerBeneficiaryData';

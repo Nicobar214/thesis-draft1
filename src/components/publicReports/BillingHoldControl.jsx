@@ -12,7 +12,7 @@
  *      wording in the UI says so, and the hold can be lifted in one click.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 
 /* public_reports.project_id is TEXT holding values like "fmr-123", while
    progress_updates.fmr_project_id is a BIGINT. Bridge the two carefully and

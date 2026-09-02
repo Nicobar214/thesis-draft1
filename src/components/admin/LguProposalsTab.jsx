@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { supabase } from '../../lib/supabase';
+import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import { getMunicipalities } from '../../data/iloiloLocations';
 import { getCropData, computeProposalPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
 import { getMunicipalityCentroid, getPendingDaysChip } from '../../lib/mapRouteUtils';

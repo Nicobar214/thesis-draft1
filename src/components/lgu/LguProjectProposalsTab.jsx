@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { supabase } from '../../lib/supabase';
+import { supabaseLgu as supabase } from '../../lib/supabase';
 import { getBarangays } from '../../data/iloiloLocations';
 import { getMunicipalityCentroid, fetchRoadAlignedPolyline, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';

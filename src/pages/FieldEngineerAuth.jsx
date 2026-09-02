@@ -1,6 +1,6 @@
 /* FieldEngineerAuth.jsx – Login page for field engineers */
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabaseFieldEngineer as supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";

@@ -4,7 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabaseContractor as supabase } from '../lib/supabase';
 import Logo from './Logo';
 
 const NAV_ITEMS = [

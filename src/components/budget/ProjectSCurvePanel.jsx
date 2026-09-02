@@ -14,7 +14,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
   Tooltip as RechartsTooltip, ResponsiveContainer,
 } from 'recharts';
-import { supabase } from '../../lib/supabase';
+import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import {
   buildSCurveSeries,
   computeVariance,

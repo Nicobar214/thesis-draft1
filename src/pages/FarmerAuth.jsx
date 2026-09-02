@@ -1,6 +1,6 @@
 /* FarmerAuth.jsx - Login page for Farmer accounts */
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabaseFarmer as supabase } from "../lib/supabase";
 import { resolveLoginEmail } from "../lib/farmerAuth";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";

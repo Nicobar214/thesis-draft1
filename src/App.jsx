@@ -140,7 +140,11 @@ function App() {
 
         {/* ===== ADMIN SIDE (no landing page, direct login) ===== */}
         <Route path="/admin" element={<AdminAuthPage />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={
+          <ProtectedRoute requiredRole="admin">
+            <Dashboard />
+          </ProtectedRoute>
+        } />
       </Routes>
     </Router>
   );

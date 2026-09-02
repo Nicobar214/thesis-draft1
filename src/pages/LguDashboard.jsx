@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { supabase, supabaseAdmin } from '../lib/supabase';
+import { supabaseLgu as supabase, supabaseAdmin } from '../lib/supabase';
 import LguRouteMap from '../components/lgu/LguRouteMap';
 import LguAnalyticsTab from '../components/lgu/LguAnalyticsTab';
 import RoadInventoryTab from '../components/lgu/RoadInventoryTab';

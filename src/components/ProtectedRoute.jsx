@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { getSupabaseForRole } from '../lib/supabase';
 import Logo from './Logo';
 
 function normalizeRole(role) {
@@ -19,9 +19,19 @@ function resolveEffectiveRole(profileRole, metadataRole) {
   return normalizedProfileRole || normalizedMetadataRole || 'user';
 }
 
+function getLoginRouteForRequiredRole(requiredRole) {
+  const role = normalizeRole(requiredRole);
+  if (role === 'admin') return '/admin';
+  if (role === 'field_engineer') return '/field-engineer/login';
+  if (role === 'contractor') return '/contractor/login';
+  if (role === 'lgu') return '/lgu/login';
+  if (role === 'farmer') return '/farmer/login';
+  return '/signin';
+}
+
 /**
  * ProtectedRoute - Guards routes based on authentication and role
- * @param {string} requiredRole - 'admin' or 'user' (optional, if not set any authenticated user can access)
+ * @param {string} requiredRole - 'admin', 'field_engineer', 'contractor', 'lgu', 'farmer', 'user'
  */
 export default function ProtectedRoute({ children, requiredRole }) {
   const [loading, setLoading] = useState(true);
@@ -31,7 +41,8 @@ export default function ProtectedRoute({ children, requiredRole }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        const client = getSupabaseForRole(requiredRole);
+        const { data: { user: currentUser } } = await client.auth.getUser();
 
         if (!currentUser) {
           setLoading(false);
@@ -42,7 +53,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
         // Fetch role from profiles table, fall back to user_metadata
         try {
-          const { data: profile, error: profileError } = await supabase
+          const { data: profile, error: profileError } = await client
             .from('profiles')
             .select('role')
             .eq('id', currentUser.id)
@@ -50,15 +61,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
           if (profileError) {
             console.warn('Profile query error, using metadata fallback:', profileError);
-            setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
+            setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
           } else if (profile) {
             setRole(resolveEffectiveRole(profile.role, currentUser.user_metadata?.role));
           } else {
-            // No profile row – use metadata role
-            setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
+            // No profile row – use metadata role or requiredRole as fallback
+            setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
           }
         } catch {
-          setRole(normalizeRole(currentUser.user_metadata?.role || 'user'));
+          setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
         }
       } catch (err) {
         console.error('Auth check error:', err);
@@ -68,7 +79,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
     };
 
     checkAuth();
-  }, []);
+  }, [requiredRole]);
 
   if (loading) {
     return (
@@ -82,9 +93,9 @@ export default function ProtectedRoute({ children, requiredRole }) {
     );
   }
 
-  // Not logged in → redirect to sign in
+  // Not logged in → redirect to portal-specific sign in
   if (!user) {
-    return <Navigate to="/signin" replace />;
+    return <Navigate to={getLoginRouteForRequiredRole(requiredRole)} replace />;
   }
 
   // Role check: if a specific role is required and user doesn't have it
@@ -115,3 +126,4 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
   return children;
 }
+

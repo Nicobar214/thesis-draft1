@@ -2,7 +2,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
-import { supabase, supabaseAdmin } from '../lib/supabase';
+import { supabaseAdminPortal as supabase, supabaseAdmin } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet.heat';

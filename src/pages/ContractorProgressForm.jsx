@@ -13,7 +13,7 @@
  * this form still load and display normally.
  */
 import { useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabaseContractor as supabase } from '../lib/supabase';
 
 const inputCls =
   'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm ' +

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { supabase } from '../../lib/supabase';
+import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { buildRoutePoints } from '../../lib/mapRouteUtils';
 import PublicReportRouteMapPanel from './PublicReportRouteMapPanel';
 import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
@@ -88,6 +88,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [conditionObserved, setConditionObserved] = useState('');
   const [recommendedAction, setRecommendedAction] = useState('');
   const [estimatedCostRange, setEstimatedCostRange] = useState('');
+  const [inspectionRating, setInspectionRating] = useState(5);
 
   const notifyAdmin = useCallback(async (title, message) => {
     try {
@@ -368,10 +369,11 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         throw new Error('Photo upload completed but public URL was not generated.');
       }
 
+      const ratingLabel = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'][inspectionRating - 1] || 'Good';
       const findingPayload = {
         report_id: report.id,
         engineer_id: currentUser.id,
-        condition_observed: conditionObserved.trim(),
+        condition_observed: `[Site Rating: ⭐ ${inspectionRating}/5 ${ratingLabel}] ${conditionObserved.trim()}`,
         recommended_action: recommendedAction.trim(),
         estimated_cost_range: estimatedCostRange.trim() || null,
         field_photo_url: uploadedPhotoUrl || null,
@@ -518,9 +520,13 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         <button
           type="button"
           onClick={() => setMapFocus([report?.latitude, report?.longitude])}
-          className="rounded-xl border border-teal-200 bg-teal-50 text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-100 transition flex items-center justify-center gap-1.5"
+          className="rounded-xl border border-teal-200 bg-teal-50 text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-100 transition flex items-center justify-center gap-2"
         >
-          📍 Focus Damage Site
+          <svg className="w-4 h-4 shrink-0 text-teal-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0z" />
+          </svg>
+          Focus Damage Site
         </button>
         <button
           type="button"
@@ -528,9 +534,12 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (startPoint) setMapFocus(startPoint);
             else if (onSaved) onSaved('Start point coordinates unavailable.', 'error');
           }}
-          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-100 transition flex items-center justify-center gap-1.5"
+          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-100 transition flex items-center justify-center gap-2"
         >
-          🏁 Focus Project Start
+          <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
+          </svg>
+          Focus Project Start
         </button>
         <button
           type="button"
@@ -538,16 +547,22 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (endPoint) setMapFocus(endPoint);
             else if (onSaved) onSaved('End point coordinates unavailable.', 'error');
           }}
-          className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-100 transition flex items-center justify-center gap-1.5"
+          className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-100 transition flex items-center justify-center gap-2"
         >
-          🏁 Focus Project End
+          <svg className="w-4 h-4 shrink-0 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
+          </svg>
+          Focus Project End
         </button>
         <button
           type="button"
           onClick={markVisited}
           disabled={saving}
-          className="rounded-xl border border-slate-200 bg-slate-900 text-white px-3 py-2 text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 flex items-center justify-center gap-1.5"
+          className="rounded-xl border border-slate-200 bg-slate-900 text-white px-3 py-2 text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 flex items-center justify-center gap-2"
         >
+          <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+          </svg>
           {saving ? 'Saving...' : 'Mark Site Visited'}
         </button>
       </div>
@@ -596,6 +611,31 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
             placeholder="e.g. PHP 150,000 - PHP 220,000"
           />
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-500 font-semibold uppercase">Site Condition Rating</label>
+          <div className="mt-1 flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => {
+                  setInspectionRating(star);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                  inspectionRating >= star ? 'text-amber-500 scale-110 bg-white shadow-sm' : 'text-slate-300 hover:text-amber-300'
+                }`}
+                title={`${star} Star${star > 1 ? 's' : ''}`}
+              >
+                ★
+              </button>
+            ))}
+            <span className="text-xs font-bold text-slate-700 ml-2 whitespace-nowrap">
+              {inspectionRating}/5 {['', 'Defective', 'Substandard', 'Fair', 'Good', 'Excellent'][inspectionRating] || ''}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">1-click rating score for site findings.</p>
         </div>
 
         <div>

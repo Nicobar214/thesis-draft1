@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import {
   CATEGORY_STYLES,
   MILESTONE_STYLE,

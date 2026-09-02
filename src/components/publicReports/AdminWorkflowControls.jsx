@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { supabase } from '../../lib/supabase';
+import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import BillingHoldControl from './BillingHoldControl';
 
 const priorityTone = {

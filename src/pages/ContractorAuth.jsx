@@ -1,6 +1,6 @@
 /* ContractorAuth.jsx – Login page for contractors */
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabaseContractor as supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";

@@ -1,6 +1,6 @@
 /* AdminAuthPage.jsx - Clean admin-only login (no landing page, no signup) */
 import { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabaseAdminPortal as supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
@@ -8,6 +8,7 @@ import AuthBackground from "../components/AuthBackground";
 export default function AdminAuthPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
+
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

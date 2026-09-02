@@ -9,7 +9,7 @@
  * update per project.
  */
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseContractor as supabase } from '../../lib/supabase';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { getWorkflowMeta, officialAccomplishmentOf } from '../../lib/progressWorkflow';
 

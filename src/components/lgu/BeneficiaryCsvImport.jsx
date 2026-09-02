@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabaseLgu as supabase } from '../../lib/supabase';
 
 const CHUNK_SIZE = 50;
 
