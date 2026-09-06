@@ -179,9 +179,105 @@ export function rankTone(rank) {
 }
 
 export function factorBarTone(key) {
-  if (key === 'V' || key === 'U') return 'bg-blue-500';
-  if (key === 'S' || key === 'B') return 'bg-red-500';
+  if (key === 'V' || key === 'U' || key === 'G') return 'bg-blue-500';
+  if (key === 'S' || key === 'B' || key === 'E') return 'bg-red-500';
+  if (key === 'M') return 'bg-emerald-500';
   return 'bg-amber-500';
+}
+
+/**
+ * Module 1: Road Network Gaps Prioritization
+ * Edge-to-edge connectivity between barangay roads and market hubs.
+ * Disregards agricultural/farmer data since production data is not readily available.
+ * 
+ * Factors:
+ *  - G (Gap Distance / Unpaved Length) 40%
+ *  - E (Edge-to-Edge Connectivity)      35%
+ *  - M (Market Access Impact)           25%
+ */
+export function computeRoadGapPriorityScores(projects, roadInventory = [], reports = []) {
+  const safeProjects = Array.isArray(projects) ? projects : [];
+  const safeInventory = Array.isArray(roadInventory) ? roadInventory : [];
+
+  const raw = safeProjects.map((project) => {
+    const projName = String(project.project_name || '').toLowerCase();
+    const barangay = String(project.barangay || project.location || '').toLowerCase();
+
+    // Match inventory entry if available
+    const invMatch = safeInventory.find((inv) => 
+      projName.includes(String(inv.roadName || '').toLowerCase()) ||
+      String(inv.roadName || '').toLowerCase().includes(projName) ||
+      (inv.barangay && barangay.includes(String(inv.barangay).toLowerCase()))
+    );
+
+    // Calculate unpaved gap length (Earth + Gravel or Poor/Critical condition)
+    let gapKm = Number(project.project_length_km || project.length_km || 1.2);
+    let gapType = 'Barangay Road Gap';
+
+    if (invMatch) {
+      const earthSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Earth');
+      const gravelSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Gravel');
+      const earthLen = Number(earthSurfaces?.length || 0);
+      const gravelLen = Number(gravelSurfaces?.length || 0);
+      
+      if (earthLen > 0 || gravelLen > 0) {
+        gapKm = earthLen + gravelLen;
+        gapType = earthLen > 0 ? 'Earth Surface Gap' : 'Gravel Surface Gap';
+      } else {
+        gapKm = Number(invMatch.lengthKm || gapKm);
+        gapType = invMatch.surfaceType || 'Barangay Road Gap';
+      }
+    }
+
+    const isConnectingRoad = projName.includes('-') || projName.includes('rd') || projName.includes('road');
+    const connectivityIndex = isConnectingRoad ? 85 : 60;
+    const marketAccessScore = projName.includes('poblacion') || barangay.includes('poblacion') ? 95 : 75;
+
+    const projectReports = (reports || []).filter(
+      (r) => String(r.project_name || '').trim().toLowerCase() === projName
+    );
+
+    return {
+      project,
+      gapKm: Number(gapKm.toFixed(2)),
+      gapType,
+      connectivityIndex,
+      marketAccessScore,
+      reportCount: projectReports.length,
+      invMatch: Boolean(invMatch),
+    };
+  });
+
+  const maxGapKm = Math.max(...raw.map((r) => r.gapKm), 1);
+  const maxConn = Math.max(...raw.map((r) => r.connectivityIndex), 1);
+  const maxMarket = Math.max(...raw.map((r) => r.marketAccessScore), 1);
+
+  const scored = raw.map((r) => {
+    const G = Math.round((r.gapKm / maxGapKm) * 100);
+    const E = Math.round((r.connectivityIndex / maxConn) * 100);
+    const M = Math.round((r.marketAccessScore / maxMarket) * 100);
+
+    const score = Math.round(G * 0.40 + E * 0.35 + M * 0.25);
+
+    return {
+      ...r,
+      score,
+      G,
+      E,
+      M,
+      cropData: { score: 0, primary_crop: 'N/A (Disregarded)', hectares: 0 },
+      bySeverity: { safety: 0, flood: 0, issue: 0, general: 0 },
+      hasEscalation: false,
+    };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      reason: `Rank #${i + 1} — ${r.project.municipality || 'Leon'} (${r.project.barangay || 'Barangay'}): ${r.gapKm} km ${r.gapType} connecting to market network.`,
+    }));
 }
 
 function proposalPendingDays(proposal) {

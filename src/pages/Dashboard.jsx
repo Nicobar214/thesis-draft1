@@ -6576,6 +6576,10 @@ export default function Dashboard() {
               onViewProjectDetail={(project) => {
                 openProjectDetailModal(project);
               }}
+              onViewOnMap={(project) => {
+                setActiveTab('map');
+                setAdminMapSearch(project.project_name || '');
+              }}
             />
           )}
 

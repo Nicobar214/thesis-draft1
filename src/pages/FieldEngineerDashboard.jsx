@@ -720,7 +720,6 @@ export default function FieldEngineerDashboard() {
               </button>
 
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
                 <h2 className="text-sm font-bold text-slate-900 tracking-tight">
                   {navItems.find((n) => n.id === activeNav)?.label || 'Field Command'}
                 </h2>

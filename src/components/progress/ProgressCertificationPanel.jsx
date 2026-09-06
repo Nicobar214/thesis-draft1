@@ -43,6 +43,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
   const [activeTab, setActiveTab] = useState('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMunicipality, setSelectedMunicipality] = useState('all');
+  const [selectedCertificationStatus, setSelectedCertificationStatus] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -92,12 +93,13 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
   }, [rows]);
 
   const hasActiveFilters = useMemo(() => {
-    return Boolean(searchQuery.trim() || selectedMunicipality !== 'all' || sortBy !== 'newest');
-  }, [searchQuery, selectedMunicipality, sortBy]);
+    return Boolean(searchQuery.trim() || selectedMunicipality !== 'all' || selectedCertificationStatus !== 'all' || sortBy !== 'newest');
+  }, [searchQuery, selectedMunicipality, selectedCertificationStatus, sortBy]);
 
   const resetFilters = () => {
     setSearchQuery('');
     setSelectedMunicipality('all');
+    setSelectedCertificationStatus('all');
     setSortBy('newest');
     setCurrentPage(1);
   };
@@ -105,7 +107,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
   // Reset pagination on filter or tab change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedMunicipality, sortBy, activeTab]);
+  }, [searchQuery, selectedMunicipality, selectedCertificationStatus, sortBy, activeTab]);
 
   // Memoized Filter & Sort Engine
   const filteredAndSortedRows = useMemo(() => {
@@ -135,6 +137,11 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
       list = list.filter((r) => (r.fmr_projects?.municipality || '').toLowerCase() === selectedMunicipality.toLowerCase());
     }
 
+    // Certification Status Filter
+    if (selectedCertificationStatus !== 'all') {
+      list = list.filter((r) => (r.certification_status || 'pending').toLowerCase() === selectedCertificationStatus.toLowerCase());
+    }
+
     // Sorting Engine
     list.sort((a, b) => {
       if (sortBy === 'oldest') {
@@ -151,7 +158,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     });
 
     return list;
-  }, [rows, activeTab, searchQuery, selectedMunicipality, sortBy]);
+  }, [rows, activeTab, searchQuery, selectedMunicipality, selectedCertificationStatus, sortBy]);
 
   // Pagination Slice
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedRows.length / pageSize));
@@ -227,21 +234,6 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
 
   return (
     <div className="space-y-5">
-      {/* DA Regulation Callout */}
-      <div className="bg-teal-50/80 border border-teal-200/80 rounded-2xl p-4 flex items-start gap-3">
-        <div className="p-2 rounded-xl bg-teal-600 text-white shrink-0 mt-0.5">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-          </svg>
-        </div>
-        <div>
-          <h4 className="text-xs font-bold text-teal-900 uppercase tracking-wider">DA Region VI Engineering Protocol</h4>
-          <p className="text-xs text-teal-800 mt-0.5 leading-relaxed">
-            Contractor accomplishments must be physically measured and certified by the supervising engineer on-site before payment recognition.
-          </p>
-        </div>
-      </div>
-
       {/* Header Tabs & Filters Control Panel */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-4">
         {/* Status Tabs */}
@@ -281,7 +273,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
         </div>
 
         {/* Filter Controls Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs font-medium">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-medium">
           {/* Search Box */}
           <div className="relative">
             <input
@@ -312,6 +304,19 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
               {availableMunicipalities.map((mun) => (
                 <option key={mun} value={mun}>{mun}</option>
               ))}
+            </select>
+          </div>
+
+          {/* Certification Status Filter */}
+          <div>
+            <select
+              value={selectedCertificationStatus}
+              onChange={(e) => setSelectedCertificationStatus(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+            >
+              <option value="all">All Certification Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="certified">Certified</option>
             </select>
           </div>
 
@@ -376,11 +381,13 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                   const reported = Number(row.reported_accomplishment ?? 0);
                   const certified = row.certified_accomplishment;
                   const isOpen = openId === row.id;
+                  const isAwaiting = row.status === 'pending' && row.certification_status !== 'certified';
 
                   return (
-                    <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-slate-900">
+                    <tr key={row.id} className={`transition-colors ${isAwaiting ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/50'}`}>
+                      <td className="py-3.5 px-4 relative">
+                        {isAwaiting && <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400" />}
+                        <p className={`font-bold ${isAwaiting ? 'text-amber-900' : 'text-slate-900'}`}>
                           {project.project_name || `Project #${row.fmr_project_id}`}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">{project.municipality || '—'}</p>
