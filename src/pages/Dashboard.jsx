@@ -61,12 +61,16 @@ import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta, canAdminApprove, approvalBlockedReason } from '../lib/progressWorkflow';
 import {
   assignPublicReportEngineer,
+  dismissPublicReport,
   rejectPublicReportInspection,
   resolvePublicReport,
   reviewPublicReport,
   unassignPublicReportEngineer,
+  updatePublicReportWorkflowMeta,
   validatePublicReportInspection,
 } from '../services/publicReportWorkflow';
+import { friendlyReportError } from '../lib/publicReportStatus';
+import { assessReport } from '../lib/publicReportTriage';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -1345,7 +1349,10 @@ export default function Dashboard() {
   }, [publicReports]);
 
   // Assign field engineer to a public report
-  const assignEngineerToReport = async (reportId, engineerId) => {
+  // Dispatching is one admin gesture. assign_public_report_engineer requires
+  // status='reviewed', so a still-pending report is reviewed first rather than
+  // making the admin set the case status by hand.
+  const assignEngineerToReport = async (reportId, engineerId, targetDate = null) => {
     setAssigningEngineer(true);
     try {
       const engineer = fieldEngineers.find(e => e.id === engineerId);
@@ -1354,12 +1361,28 @@ export default function Dashboard() {
         return;
       }
       const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
-      if (String(report?.status || '').toLowerCase() !== 'reviewed') {
-        showNotification('Review the report before assigning a field engineer.', 'error');
-        return;
+
+      if (String(report?.status || '').toLowerCase() === 'pending') {
+        await reviewPublicReport(supabase, { reportId, inspectionTargetDate: targetDate });
+        // Keep the citizen-facing feedbacks row in step with the report.
+        await syncFeedbackStatus(report, 'reviewed');
       }
 
       await assignPublicReportEngineer(supabase, { reportId, engineerId });
+
+      if (targetDate) {
+        try {
+          await updatePublicReportWorkflowMeta(supabase, {
+            reportId,
+            priority: null,
+            visitDeadline: targetDate,
+          });
+        } catch (metaErr) {
+          // The assignment itself succeeded; a missing target date is cosmetic.
+          console.warn('Could not store target inspection date:', metaErr);
+        }
+      }
+
       await fetchPublicReports();
       showNotification(`Report assigned to ${engineer.full_name || engineer.email}`);
       if (report) {
@@ -1367,10 +1390,37 @@ export default function Dashboard() {
         await createEngineerAssignmentNotification(reportId, engineerId, report.project_name || report.municipality || 'Public report');
       }
     } catch (err) {
-      console.error('Failed to assign engineer:', err.message);
-      showNotification(`Failed to assign: ${err.message}`, 'error');
+      console.error('Failed to assign engineer:', err);
+      showNotification(friendlyReportError(err, 'Could not assign this engineer. Please try again.'), 'error');
     } finally {
       setAssigningEngineer(false);
+    }
+  };
+
+  // Close a report before any engineer work starts. dismiss_public_report
+  // enforces admin role, the legal states, and that no inspection exists.
+  const dismissReportById = async (reportId, reason) => {
+    if (!reportId || !reason?.trim()) {
+      showNotification('A reason is required to close this report.', 'error');
+      return;
+    }
+    try {
+      const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
+      await dismissPublicReport(supabase, { reportId, reason: reason.trim() });
+      await syncFeedbackStatus(report, 'dismissed');
+      await fetchPublicReports();
+      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: 'dismissed', dismissal_reason: reason.trim() } : prev));
+      showNotification('Report closed without inspection');
+      if (report) {
+        await createReportNotification(
+          report,
+          'public_report_status',
+          'Your report was reviewed and closed. Open it for details.'
+        );
+      }
+    } catch (err) {
+      console.error('Failed to close report:', err);
+      showNotification(friendlyReportError(err, 'Could not close this report. Please try again.'), 'error');
     }
   };
 
@@ -1389,8 +1439,8 @@ export default function Dashboard() {
         await createReportNotification(report, 'public_report_assignment', 'The assigned field engineer for your report was removed.');
       }
     } catch (err) {
-      console.error('Failed to unassign engineer:', err.message);
-      showNotification(`Failed to unassign: ${err.message}`, 'error');
+      console.error('Failed to unassign engineer:', err);
+      showNotification(friendlyReportError(err, 'Could not remove this engineer. Please try again.'), 'error');
     }
   };
 
@@ -1906,31 +1956,6 @@ export default function Dashboard() {
     }
   };
 
-  // Update public report status (admin action) — 'pending'/'reviewed' only.
-  // 'resolved' can only be set via finalizeResolution() below, which requires
-  // the field engineer's findings to have been DA-validated first.
-  const updatePublicReportStatus = async (reportId, newStatus) => {
-    if (newStatus !== 'reviewed') {
-      showNotification('Returning a report to pending is disabled under the controlled workflow.', 'error');
-      return;
-    }
-    try {
-      const report = publicReports.find(r => r.id === reportId);
-      await reviewPublicReport(supabase, { reportId });
-      await syncFeedbackStatus(report, newStatus);
-
-      await fetchPublicReports();
-      setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: newStatus } : prev));
-      showNotification(`Public report marked as ${newStatus}`);
-      if (report) {
-        await createReportNotification(report, 'public_report_status', `Your public report status is now ${newStatus}.`);
-      }
-    } catch (err) {
-      console.error('Failed to update public report:', err.message);
-      showNotification(`Failed to update: ${err.message}`, 'error');
-    }
-  };
-
   // DA admin validates the field engineer's on-site findings as accurate —
   // this is the only action that unlocks the ability to mark a report resolved.
   const validateFieldFinding = async (reportId) => {
@@ -1963,8 +1988,8 @@ export default function Dashboard() {
       setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, engineer_status: 'validated', verification: 'Verified On-Site' } : prev));
       showNotification('Field finding validated');
     } catch (err) {
-      console.error('Failed to validate finding:', err.message);
-      showNotification(`Failed to validate: ${err.message}`, 'error');
+      console.error('Failed to validate finding:', err);
+      showNotification(friendlyReportError(err, 'Could not validate these findings. Please try again.'), 'error');
     } finally {
       setFindingActionSaving(false);
     }
@@ -2011,8 +2036,8 @@ export default function Dashboard() {
       setRejectReasonDraft('');
       showNotification('Field finding rejected and sent back for re-inspection');
     } catch (err) {
-      console.error('Failed to reject finding:', err.message);
-      showNotification(`Failed to reject: ${err.message}`, 'error');
+      console.error('Failed to reject finding:', err);
+      showNotification(friendlyReportError(err, 'Could not reject these findings. Please try again.'), 'error');
     } finally {
       setFindingActionSaving(false);
     }
@@ -2020,7 +2045,7 @@ export default function Dashboard() {
 
   // The only path allowed to set status: 'resolved'. Requires a DA-validated
   // field finding and a mandatory resolution summary (see AdminWorkflowControls).
-  const finalizeResolution = async (reportId, summary) => {
+  const finalizeResolution = async (reportId, summary, resolutionType = 'other') => {
     if (!reportId || !summary?.trim()) return;
     const report = publicReports.find(r => r.id === reportId);
     if (report?.engineer_status !== 'validated') {
@@ -2031,7 +2056,7 @@ export default function Dashboard() {
     try {
       await resolvePublicReport(supabase, {
         reportId,
-        resolutionType: 'other',
+        resolutionType,
         resolutionSummary: summary.trim(),
       });
 
@@ -2048,8 +2073,8 @@ export default function Dashboard() {
         report.id
       );
     } catch (err) {
-      console.error('Failed to finalize resolution:', err.message);
-      showNotification(`Failed to resolve: ${err.message}`, 'error');
+      console.error('Failed to finalize resolution:', err);
+      showNotification(friendlyReportError(err, 'Could not resolve this report. Please try again.'), 'error');
     }
   };
 
@@ -7674,12 +7699,17 @@ export default function Dashboard() {
 
                   const distanceBand = getDistanceBand(distanceFromProjectMeters);
 
-                  const credibility = calculateCredibilityScore({
-                    accuracy: Number(selectedPublicReport?.geo_accuracy),
-                    distanceMeters: distanceFromProjectMeters,
-                    isVerifiedUser: Boolean(selectedPublicReport?.user_id),
+                  /* Triage measures to the nearest point on the route polyline,
+                     not to the route midpoint — on a long road a genuine report
+                     at the far end is kilometres from the midpoint but metres
+                     from the road itself. */
+                  const triage = assessReport({
+                    report: selectedPublicReport,
+                    project: selectedReportProject,
+                    routeRecord: selectedReportProject ? routeByProjectId[selectedReportProject.id] : null,
                     photoGpsMatch: photoGpsMatchesReport,
                   });
+                  const credibility = triage.credibility;
 
                   return (
                     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200" onClick={() => setSelectedPublicReport(null)}>
@@ -7826,30 +7856,26 @@ export default function Dashboard() {
                           {/* RIGHT COLUMN: Administrative Action Station (Col 5) */}
                           <div className="lg:col-span-5 space-y-4">
 
-                            {/* Citizen Details */}
-                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
-                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block border-b border-slate-100 pb-2">
-                                Reporter Metadata
-                              </span>
-                              <div className="grid grid-cols-2 gap-3 text-xs">
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Submitted By</span>
-                                  <span className="font-bold text-slate-900">{selectedPublicReport.full_name || 'Anonymous Citizen'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Contact Info</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.contact_info || '—'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Municipality</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.municipality || '—'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Barangay</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.barangay || '—'}</span>
-                                </div>
-                              </div>
-                            </div>
+                            {/* The single contextual action area */}
+                            <AdminWorkflowControls
+                              report={selectedPublicReport}
+                              resolution={selectedResolution}
+                              triage={triage}
+                              onNotify={showNotification}
+                              onResolve={(summary, resolutionType) =>
+                                finalizeResolution(selectedPublicReport.id, summary, resolutionType)
+                              }
+                              onDismiss={(reason) => dismissReportById(selectedPublicReport.id, reason)}
+                              fieldEngineers={fieldEngineers}
+                              engineerWorkloads={engineerWorkloads}
+                              assigningEngineer={assigningEngineer}
+                              onAssignEngineer={(engineerId, targetDate) =>
+                                assignEngineerToReport(selectedPublicReport.id, engineerId, targetDate)
+                              }
+                              onUnassignEngineer={(reason) =>
+                                unassignEngineerFromReport(selectedPublicReport.id, reason)
+                              }
+                            />
 
                             {/* Field Engineer Findings Review */}
                             {selectedPublicReport.assigned_engineer_id && (
@@ -7939,48 +7965,61 @@ export default function Dashboard() {
                               </div>
                             )}
 
-                            {/* Workflow Controls (Priority, Field Engineer Assignment & Availability, Resolution) */}
-                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs">
-                              <AdminWorkflowControls
-                                report={selectedPublicReport}
-                                resolution={selectedResolution}
-                                adminIdentity={adminIdentity}
-                                onNotify={showNotification}
-                                onResolve={(summary) => finalizeResolution(selectedPublicReport.id, summary)}
-                                fieldEngineers={fieldEngineers}
-                                engineerWorkloads={engineerWorkloads}
-                                assigningEngineer={assigningEngineer}
-                                onAssignEngineer={(engineerId) => {
-                                  assignEngineerToReport(selectedPublicReport.id, engineerId);
-                                }}
-                                onUnassignEngineer={(reason) => {
-                                  unassignEngineerFromReport(selectedPublicReport.id, reason);
-                                }}
-                              />
+                            {/* Automated location check — the evidence behind the
+                                triage recommendation shown in the action panel. */}
+                            <div className={`p-4 rounded-xl border-2 shadow-xs space-y-2 ${
+                              triage.recommendation === 'reject'
+                                ? 'bg-red-50 border-red-200'
+                                : triage.recommendation === 'review'
+                                  ? 'bg-amber-50 border-amber-200'
+                                  : 'bg-emerald-50 border-emerald-200'
+                            }`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                  Automated Location Check
+                                </span>
+                                <span className="text-[11px] font-bold text-slate-700">
+                                  Credibility {credibility.score}/100 · {credibility.label}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-800">
+                                <strong>{triage.distanceLabel}</strong> from the project road
+                                {triage.distanceBasis === 'route-polyline'
+                                  ? ' (measured along the mapped route).'
+                                  : triage.distanceBasis === 'project-start-point'
+                                    ? ' (measured from the project start point — no full route mapped).'
+                                    : '.'}
+                              </p>
+                              {triage.reasons.length > 0 && (
+                                <ul className="text-[11px] text-slate-700 list-disc pl-4 space-y-0.5">
+                                  {triage.reasons.map((r) => <li key={r}>{r}</li>)}
+                                </ul>
+                              )}
                             </div>
 
-                            {/* Quick Status Buttons */}
-                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
-                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                                Set Official Case Status
+                            {/* Citizen Details */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block border-b border-slate-100 pb-2">
+                                Reporter Metadata
                               </span>
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  onClick={() => updatePublicReportStatus(selectedPublicReport.id, 'pending')}
-                                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${selectedPublicReport.status === 'pending' ? 'bg-amber-500 text-white border-amber-600 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50'}`}
-                                >
-                                  Pending
-                                </button>
-                                <button
-                                  onClick={() => updatePublicReportStatus(selectedPublicReport.id, 'reviewed')}
-                                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${selectedPublicReport.status === 'reviewed' ? 'bg-blue-600 text-white border-blue-700 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50'}`}
-                                >
-                                  Reviewed
-                                </button>
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Submitted By</span>
+                                  <span className="font-bold text-slate-900">{selectedPublicReport.full_name || 'Anonymous Citizen'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Contact Info</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.contact_info || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Municipality</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.municipality || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Barangay</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.barangay || '—'}</span>
+                                </div>
                               </div>
-                              <p className="text-[11px] text-slate-400">
-                                Resolved status is set from the Workflow Controls panel above, once field findings are validated.
-                              </p>
                             </div>
 
                             {/* Internal Notes */}

@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 import PublicReportRouteMapPanel from './publicReports/PublicReportRouteMapPanel';
+import { SEVERITY_TAXONOMY } from '../lib/publicReportStatus';
 
 // ── Constants ──────────────────────────────────────────────
 const REGION          = 'Region VI – Western Visayas';
@@ -70,65 +71,6 @@ function statusCls(status) {
   if (s.includes('proposed'))                                              return 'bg-sky-100 text-sky-700';
   return 'bg-slate-100 text-slate-600';
 }
-
-// ── Severity taxonomy ───────────────────────────────────────
-const SEVERITY_TAXONOMY = {
-  safety: {
-    label: 'Safety Hazard',
-    color: 'bg-red-100 text-red-700 border-red-200',
-    icon: '🔴',
-    description: 'Risk to life or physical harm',
-    problems: [
-      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
-      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
-      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
-      { value: 'accident_site', label: 'Active accident site' },
-      { value: 'sharp_debris', label: 'Sharp debris / broken glass on road' },
-      { value: 'unsafe_bridge', label: 'Unsafe or damaged bridge' },
-    ],
-  },
-  flood: {
-    label: 'Flood / Drainage',
-    color: 'bg-sky-100 text-sky-700 border-sky-200',
-    icon: '🌊',
-    description: 'Water-related road obstruction',
-    problems: [
-      { value: 'road_flooded', label: 'Road completely flooded' },
-      { value: 'partial_flood', label: 'Partial flooding — passable with care' },
-      { value: 'blocked_drainage', label: 'Blocked or clogged drainage' },
-      { value: 'erosion', label: 'Soil erosion along road edge' },
-      { value: 'landslide', label: 'Landslide / mudflow on road' },
-    ],
-  },
-  issue: {
-    label: 'Road Condition Issue',
-    color: 'bg-amber-100 text-amber-700 border-amber-200',
-    icon: '🔧',
-    description: 'Physical damage to road surface',
-    problems: [
-      { value: 'pothole', label: 'Potholes / lubak' },
-      { value: 'crack', label: 'Surface cracks' },
-      { value: 'missing_pavement', label: 'Missing pavement / unpaved section' },
-      { value: 'broken_curb', label: 'Broken curb or road edge' },
-      { value: 'uneven_surface', label: 'Severely uneven / bumpy surface' },
-      { value: 'dust_gravel', label: 'Excessive dust / loose gravel' },
-    ],
-  },
-  general: {
-    label: 'General Concern',
-    color: 'bg-slate-100 text-slate-600 border-slate-200',
-    icon: '💬',
-    description: 'Other observations or suggestions',
-    problems: [
-      { value: 'no_signage', label: 'Missing road signs' },
-      { value: 'poor_lighting', label: 'No or poor streetlighting' },
-      { value: 'vegetation', label: 'Overgrown vegetation blocking view' },
-      { value: 'project_delay', label: 'Project seems delayed / stalled' },
-      { value: 'quality_concern', label: 'Construction quality concern' },
-      { value: 'other', label: 'Other concern' },
-    ],
-  },
-};
 
 // ── Shared input style ──────────────────────────────────────
 const inputCls =

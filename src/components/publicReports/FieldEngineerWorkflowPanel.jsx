@@ -5,6 +5,7 @@ import { buildRoutePoints } from '../../lib/mapRouteUtils';
 import PublicReportRouteMapPanel from './PublicReportRouteMapPanel';
 import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
 import { submitPublicReportInspection } from '../../services/publicReportWorkflow';
+import { friendlyReportError } from '../../lib/publicReportStatus';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -375,10 +376,9 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         throw new Error('Photo upload completed but public URL was not generated.');
       }
 
-      const ratingLabel = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'][inspectionRating - 1] || 'Good';
       await submitPublicReportInspection(supabase, {
         reportId: report.id,
-        conditionObserved: `[Site Rating: ${inspectionRating}/5 ${ratingLabel}] ${conditionObserved.trim()}`,
+        conditionObserved: conditionObserved.trim(),
         recommendedAction: recommendedAction.trim(),
         siteRating: inspectionRating,
         fieldPhotoUrl: uploadedPhotoUrl || null,
@@ -404,7 +404,8 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       setEngineerCertified(false);
       await loadSupportingData();
     } catch (err) {
-      if (onSaved) onSaved(`Failed to submit findings: ${err.message}`, 'error');
+      console.error('Failed to submit inspection findings:', err);
+      if (onSaved) onSaved(friendlyReportError(err, 'Could not submit your findings. Please try again.'), 'error');
     } finally {
       setSaving(false);
     }
@@ -467,31 +468,67 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
   return (
     <section className="space-y-4">
-      {/* DA-RAED 5-Step Report Flow Stepper */}
-      <div className="bg-slate-950 text-white rounded-xl p-4 border border-slate-800 shadow-sm">
-        <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-widest mb-3">
-          DA-RAED Official Damage Report Flow
-        </p>
-        <div className="grid grid-cols-5 gap-1 text-center relative">
-          {[
-            { step: '1', title: 'Public Report', desc: 'Citizen Submitted', active: true, done: true },
-            { step: '2', title: 'DA Triage', desc: 'Engineer Assigned', active: true, done: true },
-            { step: '3', title: 'FE Inspection', desc: 'On-Site Verification', active: true, done: report?.engineer_status === 'validated' || report?.status === 'resolved' },
-            { step: '4', title: 'Work Order', desc: 'DA Action Plan', active: report?.engineer_status === 'validated' || report?.status === 'resolved', done: report?.status === 'resolved' },
-            { step: '5', title: 'Resolution', desc: 'Public Sign-off', active: report?.status === 'resolved', done: report?.status === 'resolved' },
-          ].map((s, idx) => (
-            <div key={idx} className="flex flex-col items-center">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
-                s.done ? 'bg-emerald-400 text-slate-950 ring-2 ring-emerald-400/30' : s.active ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-500 border border-slate-700'
-              }`}>
-                {s.done ? '✓' : s.step}
-              </div>
-              <p className="text-[11px] font-semibold text-slate-200 mt-1.5 leading-tight">{s.title}</p>
-              <p className="text-[9px] text-slate-400 hidden sm:block mt-0.5">{s.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Workflow stepper — mirrors the real public_reports state machine
+          (status + engineer_status). No stage here exists that the backend
+          cannot actually reach. */}
+      {(() => {
+        const engineerStatus = String(report?.engineer_status || '').toLowerCase();
+        const reportStatus = String(report?.status || '').toLowerCase();
+
+        const reached = {
+          submitted: 1,
+          assigned: ['assigned', 'in_progress', 'inspected', 'rejected', 'validated'].includes(engineerStatus) ? 1 : 0,
+          inspection: ['in_progress', 'inspected', 'rejected', 'validated'].includes(engineerStatus) ? 1 : 0,
+          validation: ['inspected', 'rejected', 'validated'].includes(engineerStatus) ? 1 : 0,
+          resolved: reportStatus === 'resolved' ? 1 : 0,
+        };
+
+        const steps = [
+          { key: 'submitted', title: 'Reported', desc: 'Citizen submitted' },
+          { key: 'assigned', title: 'Assigned', desc: 'Engineer dispatched' },
+          { key: 'inspection', title: 'Inspection', desc: 'On-site visit' },
+          { key: 'validation', title: 'Validation', desc: 'DA admin review' },
+          { key: 'resolved', title: 'Resolved', desc: 'Outcome recorded' },
+        ];
+
+        const currentIndex = steps.reduce((acc, step, i) => (reached[step.key] ? i : acc), 0);
+
+        return (
+          <div className="bg-slate-950 text-white rounded-xl p-4 border border-slate-800 shadow-sm">
+            <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-widest mb-3">
+              Report Workflow
+            </p>
+            <ol className="grid grid-cols-5 gap-1 text-center">
+              {steps.map((s2, idx) => {
+                const done = Boolean(reached[s2.key]);
+                const active = idx === currentIndex && reportStatus !== 'resolved';
+                return (
+                  <li key={s2.key} className="flex flex-col items-center">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                      done
+                        ? 'bg-emerald-400 text-slate-950 ring-2 ring-emerald-400/30'
+                        : active
+                          ? 'bg-amber-400 text-slate-950'
+                          : 'bg-slate-800 text-slate-500 border border-slate-700'
+                    }`}>
+                      {done ? '✓' : idx + 1}
+                    </div>
+                    <p className={`text-[11px] font-semibold mt-1.5 leading-tight ${done || active ? 'text-slate-200' : 'text-slate-500'}`}>
+                      {s2.title}
+                    </p>
+                    <p className="text-[9px] text-slate-400 hidden sm:block mt-0.5">{s2.desc}</p>
+                  </li>
+                );
+              })}
+            </ol>
+            {engineerStatus === 'rejected' && (
+              <p className="text-[11px] text-amber-300 mt-3 text-center">
+                Returned for re-inspection — the inspection stage runs again.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       <PublicReportRouteMapPanel
         project={project}

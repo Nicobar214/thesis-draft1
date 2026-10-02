@@ -95,7 +95,7 @@ export default function PublicReportRouteMapPanel({
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
       <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <p className="text-sm font-semibold text-slate-800">{title}</p>
+          {title && <p className="text-sm font-semibold text-slate-800">{title}</p>}
           <div className="mt-1.5 flex flex-wrap gap-2 text-xs">
             <span className={`px-2.5 py-0.5 rounded-full border font-semibold ${band.className}`}>
               {formatDistance(distanceMeters)} from route

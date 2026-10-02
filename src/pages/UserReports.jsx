@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
@@ -8,107 +8,28 @@ import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
+import {
+  CITIZEN_STATUS_FILTERS,
+  SEVERITY_TAXONOMY,
+  getCitizenStatus,
+  resolveCategory,
+  resolveSpecificProblem,
+} from '../lib/publicReportStatus';
 
-const SEVERITY_TAXONOMY = {
-  safety: {
-    label: 'Safety Hazard',
-    color: 'bg-red-100 text-red-700 border-red-200',
-    icon: '🔴',
-    description: 'Risk to life or physical harm',
-    problems: [
-      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
-      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
-      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
-      { value: 'accident_site', label: 'Active accident site' },
-      { value: 'sharp_debris', label: 'Sharp debris / broken glass on road' },
-      { value: 'unsafe_bridge', label: 'Unsafe or damaged bridge' },
-    ],
-  },
-  flood: {
-    label: 'Flood / Drainage',
-    color: 'bg-sky-100 text-sky-700 border-sky-200',
-    icon: '🌊',
-    description: 'Water-related road obstruction',
-    problems: [
-      { value: 'road_flooded', label: 'Road completely flooded' },
-      { value: 'partial_flood', label: 'Partial flooding — passable with care' },
-      { value: 'blocked_drainage', label: 'Blocked or clogged drainage' },
-      { value: 'erosion', label: 'Soil erosion along road edge' },
-      { value: 'landslide', label: 'Landslide / mudflow on road' },
-    ],
-  },
-  issue: {
-    label: 'Road Condition Issue',
-    color: 'bg-amber-100 text-amber-700 border-amber-200',
-    icon: '🔧',
-    description: 'Physical damage to road surface',
-    problems: [
-      { value: 'pothole', label: 'Potholes / lubak' },
-      { value: 'crack', label: 'Surface cracks' },
-      { value: 'missing_pavement', label: 'Missing pavement / unpaved section' },
-      { value: 'broken_curb', label: 'Broken curb or road edge' },
-      { value: 'uneven_surface', label: 'Severely uneven / bumpy surface' },
-      { value: 'dust_gravel', label: 'Excessive dust / loose gravel' },
-    ],
-  },
-  general: {
-    label: 'General Concern',
-    color: 'bg-slate-100 text-slate-600 border-slate-200',
-    icon: '💬',
-    description: 'Other observations or suggestions',
-    problems: [
-      { value: 'no_signage', label: 'Missing road signs' },
-      { value: 'poor_lighting', label: 'No or poor streetlighting' },
-      { value: 'vegetation', label: 'Overgrown vegetation blocking view' },
-      { value: 'project_delay', label: 'Project seems delayed / stalled' },
-      { value: 'quality_concern', label: 'Construction quality concern' },
-      { value: 'other', label: 'Other concern' },
-    ],
-  },
-};
-
-/* â”€â”€â”€ Icons â”€â”€â”€ */
-/* â”€â”€â”€ Status badge â”€â”€â”€ */
-function StatusBadge({ status }) {
-  const styles = {
-    pending:  'bg-amber-100 text-amber-700',
-    reviewed: 'bg-sky-100 text-sky-700',
-    resolved: 'bg-emerald-100 text-emerald-700',
-  };
-  const labels = { pending: 'Pending Review', reviewed: 'Reviewed', resolved: 'Resolved' };
+/* Status badge — derived from the citizen view's citizen_status so a closed or
+ * mid-inspection report is never mislabelled as still pending. */
+function StatusBadge({ report }) {
+  const status = getCitizenStatus(report);
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${styles[status] || styles.pending}`}>
-      {labels[status] || 'Pending Review'}
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${status.tone}`}>
+      {status.label}
     </span>
   );
 }
 
-const STATUS_PRIORITY = { pending: 0, reviewed: 1, resolved: 2 };
-
-/* â”€â”€â”€ Format date â”€â”€â”€ */
 function fmtDate(iso) {
   if (!iso) return 'N/A';
   return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-/* â”€â”€â”€ Classify report â”€â”€â”€ */
-function classifyReport(desc = '') {
-  const d = desc.toLowerCase();
-  if (/safety|aksidente|peligro|danger|hazard/.test(d)) return 'safety';
-  if (/flood|baha|tubig|drainage|water|inundated/.test(d)) return 'flood';
-  if (/lubak|sira|pothole|road|daan|crack|damage|broken/.test(d)) return 'issue';
-  return 'general';
-}
-
-function resolveCategory(report) {
-  return report.severity_category || classifyReport(report.description);
-}
-
-function resolveSpecificProblem(report) {
-  if (!report.specific_problem || !report.severity_category) return null;
-  const cat = SEVERITY_TAXONOMY[report.severity_category];
-  if (!cat) return null;
-  return cat.problems.find((p) => p.value === report.specific_problem) || null;
 }
 
 function SeverityBadge({ category }) {
@@ -135,7 +56,7 @@ function UserReports() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [showCertModal, setShowCertModal] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [reportStep, setReportStep] = useState('idle');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [problemFilter, setProblemFilter] = useState('all');
@@ -154,52 +75,59 @@ function UserReports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* â”€â”€ Get current user & fetch their reports â”€â”€ */
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setError('Not authenticated');
-          setLoading(false);
-          return;
-        }
-        setUserId(user.id);
-
-        const { data, error: err } = await supabase
-          .from('public_reports_citizen_view')
-          .select('*')
-          .eq('is_current_user_report', true)
-          .order('created_at', { ascending: false });
-
-        if (err) {
-          setError(`Failed to load reports: ${err.message}`);
-        } else {
-          setReports(data || []);
-        }
-      } catch (e) {
-        setError('An unexpected error occurred.');
+  /* Citizens read their reports through public_reports_citizen_view, which
+   * strips staff-only columns and exposes a ready-made citizen_status. */
+  const fetchReports = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('Not authenticated');
+        return;
       }
+
+      const { data, error: err } = await supabase
+        .from('public_reports_citizen_view')
+        .select('*')
+        .eq('is_current_user_report', true)
+        .order('created_at', { ascending: false });
+
+      if (err) {
+        console.error('Failed to load citizen reports:', err);
+        setError('We could not load your reports right now. Please try again.');
+      } else {
+        setError(null);
+        setReports(data || []);
+      }
+    } catch (e) {
+      console.error('Unexpected error loading citizen reports:', e);
+      setError('An unexpected error occurred.');
+    } finally {
       setLoading(false);
-    })();
+      setRefreshing(false);
+    }
+  }, []);
 
-    // Realtime subscription for user's reports
-    const channel = supabase
-      .channel('user-reports-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, async () => {
-        if (!userId) return;
-        const { data } = await supabase
-          .from('public_reports_citizen_view')
-          .select('*')
-          .eq('is_current_user_report', true)
-          .order('created_at', { ascending: false });
-        if (data) setReports(data);
-      })
-      .subscribe();
+  useEffect(() => {
+    fetchReports();
+  }, [fetchReports]);
 
-    return () => supabase.removeChannel(channel);
-  }, [userId]);
+  /* Postgres realtime is not usable here: citizens have no SELECT policy on
+   * public_reports (only on the view), so change events never reach them.
+   * Refresh when the tab regains focus instead — that is when a citizen who
+   * has been waiting for an update actually comes back to look. */
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') fetchReports({ silent: true });
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [fetchReports]);
 
   useEffect(() => {
     const handleEscape = (event) => {
@@ -227,8 +155,7 @@ function UserReports() {
       latest.updated_at !== selected.updated_at ||
       latest.status !== selected.status ||
       latest.verification !== selected.verification ||
-      latest.citizen_status !== selected.citizen_status ||
-      latest.citizen_workflow_stage !== selected.citizen_workflow_stage
+      latest.citizen_status !== selected.citizen_status
     ) {
       setSelected(latest);
     }
@@ -333,7 +260,7 @@ function UserReports() {
         const hay = `${r.description} ${r.municipality} ${r.barangay} ${r.street} ${r.project_name}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && getCitizenStatus(r).key !== statusFilter) return false;
       if (categoryFilter !== 'all') {
         if (resolveCategory(r) !== categoryFilter) return false;
       }
@@ -347,20 +274,32 @@ function UserReports() {
     if (sortBy === 'oldest') {
       sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     } else if (sortBy === 'status') {
-      sorted.sort((a, b) => (STATUS_PRIORITY[a.status] ?? 0) - (STATUS_PRIORITY[b.status] ?? 0));
+      sorted.sort((a, b) => getCitizenStatus(a).order - getCitizenStatus(b).order);
     } else {
       sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     }
     return sorted;
   }, [reports, search, statusFilter, categoryFilter, problemFilter, sortBy]);
 
-  /* â”€â”€ Stat counts â”€â”€ */
-  const counts = useMemo(() => ({
-    total: reports.length,
-    pending: reports.filter(r => r.status === 'pending').length,
-    reviewed: reports.filter(r => r.status === 'reviewed').length,
-    resolved: reports.filter(r => r.status === 'resolved').length,
-  }), [reports]);
+  /* Summary tiles answer "where do my reports stand?" — in progress means the
+   * report is live somewhere in the workflow, not that nothing has happened. */
+  const counts = useMemo(() => {
+    const byKey = reports.reduce((acc, r) => {
+      const key = getCitizenStatus(r).key;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    return {
+      total: reports.length,
+      submitted: byKey.submitted || 0,
+      inProgress:
+        (byKey.under_review || 0)
+        + (byKey.inspection_scheduled || 0)
+        + (byKey.under_verification || 0),
+      resolved: byKey.resolved || 0,
+      closed: byKey.closed || 0,
+    };
+  }, [reports]);
 
   return (
     <UserLayout>
@@ -371,6 +310,15 @@ function UserReports() {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My Reports</h1>
             <p className="mt-1 text-slate-500">Track the status of your submitted reports</p>
           </section>
+          <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => fetchReports({ silent: true })}
+            disabled={refreshing || loading}
+            className="inline-flex items-center gap-2 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-medium hover:bg-slate-50 disabled:opacity-50 transition text-sm"
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
           <button
             onClick={() => setReportStep('form')}
             className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-teal-700 transition text-sm shrink-0 self-start sm:self-auto"
@@ -378,15 +326,16 @@ function UserReports() {
             <Icons.Plus />
             Submit New Report
           </button>
+          </div>
         </div>
 
         {/* Quick stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: 'Total Reports', value: counts.total, color: 'bg-slate-100 text-slate-600' },
-            { label: 'Pending', value: counts.pending, color: 'bg-amber-100 text-amber-600' },
-            { label: 'Reviewed', value: counts.reviewed, color: 'bg-sky-100 text-sky-600' },
-            { label: 'Resolved', value: counts.resolved, color: 'bg-emerald-100 text-teal-600' },
+            { key: 'all', label: 'Total Reports', value: counts.total, color: 'bg-slate-100 text-slate-600' },
+            { key: 'submitted', label: 'Awaiting Review', value: counts.submitted, color: 'bg-amber-100 text-amber-600' },
+            { key: 'in_progress', label: 'In Progress', value: counts.inProgress, color: 'bg-sky-100 text-sky-600' },
+            { key: 'resolved', label: 'Resolved', value: counts.resolved, color: 'bg-emerald-100 text-teal-600' },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-zinc-300 transition-colors">
               <div className={`inline-flex items-center justify-center size-9 rounded-xl mb-3 ${s.color}`}>
@@ -418,10 +367,9 @@ function UserReports() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="appearance-none pl-11 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
               >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending Review</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="resolved">Resolved</option>
+                {CITIZEN_STATUS_FILTERS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
@@ -553,7 +501,7 @@ function UserReports() {
                   )}
                   <div className="p-4 flex flex-col flex-1">
                     <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                      <StatusBadge status={r.status} />
+                      <StatusBadge report={r} />
                       <SeverityBadge category={cat} />
                     </div>
 
@@ -604,7 +552,7 @@ function UserReports() {
           >
             <div className="flex items-start justify-between p-6 pb-0">
               <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={selected.status} />
+                <StatusBadge report={selected} />
                 <SeverityBadge category={resolveCategory(selected)} />
                 {resolveSpecificProblem(selected) && (
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-600">
@@ -618,109 +566,134 @@ function UserReports() {
             </div>
 
             <div className="p-6 space-y-5">
-              {selected?.status === 'resolved' && selectedLguDecision?.decision === 'endorsed' && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
-                  Endorsed by LGU
-                </div>
-              )}
-
+              {/* 1. Where the report stands right now */}
               <CitizenReportTimeline
                 report={selected}
+                finding={selectedFieldFinding}
+                resolution={selectedResolution}
                 resolutionSummary={selectedResolutionSummary}
               />
 
-              <PublicReportRouteMapPanel
-                project={selectedProject}
-                routeRecord={selectedProjectRoute}
-                reportLatitude={selected.latitude}
-                reportLongitude={selected.longitude}
-                heightClass="h-64"
-                title="Project Route Context"
-              />
+              {/* 2. What the citizen actually reported — their own words first */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-900">Your Report</h3>
 
-              {/* DA Field Engineer Technical Inspection Findings Card */}
+                <p className="text-sm text-slate-700 leading-relaxed">{selected.description}</p>
+
+                <dl className="bg-slate-50 rounded-xl p-4 space-y-3">
+                  {[
+                    { label: 'Location', value: `${selected.barangay}, ${selected.municipality}${selected.street ? ` - ${selected.street}` : ''}` },
+                    selected.project_name && { label: 'Project', value: selected.project_name },
+                    { label: 'Date Reported', value: fmtDate(selected.created_at) },
+                    selected.severity_category && {
+                      label: 'Issue Type',
+                      value: `${SEVERITY_TAXONOMY[selected.severity_category]?.icon} ${SEVERITY_TAXONOMY[selected.severity_category]?.label}`,
+                    },
+                    selected.specific_problem && {
+                      label: 'Problem',
+                      value: SEVERITY_TAXONOMY[selected.severity_category]?.problems
+                        .find((p) => p.value === selected.specific_problem)?.label || selected.specific_problem,
+                    },
+                    selected.verification && { label: 'Location Check', value: selected.verification },
+                  ].filter(Boolean).map((item) => (
+                    <div key={item.label} className="flex items-start gap-3 text-sm">
+                      <dt className="text-slate-500 w-28 shrink-0 font-medium">{item.label}</dt>
+                      <dd className="text-slate-800 min-w-0">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {selected.photo_url && (
+                  <figure className="space-y-1.5">
+                    <figcaption className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                      Photo you submitted
+                    </figcaption>
+                    <img src={selected.photo_url} alt="The site condition you reported" className="w-full rounded-xl border border-slate-200" />
+                  </figure>
+                )}
+              </section>
+
+              {/* 3. Where it is on the map */}
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-slate-900">Location &amp; Project Route</h3>
+                <PublicReportRouteMapPanel
+                  project={selectedProject}
+                  routeRecord={selectedProjectRoute}
+                  reportLatitude={selected.latitude}
+                  reportLongitude={selected.longitude}
+                  heightClass="h-64"
+                  title={null}
+                />
+              </section>
+
+              {/* 4. The official inspection — deliberately kept visually distinct
+                   from the citizen's own account above. The citizen view only
+                   exposes submitted/validated findings, never drafts. */}
               {selectedFieldFinding && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
-                      <Icons.ShieldCheck /> DA Field Engineer Technical Inspection
-                    </span>
-                    <span className="text-[11px] text-slate-500 font-medium">{fmtDate(selectedFieldFinding.submitted_at)}</span>
-                  </div>
-                  <div className="text-xs space-y-1.5 text-slate-800 pt-1">
-                    <p><span className="font-semibold text-slate-600">Observed Condition:</span> {selectedFieldFinding.condition_observed}</p>
-                    <p><span className="font-semibold text-slate-600">Recommended Action:</span> {selectedFieldFinding.recommended_action}</p>
-                    {selectedFieldFinding.estimated_cost_range && (
-                      <p><span className="font-semibold text-slate-600">Estimated Cost:</span> {selectedFieldFinding.estimated_cost_range}</p>
+                <section className="rounded-xl border-2 border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-emerald-900 flex items-center gap-1.5">
+                      <Icons.ShieldCheck /> Official Field Inspection
+                    </h3>
+                    {selectedFieldFinding.submitted_at && (
+                      <span className="text-xs text-emerald-800 font-medium">
+                        {fmtDate(selectedFieldFinding.submitted_at)}
+                      </span>
                     )}
                   </div>
-                  {selectedFieldFinding.field_photo_url && (
-                    <div className="pt-2">
-                      <p className="text-[10px] text-slate-500 uppercase font-semibold mb-1">On-Site Verified Photo:</p>
-                      <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-32 object-cover rounded-lg border border-slate-300" />
+                  <p className="text-xs text-emerald-800">
+                    Conducted on site by a government field engineer.
+                    {selectedFieldFinding.validated_at
+                      ? ' These findings have been verified.'
+                      : ' These findings are awaiting verification.'}
+                  </p>
+
+                  <dl className="text-sm space-y-2 text-slate-800">
+                    <div>
+                      <dt className="text-xs font-semibold text-slate-600">Condition Observed</dt>
+                      <dd className="mt-0.5">{selectedFieldFinding.condition_observed}</dd>
                     </div>
+                    <div>
+                      <dt className="text-xs font-semibold text-slate-600">Recommended Action</dt>
+                      <dd className="mt-0.5">{selectedFieldFinding.recommended_action}</dd>
+                    </div>
+                    {selectedFieldFinding.estimated_cost_range && (
+                      <div>
+                        <dt className="text-xs font-semibold text-slate-600">Estimated Cost</dt>
+                        <dd className="mt-0.5">{selectedFieldFinding.estimated_cost_range}</dd>
+                      </div>
+                    )}
+                  </dl>
+
+                  {selectedFieldFinding.field_photo_url && (
+                    <figure className="space-y-1.5">
+                      <figcaption className="text-xs text-slate-600 font-semibold">
+                        Engineer&rsquo;s on-site photo
+                      </figcaption>
+                      <img src={selectedFieldFinding.field_photo_url} alt="Photo taken during the official field inspection" className="w-full h-40 object-cover rounded-lg border border-emerald-200" />
+                    </figure>
                   )}
-                </div>
+                </section>
               )}
 
-              {/* Official DA Action Certificate Button — only once the DA has resolved the issue */}
-              {selected.status === 'resolved' ? (
-                <button
-                  onClick={() => setShowCertModal(true)}
-                  className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs shadow-xs transition-colors"
-                >
-                  <Icons.Document />
-                  <span>View Official DA Action Resolution Certificate</span>
-                </button>
-              ) : (
-                <div className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-500 font-semibold py-2.5 px-4 rounded-xl text-xs border border-slate-200">
-                  <Icons.Clock />
-                  <span>Resolution certificate is issued once the DA settles this road issue</span>
-                </div>
-              )}
-
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 mb-1">Issue Description</h3>
-                <p className="text-sm text-slate-600 leading-relaxed">{selected.description}</p>
-              </div>
-
-              <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-                {[
-                  { label: 'Location', value: `${selected.barangay}, ${selected.municipality}${selected.street ? ` - ${selected.street}` : ''}` },
-                  selected.project_name && { label: 'Project', value: selected.project_name },
-                  { label: 'Date Reported', value: fmtDate(selected.created_at) },
-                  { label: 'Status', value: selected.status?.charAt(0).toUpperCase() + selected.status?.slice(1) },
-                  {
-                    label: 'Field Engineer Status',
-                    value: selected.citizen_status || 'Submitted',
-                  },
-                  {
-                    label: 'Assigned Engineer',
-                    value: selected.citizen_field_dispatched_at ? 'Dispatched' : 'Not dispatched yet',
-                  },
-                  { label: 'Verification', value: selected.verification },
-                  selected.severity_category && {
-                    label: 'Severity',
-                    value: `${SEVERITY_TAXONOMY[selected.severity_category]?.icon} ${SEVERITY_TAXONOMY[selected.severity_category]?.label}`,
-                  },
-                  selected.specific_problem && {
-                    label: 'Problem',
-                    value: SEVERITY_TAXONOMY[selected.severity_category]?.problems
-                      .find((p) => p.value === selected.specific_problem)?.label || selected.specific_problem,
-                  },
-                ].filter(Boolean).map((item) => (
-                  <div key={item.label} className="flex items-start gap-3 text-sm">
-                    <span className="text-slate-400 w-28 shrink-0 font-medium">{item.label}</span>
-                    <span className="text-slate-800">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {selected.photo_url && (
-                <div>
-                  <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wider">Attached Photo</p>
-                  <img src={selected.photo_url} alt="Report photo" className="w-full rounded-xl border border-slate-200" />
-                </div>
+              {/* 5. Final outcome — the certificate button appears only once
+                   there is something to certify. */}
+              {selected.status === 'resolved' && (
+                <section className="space-y-2.5">
+                  <h3 className="text-sm font-semibold text-slate-900">Outcome</h3>
+                  {selectedLguDecision?.decision === 'endorsed' && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
+                      Endorsed by LGU
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setShowCertModal(true)}
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-colors"
+                  >
+                    <Icons.Document />
+                    <span>View Resolution Certificate</span>
+                  </button>
+                </section>
               )}
             </div>
           </div>

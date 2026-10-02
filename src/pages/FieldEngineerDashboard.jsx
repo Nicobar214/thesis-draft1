@@ -10,6 +10,7 @@ import Logo from '../components/Logo';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import { startPublicReportInspection } from '../services/publicReportWorkflow';
+import { friendlyReportError } from '../lib/publicReportStatus';
 
 /* ─── Status Helpers & Badges ─── */
 const engineerStatusStyles = {
@@ -282,8 +283,8 @@ export default function FieldEngineerDashboard() {
         }));
       }
     } catch (err) {
-      console.error('Failed to update report:', err.message);
-      showNotification(`Update failed: ${err.message}`, 'error');
+      console.error('Failed to update report:', err);
+      showNotification(friendlyReportError(err, 'Could not update this report. Please try again.'), 'error');
     } finally {
       setUpdatingStatus(false);
     }
@@ -1392,46 +1393,112 @@ export default function FieldEngineerDashboard() {
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-1">
                   <p className="text-xs font-semibold text-rose-800 uppercase tracking-wide">DA Admin Returned For Re-Inspection</p>
                   <p className="text-sm text-slate-800">{rejectionReason || 'No reason specified.'}</p>
-                  <p className="text-xs text-rose-600 mt-1">Re-examine site findings below and resubmit once verified.</p>
+                  <p className="text-xs text-rose-600 mt-1">Start a new inspection below and resubmit once verified.</p>
                 </div>
               )}
 
-              <FieldEngineerWorkflowPanel
-                report={selectedReport}
-                currentUser={user}
-                onSaved={(message, type = 'success') => {
-                  showNotification(message, type);
-                  fetchReports();
-                }}
-              />
-
-              {/* Photos */}
+              {/* Citizen evidence comes BEFORE the inspection form — the engineer
+                  needs to read the complaint before recording findings. */}
               {selectedReport.photo_url && (
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Citizen On-Site Photo Evidence</p>
                   <a href={selectedReport.photo_url} target="_blank" rel="noopener noreferrer">
-                    <img src={selectedReport.photo_url} alt="Site" className="w-full max-h-60 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition" />
+                    <img src={selectedReport.photo_url} alt="Site reported by the citizen" className="w-full max-h-60 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition" />
                   </a>
                 </div>
               )}
 
-              {/* Status Actions */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <p className="text-xs font-semibold text-slate-700 uppercase">Update Field Inspection Workflow Status</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    onClick={() => updateReportStatus(selectedReport.id, 'in_progress')}
-                    disabled={updatingStatus || selectedReport.engineer_status === 'in_progress'}
-                    className={`px-4 py-3 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 ${
-                      selectedReport.engineer_status === 'in_progress'
-                        ? 'bg-amber-100 text-amber-800 border-amber-300'
-                        : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                    }`}
-                  >
-                    Start On-Site Inspection
-                  </button>
-                </div>
-              </div>
+              {/* Single contextual action area.
+                  submit_public_report_inspection requires engineer_status
+                  'in_progress' plus an open finding row, which only
+                  start_public_report_inspection creates. Gate the form on that
+                  instead of letting the engineer fill it in and hit an RPC
+                  exception on submit. */}
+              {(() => {
+                const engineerStatus = String(selectedReport.engineer_status || '').toLowerCase();
+                const reportStatus = String(selectedReport.status || '').toLowerCase();
+                const canStart = reportStatus === 'reviewed' && ['assigned', 'rejected'].includes(engineerStatus);
+                const inspectionOpen = engineerStatus === 'in_progress';
+                const awaitingAdmin = engineerStatus === 'inspected';
+                const finished = engineerStatus === 'validated' || reportStatus === 'resolved';
+
+                if (canStart) {
+                  return (
+                    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
+                      <div>
+                        <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Action Required</p>
+                        <p className="text-sm font-semibold text-slate-900 mt-1">
+                          {engineerStatus === 'rejected' ? 'Conduct a re-inspection' : 'Conduct the site inspection'}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Start the inspection to open the findings form. Do this when you are on site.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => updateReportStatus(selectedReport.id, 'in_progress')}
+                        disabled={updatingStatus}
+                        className="w-full px-4 py-3 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-all"
+                      >
+                        {updatingStatus ? 'Starting...' : 'Start On-Site Inspection'}
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (inspectionOpen) {
+                  return (
+                    <>
+                      <div className="rounded-xl border-2 border-teal-300 bg-teal-50 p-4">
+                        <p className="text-xs font-bold text-teal-800 uppercase tracking-wide">Action Required</p>
+                        <p className="text-sm font-semibold text-slate-900 mt-1">Record and submit your findings</p>
+                        <p className="text-xs text-slate-600 mt-1">
+                          Inspection is open. Complete every field below, capture a geotagged photo, then certify and submit.
+                        </p>
+                      </div>
+                      <FieldEngineerWorkflowPanel
+                        report={selectedReport}
+                        currentUser={user}
+                        onSaved={(message, type = 'success') => {
+                          showNotification(message, type);
+                          fetchReports();
+                        }}
+                      />
+                    </>
+                  );
+                }
+
+                if (awaitingAdmin) {
+                  return (
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <p className="text-xs font-bold text-violet-800 uppercase tracking-wide">Waiting on DA Admin</p>
+                      <p className="text-sm text-slate-800 mt-1">
+                        Your findings have been submitted and are awaiting validation. No further action is needed from you
+                        unless the admin returns this report for re-inspection.
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (finished) {
+                  return (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Inspection Complete</p>
+                      <p className="text-sm text-slate-800 mt-1">
+                        Your findings were validated by the DA admin. This report is closed for field edits.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">No Action Available</p>
+                    <p className="text-sm text-slate-700 mt-1">
+                      This report is not ready for a site inspection yet. It will appear here once an admin assigns it to you.
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Cancel / Close Footer */}
               <div className="pt-2 flex justify-end">

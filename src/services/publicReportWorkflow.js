@@ -86,6 +86,15 @@ export async function validatePublicReportInspection(client, { reportId, inspect
   return data;
 }
 
+export async function dismissPublicReport(client, { reportId, reason }) {
+  const { data, error } = await client.rpc('dismiss_public_report', {
+    p_report_id: reportId,
+    p_reason: reason,
+  });
+  assertRpc(error, 'Failed to close public report');
+  return data;
+}
+
 export async function resolvePublicReport(client, { reportId, resolutionType = 'other', resolutionSummary }) {
   const { data, error } = await client.rpc('resolve_public_report', {
     p_report_id: reportId,

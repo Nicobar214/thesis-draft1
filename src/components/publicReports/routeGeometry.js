@@ -1,4 +1,7 @@
 function toNum(value) {
+  // Number(null) and Number('') are both 0, which would silently turn a missing
+  // coordinate into a valid point at 0°,0°. Reject the empty cases first.
+  if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
