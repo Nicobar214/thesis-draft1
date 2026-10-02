@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { supabaseContractor as supabase } from '../../lib/supabase';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { getWorkflowMeta, officialAccomplishmentOf } from '../../lib/progressWorkflow';
+import { formatPercentage } from '../../lib/percentageFormat';
 
 const fmtDate = (value) => {
   if (!value) return '—';
@@ -29,7 +30,7 @@ function ValueBlock({ label, value, suffix, tone, note }) {
     <div className={`rounded-lg border p-2.5 ${tone}`}>
       <p className="text-[10px] font-bold uppercase tracking-wider opacity-70">{label}</p>
       <p className="text-base font-bold font-mono mt-0.5">
-        {value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`}
+        {formatPercentage(value)}
         {suffix}
       </p>
       {note && <p className="text-[10px] mt-0.5 opacity-80">{note}</p>}
@@ -91,6 +92,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
   const contract = Number(project.contract_amount || project.total_budget || 0);
   const financialPct = contract > 0 ? Math.min(100, (Number(budget.released || 0) / contract) * 100) : null;
   const hasPending = history.some((h) => h.status === 'pending');
+  const hasFinalizedWorkPlan = project.work_plan_status === 'finalized';
 
   return (
     <div
@@ -132,7 +134,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-4">
               <p className="text-[10px] font-bold uppercase tracking-wider text-teal-700">Official physical accomplishment</p>
-              <p className="text-2xl font-bold text-teal-700 mt-1 font-mono">{accomplishment.toFixed(1)}%</p>
+              <p className="text-2xl font-bold text-teal-700 mt-1 font-mono">{formatPercentage(accomplishment)}</p>
               <p className="text-[10px] text-teal-700/70">Engineer-certified &amp; DA-approved</p>
               <div className="w-full bg-white/70 rounded-full h-2 mt-2">
                 <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(accomplishment, 100)}%` }} />
@@ -141,7 +143,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
               <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Funds released</p>
               <p className="text-2xl font-bold text-indigo-700 mt-1 font-mono">
-                {financialPct === null ? '—' : `${financialPct.toFixed(1)}%`}
+                {formatPercentage(financialPct)}
               </p>
               <p className="text-xs text-indigo-700/80 mt-1">
                 {formatPeso(budget.released)} of {formatPeso(budget.totalBudget)}
@@ -273,6 +275,13 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
           {hasPending ? (
             <span className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200">
               Pending review
+            </span>
+          ) : !hasFinalizedWorkPlan ? (
+            <span
+              title="The Admin must finalize this project's Work Plan before progress can be submitted."
+              className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-50 text-slate-500 border border-slate-200 text-center"
+            >
+              Finalized Work Plan required
             </span>
           ) : (
             <button

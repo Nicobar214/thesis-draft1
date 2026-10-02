@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import { supabaseAdminPortal as supabase, supabaseAdmin } from '../lib/supabase';
+import { formatPercentage } from '../lib/percentageFormat';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet.heat';
 import {
   buildRoutePoints,
   boundsFromPoints,
+  createDisplayRoutePoints,
   fetchRoadAlignedPolyline,
   getProjectBarangay,
   getRouteStatusTheme,
@@ -50,12 +52,21 @@ import PriorityTab from '../components/admin/PriorityTab';
 import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectSchedulingTab from '../components/admin/ProjectSchedulingTab';
+import WorkPlanModal from '../components/admin/WorkPlanModal';
 import { computePriorityScores } from '../lib/priorityScoring';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
 import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta, canAdminApprove, approvalBlockedReason } from '../lib/progressWorkflow';
+import {
+  assignPublicReportEngineer,
+  rejectPublicReportInspection,
+  resolvePublicReport,
+  reviewPublicReport,
+  unassignPublicReportEngineer,
+  validatePublicReportInspection,
+} from '../services/publicReportWorkflow';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -352,6 +363,53 @@ function EditModalMapController({ projectId, startLat, startLng, endLat, endLng 
   return null;
 }
 
+function CreateProposalMapController({ proposalId, points }) {
+  const map = useMap();
+  const lastFitKeyRef = useRef('');
+
+  useEffect(() => {
+    if (!proposalId) return undefined;
+    const validPoints = (points || []).filter(([lat, lng]) => Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)));
+    if (validPoints.length === 0) return undefined;
+
+    const fitKey = `${proposalId}:${validPoints.map(([lat, lng]) => `${Number(lat).toFixed(6)},${Number(lng).toFixed(6)}`).join('|')}`;
+    const fitRoute = () => {
+      map.invalidateSize();
+      if (validPoints.length >= 2) {
+        const bounds = boundsFromPoints(validPoints);
+        if (bounds) {
+          map.fitBounds(bounds, { padding: [44, 44], maxZoom: 18, animate: true });
+        }
+      } else {
+        map.setView(validPoints[0], 17, { animate: true });
+      }
+    };
+
+    if (lastFitKeyRef.current !== fitKey) {
+      lastFitKeyRef.current = fitKey;
+      window.requestAnimationFrame(fitRoute);
+    }
+
+    const timers = [120, 350, 800].map((delay) => window.setTimeout(fitRoute, delay));
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          fitRoute();
+        }
+      },
+      { threshold: 0.35 }
+    );
+    observer.observe(map.getContainer());
+
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      observer.disconnect();
+    };
+  }, [proposalId, points, map]);
+
+  return null;
+}
+
 
 function ReportHeatmapLayer({ visible, points }) {
   const map = useMap();
@@ -477,7 +535,7 @@ function FmrSortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortCha
 }
 
 /* Admin FMR projects table - the default view for the Projects tab. */
-function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onAssign, onDelete }) {
+function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onWorkPlan, onAssign, onDelete }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
       <div className="overflow-x-auto">
@@ -539,7 +597,7 @@ function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, on
                         <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
                         </div>
-                        <span className="text-xs font-bold text-slate-700 tabular-nums w-9 text-right">{project.accomplishment || 0}%</span>
+                        <span className="text-xs font-bold text-slate-700 tabular-nums w-14 text-right">{formatPercentage(project.accomplishment ?? 0)}</span>
                       </div>
                     )}
                   </td>
@@ -561,6 +619,14 @@ function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, on
                         className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                      </button>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); onWorkPlan(project); }}
+                        title="Work Plan"
+                        aria-label={`Open Work Plan for ${project.project_name}`}
+                        className="p-2 bg-teal-50 hover:bg-teal-100 border border-teal-200/60 rounded-lg text-teal-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75h11.25M9 12h11.25M9 17.25h11.25M3.75 6.75h.008v.008H3.75V6.75Zm0 5.25h.008v.008H3.75V12Zm0 5.25h.008v.008H3.75v-.008Z" /></svg>
                       </button>
                       <button
                         onClick={(event) => { event.stopPropagation(); onAssign(project); }}
@@ -682,7 +748,7 @@ export default function Dashboard() {
   const [adminMapShowOverdueOnly, setAdminMapShowOverdueOnly] = useState(false);
   const [adminMapShowHeatmap, setAdminMapShowHeatmap] = useState(false);
   const [adminMapSelectedProject, setAdminMapSelectedProject] = useState(null);
-  const [adminMapProgressEdit, setAdminMapProgressEdit] = useState(null);
+  const [adminMapHoveredProjectId, setAdminMapHoveredProjectId] = useState(null);
   const [routeByProjectId, setRouteByProjectId] = useState({});
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
   // Raw unresolved report locations (with created_at) rather than pre-baked heat
@@ -745,6 +811,7 @@ export default function Dashboard() {
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
   const [fmrRouteMode, setFmrRouteMode] = useState('waypoint');
   const [fmrRouteWaypoints, setFmrRouteWaypoints] = useState([]);
+  const [fmrRouteWaypointsOpen, setFmrRouteWaypointsOpen] = useState(false);
 
   // Map Search States inside modals
   const [createMapSearchQuery, setCreateMapSearchQuery] = useState('');
@@ -858,6 +925,7 @@ export default function Dashboard() {
 
   const [newProjectRouteMode, setNewProjectRouteMode] = useState('waypoint');
   const [newProjectRouteWaypoints, setNewProjectRouteWaypoints] = useState([]);
+  const [newProjectRouteWaypointsOpen, setNewProjectRouteWaypointsOpen] = useState(false);
 
   // FMR projects-tab filter state
   const [fmrProjectSearch, setFmrProjectSearch] = useState('');
@@ -878,6 +946,7 @@ export default function Dashboard() {
   const [fmrRowsPerPage, setFmrRowsPerPage] = useState(10);
   const fmrProjectsPerPage = fmrViewMode === 'table' ? fmrRowsPerPage : 9;
   const [selectedProjectDetail, setSelectedProjectDetail] = useState(null);
+  const [workPlanProject, setWorkPlanProject] = useState(null);
 
   // Contractor state
   const [contractors, setContractors] = useState([]);
@@ -942,11 +1011,29 @@ export default function Dashboard() {
     description: ''
   };
 
+  const extractFmrCode = (project) => {
+    const directCode = (project?.project_code || project?.projectCode || '').trim();
+    if (directCode) return directCode;
+
+    const remarksText = project?.remarks || '';
+    const codeMatch = String(remarksText).match(/FMR Code:\s*([^|]+)/i);
+    return codeMatch ? codeMatch[1].trim() : '';
+  };
+
+  const getExistingFmrCodes = () => {
+    return new Set(
+      [...(projects || []), ...(fmrProjects || [])]
+        .map(extractFmrCode)
+        .filter(Boolean)
+        .map((code) => code.toUpperCase())
+    );
+  };
+
   const generateNextProjectCode = () => {
     const prefix = 'FMR-2026-R6-';
+    const usedCodes = getExistingFmrCodes();
     let maxNum = 0;
-    (projects || []).forEach(p => {
-      const code = p.project_code || '';
+    usedCodes.forEach((code) => {
       if (code.startsWith(prefix)) {
         const numPart = code.substring(prefix.length);
         const num = parseInt(numPart, 10);
@@ -955,9 +1042,13 @@ export default function Dashboard() {
         }
       }
     });
-    const nextNum = maxNum + 1;
-    const padded = String(nextNum).padStart(3, '0');
-    return `${prefix}${padded}`;
+    let nextNum = maxNum + 1;
+    let nextCode = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    while (usedCodes.has(nextCode.toUpperCase())) {
+      nextNum += 1;
+      nextCode = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    }
+    return nextCode;
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -1262,39 +1353,15 @@ export default function Dashboard() {
         showNotification('Selected engineer not found. Refresh and try again.', 'error');
         return;
       }
-      const updatePayload = {
-        assigned_engineer_id: engineerId,
-        assigned_engineer_name: engineer.full_name || engineer.email || '',
-        assigned_at: new Date().toISOString(),
-        engineer_status: 'assigned',
-      };
-      const { data: updated, error } = await supabase
-        .from('public_reports')
-        .update(updatePayload)
-        .eq('id', reportId)
-        .select();
-      if (error) {
-        console.error('Assignment DB error:', error);
-        if (error.message?.includes('column') || error.code === '42703') {
-          showNotification('Database columns missing. Run supabase_complete_fe_setup.sql first.', 'error');
-        } else {
-          showNotification(`Failed to assign: ${error.message}`, 'error');
-        }
+      const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
+      if (String(report?.status || '').toLowerCase() !== 'reviewed') {
+        showNotification('Review the report before assigning a field engineer.', 'error');
         return;
       }
-      if (!updated || updated.length === 0) {
-        showNotification('No report was updated. The report may have been deleted.', 'error');
-        return;
-      }
+
+      await assignPublicReportEngineer(supabase, { reportId, engineerId });
       await fetchPublicReports();
       showNotification(`Report assigned to ${engineer.full_name || engineer.email}`);
-      const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
-      await addPublicReportActivity(
-        reportId,
-        'engineer_assigned',
-        `Assigned field engineer: ${engineer.full_name || engineer.email || 'Engineer'}`,
-        { engineer_id: engineerId }
-      );
       if (report) {
         await createReportNotification(report, 'public_report_assignment', 'A field engineer has been assigned to your report.');
         await createEngineerAssignmentNotification(reportId, engineerId, report.project_name || report.municipality || 'Public report');
@@ -1308,23 +1375,16 @@ export default function Dashboard() {
   };
 
   // Unassign field engineer from a public report
-  const unassignEngineerFromReport = async (reportId) => {
+  const unassignEngineerFromReport = async (reportId, reason) => {
+    if (!reason?.trim()) {
+      showNotification('A reason is required to unassign an engineer.', 'error');
+      return;
+    }
     try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({
-          assigned_engineer_id: null,
-          assigned_engineer_name: '',
-          assigned_at: null,
-          engineer_status: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', reportId);
-      if (error) throw error;
+      await unassignPublicReportEngineer(supabase, { reportId, reason: reason.trim() });
       await fetchPublicReports();
       showNotification('Engineer unassigned from report');
       const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
-      await addPublicReportActivity(reportId, 'engineer_unassigned', 'Unassigned field engineer from report');
       if (report) {
         await createReportNotification(report, 'public_report_assignment', 'The assigned field engineer for your report was removed.');
       }
@@ -1720,7 +1780,10 @@ export default function Dashboard() {
         .filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lng))
       : [];
     setNewProjectRouteWaypoints(waypoints);
+    setNewProjectRouteWaypointsOpen(false);
     setNewProjectContractorId('');
+    setCreateMapSearchQuery('');
+    setCreateMapSearchCoords(null);
     setPendingProposalLink({ id: proposal.id, submitted_by: proposal.submitted_by, project_name: proposal.project_name });
     setActiveTab('projects');
     setShowAddModal(true);
@@ -1847,20 +1910,18 @@ export default function Dashboard() {
   // 'resolved' can only be set via finalizeResolution() below, which requires
   // the field engineer's findings to have been DA-validated first.
   const updatePublicReportStatus = async (reportId, newStatus) => {
+    if (newStatus !== 'reviewed') {
+      showNotification('Returning a report to pending is disabled under the controlled workflow.', 'error');
+      return;
+    }
     try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (error) throw error;
-
       const report = publicReports.find(r => r.id === reportId);
+      await reviewPublicReport(supabase, { reportId });
       await syncFeedbackStatus(report, newStatus);
 
       await fetchPublicReports();
       setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: newStatus } : prev));
       showNotification(`Public report marked as ${newStatus}`);
-      await addPublicReportActivity(reportId, 'status_updated', `Status changed to ${newStatus}`);
       if (report) {
         await createReportNotification(report, 'public_report_status', `Your public report status is now ${newStatus}.`);
       }
@@ -1874,16 +1935,15 @@ export default function Dashboard() {
   // this is the only action that unlocks the ability to mark a report resolved.
   const validateFieldFinding = async (reportId) => {
     if (!reportId) return;
+    if (!selectedFieldFinding?.id) {
+      showNotification('No submitted inspection record was found to validate.', 'error');
+      return;
+    }
     setFindingActionSaving(true);
     try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({ engineer_status: 'validated', verification: 'Verified On-Site', updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (error) throw error;
+      await validatePublicReportInspection(supabase, { reportId, inspectionId: selectedFieldFinding.id });
 
       const report = publicReports.find(r => r.id === reportId);
-      await addPublicReportActivity(reportId, 'finding_validated', 'DA admin validated the field engineer findings');
       if (report) {
         await createReportNotification(report, 'public_report_field_update', 'DA admin validated the field inspection findings for your report.');
         if (report.assigned_engineer_id) {
@@ -1917,16 +1977,19 @@ export default function Dashboard() {
       showNotification('A reason is required to reject findings', 'error');
       return;
     }
+    if (!selectedFieldFinding?.id) {
+      showNotification('No submitted inspection record was found to reject.', 'error');
+      return;
+    }
     setFindingActionSaving(true);
     try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({ engineer_status: 'rejected', verification: 'Needs Review', updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (error) throw error;
+      await rejectPublicReportInspection(supabase, {
+        reportId,
+        inspectionId: selectedFieldFinding.id,
+        reason: reason.trim(),
+      });
 
       const report = publicReports.find(r => r.id === reportId);
-      await addPublicReportActivity(reportId, 'finding_rejected', `DA admin rejected field findings: ${reason.trim()}`);
       if (report) {
         await createReportNotification(report, 'public_report_field_update', 'DA admin requested additional field re-inspection for your report.');
         if (report.assigned_engineer_id) {
@@ -1966,17 +2029,16 @@ export default function Dashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({ status: 'resolved', updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (error) throw error;
+      await resolvePublicReport(supabase, {
+        reportId,
+        resolutionType: 'other',
+        resolutionSummary: summary.trim(),
+      });
 
       await syncFeedbackStatus(report, 'resolved');
       await fetchPublicReports();
       await loadLatestResolution(reportId);
       setSelectedPublicReport((prev) => (prev?.id === reportId ? { ...prev, status: 'resolved' } : prev));
-      await addPublicReportActivity(reportId, 'resolved_with_summary', summary.trim());
       await createReportNotification(report, 'public_report_status', 'Your public report status is now resolved.');
       await createLguNotification(
         report.municipality,
@@ -3007,10 +3069,28 @@ export default function Dashboard() {
   const handleAddProject = async (e) => {
     e.preventDefault();
 
-    const enteredCode = (formData.projectCode || '').trim();
+    if (!newProjectContractorId) {
+      showNotification(
+        contractors.length === 0
+          ? 'Register a contractor first before creating or publishing a project.'
+          : 'Select a contractor before creating or publishing this project.',
+        'error'
+      );
+      return;
+    }
+
+    let enteredCode = (formData.projectCode || '').trim();
     if (!enteredCode) {
       showNotification('FMR code is required.', 'error');
       return;
+    }
+    if (getExistingFmrCodes().has(enteredCode.toUpperCase())) {
+      if (!pendingProposalLink) {
+        showNotification('FMR code already exists. Generate a new code before publishing.', 'error');
+        return;
+      }
+      enteredCode = generateNextProjectCode();
+      setFormData((prev) => ({ ...prev, projectCode: enteredCode }));
     }
 
     const startLat = parseCoordinate(formData.startLatitude);
@@ -3045,7 +3125,7 @@ export default function Dashboard() {
       end_longitude: endLng,
       target_completion_date: formData.expectedEndDate || null,
       location: formData.barangay,
-      contractor_id: newProjectContractorId || null,
+      contractor_id: newProjectContractorId,
       total_budget: formData.totalBudget ? parseFloat(formData.totalBudget) : null,
       funds_released: formData.disbursedAmount ? parseFloat(formData.disbursedAmount) : null,
       funding_source: 'DA',
@@ -3101,6 +3181,7 @@ export default function Dashboard() {
       setFormData(emptyForm);
       setNewProjectContractorId('');
       setNewProjectRouteWaypoints([]);
+      setNewProjectRouteWaypointsOpen(false);
       showNotification('FMR project created successfully!');
     } catch (err) {
       console.error('Failed to create project:', err.message);
@@ -3360,6 +3441,7 @@ export default function Dashboard() {
         .filter(Boolean)
       : [];
     setFmrRouteWaypoints(waypoints);
+    setFmrRouteWaypointsOpen(false);
 
     setFmrFormData({
       project_name: project.project_name || '',
@@ -3389,6 +3471,10 @@ export default function Dashboard() {
     setShowFmrDeleteModal(true);
   };
 
+  const openWorkPlanModal = (project) => {
+    setWorkPlanProject(project);
+  };
+
   const handleEditFmrProject = async (e) => {
     e.preventDefault();
     const payload = {
@@ -3397,7 +3483,6 @@ export default function Dashboard() {
       year_funded: fmrFormData.year_funded ? parseInt(fmrFormData.year_funded) : null,
       municipality: fmrFormData.municipality,
       province: fmrFormData.province,
-      accomplishment: fmrFormData.accomplishment ? parseFloat(fmrFormData.accomplishment) : null,
       project_length_km: fmrFormData.project_length_km ? parseFloat(fmrFormData.project_length_km) : null,
       start_latitude: fmrFormData.start_latitude ? parseFloat(fmrFormData.start_latitude) : null,
       start_longitude: fmrFormData.start_longitude ? parseFloat(fmrFormData.start_longitude) : null,
@@ -3430,6 +3515,7 @@ export default function Dashboard() {
       setSelectedFmrProject(null);
       setFmrFormData(emptyFmrForm);
       setFmrRouteWaypoints([]);
+      setFmrRouteWaypointsOpen(false);
       showNotification('FMR project updated successfully!');
     } catch (err) {
       console.error('Failed to update FMR project:', err.message);
@@ -3448,29 +3534,6 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to delete FMR project:', err.message);
       showNotification(`Failed to delete FMR project: ${err.message}`, 'error');
-    }
-  };
-
-  const handleSaveAdminMapProgress = async () => {
-    if (!adminMapProgressEdit?.id) return;
-    const nextProgress = Number(adminMapProgressEdit.accomplishment);
-    if (!Number.isFinite(nextProgress) || nextProgress < 0 || nextProgress > 100) {
-      showNotification('Progress must be between 0 and 100.', 'error');
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('fmr_projects')
-        .update({ accomplishment: nextProgress })
-        .eq('id', adminMapProgressEdit.id);
-      if (error) throw error;
-
-      await fetchFmrProjects();
-      setAdminMapProgressEdit(null);
-      showNotification('Project progress updated successfully.');
-    } catch (err) {
-      showNotification(`Failed to update progress: ${err.message}`, 'error');
     }
   };
 
@@ -3744,6 +3807,7 @@ export default function Dashboard() {
                     budgetSource: 'DA',
                   });
                   setNewProjectRouteWaypoints([]);
+                  setNewProjectRouteWaypointsOpen(false);
                   setNewProjectRouteMode('waypoint');
                   setShowAddModal(true);
                 }}
@@ -4050,7 +4114,7 @@ export default function Dashboard() {
                               <td className="px-6 py-5">
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between text-xs">
-                                    <span className="font-bold text-slate-700">{project.progress}%</span>
+                                    <span className="font-bold text-slate-700">{formatPercentage(project.progress)}</span>
                                   </div>
                                   <div className="w-28 bg-slate-100 rounded-full h-2.5 overflow-hidden">
                                     <div
@@ -4395,47 +4459,68 @@ export default function Dashboard() {
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
+                        const isFocused = isSelected || adminMapHoveredProjectId === project.id;
                         const progress = Number(project.accomplishment || 0);
                         const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
                         const reportCount = reportCountByProjectId[project.id] || 0;
+                        const routePoints = adminSnappedRouteByProjectId[project.id] || route.points;
+                        const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
 
                         return (
                           <div key={project.id}>
                             {route.hasPolyline && !isCentroidFallback && (
                               <>
+                                {isFocused && (
+                                  <Polyline
+                                    positions={displayRoutePoints}
+                                    pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
+                                    eventHandlers={{
+                                      mouseover: () => setAdminMapHoveredProjectId(project.id),
+                                      mouseout: () => setAdminMapHoveredProjectId(null),
+                                      click: () => {
+                                        setAdminMapSelectedProject(project);
+                                        openProjectDetailModal(project);
+                                      },
+                                    }}
+                                  />
+                                )}
                                 <Polyline
-                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
-                                  pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
-                                  eventHandlers={{ click: () => openProjectDetailModal(project) }}
-                                />
-                                <Polyline
-                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
-                                  pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
-                                  eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                                  positions={displayRoutePoints}
+                                  pathOptions={{
+                                    color: theme.line,
+                                    weight: isFocused ? 5.5 : 3.4,
+                                    opacity: isFocused ? 0.96 : 0.72,
+                                  }}
+                                  eventHandlers={{
+                                    mouseover: () => setAdminMapHoveredProjectId(project.id),
+                                    mouseout: () => setAdminMapHoveredProjectId(null),
+                                    click: () => {
+                                      setAdminMapSelectedProject(project);
+                                      openProjectDetailModal(project);
+                                    },
+                                  }}
                                 >
                                   <Tooltip sticky>
                                     {project.project_name}
                                   </Tooltip>
                                 </Polyline>
 
-                                {route.startPoint && (
+                                {routePoints[0] && (
                                   <CircleMarker
-                                    center={route.startPoint}
-                                    radius={8}
-                                    pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
-                                  >
-                                    <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
-                                  </CircleMarker>
+                                    center={routePoints[0]}
+                                    radius={4}
+                                    pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
+                                  />
                                 )}
 
-                                {route.endPoint && (
+                                {(routePoints[routePoints.length - 1] || route.endPoint) && (
                                   <Marker
-                                    position={route.endPoint}
+                                    position={routePoints[routePoints.length - 1] || route.endPoint}
                                     icon={L.divIcon({
                                       className: 'route-end-marker-admin',
-                                      html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
-                                      iconSize: [16, 16],
-                                      iconAnchor: [8, 8],
+                                      html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
+                                      iconSize: [10, 10],
+                                      iconAnchor: [5, 5],
                                     })}
                                   />
                                 )}
@@ -4445,15 +4530,22 @@ export default function Dashboard() {
                             {hasFallbackPin && coordinates && (
                               <CircleMarker
                                 center={coordinates}
-                                radius={isSelected ? 11 : 8}
+                                radius={isSelected ? 9 : 6}
                                 pathOptions={{
                                   fillColor: theme.line,
                                   color: theme.stroke,
-                                  weight: isSelected ? 3.5 : 2,
-                                  fillOpacity: 0.9,
+                                  weight: isSelected ? 3 : 1.5,
+                                  fillOpacity: isSelected ? 0.9 : 0.7,
                                   dashArray: isCentroidFallback ? '3, 4' : undefined
                                 }}
-                                eventHandlers={{ click: () => openProjectDetailModal(project) }}
+                                eventHandlers={{
+                                  mouseover: () => setAdminMapHoveredProjectId(project.id),
+                                  mouseout: () => setAdminMapHoveredProjectId(null),
+                                  click: () => {
+                                    setAdminMapSelectedProject(project);
+                                    openProjectDetailModal(project);
+                                  },
+                                }}
                               >
                                 <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
                                   <div className="p-1">
@@ -4899,6 +4991,7 @@ export default function Dashboard() {
                         onSortChange={setFmrProjectSortBy}
                         onOpenDetail={openProjectDetailModal}
                         onEdit={openFmrEditModal}
+                        onWorkPlan={openWorkPlanModal}
                         onAssign={(project) => {
                           setAssignContractorModal(project);
                           setSelectedContractorId(project.contractor_id || '');
@@ -4958,7 +5051,7 @@ export default function Dashboard() {
                                 <div className="mb-4">
                                   <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-xs text-slate-500 font-medium">Accomplishment</span>
-                                    <span className="text-xs font-bold text-slate-700">{project.accomplishment || 0}%</span>
+                                    <span className="text-xs font-bold text-slate-700">{formatPercentage(project.accomplishment ?? 0)}</span>
                                   </div>
                                   <div className="w-full bg-slate-100 rounded-full h-2">
                                     <div className={`h-2 rounded-full transition-all duration-700 ease-out ${statusStyle.bar}`} style={{ width: `${Math.min(project.accomplishment || 0, 100)}%` }} />
@@ -4993,6 +5086,16 @@ export default function Dashboard() {
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
                                   Edit
+                                </button>
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openWorkPlanModal(project);
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-50 hover:bg-teal-100 border border-teal-200/60 rounded-xl text-sm font-semibold text-teal-700 transition-all duration-200"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75h11.25M9 12h11.25M9 17.25h11.25M3.75 6.75h.008v.008H3.75V6.75Zm0 5.25h.008v.008H3.75V12Zm0 5.25h.008v.008H3.75v-.008Z" /></svg>
+                                  Work Plan
                                 </button>
                                 <button
                                   onClick={(event) => {
@@ -5273,19 +5376,32 @@ export default function Dashboard() {
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
+                        const isFocused = isSelected || adminMapHoveredProjectId === project.id;
                         const progress = Number(project.accomplishment || 0);
                         const targetChip = getTargetDateChip(project.target_completion_date, normalizeFmrStatus(project.status) === 'Completed');
                         const reportCount = reportCountByProjectId[project.id] || 0;
+                        const routePoints = adminSnappedRouteByProjectId[project.id] || route.points;
+                        const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
 
                         return (
                           <div key={project.id}>
                             {route.hasPolyline && !isCentroidFallback && (
                               <>
-                                <Polyline positions={adminSnappedRouteByProjectId[project.id] || route.points} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }} />
+                                {isFocused && (
+                                  <Polyline positions={displayRoutePoints} pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }} />
+                                )}
                                 <Polyline
-                                  positions={adminSnappedRouteByProjectId[project.id] || route.points}
-                                  pathOptions={{ color: theme.line, weight: isSelected ? 6 : 5, opacity: 0.95 }}
-                                  eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
+                                  positions={displayRoutePoints}
+                                  pathOptions={{
+                                    color: theme.line,
+                                    weight: isFocused ? 5.5 : 3.4,
+                                    opacity: isFocused ? 0.96 : 0.72,
+                                  }}
+                                  eventHandlers={{
+                                    mouseover: () => setAdminMapHoveredProjectId(project.id),
+                                    mouseout: () => setAdminMapHoveredProjectId(null),
+                                    click: () => setAdminMapSelectedProject(project),
+                                  }}
                                 >
                                   <Tooltip sticky>
                                     {project.project_name} - {normalizeFmrStatus(project.status)}
@@ -5303,7 +5419,7 @@ export default function Dashboard() {
                                       <div>
                                         <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                                           <span>Progress</span>
-                                          <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                          <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
                                         </div>
                                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                           <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
@@ -5336,35 +5452,27 @@ export default function Dashboard() {
                                         >
                                           View Details
                                         </a>
-                                        <button
-                                          onClick={() => setAdminMapProgressEdit({ id: project.id, project_name: project.project_name, accomplishment: progress })}
-                                          className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-amber-100 text-amber-700 hover:bg-amber-200"
-                                        >
-                                          Update Progress
-                                        </button>
                                       </div>
                                     </div>
                                   </Popup>
                                 </Polyline>
 
-                                {route.startPoint && (
+                                {routePoints[0] && (
                                   <CircleMarker
-                                    center={route.startPoint}
-                                    radius={8}
-                                    pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
-                                  >
-                                    <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
-                                  </CircleMarker>
+                                    center={routePoints[0]}
+                                    radius={4}
+                                    pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
+                                  />
                                 )}
 
-                                {route.endPoint && (
+                                {(routePoints[routePoints.length - 1] || route.endPoint) && (
                                   <Marker
-                                    position={route.endPoint}
+                                    position={routePoints[routePoints.length - 1] || route.endPoint}
                                     icon={L.divIcon({
                                       className: 'route-end-marker-admin',
-                                      html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
-                                      iconSize: [16, 16],
-                                      iconAnchor: [8, 8],
+                                      html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
+                                      iconSize: [10, 10],
+                                      iconAnchor: [5, 5],
                                     })}
                                   />
                                 )}
@@ -5374,15 +5482,19 @@ export default function Dashboard() {
                             {hasFallbackPin && coordinates && (
                               <CircleMarker
                                 center={coordinates}
-                                radius={isSelected ? 11 : 8}
+                                radius={isSelected ? 9 : 6}
                                 pathOptions={{
                                   fillColor: theme.line,
                                   color: theme.stroke,
-                                  weight: isSelected ? 3.5 : 2,
-                                  fillOpacity: 0.9,
+                                  weight: isSelected ? 3 : 1.5,
+                                  fillOpacity: isSelected ? 0.9 : 0.7,
                                   dashArray: isCentroidFallback ? '3, 4' : undefined
                                 }}
-                                eventHandlers={{ click: () => setAdminMapSelectedProject(project) }}
+                                eventHandlers={{
+                                  mouseover: () => setAdminMapHoveredProjectId(project.id),
+                                  mouseout: () => setAdminMapHoveredProjectId(null),
+                                  click: () => setAdminMapSelectedProject(project),
+                                }}
                               >
                                 <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
                                   <div className="p-1">
@@ -5410,7 +5522,7 @@ export default function Dashboard() {
                                     <div>
                                       <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                                         <span>Progress</span>
-                                        <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                        <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
                                       </div>
                                       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                         <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
@@ -6090,7 +6202,7 @@ export default function Dashboard() {
                                   <div className="mt-3">
                                     <div className="flex justify-between text-[10px] text-slate-400 mb-1">
                                       <span>Progress</span>
-                                      <span className="font-semibold text-slate-600">{progress.toFixed(0)}%</span>
+                                      <span className="font-semibold text-slate-600">{formatPercentage(progress)}</span>
                                     </div>
                                     <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                       <div className={`h-1.5 rounded-full ${st.bg} transition-all duration-500`} style={{ width: `${Math.min(progress, 100)}%` }} />
@@ -6336,7 +6448,7 @@ export default function Dashboard() {
                                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                                   <div className="flex justify-between text-xs text-slate-600 mb-1">
                                     <span className="font-semibold">Physical Accomplishment</span>
-                                    <span className="font-bold text-teal-600">{progress.toFixed(0)}%</span>
+                                    <span className="font-bold text-teal-600">{formatPercentage(progress)}</span>
                                   </div>
                                   <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
                                     <div className="h-full bg-teal-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
@@ -6464,7 +6576,7 @@ export default function Dashboard() {
                         <p className="text-xs font-semibold opacity-80 uppercase tracking-wider">Avg Completion</p>
                         <p className="text-3xl font-black mt-1">
                           {filteredFmrProjects.length > 0
-                            ? `${Math.round(filteredFmrProjects.reduce((s, p) => s + Number(p.accomplishment || 0), 0) / filteredFmrProjects.length)}%`
+                            ? formatPercentage(filteredFmrProjects.reduce((s, p) => s + Number(p.accomplishment || 0), 0) / filteredFmrProjects.length)
                             : '—'}
                         </p>
                         <p className="text-xs opacity-70 mt-1">Across all {filteredFmrProjects.length} filtered projects</p>
@@ -6722,7 +6834,7 @@ export default function Dashboard() {
                                       <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
                                         <div className={`h-2 rounded-full ${(p.accomplishment || 0) >= 100 ? 'bg-emerald-500' : 'bg-teal-500'}`} style={{ width: `${Math.min(p.accomplishment || 0, 100)}%` }} />
                                       </div>
-                                      <span className="text-xs font-bold text-slate-700">{p.accomplishment || 0}%</span>
+                                      <span className="text-xs font-bold text-slate-700">{formatPercentage(p.accomplishment ?? 0)}</span>
                                     </div>
                                   </td>
                                 </tr>
@@ -7840,11 +7952,9 @@ export default function Dashboard() {
                                 assigningEngineer={assigningEngineer}
                                 onAssignEngineer={(engineerId) => {
                                   assignEngineerToReport(selectedPublicReport.id, engineerId);
-                                  setSelectedPublicReport(prev => (prev ? { ...prev, assigned_engineer_id: engineerId, assigned_engineer_name: fieldEngineers.find(e => e.id === engineerId)?.full_name || '', engineer_status: 'assigned', assigned_at: new Date().toISOString() } : prev));
                                 }}
-                                onUnassignEngineer={() => {
-                                  unassignEngineerFromReport(selectedPublicReport.id);
-                                  setSelectedPublicReport(prev => (prev ? { ...prev, assigned_engineer_id: null, assigned_engineer_name: '', engineer_status: null, assigned_at: null } : prev));
+                                onUnassignEngineer={(reason) => {
+                                  unassignEngineerFromReport(selectedPublicReport.id, reason);
                                 }}
                               />
                             </div>
@@ -8299,9 +8409,9 @@ export default function Dashboard() {
                           <tr className="bg-slate-50/60 border-b border-slate-200">
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
-                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor Reported</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Engineer Certified</th>
-                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current %</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Official</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -8326,14 +8436,14 @@ export default function Dashboard() {
                                   <p className="text-sm text-slate-700">{contractorName}</p>
                                 </td>
                                 <td className="px-5 py-4">
-                                  <span className="text-sm font-bold text-slate-900 font-mono">{upd.reported_accomplishment}%</span>
+                                  <span className="text-sm font-bold text-slate-900 font-mono">{formatPercentage(upd.reported_accomplishment)}</span>
                                   <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">claim</p>
                                 </td>
                                 <td className="px-5 py-4">
                                   {upd.certified_accomplishment != null ? (
                                     <>
                                       <span className="text-sm font-bold text-teal-700 font-mono">
-                                        {Number(upd.certified_accomplishment).toFixed(2)}%
+                                        {formatPercentage(upd.certified_accomplishment)}
                                       </span>
                                       <p className="text-[10px] text-teal-600 font-semibold uppercase tracking-wide">certified</p>
                                     </>
@@ -8344,7 +8454,7 @@ export default function Dashboard() {
                                   )}
                                 </td>
                                 <td className="px-5 py-4 whitespace-nowrap">
-                                  <span className="text-sm font-semibold text-slate-700 font-mono">{Number(upd.fmr_projects?.accomplishment || 0).toFixed(2)}%</span>
+                                  <span className="text-sm font-semibold text-slate-700 font-mono">{formatPercentage(upd.fmr_projects?.accomplishment ?? 0)}</span>
                                 </td>
                                 <td className="px-5 py-4 max-w-xs">
                                   <p className="text-xs text-slate-600 line-clamp-3">{upd.remarks || '—'}</p>
@@ -8956,7 +9066,7 @@ export default function Dashboard() {
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Road Project</h2>
                 <p className="text-sm text-slate-500 mt-1">Create a new farm-to-market road project</p>
               </div>
-              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setPendingProposalLink(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -8965,7 +9075,7 @@ export default function Dashboard() {
             <form onSubmit={handleAddProject} className="flex-1 overflow-y-auto p-8">
               {pendingProposalLink && (
                 <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-                  Pre-filled from a validated LGU proposal: <strong>{pendingProposalLink.project_name}</strong>. Review the details, assign an official FMR Code and contractor, then create the project to publish it.
+                  Pre-filled from a validated LGU proposal: <strong>{pendingProposalLink.project_name}</strong>. Review the details, confirm the FMR Code, select a contractor, then create the project to publish it.
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -8984,15 +9094,22 @@ export default function Dashboard() {
                     }`}
                     placeholder="e.g., Barangay Access Road"
                   />
-                  {pendingProposalLink && (
-                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                      🔒 Locked to match the validated LGU proposal name for traceability.
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">FMR Code *</label>
-                  <input type="text" name="projectCode" value={formData.projectCode} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono" placeholder="e.g., FMR-2026-ILO-001" />
+                  <input
+                    type="text"
+                    name="projectCode"
+                    value={formData.projectCode}
+                    onChange={handleInputChange}
+                    required
+                    readOnly={!!pendingProposalLink}
+                    disabled={!!pendingProposalLink}
+                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono ${
+                      pendingProposalLink ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
+                    }`}
+                    placeholder="e.g., FMR-2026-ILO-001"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Region</label>
@@ -9004,14 +9121,32 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Municipality *</label>
-                  <select name="municipality" value={formData.municipality} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                  <select
+                    name="municipality"
+                    value={formData.municipality}
+                    onChange={handleInputChange}
+                    required
+                    disabled={!!pendingProposalLink}
+                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 ${
+                      pendingProposalLink ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
+                    }`}
+                  >
                     <option value="">Select municipality</option>
                     {getMunicipalities().map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Barangay *</label>
-                  <select name="barangay" value={formData.barangay} onChange={handleInputChange} required disabled={!formData.municipality} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed">
+                  <select
+                    name="barangay"
+                    value={formData.barangay}
+                    onChange={handleInputChange}
+                    required
+                    disabled={!formData.municipality || !!pendingProposalLink}
+                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed ${
+                      pendingProposalLink ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
+                    }`}
+                  >
                     <option value="">Select barangay</option>
                     {getBarangays(formData.municipality).map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
@@ -9074,6 +9209,7 @@ export default function Dashboard() {
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
 
                               setNewProjectRouteWaypoints(middle);
+                              setNewProjectRouteWaypointsOpen(false);
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFormData(prev => ({
                                 ...prev,
@@ -9106,6 +9242,7 @@ export default function Dashboard() {
                             endLongitude: ''
                           }));
                           setNewProjectRouteWaypoints([]);
+                          setNewProjectRouteWaypointsOpen(false);
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                       >
@@ -9145,6 +9282,7 @@ export default function Dashboard() {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
                       <MapSearchController searchCoords={createMapSearchCoords} />
+                      <CreateProposalMapController proposalId={pendingProposalLink?.id} points={newProjectRoutePreview} />
                       <RouteEditorMapClick onPickPoint={handleNewProjectRoutePick} />
                       {createMapSearchCoords && (
                         <Marker position={createMapSearchCoords}>
@@ -9160,16 +9298,16 @@ export default function Dashboard() {
                         </>
                       )}
                       {newProjectRoutePreview[0] && (
-                        <CircleMarker center={newProjectRoutePreview[0]} radius={7} pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }} />
+                        <CircleMarker center={newProjectRoutePreview[0]} radius={4} pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }} />
                       )}
                       {newProjectRoutePreview.length > 1 && (
                         <Marker
                           position={newProjectRoutePreview[newProjectRoutePreview.length - 1]}
                           icon={L.divIcon({
                             className: 'add-route-end',
-                            html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;"></div>',
-                            iconSize: [16, 16],
-                            iconAnchor: [8, 8],
+                            html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
+                            iconSize: [10, 10],
+                            iconAnchor: [5, 5],
                           })}
                         />
                       )}
@@ -9177,8 +9315,24 @@ export default function Dashboard() {
                   </div>
 
                   {newProjectRouteWaypoints.length > 0 && (
-                    <div className="space-y-2">
-                      {newProjectRouteWaypoints.map((point, idx) => (
+                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setNewProjectRouteWaypointsOpen((open) => !open)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Waypoints ({newProjectRouteWaypoints.length})</p>
+                          <p className="text-[11px] text-slate-500">Intermediate route coordinates</p>
+                        </div>
+                        <svg className={`w-4 h-4 text-slate-500 transition-transform ${newProjectRouteWaypointsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </button>
+
+                      {newProjectRouteWaypointsOpen && (
+                        <div className="space-y-2 border-t border-slate-100 p-3 max-h-72 overflow-y-auto">
+                          {newProjectRouteWaypoints.map((point, idx) => (
                         <div key={`new-waypoint-${idx}`} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
                           <input
                             type="number"
@@ -9254,7 +9408,9 @@ export default function Dashboard() {
                             Remove
                           </button>
                         </div>
-                      ))}
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -9280,7 +9436,7 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Contractor</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Contractor *</label>
                   <select
                     value={newProjectContractorId}
                     onChange={(e) => {
@@ -9294,6 +9450,7 @@ export default function Dashboard() {
                       }
                     }}
                     disabled={contractors.length === 0}
+                    required
                     className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
                   >
                     <option value="">{contractors.length > 0 ? '— Select a registered contractor —' : 'No contractors registered yet'}</option>
@@ -9311,7 +9468,7 @@ export default function Dashboard() {
                       Assigned contractor will see this project in their portal.
                     </p>
                   ) : (
-                    <p className="text-xs text-slate-500 mt-1.5">You can leave this unassigned and assign later.</p>
+                    <p className="text-xs text-red-600 mt-1.5">A contractor is required before this project can be created or published.</p>
                   )}
                 </div>
                 <div>
@@ -9329,8 +9486,16 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setPendingProposalLink(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
-              <button type="submit" onClick={handleAddProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Create Project</button>
+              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button
+                type="submit"
+                onClick={handleAddProject}
+                disabled={!newProjectContractorId}
+                title={!newProjectContractorId ? 'Select a contractor before creating this project.' : 'Create project'}
+                className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
+              >
+                Create Project
+              </button>
             </div>
           </div>
         </div>
@@ -9527,46 +9692,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {adminMapProgressEdit && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="px-6 py-5 border-b border-slate-200/60 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Update Progress</h3>
-                <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">{adminMapProgressEdit.project_name}</p>
-              </div>
-              <button onClick={() => setAdminMapProgressEdit(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Accomplishment (%)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={adminMapProgressEdit.accomplishment}
-                  onChange={(e) => setAdminMapProgressEdit((prev) => ({ ...prev, accomplishment: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-3">
-                <button onClick={() => setAdminMapProgressEdit(null)} className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium hover:bg-slate-50">
-                  Cancel
-                </button>
-                <button onClick={handleSaveAdminMapProgress} className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium">
-                  Save Progress
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* FMR Edit Modal */}
       {showFmrEditModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
@@ -9598,11 +9723,6 @@ export default function Dashboard() {
                       (selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id)) ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
                     }`}
                   />
-                  {selectedFmrProject && lguProposals.some(p => p.fmr_project_id === selectedFmrProject.id) && (
-                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                      🔒 Locked to match the validated LGU proposal name for traceability.
-                    </p>
-                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Status *</label>
@@ -9629,7 +9749,8 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Accomplishment (%)</label>
-                  <input type="number" min="0" max="100" step="0.01" name="accomplishment" value={fmrFormData.accomplishment} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <input type="number" name="accomplishment" value={fmrFormData.accomplishment} readOnly className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
+                  <p className="mt-1 text-xs text-slate-500">Updated only when Admin approves certified progress.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Length (km)</label>
@@ -9710,6 +9831,7 @@ export default function Dashboard() {
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
 
                               setFmrRouteWaypoints(middle);
+                              setFmrRouteWaypointsOpen(false);
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFmrFormData(prev => ({
                                 ...prev,
@@ -9742,6 +9864,7 @@ export default function Dashboard() {
                             end_longitude: ''
                           }));
                           setFmrRouteWaypoints([]);
+                          setFmrRouteWaypointsOpen(false);
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
                       >
@@ -9803,16 +9926,16 @@ export default function Dashboard() {
                         </>
                       )}
                       {fmrRoutePreview[0] && (
-                        <CircleMarker center={fmrRoutePreview[0]} radius={7} pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }} />
+                        <CircleMarker center={fmrRoutePreview[0]} radius={4} pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }} />
                       )}
                       {fmrRoutePreview.length > 1 && (
                         <Marker
                           position={fmrRoutePreview[fmrRoutePreview.length - 1]}
                           icon={L.divIcon({
                             className: 'edit-route-end',
-                            html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;"></div>',
-                            iconSize: [16, 16],
-                            iconAnchor: [8, 8],
+                            html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
+                            iconSize: [10, 10],
+                            iconAnchor: [5, 5],
                           })}
                         />
                       )}
@@ -9820,8 +9943,24 @@ export default function Dashboard() {
                   </div>
 
                   {fmrRouteWaypoints.length > 0 && (
-                    <div className="space-y-2">
-                      {fmrRouteWaypoints.map((point, idx) => (
+                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setFmrRouteWaypointsOpen((open) => !open)}
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors"
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Waypoints ({fmrRouteWaypoints.length})</p>
+                          <p className="text-[11px] text-slate-500">Intermediate route coordinates</p>
+                        </div>
+                        <svg className={`w-4 h-4 text-slate-500 transition-transform ${fmrRouteWaypointsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </button>
+
+                      {fmrRouteWaypointsOpen && (
+                        <div className="space-y-2 border-t border-slate-100 p-3 max-h-72 overflow-y-auto">
+                          {fmrRouteWaypoints.map((point, idx) => (
                         <div key={`edit-waypoint-${idx}`} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
                           <input
                             type="number"
@@ -9897,7 +10036,9 @@ export default function Dashboard() {
                             Remove
                           </button>
                         </div>
-                      ))}
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -9921,6 +10062,16 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {workPlanProject && (
+        <WorkPlanModal
+          project={workPlanProject}
+          supabase={supabase}
+          onClose={() => setWorkPlanProject(null)}
+          onChanged={fetchFmrProjects}
+          showNotification={showNotification}
+        />
       )}
 
       {/* FMR Delete Confirmation Modal */}
@@ -10011,7 +10162,7 @@ export default function Dashboard() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Status</p>
                     <p className="mt-2 text-lg font-semibold text-slate-900">{renderStatusPill(displayStatus, displayStatus)}</p>
-                    <p className="mt-1 text-sm text-slate-500">Progress {Number.isFinite(progressValue) ? `${progressValue}%` : 'N/A'}</p>
+                    <p className="mt-1 text-sm text-slate-500">Progress {formatPercentage(progressValue, 'N/A')}</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Budget / Contractor</p>
@@ -10106,6 +10257,18 @@ export default function Dashboard() {
               </div>
 
               <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+                {isFmrProject && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProjectDetail(null);
+                      openWorkPlanModal(rawProject);
+                    }}
+                    className="rounded-xl border border-teal-200 bg-teal-50 px-5 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-100"
+                  >
+                    Work Plan
+                  </button>
+                )}
                 {isFmrProject && (
                   <button
                     type="button"

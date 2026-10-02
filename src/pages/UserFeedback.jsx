@@ -161,7 +161,7 @@ export default function UserFeedback() {
           ? supabase.from('feedbacks').select('*').eq('user_id', userId).order('created_at', { ascending: false })
           : Promise.resolve({ data: [] }),
         userId
-          ? supabase.from('public_reports').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+          ? supabase.from('public_reports_citizen_view').select('*').eq('is_current_user_report', true).order('created_at', { ascending: false })
           : Promise.resolve({ data: [] }),
         supabase.from('projects').select('id, projectName, project_name, municipality, province'),
       ]);

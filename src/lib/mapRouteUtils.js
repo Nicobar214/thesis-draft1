@@ -219,6 +219,51 @@ export function calculatePolylineDistanceKm(points) {
   return totalMeters / 1000;
 }
 
+function hashRouteKey(routeKey) {
+  let hash = 0;
+  for (const ch of String(routeKey || 'route')) {
+    hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  }
+  return hash;
+}
+
+function offsetPointMeters(point, angleRad, meters) {
+  const lat = Number(point?.[0]);
+  const lng = Number(point?.[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(meters)) return point;
+  const latOffset = (Math.sin(angleRad) * meters) / 111320;
+  const lngOffset = (Math.cos(angleRad) * meters) / (111320 * Math.cos((lat * Math.PI) / 180));
+  return [lat + latOffset, lng + lngOffset];
+}
+
+export function createDisplayRoutePoints(points, routeKey, maxOffsetMeters = 8) {
+  if (!Array.isArray(points) || points.length < 2) return points || [];
+
+  const valid = points
+    .map((point) => [Number(point?.[0]), Number(point?.[1])])
+    .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  if (valid.length < 2) return points;
+
+  const hash = hashRouteKey(routeKey);
+  const offsetStep = (hash % 7) - 3;
+  if (offsetStep === 0) return valid;
+
+  const offsetMeters = Math.max(-maxOffsetMeters, Math.min(maxOffsetMeters, offsetStep * 2.5));
+  const angleRad = ((hash % 360) * Math.PI) / 180;
+
+  if (valid.length === 2) {
+    const start = valid[0];
+    const end = valid[1];
+    const mid = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+    return [start, offsetPointMeters(mid, angleRad, offsetMeters), end];
+  }
+
+  return valid.map((point, index) => {
+    if (index === 0 || index === valid.length - 1) return point;
+    return offsetPointMeters(point, angleRad, offsetMeters);
+  });
+}
+
 const roadSnapCache = new Map();
 
 export async function fetchRoadAlignedPolyline(points) {

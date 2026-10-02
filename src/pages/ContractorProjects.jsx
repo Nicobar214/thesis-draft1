@@ -12,6 +12,7 @@ import ContractorProjectDetailModal from '../components/contractor/ContractorPro
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta } from '../lib/progressWorkflow';
+import { formatPercentage } from '../lib/percentageFormat';
 
 const ROWS_PER_PAGE = 10;
 
@@ -38,6 +39,21 @@ function FmrStatusBadge({ status }) {
   );
 }
 
+function WorkPlanStatusBadge({ status }) {
+  const normalized = status || 'none';
+  const styles = {
+    none: 'bg-slate-50 text-slate-600 border-slate-200',
+    draft: 'bg-amber-50 text-amber-700 border-amber-200',
+    finalized: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+  const labels = { none: 'No Plan', draft: 'Draft', finalized: 'Finalized' };
+  return (
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${styles[normalized] || styles.none}`}>
+      {labels[normalized] || 'No Plan'}
+    </span>
+  );
+}
+
 export default function ContractorProjects() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -47,6 +63,7 @@ export default function ContractorProjects() {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null); // project for the progress form
   const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
+  const [successMessage, setSuccessMessage] = useState('');
   const [page, setPage] = useState(1);
 
   // ── Auth ─────────────────────────────────────────────────────
@@ -68,7 +85,7 @@ export default function ContractorProjects() {
     try {
       const { data: projs, error } = await supabase
         .from('fmr_projects')
-        .select('id, project_name, municipality, province, location, status, accomplishment, project_length_km, total_budget, funds_released, funding_source, contract_amount, remarks, year_funded, date_started, target_completion_date, date_completed')
+        .select('id, project_name, municipality, province, location, status, accomplishment, project_length_km, total_budget, funds_released, funding_source, contract_amount, remarks, year_funded, date_started, target_completion_date, date_completed, work_plan_status, work_plan_adoption_baseline')
         .eq('contractor_id', user.id)
         .order('project_name', { ascending: true });
       if (error) throw error;
@@ -142,8 +159,15 @@ export default function ContractorProjects() {
   /* Opening the submit form from inside the detail modal: close the detail
      first so the two dialogs never stack. */
   const handleSubmitFromDetail = (project) => {
+    if (project.work_plan_status !== 'finalized') return;
     setDetailProject(null);
     setSelectedProject(project);
+  };
+
+  const handleSubmitted = () => {
+    setSuccessMessage('Progress update submitted successfully. The displayed accomplishment will refresh from the server-calculated result.');
+    setSelectedProject(null);
+    fetchData(false);
   };
 
   if (loading) {
@@ -165,6 +189,13 @@ export default function ContractorProjects() {
           <p className="text-sm text-slate-500 mt-1">{projects.length} project{projects.length !== 1 ? 's' : ''} assigned to you</p>
         </div>
 
+        {successMessage && (
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <span>{successMessage}</span>
+            <button type="button" onClick={() => setSuccessMessage('')} aria-label="Dismiss success message" className="font-bold text-emerald-700 hover:text-emerald-900">x</button>
+          </div>
+        )}
+
         {projects.length === 0 ? (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm py-16 text-center">
             <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -183,6 +214,7 @@ export default function ContractorProjects() {
                   <tr className="bg-slate-50/60 border-b border-slate-100">
                     <th className={thClass}>Project</th>
                     <th className={thClass}>Status</th>
+                    <th className={thClass}>Work Plan</th>
                     <th className={thClass}>Physical</th>
                     <th className={thClass}>Funds Released</th>
                     <th className={thClass}>Latest Submission</th>
@@ -227,6 +259,10 @@ export default function ContractorProjects() {
                         </td>
 
                         <td className="px-5 py-4">
+                          <WorkPlanStatusBadge status={project.work_plan_status} />
+                        </td>
+
+                        <td className="px-5 py-4">
                           <div className="flex items-center gap-2 min-w-[120px]">
                             <div className="flex-1 bg-slate-100 rounded-full h-2">
                               <div
@@ -235,7 +271,7 @@ export default function ContractorProjects() {
                               />
                             </div>
                             <span className="text-xs font-bold text-slate-700 font-mono w-11 text-right">
-                              {accomplishment.toFixed(0)}%
+                              {formatPercentage(accomplishment)}
                             </span>
                           </div>
                         </td>
@@ -247,7 +283,7 @@ export default function ContractorProjects() {
                           <p className="text-xs text-slate-400">
                             {financialPct === null
                               ? `of ${formatPeso(budget.totalBudget)}`
-                              : `${financialPct.toFixed(0)}% of ${formatPeso(budget.totalBudget)}`}
+                              : `${formatPercentage(financialPct)} of ${formatPeso(budget.totalBudget)}`}
                             {budget.budgetIsEstimated ? ' (est.)' : ''}
                           </p>
                         </td>
@@ -259,10 +295,10 @@ export default function ContractorProjects() {
                               return (
                                 <>
                                   <p className="text-sm text-slate-700">
-                                    {Number(latest.reported_accomplishment ?? 0).toFixed(0)}% claimed
+                                    {formatPercentage(latest.reported_accomplishment)} claimed
                                     {latest.certified_accomplishment != null && (
                                       <span className="text-teal-700 font-semibold">
-                                        {' '}· {Number(latest.certified_accomplishment).toFixed(0)}% certified
+                                        {' '}· {formatPercentage(latest.certified_accomplishment)} certified
                                       </span>
                                     )}
                                   </p>
@@ -289,6 +325,13 @@ export default function ContractorProjects() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               Pending Review
+                            </span>
+                          ) : project.work_plan_status !== 'finalized' ? (
+                            <span
+                              title="The Admin must finalize this project's Work Plan before progress can be submitted."
+                              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 text-slate-500 border border-slate-200 whitespace-nowrap"
+                            >
+                              Work Plan required
                             </span>
                           ) : (
                             <button
@@ -371,6 +414,7 @@ export default function ContractorProjects() {
           project={selectedProject}
           user={user}
           onClose={handleFormClose}
+          onSubmitted={handleSubmitted}
         />
       )}
     </ContractorLayout>

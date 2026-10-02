@@ -4,6 +4,7 @@ import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { buildRoutePoints } from '../../lib/mapRouteUtils';
 import PublicReportRouteMapPanel from './PublicReportRouteMapPanel';
 import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
+import { submitPublicReportInspection } from '../../services/publicReportWorkflow';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -89,6 +90,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [recommendedAction, setRecommendedAction] = useState('');
   const [estimatedCostRange, setEstimatedCostRange] = useState('');
   const [inspectionRating, setInspectionRating] = useState(5);
+  const [engineerCertified, setEngineerCertified] = useState(false);
 
   const notifyAdmin = useCallback(async (title, message) => {
     try {
@@ -334,6 +336,10 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       if (onSaved) onSaved('Live geotag is required. Enable location and capture again.', 'error');
       return;
     }
+    if (!engineerCertified) {
+      if (onSaved) onSaved('Certification is required before submitting findings.', 'error');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -370,36 +376,17 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       }
 
       const ratingLabel = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'][inspectionRating - 1] || 'Good';
-      const findingPayload = {
-        report_id: report.id,
-        engineer_id: currentUser.id,
-        condition_observed: `[Site Rating: ⭐ ${inspectionRating}/5 ${ratingLabel}] ${conditionObserved.trim()}`,
-        recommended_action: recommendedAction.trim(),
-        estimated_cost_range: estimatedCostRange.trim() || null,
-        field_photo_url: uploadedPhotoUrl || null,
-        submitted_at: new Date().toISOString(),
-      };
-
-      const { error: insErr } = await supabase
-        .from('public_report_field_findings')
-        .insert(findingPayload);
-
-      if (insErr) throw insErr;
-
-      try {
-        await supabase
-          .from('public_reports')
-          .update({ engineer_status: 'inspected', verification: 'Needs Review', updated_at: new Date().toISOString() })
-          .eq('id', report.id);
-      } catch {
-        // Findings are already saved; a failure here shouldn't block the submission.
-      }
-
-      await supabase.from('public_report_activity_logs').insert({
-        report_id: report.id,
-        action_type: 'findings_submitted',
-        description: 'Field engineer submitted findings',
-        actor_name: currentUser.user_metadata?.full_name || currentUser.email || 'Field Engineer',
+      await submitPublicReportInspection(supabase, {
+        reportId: report.id,
+        conditionObserved: `[Site Rating: ${inspectionRating}/5 ${ratingLabel}] ${conditionObserved.trim()}`,
+        recommendedAction: recommendedAction.trim(),
+        siteRating: inspectionRating,
+        fieldPhotoUrl: uploadedPhotoUrl || null,
+        certified: engineerCertified,
+        estimatedCostRange: estimatedCostRange.trim() || null,
+        latitude: capturedGeo?.latitude ?? null,
+        longitude: capturedGeo?.longitude ?? null,
+        gpsAccuracyMeters: capturedGeo?.accuracy ?? null,
       });
 
       await notifyAdmin(
@@ -414,6 +401,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       if (onSaved) onSaved('Field findings submitted');
       setPhotoFile(null);
       setCapturedGeo(null);
+      setEngineerCertified(false);
       await loadSupportingData();
     } catch (err) {
       if (onSaved) onSaved(`Failed to submit findings: ${err.message}`, 'error');
@@ -468,7 +456,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         maximumAge: 0,
       }
     );
-  }, [stopCamera]);
+  }, [report, stopCamera]);
 
   const retakeCapture = () => {
     setPhotoFile(null);
@@ -480,8 +468,8 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   return (
     <section className="space-y-4">
       {/* DA-RAED 5-Step Report Flow Stepper */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 shadow-sm">
-        <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-3">
+      <div className="bg-slate-950 text-white rounded-xl p-4 border border-slate-800 shadow-sm">
+        <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-widest mb-3">
           DA-RAED Official Damage Report Flow
         </p>
         <div className="grid grid-cols-5 gap-1 text-center relative">
@@ -493,12 +481,12 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             { step: '5', title: 'Resolution', desc: 'Public Sign-off', active: report?.status === 'resolved', done: report?.status === 'resolved' },
           ].map((s, idx) => (
             <div key={idx} className="flex flex-col items-center">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                s.done ? 'bg-emerald-500 text-slate-950 font-extrabold ring-2 ring-emerald-400/30' : s.active ? 'bg-amber-500 text-slate-950 font-extrabold animate-pulse' : 'bg-slate-800 text-slate-500 border border-slate-700'
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
+                s.done ? 'bg-emerald-400 text-slate-950 ring-2 ring-emerald-400/30' : s.active ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-500 border border-slate-700'
               }`}>
                 {s.done ? '✓' : s.step}
               </div>
-              <p className="text-[11px] font-bold text-slate-200 mt-1.5 leading-tight">{s.title}</p>
+              <p className="text-[11px] font-semibold text-slate-200 mt-1.5 leading-tight">{s.title}</p>
               <p className="text-[9px] text-slate-400 hidden sm:block mt-0.5">{s.desc}</p>
             </div>
           ))}
@@ -516,11 +504,11 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         onResetFocus={() => setMapFocus('fit')}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
         <button
           type="button"
           onClick={() => setMapFocus([report?.latitude, report?.longitude])}
-          className="rounded-xl border border-teal-200 bg-teal-50 text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-100 transition flex items-center justify-center gap-2"
+          className="rounded-lg border border-teal-200 bg-white text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-50 transition flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4 shrink-0 text-teal-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
@@ -534,7 +522,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (startPoint) setMapFocus(startPoint);
             else if (onSaved) onSaved('Start point coordinates unavailable.', 'error');
           }}
-          className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-100 transition flex items-center justify-center gap-2"
+          className="rounded-lg border border-emerald-200 bg-white text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-50 transition flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
@@ -547,7 +535,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (endPoint) setMapFocus(endPoint);
             else if (onSaved) onSaved('End point coordinates unavailable.', 'error');
           }}
-          className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-100 transition flex items-center justify-center gap-2"
+          className="rounded-lg border border-rose-200 bg-white text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-50 transition flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4 shrink-0 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
@@ -558,7 +546,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           type="button"
           onClick={markVisited}
           disabled={saving}
-          className="rounded-xl border border-slate-200 bg-slate-900 text-white px-3 py-2 text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 flex items-center justify-center gap-2"
+          className="rounded-lg border border-teal-600 bg-teal-600 text-white px-3 py-2 text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-60 flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
@@ -568,18 +556,21 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
           <p className="text-xs text-slate-500 uppercase font-semibold">Route Length</p>
           <p className="mt-1 font-semibold text-slate-800">{formatDistance(routeLengthMeters)}</p>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+        <div className="rounded-xl border border-amber-200 bg-white p-3">
           <p className="text-xs text-amber-700 uppercase font-semibold">Assigned Deadline</p>
           <p className="mt-1 font-semibold text-amber-800">{deadlineText}</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-        <p className="text-sm font-semibold text-slate-800">Field Findings Form</p>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+        <div className="border-b border-slate-100 pb-3">
+          <p className="text-sm font-semibold text-slate-900">Field Findings Form</p>
+          <p className="text-xs text-slate-500 mt-0.5">Document the site condition, recommendation, cost range, rating, and geotagged evidence.</p>
+        </div>
 
         <div>
           <label className="text-xs text-slate-500 font-semibold uppercase">Condition Observed</label>
@@ -587,7 +578,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             value={conditionObserved}
             onChange={(e) => setConditionObserved(e.target.value)}
             rows={3}
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
             placeholder="Describe actual road condition observed on-site"
           />
         </div>
@@ -598,7 +589,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             value={recommendedAction}
             onChange={(e) => setRecommendedAction(e.target.value)}
             rows={3}
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
             placeholder="Recommended corrective action"
           />
         </div>
@@ -608,14 +599,14 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           <input
             value={estimatedCostRange}
             onChange={(e) => setEstimatedCostRange(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
             placeholder="e.g. PHP 150,000 - PHP 220,000"
           />
         </div>
 
         <div>
           <label className="text-xs text-slate-500 font-semibold uppercase">Site Condition Rating</label>
-          <div className="mt-1 flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+          <div className="mt-1 flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
@@ -623,7 +614,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 onClick={() => {
                   setInspectionRating(star);
                 }}
-                className={`flex-1 py-1.5 rounded-lg text-sm font-bold transition-all ${
+                className={`flex-1 py-1.5 rounded-md text-sm font-semibold transition-all ${
                   inspectionRating >= star ? 'text-amber-500 scale-110 bg-white shadow-sm' : 'text-slate-300 hover:text-amber-300'
                 }`}
                 title={`${star} Star${star > 1 ? 's' : ''}`}
@@ -631,7 +622,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 ★
               </button>
             ))}
-            <span className="text-xs font-bold text-slate-700 ml-2 whitespace-nowrap">
+            <span className="text-xs font-semibold text-slate-700 ml-2 whitespace-nowrap">
               {inspectionRating}/5 {['', 'Defective', 'Substandard', 'Fair', 'Good', 'Excellent'][inspectionRating] || ''}
             </span>
           </div>
@@ -642,7 +633,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           <label className="text-xs text-slate-500 font-semibold uppercase">On-Site Camera Capture</label>
           <p className="mt-1 text-xs text-slate-500">Capture directly from camera with live GPS geotag.</p>
 
-          <div className="mt-2 relative bg-black rounded-2xl overflow-hidden aspect-video border border-slate-200">
+          <div className="mt-2 relative bg-black rounded-xl overflow-hidden aspect-video border border-slate-200">
             {!photoFile ? (
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             ) : (
@@ -657,7 +648,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={captureFromCamera}
                 disabled={!cameraReady || saving}
-                className="px-4 py-2 rounded-xl bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 Capture Photo
               </button>
@@ -666,7 +657,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={retakeCapture}
                 disabled={saving}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
               >
                 Retake Photo
               </button>
@@ -676,7 +667,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={startCamera}
                 disabled={saving}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
               >
                 Restart Camera
               </button>
@@ -701,17 +692,29 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           <div className="grid grid-cols-1 gap-3">
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Previously Submitted Photo</p>
-              <img src={latestFinding.field_photo_url} alt="Previously submitted field capture" className="w-full h-40 object-cover rounded-xl border border-slate-200" />
+              <img src={latestFinding.field_photo_url} alt="Previously submitted field capture" className="w-full h-40 object-cover rounded-lg border border-slate-200" />
             </div>
           </div>
         )}
 
-        <div className="flex justify-end">
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            checked={engineerCertified}
+            onChange={(e) => setEngineerCertified(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="font-semibold">
+            I certify that these inspection findings, photo, and GPS capture were collected on site.
+          </span>
+        </label>
+
+        <div className="flex justify-end border-t border-slate-100 pt-4">
           <button
             type="button"
             onClick={submitFindings}
-            disabled={saving || loading}
-            className="px-4 py-2 rounded-xl bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-60"
+            disabled={saving || loading || !engineerCertified}
+            className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-60"
           >
             {saving ? 'Submitting...' : 'Submit Findings'}
           </button>

@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
+import { formatPercentage } from '../../lib/percentageFormat';
 
 /* public_reports.project_id is TEXT holding values like "fmr-123", while
    progress_updates.fmr_project_id is a BIGINT. Bridge the two carefully and
@@ -130,7 +131,7 @@ export default function BillingHoldControl({ report, onChanged }) {
                       )}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      {Number(verified ?? 0).toFixed(1)}% accomplishment · {u.status}
+                      {formatPercentage(verified ?? 0)} accomplishment · {u.status}
                       {u.certified_accomplishment == null && (
                         <span className="ml-1 text-amber-700 font-semibold">· uncertified</span>
                       )}

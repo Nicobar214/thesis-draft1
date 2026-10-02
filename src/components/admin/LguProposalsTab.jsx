@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import { getMunicipalities } from '../../data/iloiloLocations';
 import { getCropData, computeProposalPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
-import { getMunicipalityCentroid, getPendingDaysChip } from '../../lib/mapRouteUtils';
+import { boundsFromPoints, getMunicipalityCentroid, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { formatPeso } from '../../lib/budgetEstimate';
 import { fetchProposalActivity, describeActionType, formatActivityActor } from '../../lib/proposalActivity';
 
@@ -42,6 +42,61 @@ function StatusPill({ proposal }) {
       {proposalStatusLabel(proposal)}
     </span>
   );
+}
+
+function ActivityIcon({ type }) {
+  const baseClass = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border';
+  const toneClass = {
+    submitted: 'border-sky-200 bg-sky-50 text-sky-700',
+    resubmitted: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    validated: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    rejected: 'border-red-200 bg-red-50 text-red-700',
+    revision_requested: 'border-orange-200 bg-orange-50 text-orange-700',
+    published: 'border-teal-200 bg-teal-50 text-teal-700',
+    activity: 'border-slate-200 bg-white text-slate-500',
+  }[type] || 'border-slate-200 bg-white text-slate-500';
+
+  const iconPaths = {
+    submitted: <path strokeLinecap="round" strokeLinejoin="round" d="M12 15V4m0 0 4 4m-4-4-4 4M5 20h14" />,
+    resubmitted: <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25H21V3.75M21 8.25l-2.1-2.1a8.25 8.25 0 0 0-13.4 2.8M7.5 15.75H3v4.5m0-4.5 2.1 2.1a8.25 8.25 0 0 0 13.4-2.8" />,
+    validated: <path strokeLinecap="round" strokeLinejoin="round" d="m5 12.5 4.5 4.5L19 7" />,
+    rejected: <path strokeLinecap="round" strokeLinejoin="round" d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />,
+    revision_requested: <path strokeLinecap="round" strokeLinejoin="round" d="m16.5 4.5 3 3L8 19H5v-3L16.5 4.5Z" />,
+    published: <path strokeLinecap="round" strokeLinejoin="round" d="M4 12h5l10-6v12L9 12H4Zm5 0v5.5" />,
+    activity: <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />,
+  };
+
+  return (
+    <span className={`${baseClass} ${toneClass}`} aria-hidden="true">
+      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        {iconPaths[type] || iconPaths.activity}
+      </svg>
+    </span>
+  );
+}
+
+function RouteAutoZoom({ points, fallbackCenter }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const validPoints = (points || []).filter(([lat, lng]) => Number.isFinite(Number(lat)) && Number.isFinite(Number(lng)));
+    if (validPoints.length >= 2) {
+      const bounds = boundsFromPoints(validPoints);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [28, 28], maxZoom: 16, animate: false });
+      }
+      return;
+    }
+    if (validPoints.length === 1) {
+      map.setView(validPoints[0], 15, { animate: false });
+      return;
+    }
+    if (fallbackCenter) {
+      map.setView(fallbackCenter, 12, { animate: false });
+    }
+  }, [points, fallbackCenter, map]);
+
+  return null;
 }
 
 function InfoCard({ label, value, helper }) {
@@ -241,6 +296,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
                 <div className="mt-3 rounded-xl overflow-hidden border border-slate-200" style={{ height: '220px' }}>
                   <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} dragging={true}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
+                    <RouteAutoZoom points={routePoints} fallbackCenter={mapCenter} />
                     {routePoints.length >= 2 && (
                       <Polyline positions={routePoints} pathOptions={{ color: '#0d9488', weight: 4, opacity: 0.9 }} />
                     )}
@@ -253,7 +309,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
                     {hasEnd && (
                       <Marker
                         position={[Number(proposal.end_latitude), Number(proposal.end_longitude)]}
-                        icon={L.divIcon({ className: 'proposal-end', html: '<div style="width:14px;height:14px;background:#e11d48;border:2px solid #fff;border-radius:3px;"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })}
+                        icon={L.divIcon({ className: 'proposal-end', html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>', iconSize: [10, 10], iconAnchor: [5, 5] })}
                       />
                     )}
                   </MapContainer>
@@ -307,12 +363,17 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
                   const { label, icon } = describeActionType(log.action_type);
                   return (
                     <div key={log.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm font-semibold text-slate-900">{icon} {label}</p>
-                        <p className="text-xs font-medium text-slate-500">{new Date(log.created_at).toLocaleString()}</p>
+                      <div className="flex gap-3">
+                        <ActivityIcon type={icon} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm font-semibold text-slate-900">{label}</p>
+                            <p className="text-xs font-medium text-slate-500">{new Date(log.created_at).toLocaleString()}</p>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">{formatActivityActor(log)}</p>
+                          {log.description && <p className="mt-2 text-sm text-slate-600">{log.description}</p>}
+                        </div>
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">{formatActivityActor(log)}</p>
-                      {log.description && <p className="mt-2 text-sm text-slate-600">{log.description}</p>}
                     </div>
                   );
                 })

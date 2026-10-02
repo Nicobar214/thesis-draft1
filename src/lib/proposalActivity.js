@@ -1,16 +1,16 @@
 import { supabase } from './supabase';
 
 const ACTION_TYPE_LABELS = {
-  submitted: { label: 'Submitted', icon: '📤' },
-  resubmitted: { label: 'Resubmitted', icon: '🔄' },
-  validated: { label: 'Validated', icon: '✅' },
-  rejected: { label: 'Rejected', icon: '❌' },
-  revision_requested: { label: 'Revision Requested', icon: '✏️' },
-  published: { label: 'Published', icon: '📢' },
+  submitted: { label: 'Submitted', icon: 'submitted' },
+  resubmitted: { label: 'Resubmitted', icon: 'resubmitted' },
+  validated: { label: 'Validated', icon: 'validated' },
+  rejected: { label: 'Rejected', icon: 'rejected' },
+  revision_requested: { label: 'Revision Requested', icon: 'revision_requested' },
+  published: { label: 'Published', icon: 'published' },
 };
 
 export function describeActionType(actionType) {
-  return ACTION_TYPE_LABELS[actionType] || { label: actionType || 'Activity', icon: '•' };
+  return ACTION_TYPE_LABELS[actionType] || { label: actionType || 'Activity', icon: 'activity' };
 }
 
 export function formatActivityActor(log) {

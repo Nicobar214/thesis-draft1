@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
+import { formatPercentage } from '../lib/percentageFormat';
 
 // ── Status badge styles ──────────────────────────────────────
 const UPDATE_STATUS = {
@@ -271,7 +272,7 @@ export default function ContractorDashboard() {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="text-sm font-bold text-slate-700 font-mono">
-                        {item.reported_accomplishment}%
+                        {formatPercentage(item.reported_accomplishment)}
                       </span>
                       <StatusBadge status={item.status} />
                     </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
+import { formatPercentage } from '../../lib/percentageFormat';
 import {
   CATEGORY_STYLES,
   MILESTONE_STYLE,
@@ -718,7 +719,7 @@ function ScheduleDetailModal({ detail, contractors, latestProgress, onClose, onE
               {latestProgress && (
                 <div className="rounded-xl border border-teal-200 bg-teal-50 p-3">
                   <p className="text-xs font-semibold uppercase text-teal-700">Actual Reported Progress</p>
-                  <p className="text-sm text-teal-900 mt-1">{latestProgress.reported_accomplishment}% as of {new Date(latestProgress.submitted_at).toLocaleDateString()}</p>
+                  <p className="text-sm text-teal-900 mt-1">{formatPercentage(latestProgress.reported_accomplishment)} as of {new Date(latestProgress.submitted_at).toLocaleDateString()}</p>
                 </div>
               )}
               {record.remarks && <p className="text-sm text-slate-600">{record.remarks}</p>}

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
+import { formatPercentage } from '../lib/percentageFormat';
 
 // ── Status badge ─────────────────────────────────────────────
 function ReportStatusBadge({ status }) {
@@ -268,8 +269,8 @@ export default function ContractorReports() {
                         <p className="text-sm font-semibold text-slate-900 line-clamp-2">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
                         {item.fmr_projects?.municipality && <p className="text-xs text-slate-500 mt-0.5">{item.fmr_projects.municipality}</p>}
                       </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-slate-900 font-mono">{Number(item.reported_accomplishment || 0).toFixed(2)}%</td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 font-mono">{Number(item.fmr_projects?.accomplishment || 0).toFixed(2)}%</td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-slate-900 font-mono">{formatPercentage(item.reported_accomplishment)}</td>
+                      <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 font-mono">{formatPercentage(item.fmr_projects?.accomplishment ?? 0)}</td>
                       <td className="px-5 py-4"><ProgressStatusBadge status={item.status} /></td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{fmtDateTime(item.submitted_at)}</td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{item.status === 'pending' ? 'Awaiting review' : fmtDateTime(item.reviewed_at)}</td>

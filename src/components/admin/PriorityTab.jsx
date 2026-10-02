@@ -256,6 +256,7 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
         })() && null}
         {rankings.slice((currentPage - 1) * itemsPerPage, (currentPage - 1) * itemsPerPage + itemsPerPage).map((entry) => {
           const { project, bySeverity, cropData, score, rank, reason, hasEscalation } = entry;
+          const hasGapDetails = moduleMode === 'network_gaps' && (entry.gapKm || entry.gapType || entry.gapReason);
           const severityPills = [
             { key: 'safety', label: `Safety ×${bySeverity.safety}`, tone: 'bg-red-100 text-red-700' },
             { key: 'flood', label: `Flood ×${bySeverity.flood}`, tone: 'bg-sky-100 text-sky-700' },
@@ -290,6 +291,12 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
                       </p>
                     </div>
                     <p className="text-sm text-slate-500 italic">{reason}</p>
+                    {hasGapDetails && (
+                      <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
+                        <p className="font-bold">{entry.gapKm || 0} km {entry.gapType || 'Road Network Gap'}</p>
+                        {entry.gapReason && <p className="mt-0.5 text-red-700">{entry.gapReason}</p>}
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       {severityPills.map((pill) => (
                         <span key={pill.key} className={`px-2.5 py-1 rounded-full text-xs font-semibold ${pill.tone}`}>

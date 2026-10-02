@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
-import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline } from '../../lib/mapRouteUtils';
+import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints } from '../../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 
 function FitToData({ points }) {
@@ -73,16 +73,16 @@ function FarmerHeatmapLayer({ visible, points }) {
 
 const startIcon = new L.DivIcon({
   className: 'lgu-route-start',
-  html: '<div style="background:#16a34a;color:#fff;width:22px;height:22px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:700">S</div>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  html: '<div style="background:#16a34a;width:10px;height:10px;border-radius:9999px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(22,101,52,.55),0 1px 3px rgba(0,0,0,.25)"></div>',
+  iconSize: [10, 10],
+  iconAnchor: [5, 5],
 });
 
 const endIcon = new L.DivIcon({
   className: 'lgu-route-end',
-  html: '<div style="background:#dc2626;color:#fff;width:22px;height:22px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:700">E</div>',
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
+  html: '<div style="background:#f97316;width:10px;height:10px;border-radius:9999px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25)"></div>',
+  iconSize: [10, 10],
+  iconAnchor: [5, 5],
 });
 
 export default function LguRouteMap({
@@ -103,17 +103,50 @@ export default function LguRouteMap({
   const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
   const [farmerCropFilter, setFarmerCropFilter] = useState('All');
   const [showRoadGaps, setShowRoadGaps] = useState(true);
+  const [snappedConnectionPoints, setSnappedConnectionPoints] = useState({ key: null, points: null });
   const [snappedProjectRoutes, setSnappedProjectRoutes] = useState({});
+  const [focusedProjectId, setFocusedProjectId] = useState(null);
+
+  const connectionPoints = useMemo(() => {
+    if (!selectedFarmerForPath) return [];
+
+    const farmLat = selectedFarmerForPath.farmLatitude || selectedFarmerForPath.gps?.lat;
+    const farmLng = selectedFarmerForPath.farmLongitude || selectedFarmerForPath.gps?.lng;
+    if (!farmLat || !farmLng) return [];
+
+    const points = [[Number(farmLat), Number(farmLng)]];
+
+    const linkedProject = (projects || []).find((project) => project.id === selectedFarmerForPath.linkedProjectId);
+    if (linkedProject?.start_latitude && linkedProject?.start_longitude) {
+      points.push([Number(linkedProject.start_latitude), Number(linkedProject.start_longitude)]);
+      if (linkedProject.end_latitude && linkedProject.end_longitude) {
+        points.push([Number(linkedProject.end_latitude), Number(linkedProject.end_longitude)]);
+      }
+    }
+
+    const linkedMarket = (markets || []).find((market) => market.id === selectedFarmerForPath.nearestMarketId);
+    if (linkedMarket?.latitude && linkedMarket?.longitude) {
+      points.push([Number(linkedMarket.latitude), Number(linkedMarket.longitude)]);
+    }
+
+    return points.filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+  }, [markets, projects, selectedFarmerForPath]);
+
+  const connectionKey = useMemo(() => {
+    return connectionPoints.map(([lat, lng]) => `${lat},${lng}`).join('|');
+  }, [connectionPoints]);
 
   // Snap the farmer's supply-chain connection line onto real road geometry
   // (OSRM) instead of leaving it as a straight Euclidean line.
   useEffect(() => {
+    if (connectionPoints.length < 2) return undefined;
+
     let cancelled = false;
     fetchRoadAlignedPolyline(connectionPoints).then((snapped) => {
-      if (!cancelled) setSnappedConnectionPoints(connectionPoints.length >= 2 ? snapped : null);
+      if (!cancelled) setSnappedConnectionPoints({ key: connectionKey, points: snapped });
     });
     return () => { cancelled = true; };
-  }, [connectionPoints]);
+  }, [connectionKey, connectionPoints]);
 
   // Auto-snap all project routes to real road network geometry via OSRM
   useEffect(() => {
@@ -267,15 +300,38 @@ export default function LguRouteMap({
 
         {routeLayers.map(({ project, routeData, coordinates }) => {
           const effectivePoints = snappedProjectRoutes[project.id] || routeData.points;
+          const displayPoints = createDisplayRoutePoints(effectivePoints, project.id);
+          const isFocused = focusedProjectId === project.id;
+          const lineHandlers = {
+            mouseover: () => setFocusedProjectId(project.id),
+            mouseout: () => setFocusedProjectId(null),
+            click: () => setFocusedProjectId(project.id),
+          };
           return (
             <div key={project.id}>
               {effectivePoints?.length >= 2 && (
-                <Polyline positions={effectivePoints} pathOptions={{ color: '#0f766e', weight: 4.5, opacity: 0.85 }} />
+                <>
+                  {isFocused && (
+                    <Polyline
+                      positions={displayPoints}
+                      pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
+                    />
+                  )}
+                  <Polyline
+                    positions={displayPoints}
+                    pathOptions={{
+                      color: '#0f766e',
+                      weight: isFocused ? 5.5 : 3.4,
+                      opacity: isFocused ? 0.95 : 0.72,
+                    }}
+                    eventHandlers={lineHandlers}
+                  />
+                </>
               )}
               {coordinates && (() => {
                 const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
                 return (
-                  <Marker position={coordinates} icon={startIcon}>
+                  <Marker position={coordinates} icon={startIcon} eventHandlers={lineHandlers}>
                     <Popup>
                       <div className="p-1 space-y-0.5 text-xs text-slate-800">
                         <p className="font-bold text-teal-700">{project.project_name}</p>
@@ -291,8 +347,8 @@ export default function LguRouteMap({
                   </Marker>
                 );
               })()}
-              {routeData.endPoint && !coordinates && (
-                <Marker position={routeData.endPoint} icon={endIcon}>
+              {routeData.endPoint && (
+                <Marker position={routeData.endPoint} icon={endIcon} eventHandlers={lineHandlers}>
                   <Popup>{project.project_name} (End)</Popup>
                 </Marker>
               )}
@@ -307,9 +363,9 @@ export default function LguRouteMap({
             positions={gap.points}
             pathOptions={{
               color: '#ef4444',
-              weight: 4,
+              weight: 3,
               dashArray: '6, 8',
-              opacity: 0.9,
+              opacity: 0.72,
             }}
           >
             <Popup>
@@ -442,7 +498,11 @@ export default function LguRouteMap({
 
           return (
             <Polyline
-              positions={snappedConnectionPoints || connectionPoints}
+              positions={
+                snappedConnectionPoints.key === connectionKey && snappedConnectionPoints.points
+                  ? snappedConnectionPoints.points
+                  : connectionPoints
+              }
               pathOptions={{
                 color: '#fb7185',
                 weight: 3.5,

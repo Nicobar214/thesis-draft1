@@ -5,6 +5,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } 
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
+import { formatPercentage } from '../lib/percentageFormat';
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Icon Components - Clean, consistent 24x24 icons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -78,7 +79,7 @@ function ProjectCard({ project }) {
           <div className={`h-full rounded-full ${style.bar} transition-all duration-500`} style={{ width: `${project.progress || 0}%` }} />
         </div>
         <span className="text-xs font-extrabold text-slate-700 tabular-nums w-12 text-right">
-          {project.progress || 0}%
+          {formatPercentage(project.progress ?? 0)}
         </span>
       </div>
     </article>
@@ -260,8 +261,8 @@ export default function UserDashboard() {
 
         const [{ data: reportsData }, { data: feedbackData }] = await Promise.all([
           supabase
-            .from('public_reports')
-            .select('id, created_at, project_name, municipality, status, user_id')
+            .from('public_reports_citizen_view')
+            .select('id, created_at, project_name, municipality, status, is_current_user_report')
             .order('created_at', { ascending: false })
             .limit(12),
           supabase
@@ -312,7 +313,7 @@ export default function UserDashboard() {
         setActivityFeed(combinedActivity);
 
         if (user?.id) {
-          const myReports = (reportsData || []).filter((report) => report.user_id === user.id);
+          const myReports = (reportsData || []).filter((report) => report.is_current_user_report);
           const myFeedback = (feedbackData || []).filter((feedback) => feedback.user_id === user.id);
 
           setSubmissions({
@@ -522,7 +523,7 @@ export default function UserDashboard() {
                             />
                           </div>
                           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-                            <span>{project.progress || 0}% Complete</span>
+                            <span>{formatPercentage(project.progress ?? 0)} Complete</span>
                             <span className="text-slate-400">{formatProjectDate(project)}</span>
                           </div>
                         </div>

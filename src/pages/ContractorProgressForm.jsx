@@ -1,26 +1,14 @@
-/* ContractorProgressForm.jsx – Modal for submitting a progress update
- * - Auto-fills project info (locked)
- * - Contractor inputs: reporting period, new accomplishment %, scope of work,
- *   amount billed, remarks, optional photo
- * - INSERT into progress_updates; does NOT update fmr_projects directly
- * - Photo uploaded to 'progress-photos' storage bucket
- *
- * The reporting period / scope / amount fields implement DA Region VI's
- * monthly reporting requirement: formal progress reporting is monthly, and
- * DA compares physical accomplishment (%) against the financial
- * disbursement (%) using these progress reports and billing documents.
- * All of them are optional at the DB level, so older updates that predate
- * this form still load and display normally.
+/* ContractorProgressForm.jsx - quantity-based contractor progress reporting.
+ * New submissions are created atomically by submit_progress_update_with_quantities.
  */
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseContractor as supabase } from '../lib/supabase';
+import { formatPercentage } from '../lib/percentageFormat';
 
 const inputCls =
-  'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm ' +
+  'w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm ' +
   'focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition';
 
-/* yyyy-mm-dd for <input type="date">, using local time (not toISOString,
-   which would shift the date across the UTC boundary for PH users). */
 const toDateInput = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -28,435 +16,441 @@ const toDateInput = (date) => {
   return `${y}-${m}-${d}`;
 };
 
-/* Default the period to the calendar month being reported. */
 const currentMonthStart = () => {
   const now = new Date();
   return toDateInput(new Date(now.getFullYear(), now.getMonth(), 1));
 };
+
 const currentMonthEnd = () => {
   const now = new Date();
   return toDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 };
 
-const emptyWorkItem = () => ({ item: '', unit: '', planned_qty: '', accomplished_qty: '' });
+const asNumber = (value) => {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
 
-export default function ContractorProgressForm({ project, user, onClose }) {
-  const currentAccomplishment = Number(project.accomplishment || 0);
+const hasUnsupportedPrecision = (value) =>
+  Math.abs(Number(value) * 10000 - Math.round(Number(value) * 10000)) > 1e-8;
 
+const formatQuantity = (value) => Number(value || 0).toLocaleString('en-PH', {
+  maximumFractionDigits: 4,
+});
+
+const friendlySubmitError = (error) => {
+  const message = error?.message || '';
+  if (error?.code === '23505' || message.toLowerCase().includes('pending progress update')) {
+    return 'A pending progress update already exists for this project. Wait for it to be reviewed before submitting another.';
+  }
+  if (message.toLowerCase().includes('cumulative contractor reported quantity')) {
+    return 'One or more cumulative quantities exceed the Work Plan. Refresh the form and review the quantities.';
+  }
+  return message || 'Something went wrong. Please try again.';
+};
+
+export default function ContractorProgressForm({ project, user, onClose, onSubmitted }) {
   const [periodStart, setPeriodStart] = useState(currentMonthStart);
-  const [periodEnd, setPeriodEnd]     = useState(currentMonthEnd);
-  const [newAccomplishment, setNewAccomplishment] = useState(currentAccomplishment);
+  const [periodEnd, setPeriodEnd] = useState(currentMonthEnd);
   const [amountBilled, setAmountBilled] = useState('');
-  const [workItems, setWorkItems] = useState([emptyWorkItem()]);
   const [remainingScope, setRemainingScope] = useState('');
-  const [remarks, setRemarks]   = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [certified, setCertified] = useState(false);
+  const [planStatus, setPlanStatus] = useState(project.work_plan_status || 'none');
+  const [planItems, setPlanItems] = useState([]);
+  const [previousByItem, setPreviousByItem] = useState({});
+  const [quantities, setQuantities] = useState({});
+  const [loadingPlan, setLoadingPlan] = useState(true);
+  const [planError, setPlanError] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
-  const updateWorkItem = (index, field, value) => {
-    setWorkItems((rows) => rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
-  };
-  const addWorkItem = () => setWorkItems((rows) => [...rows, emptyWorkItem()]);
-  const removeWorkItem = (index) => {
-    setWorkItems((rows) => (rows.length === 1 ? [emptyWorkItem()] : rows.filter((_, i) => i !== index)));
-  };
-
   const projectName = project.project_name || project.projectName || 'Unnamed Project';
   const municipality = project.municipality || '';
 
-  const handlePhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWorkPlan = async () => {
+      setLoadingPlan(true);
+      setPlanError(null);
+
+      try {
+        const { data: liveProject, error: projectError } = await supabase
+          .from('fmr_projects')
+          .select('id, work_plan_status')
+          .eq('id', project.id)
+          .maybeSingle();
+        if (projectError) throw projectError;
+
+        const liveStatus = liveProject?.work_plan_status || 'none';
+        if (cancelled) return;
+        setPlanStatus(liveStatus);
+
+        if (liveStatus !== 'finalized') {
+          setPlanItems([]);
+          setPreviousByItem({});
+          setPlanError('This project does not have a finalized Work Plan. Ask the Admin to finalize it before submitting progress.');
+          return;
+        }
+
+        const { data: items, error: itemsError } = await supabase
+          .from('work_plan_items')
+          .select('id, activity_name, unit, planned_quantity, sort_order, remarks')
+          .eq('fmr_project_id', project.id)
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('id', { ascending: true });
+        if (itemsError) throw itemsError;
+        if (!items?.length) {
+          throw new Error('Configuration error: this finalized Work Plan has no activities. Contact the Admin before submitting progress.');
+        }
+
+        const { data: approvedUpdates, error: approvedError } = await supabase
+          .from('progress_updates')
+          .select('id')
+          .eq('fmr_project_id', project.id)
+          .eq('contractor_id', user.id)
+          .eq('status', 'approved');
+        if (approvedError) throw approvedError;
+
+        let baseline = {};
+        const approvedIds = (approvedUpdates || []).map((update) => update.id);
+        if (approvedIds.length > 0) {
+          const { data: approvedItems, error: baselineError } = await supabase
+            .from('progress_update_items')
+            .select('work_plan_item_id, contractor_reported_quantity')
+            .in('progress_update_id', approvedIds);
+          if (baselineError) throw baselineError;
+          baseline = (approvedItems || []).reduce((totals, item) => ({
+            ...totals,
+            [item.work_plan_item_id]: (totals[item.work_plan_item_id] || 0) + Number(item.contractor_reported_quantity || 0),
+          }), {});
+        }
+
+        if (!cancelled) {
+          setPlanItems(items);
+          setPreviousByItem(baseline);
+          setQuantities(Object.fromEntries(items.map((item) => [item.id, ''])));
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          console.error('Failed to load finalized Work Plan', loadError);
+          setPlanItems([]);
+          setPreviousByItem({});
+          setPlanError(loadError.message || 'Unable to load the finalized Work Plan.');
+        }
+      } finally {
+        if (!cancelled) setLoadingPlan(false);
+      }
+    };
+
+    loadWorkPlan();
+    return () => { cancelled = true; };
+  }, [project.id, user.id]);
+
+  useEffect(() => () => {
     if (photoPreview) URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
+
+  const previewRows = useMemo(() => planItems.map((item) => {
+    const previous = Number(previousByItem[item.id] || 0);
+    const current = asNumber(quantities[item.id]) ?? 0;
+    const cumulative = previous + current;
+    const planned = Number(item.planned_quantity || 0);
+    const percent = planned > 0 ? (cumulative / planned) * 100 : 0;
+    return { ...item, previous, current, cumulative, percent };
+  }), [planItems, previousByItem, quantities]);
+
+  const overallPreview = useMemo(() => {
+    if (previewRows.length === 0) return 0;
+    return previewRows.reduce((sum, item) => sum + item.percent, 0) / previewRows.length;
+  }, [previewRows]);
+
+  const handlePhotoChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
   };
 
   const clearPhoto = () => {
     setPhotoFile(null);
-    if (photoPreview) { URL.revokeObjectURL(photoPreview); setPhotoPreview(null); }
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError(null);
 
-    if (!remarks.trim()) { setError('Remarks are required.'); return; }
-    if (newAccomplishment < currentAccomplishment) {
-      setError(`New accomplishment (${newAccomplishment}%) cannot be less than current (${currentAccomplishment}%).`);
+    if (planStatus !== 'finalized' || planItems.length === 0) {
+      setError(planError || 'A finalized Work Plan is required.');
       return;
     }
-    if (newAccomplishment > 100) { setError('Accomplishment cannot exceed 100%.'); return; }
-    if (!periodStart || !periodEnd) { setError('Reporting period start and end are required.'); return; }
-    if (periodEnd < periodStart) { setError('Reporting period end cannot be before the start date.'); return; }
-    if (amountBilled !== '' && Number(amountBilled) < 0) {
-      setError('Amount billed cannot be negative.');
+    if (!periodStart || !periodEnd || periodEnd < periodStart) {
+      setError('Enter a valid reporting period.');
+      return;
+    }
+    if (!remarks.trim()) {
+      setError('Remarks are required.');
+      return;
+    }
+    if (amountBilled !== '' && (asNumber(amountBilled) === null || Number(amountBilled) < 0)) {
+      setError('Amount billed must be zero or greater.');
+      return;
+    }
+    if (!certified) {
+      setError('You must certify that the reported data is true and correct before submitting.');
       return;
     }
 
-    // Keep only rows the contractor actually filled in; a blank repeater row
-    // is the default state, not data.
-    const cleanedWorkItems = workItems
-      .filter((row) => row.item.trim())
-      .map((row) => ({
-        item: row.item.trim(),
-        unit: row.unit.trim(),
-        planned_qty: row.planned_qty === '' ? null : Number(row.planned_qty),
-        accomplished_qty: row.accomplished_qty === '' ? null : Number(row.accomplished_qty),
-      }));
+    for (const row of previewRows) {
+      const rawQuantity = quantities[row.id];
+      const quantity = asNumber(rawQuantity);
+      if (rawQuantity === '' || quantity === null || quantity < 0) {
+        setError(`Enter a quantity of zero or greater for "${row.activity_name}".`);
+        return;
+      }
+      if (hasUnsupportedPrecision(quantity)) {
+        setError(`Use no more than four decimal places for "${row.activity_name}".`);
+        return;
+      }
+      if (row.cumulative > Number(row.planned_quantity)) {
+        setError(`The cumulative quantity for "${row.activity_name}" cannot exceed its planned quantity.`);
+        return;
+      }
+    }
 
     setSubmitting(true);
+    let uploadedPath = null;
+
     try {
-      const { data: existingPending, error: pendingErr } = await supabase
+      const { data: existingPending, error: pendingError } = await supabase
         .from('progress_updates')
-        .select('id, status')
+        .select('id')
         .eq('fmr_project_id', project.id)
         .eq('contractor_id', user.id)
         .eq('status', 'pending')
-        .order('submitted_at', { ascending: false })
         .limit(1);
-      if (pendingErr) throw pendingErr;
+      if (pendingError) throw pendingError;
       if (existingPending?.length) {
-        throw new Error('There is already a pending progress update for this project. Wait for admin review before submitting another.');
+        throw new Error('A pending progress update already exists for this project.');
       }
 
       let photoUrl = null;
-
-      // Upload photo if provided
       if (photoFile) {
-        const ext  = photoFile.name.split('.').pop() || 'jpg';
-        const path = `updates/${user.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage
+        const ext = photoFile.name.split('.').pop() || 'jpg';
+        uploadedPath = `updates/${user.id}/${project.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage
           .from('progress-photos')
-          .upload(path, photoFile, { contentType: photoFile.type || 'image/jpeg' });
-        if (upErr) throw upErr;
-        const { data: urlData } = supabase.storage.from('progress-photos').getPublicUrl(path);
+          .upload(uploadedPath, photoFile, { contentType: photoFile.type || 'image/jpeg' });
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from('progress-photos').getPublicUrl(uploadedPath);
         photoUrl = urlData.publicUrl;
       }
 
-      const { error: insErr } = await supabase.from('progress_updates').insert({
-        fmr_project_id:          project.id,
-        contractor_id:           user.id,
-        reported_accomplishment: newAccomplishment,
-        remarks:                 remarks.trim(),
-        photo_url:               photoUrl,
-        status:                  'pending',
-        period_start:            periodStart,
-        period_end:              periodEnd,
-        amount_this_billing:     amountBilled === '' ? null : Number(amountBilled),
-        work_items:              cleanedWorkItems,
-        remaining_scope:         remainingScope.trim() || null,
-      });
-      if (insErr) throw insErr;
+      const payload = previewRows.map((row) => ({
+        work_plan_item_id: row.id,
+        contractor_reported_quantity: Number(quantities[row.id]),
+      }));
 
-      onClose();
-    } catch (err) {
-      console.error('Progress update submit error:', err);
-      setError(err.message || 'Something went wrong. Please try again.');
+      const { data: progressUpdateId, error: rpcError } = await supabase.rpc(
+        'submit_progress_update_with_quantities',
+        {
+          p_fmr_project_id: project.id,
+          p_period_start: periodStart,
+          p_period_end: periodEnd,
+          p_remarks: remarks.trim(),
+          p_items: payload,
+          p_contractor_certified: certified,
+          p_photo_url: photoUrl,
+          p_amount_this_billing: amountBilled === '' ? null : Number(amountBilled),
+          p_remaining_scope: remainingScope.trim() || null,
+        }
+      );
+      if (rpcError) throw rpcError;
+
+      onSubmitted?.(progressUpdateId);
+    } catch (submitError) {
+      if (uploadedPath) {
+        const { error: cleanupError } = await supabase.storage.from('progress-photos').remove([uploadedPath]);
+        if (cleanupError) console.error('Failed to clean up unreferenced progress photo', cleanupError);
+      }
+      console.error('Progress update submit error:', submitError);
+      setError(friendlySubmitError(submitError));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    // Backdrop
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={() => !submitting && onClose()}
+      role="presentation"
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-lg shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-y-auto"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Submit progress for ${projectName}`}
       >
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">Submit Progress Update</h2>
-            <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">{projectName}</p>
+        <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between gap-4 sticky top-0 bg-white z-10">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-slate-900">Submit Quantity Progress Update</h2>
+            <p className="text-sm text-slate-500 mt-0.5 truncate">{projectName}{municipality ? ` - ${municipality}` : ''}</p>
           </div>
           <button
+            type="button"
             onClick={() => !submitting && onClose()}
-            className="p-2 rounded-xl hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
+            aria-label="Close progress form"
+            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 shrink-0"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Locked project info */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Project Info (read-only)</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs text-slate-500">Project Name</p>
-                <p className="text-sm font-semibold text-slate-900">{projectName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Municipality</p>
-                <p className="text-sm font-semibold text-slate-900">{municipality || '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Current Accomplishment</p>
-                <p className="text-sm font-bold text-teal-700 font-mono">{currentAccomplishment}%</p>
-              </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {loadingPlan ? (
+            <div className="py-14 text-center">
+              <div className="w-8 h-8 mx-auto border-4 border-teal-100 border-t-teal-600 rounded-full animate-spin" />
+              <p className="text-sm text-slate-500 mt-3">Loading finalized Work Plan...</p>
             </div>
-          </div>
-
-          {/* Reporting period – DA requires monthly progress reporting */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Reporting Period <span className="text-red-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <input
-                  type="date"
-                  value={periodStart}
-                  onChange={(e) => setPeriodStart(e.target.value)}
-                  max={periodEnd || undefined}
-                  aria-label="Reporting period start"
-                  className={inputCls}
-                  required
-                />
-                <p className="text-xs text-slate-400 mt-1">Period start</p>
-              </div>
-              <div>
-                <input
-                  type="date"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                  min={periodStart || undefined}
-                  aria-label="Reporting period end"
-                  className={inputCls}
-                  required
-                />
-                <p className="text-xs text-slate-400 mt-1">Period end</p>
-              </div>
+          ) : planError ? (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-4 rounded-lg">
+              <p className="text-sm font-semibold">Progress submission unavailable</p>
+              <p className="text-sm mt-1">{planError}</p>
             </div>
-            <p className="text-xs text-slate-400 mt-1.5">
-              Defaults to the current month. DA requires formal progress reporting monthly.
-            </p>
-          </div>
-
-          {/* New accomplishment */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              New Accomplishment % <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              min={currentAccomplishment}
-              max={100}
-              step={0.1}
-              value={newAccomplishment}
-              onChange={(e) => setNewAccomplishment(Number(e.target.value))}
-              className={inputCls}
-              required
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Must be ≥ {currentAccomplishment}% (current value). Subject to verification by
-              the supervising engineer before it is recognised for payment.
-            </p>
-          </div>
-
-          {/* Amount billed this period */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Amount Billed This Period <span className="text-slate-400 font-normal">(optional)</span>
-            </label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">₱</span>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={amountBilled}
-                onChange={(e) => setAmountBilled(e.target.value)}
-                placeholder="0.00"
-                className={inputCls + ' pl-8'}
-              />
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Progress billing for this period. Leave blank if no billing is being submitted yet.
-            </p>
-          </div>
-
-          {/* Scope of work accomplished */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-sm font-semibold text-slate-700">
-                Scope of Work <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
-              <button
-                type="button"
-                onClick={addWorkItem}
-                className="text-xs font-semibold text-teal-700 hover:text-teal-800 hover:bg-teal-50 px-2 py-1 rounded-lg transition-colors"
-              >
-                + Add item
-              </button>
-            </div>
-            <div className="space-y-2">
-              {workItems.map((row, index) => (
-                <div key={index} className="grid grid-cols-12 gap-2 items-start">
-                  <input
-                    type="text"
-                    value={row.item}
-                    onChange={(e) => updateWorkItem(index, 'item', e.target.value)}
-                    placeholder="Work item (e.g. Subbase course)"
-                    aria-label={`Work item ${index + 1} description`}
-                    className={inputCls + ' col-span-5'}
-                  />
-                  <input
-                    type="text"
-                    value={row.unit}
-                    onChange={(e) => updateWorkItem(index, 'unit', e.target.value)}
-                    placeholder="Unit"
-                    aria-label={`Work item ${index + 1} unit`}
-                    className={inputCls + ' col-span-2'}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={row.planned_qty}
-                    onChange={(e) => updateWorkItem(index, 'planned_qty', e.target.value)}
-                    placeholder="Plan"
-                    aria-label={`Work item ${index + 1} planned quantity`}
-                    className={inputCls + ' col-span-2'}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={row.accomplished_qty}
-                    onChange={(e) => updateWorkItem(index, 'accomplished_qty', e.target.value)}
-                    placeholder="Done"
-                    aria-label={`Work item ${index + 1} accomplished quantity`}
-                    className={inputCls + ' col-span-2'}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeWorkItem(index)}
-                    aria-label={`Remove work item ${index + 1}`}
-                    className="col-span-1 h-[42px] rounded-xl border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors grid place-items-center"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+          ) : (
+            <>
+              {Number(project.work_plan_adoption_baseline || 0) > 0 && (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                  Quantities report progress after Work Plan adoption. The preserved historical baseline is{' '}
+                  <strong>{formatPercentage(project.work_plan_adoption_baseline)}</strong>.
                 </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-400 mt-1.5">
-              Itemise what was actually accomplished this period. Blank rows are ignored.
-            </p>
-          </div>
-
-          {/* Remaining workload */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Remaining Workload <span className="text-slate-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={remainingScope}
-              onChange={(e) => setRemainingScope(e.target.value)}
-              placeholder="What is still outstanding after this period?"
-              rows={2}
-              className={inputCls + ' resize-none'}
-            />
-          </div>
-
-          {/* Remarks */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Remarks / Notes <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Describe the work done, materials used, conditions, etc."
-              rows={4}
-              className={inputCls + ' resize-none'}
-              required
-            />
-          </div>
-
-          {/* Photo upload */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Site Photo <span className="text-slate-400 font-normal">(optional)</span>
-            </label>
-            {photoPreview ? (
-              <div className="relative">
-                <img
-                  src={photoPreview}
-                  alt="Preview"
-                  className="w-full h-48 object-cover rounded-xl border border-slate-200"
-                />
-                <button
-                  type="button"
-                  onClick={clearPhoto}
-                  className="absolute top-2 right-2 bg-white/90 hover:bg-white rounded-lg p-1.5 shadow-sm border border-slate-200 text-slate-500 hover:text-red-500 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Period Start <span className="text-red-500">*</span></label>
+                  <input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} max={periodEnd || undefined} className={inputCls} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Period End <span className="text-red-500">*</span></label>
+                  <input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} min={periodStart || undefined} className={inputCls} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Amount Billed This Period <span className="font-normal text-slate-400">(optional)</span></label>
+                  <input type="number" min="0" step="0.01" value={amountBilled} onChange={(event) => setAmountBilled(event.target.value)} placeholder="0.00" className={inputCls} />
+                </div>
               </div>
-            ) : (
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-teal-400 hover:bg-teal-50/30 transition-colors">
-                <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                </svg>
-                <span className="text-sm text-slate-500">Click to upload a photo</span>
-                <span className="text-xs text-slate-400 mt-0.5">JPG, PNG, WEBP up to 10MB</span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoChange}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
 
-          {/* Error */}
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-              {error}
-            </div>
+              <div>
+                <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Work Plan Quantities</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Enter the quantity accomplished during this reporting period for every activity.</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Overall preview</p>
+                    <p className="text-xl font-bold text-teal-700 font-mono">{formatPercentage(overallPreview)}</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full min-w-[950px] text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500">
+                      <tr>
+                        <th className="text-left px-3 py-3">Activity</th>
+                        <th className="text-left px-3 py-3">Unit</th>
+                        <th className="text-right px-3 py-3">Planned</th>
+                        <th className="text-right px-3 py-3">Previous Approved</th>
+                        <th className="text-left px-3 py-3 w-48">This Period</th>
+                        <th className="text-right px-3 py-3">Cumulative</th>
+                        <th className="text-right px-3 py-3">Progress Preview</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {previewRows.map((row) => {
+                        const exceedsPlan = row.cumulative > Number(row.planned_quantity);
+                        return (
+                          <tr key={row.id} className={exceedsPlan ? 'bg-red-50/60' : ''}>
+                            <td className="px-3 py-3 font-semibold text-slate-800">{row.activity_name}</td>
+                            <td className="px-3 py-3 text-slate-600">{row.unit || '-'}</td>
+                            <td className="px-3 py-3 text-right font-mono">{formatQuantity(row.planned_quantity)}</td>
+                            <td className="px-3 py-3 text-right font-mono text-slate-600">{formatQuantity(row.previous)}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.0001"
+                                value={quantities[row.id] ?? ''}
+                                onChange={(event) => setQuantities((values) => ({ ...values, [row.id]: event.target.value }))}
+                                aria-label={`Quantity accomplished this period for ${row.activity_name}`}
+                                className={`${inputCls} ${exceedsPlan ? 'border-red-300 focus:border-red-500' : ''}`}
+                                required
+                              />
+                            </td>
+                            <td className={`px-3 py-3 text-right font-mono font-semibold ${exceedsPlan ? 'text-red-700' : 'text-slate-800'}`}>{formatQuantity(row.cumulative)}</td>
+                            <td className={`px-3 py-3 text-right font-mono font-bold ${exceedsPlan ? 'text-red-700' : 'text-teal-700'}`}>{formatPercentage(row.percent)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-slate-400 mt-2">Preview percentages are for guidance. The server calculates the submitted accomplishment from all Work Plan activities.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Remaining Workload <span className="font-normal text-slate-400">(optional)</span></label>
+                  <textarea value={remainingScope} onChange={(event) => setRemainingScope(event.target.value)} rows={4} placeholder="What remains after this period?" className={`${inputCls} resize-none`} />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Remarks / Notes <span className="text-red-500">*</span></label>
+                  <textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={4} placeholder="Describe the work completed and site conditions." className={`${inputCls} resize-none`} required />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Site Photo <span className="font-normal text-slate-400">(optional)</span></label>
+                {photoPreview ? (
+                  <div className="relative max-w-md">
+                    <img src={photoPreview} alt="Site evidence preview" className="w-full h-48 object-cover rounded-lg border border-slate-200" />
+                    <button type="button" onClick={clearPhoto} aria-label="Remove photo" className="absolute top-2 right-2 bg-white p-2 rounded-lg shadow border border-slate-200 text-slate-500 hover:text-red-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center w-full max-w-md h-28 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-teal-400 hover:bg-teal-50/30">
+                    <span className="text-sm text-slate-500">Choose a JPG, PNG, or WEBP photo</span>
+                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                  </label>
+                )}
+              </div>
+
+              <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={certified} onChange={(event) => setCertified(event.target.checked)} className="mt-0.5 w-4 h-4 accent-teal-600" required />
+                <span className="text-sm text-slate-700">I certify that the accomplishment quantities and supporting information reported here are true and correct to the best of my knowledge.</span>
+              </label>
+            </>
           )}
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => !submitting && onClose()}
-              disabled={submitting}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 shadow-lg shadow-teal-500/25 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {submitting ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Submitting…
-                </>
-              ) : 'Submit Update'}
+          {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>}
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+            <button type="button" onClick={() => !submitting && onClose()} disabled={submitting} className="px-5 py-2.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+            <button type="submit" disabled={submitting || loadingPlan || Boolean(planError)} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              {submitting ? 'Submitting...' : 'Submit Update'}
             </button>
           </div>
         </form>

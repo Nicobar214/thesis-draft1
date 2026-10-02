@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatPercentage } from '../lib/percentageFormat';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -83,7 +84,7 @@ function ProjectListCard({ project, onClick }) {
           <div className={`h-full rounded-full ${style.bar} transition-all`} style={{ width: `${project.progress || 0}%` }} />
         </div>
         <span className="text-xs font-medium text-slate-600 tabular-nums w-10 text-right">
-          {project.progress || 0}%
+          {formatPercentage(project.progress ?? 0)}
         </span>
       </div>
 
@@ -389,7 +390,7 @@ function ProjectDetail({ project, onBack }) {
           <div className="mb-5">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-sm font-medium text-slate-700">Progress</span>
-              <span className="text-sm font-semibold text-slate-900">{project.progress || 0}%</span>
+              <span className="text-sm font-semibold text-slate-900">{formatPercentage(project.progress ?? 0)}</span>
             </div>
             <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
               <div className={`h-full rounded-full ${style.bar} transition-all`} style={{ width: `${project.progress || 0}%` }} />

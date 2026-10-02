@@ -5,12 +5,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
-import { enqueueEngineerUpdate } from '../lib/offlineReports';
-import { requestBackgroundSync } from '../lib/offlineSync';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
+import { startPublicReportInspection } from '../services/publicReportWorkflow';
 
 /* ─── Status Helpers & Badges ─── */
 const engineerStatusStyles = {
@@ -56,12 +55,12 @@ const engineerStatusFlow = {
 
 function EngineerStatusBadge({ status }) {
   const s = engineerStatusStyles[status] || { label: status || 'Unknown', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
-  return <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${s.cls}`}>{s.label}</span>;
+  return <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${s.cls}`}>{s.label}</span>;
 }
 
 function ReportStatusBadge({ status }) {
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${reportStatusStyles[status] || 'bg-slate-100 text-slate-600'}`}>
+    <span className={`px-2.5 py-1 rounded-md text-xs font-semibold ${reportStatusStyles[status] || 'bg-slate-100 text-slate-600'}`}>
       {status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Pending'}
     </span>
   );
@@ -74,7 +73,7 @@ function VerifyBadge({ verification }) {
     'Location Mismatch':  { icon: '✕', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
   };
   const s = map[verification] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
-  return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold border ${s.cls}`}>{s.icon} {verification}</span>;
+  return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${s.cls}`}>{s.icon} {verification}</span>;
 }
 
 export default function FieldEngineerDashboard() {
@@ -246,23 +245,6 @@ export default function FieldEngineerDashboard() {
     } catch { /* silent */ }
   }, []);
 
-  const addPublicReportActivity = useCallback(async (reportId, statusLabel, note = '') => {
-    if (!reportId) return;
-    try {
-      const actorName = profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Field Engineer';
-      const noteText = note?.trim() ? ` Notes: ${note.trim()}` : '';
-      await supabase.from('public_report_activity_logs').insert({
-        report_id: reportId,
-        action_type: 'engineer_status_updated',
-        description: `Field engineer marked the report as ${statusLabel}.${noteText}`,
-        metadata: { engineer_status: statusLabel.toLowerCase().replace(/\s+/g, '_') },
-        actor_name: actorName,
-        actor_email: user?.email || null,
-        created_at: new Date().toISOString(),
-      });
-    } catch { /* silent */ }
-  }, [profile?.full_name, user]);
-
   // Update engineer status
   const updateReportStatus = async (reportId, newStatus) => {
     setUpdatingStatus(true);
@@ -271,76 +253,20 @@ export default function FieldEngineerDashboard() {
       const activeReport = reports.find((row) => row.id === reportId) || selectedReport;
 
       if (!flow || !activeReport) throw new Error('Invalid request or report not found');
+      if (newStatus !== 'in_progress') {
+        throw new Error('This workflow action is now handled by the inspection submission or admin review step.');
+      }
       if (String(activeReport.status || '').toLowerCase() === 'resolved') {
         throw new Error('Resolved reports can no longer be edited by field engineers.');
       }
 
-      const normalizedStatus = String(activeReport.status || '').toLowerCase();
-      const nextReportStatus = normalizedStatus === 'pending' ? 'reviewed' : activeReport.status;
-
       if (isOffline) {
-        const actorName = profile?.full_name || user?.user_metadata?.full_name || user?.email || 'Field Engineer';
-        await enqueueEngineerUpdate({
-          type: 'status',
-          reportId,
-          engineerId: user.id,
-          payload: {
-            engineer_status: newStatus,
-            verification: flow.verification,
-            status: nextReportStatus,
-            engineer_notes: engineerNotes,
-            updated_at: new Date().toISOString(),
-          },
-          activity: {
-            report_id: reportId,
-            action_type: 'engineer_status_updated',
-            description: `Field engineer marked report as ${flow.label}.${engineerNotes?.trim() ? ` Notes: ${engineerNotes.trim()}` : ''}`,
-            metadata: { engineer_status: newStatus },
-            actor_name: actorName,
-            actor_email: user?.email || null,
-            created_at: new Date().toISOString(),
-          },
-          notifications: {
-            userId: activeReport.user_id,
-            userMessage: flow.userMessage,
-            adminMessage: flow.adminMessage,
-          }
-        });
-        await requestBackgroundSync();
-
-        setReports((prev) => prev.map((row) => (
-          row.id === reportId
-            ? { ...row, engineer_status: newStatus, verification: flow.verification, status: nextReportStatus, engineer_notes: engineerNotes, updated_at: new Date().toISOString() }
-            : row
-        )));
-        if (selectedReport) {
-          setSelectedReport(prev => ({
-            ...prev,
-            engineer_status: newStatus,
-            verification: flow.verification,
-            status: nextReportStatus,
-            engineer_notes: engineerNotes,
-            updated_at: new Date().toISOString(),
-          }));
-        }
-        showNotification('Saved offline. Will sync when back online.');
+        showNotification('Inspection workflow actions require an internet connection.', 'error');
         return;
       }
 
-      const { error } = await supabase
-        .from('public_reports')
-        .update({
-          engineer_status: newStatus,
-          verification: flow.verification,
-          status: nextReportStatus,
-          engineer_notes: engineerNotes,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', reportId)
-        .eq('assigned_engineer_id', user.id);
-      if (error) throw error;
+      await startPublicReportInspection(supabase, { reportId });
 
-      await addPublicReportActivity(reportId, flow.label, engineerNotes);
       await createReportNotification(activeReport, 'public_report_field_update', flow.userMessage);
       await createAdminNotification(reportId, flow.adminMessage);
 
@@ -351,7 +277,6 @@ export default function FieldEngineerDashboard() {
           ...prev,
           engineer_status: newStatus,
           verification: flow.verification,
-          status: nextReportStatus,
           engineer_notes: engineerNotes,
           updated_at: new Date().toISOString(),
         }));
@@ -494,7 +419,7 @@ export default function FieldEngineerDashboard() {
 
   if (!user || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="text-center">
           <div className="animate-spin w-10 h-10 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
           <p className="text-slate-500 text-sm font-semibold">Loading Field Engineer Portal…</p>
@@ -512,10 +437,10 @@ export default function FieldEngineerDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
+    <div className="field-engineer-theme min-h-screen bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
       {/* Offline Status Banner */}
       {isOffline && (
-        <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-500 text-slate-950 px-4 py-2 text-xs font-bold text-center flex items-center justify-center gap-2 shadow-md">
+        <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-400 text-slate-950 px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-2 shadow-sm">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
@@ -525,8 +450,8 @@ export default function FieldEngineerDashboard() {
 
       {/* Notification Toast */}
       {notification && (
-        <div className={`fixed top-4 right-4 left-4 sm:left-auto sm:w-auto z-[100] px-5 py-3 rounded-xl shadow-2xl text-white font-bold text-sm flex items-center gap-2 animate-bounce ${
-          notification.type === 'error' ? 'bg-rose-600 border border-rose-500' : 'bg-emerald-600 border border-emerald-500'
+        <div className={`fixed top-4 right-4 left-4 sm:left-auto sm:w-auto z-[100] px-4 py-3 rounded-xl shadow-xl text-white font-semibold text-sm flex items-center gap-2 ${
+          notification.type === 'error' ? 'bg-rose-600 border border-rose-500' : 'bg-slate-900 border border-slate-800'
         }`}>
           <span>{notification.type === 'error' ? '✕' : '✓'}</span>
           <span>{notification.message}</span>
@@ -534,20 +459,20 @@ export default function FieldEngineerDashboard() {
       )}
 
       {/* ── DESKTOP COLLAPSIBLE LEFT SIDEBAR ── */}
-      <aside className={`hidden lg:flex flex-col fixed top-0 bottom-0 left-0 z-40 bg-white/95 backdrop-blur-xl border-r border-slate-200/80 shadow-xs transition-all duration-300 ease-in-out ${
+      <aside className={`hidden lg:flex flex-col fixed top-0 bottom-0 left-0 z-40 bg-slate-900 text-white border-r border-slate-800 shadow-2xl transition-all duration-300 ease-in-out ${
         sidebarCollapsed ? 'w-20' : 'w-64'
       }`}>
         {/* Sidebar Header & Toggle */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-100 shrink-0">
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-700/60 shrink-0">
           {!sidebarCollapsed ? (
             <div className="flex items-center gap-3 overflow-hidden">
-              <Logo className="h-7" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+              <Logo tone="light" className="h-7" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300 bg-slate-800/80 border border-slate-700 px-2 py-0.5 rounded-md whitespace-nowrap">
                 Field
               </span>
             </div>
           ) : (
-            <div className="mx-auto w-8 h-8 rounded-xl bg-gradient-to-br from-teal-600 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-sm">
+            <div className="mx-auto w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 flex items-center justify-center text-teal-300 font-black text-xs shadow-sm">
               FE
             </div>
           )}
@@ -555,7 +480,7 @@ export default function FieldEngineerDashboard() {
           {/* Collapse/Expand Toggle Button */}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className={`p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all border border-slate-200 ${sidebarCollapsed ? 'mx-auto mt-1' : ''}`}
+            className={`p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all border border-slate-700 ${sidebarCollapsed ? 'mx-auto mt-1' : ''}`}
             title={sidebarCollapsed ? "Expand Navigation" : "Collapse Navigation"}
           >
             <svg className={`w-4 h-4 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -565,17 +490,17 @@ export default function FieldEngineerDashboard() {
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const active = activeNav === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveNav(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all group relative ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all group relative ${
                   active
-                    ? 'bg-gradient-to-r from-teal-600 to-emerald-600 text-white shadow-md shadow-teal-500/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                    ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/25'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
                 } ${sidebarCollapsed ? 'justify-center' : ''}`}
                 title={sidebarCollapsed ? `${item.label}${item.count ? ` (${item.count})` : ''}` : undefined}
               >
@@ -591,7 +516,7 @@ export default function FieldEngineerDashboard() {
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                     active
                       ? 'bg-white/20 text-white'
-                      : 'bg-teal-50 text-teal-700 border border-teal-200'
+                      : 'bg-slate-800 text-slate-300 border border-slate-700'
                   } ${sidebarCollapsed ? 'absolute top-1 right-1 px-1 py-0 text-[9px] min-w-[16px] text-center' : ''}`}>
                     {item.count}
                   </span>
@@ -602,21 +527,21 @@ export default function FieldEngineerDashboard() {
         </nav>
 
         {/* Sidebar Footer User Info */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50/60">
+        <div className="p-3 border-t border-slate-700/60 bg-slate-900/60">
           {!sidebarCollapsed ? (
-            <div className="flex items-center justify-between gap-2 p-2 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-800/70 border border-slate-700">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 text-teal-300 font-bold text-xs flex items-center justify-center shrink-0">
                   {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-slate-800 truncate">{profile.full_name || profile.email}</p>
-                  <p className="text-[10px] text-teal-600 font-bold">Field Inspector</p>
+                  <p className="text-xs font-bold text-white truncate">{profile.full_name || profile.email}</p>
+                <p className="text-[10px] text-slate-400 font-semibold">Field Inspector</p>
                 </div>
               </div>
               <button
                 onClick={handleSignOut}
-                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                className="p-1.5 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors"
                 title="Sign Out"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -627,7 +552,7 @@ export default function FieldEngineerDashboard() {
           ) : (
             <button
               onClick={handleSignOut}
-              className="w-full py-2 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-xl transition-colors"
+              className="w-full py-2 flex items-center justify-center text-slate-400 hover:text-rose-300 hover:bg-slate-800 rounded-xl transition-colors"
               title="Sign Out"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -642,14 +567,14 @@ export default function FieldEngineerDashboard() {
       {mobileDrawerOpen && (
         <div className="lg:hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm" onClick={() => setMobileDrawerOpen(false)}>
           <div
-            className="w-72 max-w-[80vw] h-full bg-white border-r border-slate-200 flex flex-col p-4 shadow-2xl animate-slideRight"
+            className="w-72 max-w-[80vw] h-full bg-slate-900 text-white border-r border-slate-800 flex flex-col p-4 shadow-2xl animate-slideRight"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
-              <Logo className="h-7" />
+            <div className="flex items-center justify-between pb-4 border-b border-slate-700/60 mb-4">
+              <Logo tone="light" className="h-7" />
               <button
                 onClick={() => setMobileDrawerOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl bg-slate-100"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800"
               >
                 ✕
               </button>
@@ -665,8 +590,8 @@ export default function FieldEngineerDashboard() {
                       setActiveNav(item.id);
                       setMobileDrawerOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-bold transition-all ${
-                      active ? 'bg-teal-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all ${
+                      active ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/25' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -685,12 +610,12 @@ export default function FieldEngineerDashboard() {
               })}
             </nav>
 
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+            <div className="pt-4 border-t border-slate-700/60 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-teal-600 text-white font-bold text-xs flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 text-teal-300 font-bold text-xs flex items-center justify-center">
                   {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
                 </div>
-                <p className="text-xs font-bold text-slate-800">{profile.full_name || 'Engineer'}</p>
+                <p className="text-xs font-bold text-white">{profile.full_name || 'Engineer'}</p>
               </div>
               <button onClick={handleSignOut} className="text-xs text-rose-600 font-bold hover:underline">
                 Sign Out
@@ -705,13 +630,13 @@ export default function FieldEngineerDashboard() {
         sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
       }`}>
         {/* Top Header Bar (Matches Admin Page) */}
-        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30">
+        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Mobile Hamburger Drawer Button */}
               <button
                 onClick={() => setMobileDrawerOpen(true)}
-                className="lg:hidden p-2 rounded-xl text-slate-600 hover:text-slate-900 bg-slate-100 border border-slate-200"
+              className="lg:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 bg-slate-100 border border-slate-200"
                 title="Open Menu"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -720,7 +645,7 @@ export default function FieldEngineerDashboard() {
               </button>
 
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                <h2 className="text-sm font-semibold text-slate-900 tracking-tight">
                   {navItems.find((n) => n.id === activeNav)?.label || 'Field Command'}
                 </h2>
               </div>
@@ -730,9 +655,9 @@ export default function FieldEngineerDashboard() {
             <div className="flex items-center gap-3">
               <div className="hidden sm:block text-right">
                 <p className="text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</p>
-                <p className="text-[10px] font-bold text-teal-600 uppercase tracking-wider">DA Region VI Inspector</p>
+                <p className="text-[10px] font-semibold text-teal-700 uppercase tracking-wider">DA Region VI Inspector</p>
               </div>
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+              <div className="w-8 h-8 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center shadow-sm">
                 {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
               </div>
             </div>
@@ -740,29 +665,29 @@ export default function FieldEngineerDashboard() {
         </header>
 
         {/* Main Section Body */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5">
 
           {/* ── VIEW 1: OVERVIEW DASHBOARD ── */}
           {activeNav === 'overview' && (
-            <div className="space-y-6 animate-fadeIn">
-              {/* Hero Welcome Banner (Clean Light Theme) */}
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-teal-800 via-emerald-800 to-teal-900 border border-teal-700/60 p-6 sm:p-8 shadow-xl text-white">
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-5 animate-fadeIn">
+              {/* Workload Header */}
+              <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-5 sm:p-6 shadow-sm">
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
                   <div>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-white/10 text-teal-200 border border-white/20 mb-3">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200 mb-3">
                       DA RAED Field Command
                     </span>
-                    <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-950">
                       Welcome back, {profile.full_name || 'Engineer'}
                     </h1>
-                    <p className="text-sm text-teal-100/90 mt-1 max-w-xl">
+                    <p className="text-sm text-slate-600 mt-1 max-w-2xl leading-6">
                       Department of Agriculture Region VI Field Operations. Measure contractor progress, inspect public damage reports, and verify infrastructure quality.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => setActiveNav('reports')}
-                      className="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-teal-900 font-bold text-xs uppercase tracking-wider shadow-md transition-all flex items-center gap-2"
+                      className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs shadow-sm shadow-teal-600/10 transition-all flex items-center gap-2"
                     >
                       <svg className="w-4 h-4 text-teal-700" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25" />
@@ -771,7 +696,7 @@ export default function FieldEngineerDashboard() {
                     </button>
                     <button
                       onClick={() => setActiveNav('certify')}
-                      className="px-4 py-2.5 rounded-xl bg-teal-900/60 hover:bg-teal-900 text-white border border-teal-500/40 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2"
+                      className="px-4 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs transition-all flex items-center gap-2"
                     >
                       <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
@@ -783,83 +708,83 @@ export default function FieldEngineerDashboard() {
               </div>
 
               {/* KPI Stat Cards (White Theme Cards matching Admin) */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider">Total Workload</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">Total Workload</span>
                     <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6z" />
                     </svg>
                   </div>
-                  <p className="text-2xl sm:text-3xl font-black text-slate-900">{metrics.total}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-slate-950">{metrics.total}</p>
                   <p className="text-[11px] text-slate-500 mt-1">Assigned Cases</p>
                 </div>
 
-                <div className="bg-blue-50/60 rounded-2xl border border-blue-200/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-xl border border-blue-200 p-4 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between text-blue-700 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider">New</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">New</span>
                     <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
                   </div>
-                  <p className="text-2xl sm:text-3xl font-black text-blue-900">{metrics.assigned}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-blue-900">{metrics.assigned}</p>
                   <p className="text-[11px] text-blue-600 mt-1">Awaiting Inspection</p>
                 </div>
 
-                <div className="bg-amber-50/60 rounded-2xl border border-amber-200/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between text-amber-700 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider">In Progress</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">In Progress</span>
                     <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
                     </svg>
                   </div>
-                  <p className="text-2xl sm:text-3xl font-black text-amber-900">{metrics.inProgress}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-amber-900">{metrics.inProgress}</p>
                   <p className="text-[11px] text-amber-600 mt-1">On-Site Active</p>
                 </div>
 
-                <div className="bg-rose-50/60 rounded-2xl border border-rose-200/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow">
+                <div className="bg-white rounded-xl border border-rose-200 p-4 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between text-rose-700 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider">Needs Rework</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">Needs Rework</span>
                     <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                     </svg>
                   </div>
-                  <p className="text-2xl sm:text-3xl font-black text-rose-900">{metrics.needsRework}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-rose-900">{metrics.needsRework}</p>
                   <p className="text-[11px] text-rose-600 mt-1">Returned by Admin</p>
                 </div>
 
-                <div className="bg-emerald-50/60 rounded-2xl border border-emerald-200/80 p-4 sm:p-5 shadow-xs hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
+                <div className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
                   <div className="flex items-center justify-between text-emerald-700 mb-2">
-                    <span className="text-xs font-bold uppercase tracking-wider">Completed</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">Completed</span>
                     <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                     </svg>
                   </div>
-                  <p className="text-2xl sm:text-3xl font-black text-emerald-900">{metrics.completed}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-emerald-900">{metrics.completed}</p>
                   <p className="text-[11px] text-emerald-600 mt-1">Inspected & Verified</p>
                 </div>
               </div>
 
               {/* Recent Assigned Damage Reports Preview */}
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base font-bold text-slate-900">Recent Assigned Damage Reports</h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                      <h3 className="text-base font-semibold text-slate-900">Recent Assigned Damage Reports</h3>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200">
                         {filteredAndSortedReports.length} {filteredAndSortedReports.length === 1 ? 'Report' : 'Reports'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">Citizens public reports requiring field inspection</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Citizen public reports requiring field inspection</p>
                   </div>
                   <button
                     onClick={() => setActiveNav('reports')}
-                    className="text-xs font-bold text-teal-600 hover:text-teal-700 transition flex items-center gap-1 shrink-0"
+                    className="text-xs font-semibold text-teal-700 hover:text-teal-800 transition flex items-center gap-1 shrink-0"
                   >
                     View All Queue ({reports.length}) →
                   </button>
                 </div>
 
                 {/* Senior Engineer Search, Filter & Sort Bar */}
-                <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-medium">
                     {/* Search Input */}
                     <div className="relative">
@@ -868,7 +793,7 @@ export default function FieldEngineerDashboard() {
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search barangay, sitio, ref #..."
-                        className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-medium placeholder-slate-400"
+                        className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-medium placeholder-slate-400"
                       />
                       <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607z" />
@@ -885,7 +810,7 @@ export default function FieldEngineerDashboard() {
                       <select
                         value={selectedMunicipality}
                         onChange={(e) => setSelectedMunicipality(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                       >
                         <option value="all">All Municipalities ({availableMunicipalities.length})</option>
                         {availableMunicipalities.map((mun) => (
@@ -899,7 +824,7 @@ export default function FieldEngineerDashboard() {
                       <select
                         value={selectedVerification}
                         onChange={(e) => setSelectedVerification(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                       >
                         <option value="all">All Verifications</option>
                         <option value="Needs Review">Needs Review</option>
@@ -913,7 +838,7 @@ export default function FieldEngineerDashboard() {
                       <select
                         value={sortBy}
                         onChange={(e) => setSortBy(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                       >
                         <option value="newest">Sort: Newest First</option>
                         <option value="oldest">Sort: Oldest First (Backlog)</option>
@@ -940,7 +865,7 @@ export default function FieldEngineerDashboard() {
                 </div>
 
                 {filteredAndSortedReports.length === 0 ? (
-                  <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500 text-sm space-y-1">
+                  <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-300 text-slate-500 text-sm space-y-1">
                     <p className="font-bold text-slate-700">No matching reports found</p>
                     <p className="text-xs text-slate-400">Try adjusting search terms or clear active filters</p>
                     {hasActiveFilters && (
@@ -952,10 +877,10 @@ export default function FieldEngineerDashboard() {
                 ) : (
                   <div className="space-y-4">
                     {/* Tabular Data Table */}
-                    <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs">
+                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                             <th className="py-3 px-4">Ref ID</th>
                             <th className="py-3 px-4">Location</th>
                             <th className="py-3 px-4">Description</th>
@@ -983,7 +908,7 @@ export default function FieldEngineerDashboard() {
                               <td className="py-3 px-4 max-w-xs truncate text-slate-600">
                                 <div className="flex items-center gap-2">
                                   {rpt.photo_url && (
-                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">Photo</span>
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">Photo</span>
                                   )}
                                   <span className="truncate">{rpt.description}</span>
                                 </div>
@@ -1001,7 +926,7 @@ export default function FieldEngineerDashboard() {
                                 <button
                                   type="button"
                                   onClick={() => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
-                                  className="px-3.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[11px] hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                                  className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
                                 >
                                   Inspect →
                                 </button>
@@ -1025,7 +950,7 @@ export default function FieldEngineerDashboard() {
                           <select
                             value={pageSize}
                             onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                            className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 cursor-pointer"
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-semibold text-slate-700 cursor-pointer"
                           >
                             <option value={5}>5</option>
                             <option value={10}>10</option>
@@ -1039,7 +964,7 @@ export default function FieldEngineerDashboard() {
                         <button
                           onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                           disabled={currentPage === 1}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
                         >
                           ‹ Prev
                         </button>
@@ -1049,9 +974,9 @@ export default function FieldEngineerDashboard() {
                             <button
                               key={pg}
                               onClick={() => setCurrentPage(pg)}
-                              className={`w-7 h-7 rounded-xl font-bold text-xs transition ${
+                              className={`w-7 h-7 rounded-lg font-semibold text-xs transition ${
                                 currentPage === pg
-                                  ? 'bg-teal-600 text-white shadow-xs'
+                                  ? 'bg-teal-600 text-white shadow-sm'
                                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                               }`}
                             >
@@ -1063,7 +988,7 @@ export default function FieldEngineerDashboard() {
                         <button
                           onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                           disabled={currentPage === totalPages}
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
                         >
                           Next ›
                         </button>
@@ -1077,16 +1002,16 @@ export default function FieldEngineerDashboard() {
 
           {/* ── VIEW 2: DAMAGE REPORTS INSPECTIONS ── */}
           {activeNav === 'reports' && (
-            <div className="space-y-6 animate-fadeIn">
+            <div className="space-y-5 animate-fadeIn">
               {/* Header & Status Tabs */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Public Damage Inspection Queue</h2>
+                  <h2 className="text-xl font-semibold text-slate-950">Public Damage Inspection Queue</h2>
                   <p className="text-xs text-slate-500 mt-0.5">Assigned public reports awaiting on-site findings & geotagged evidence</p>
                 </div>
 
                 {/* Status Filter Tabs */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 rounded-xl bg-slate-100 p-1">
                   {[
                     { id: 'assigned', label: 'New', count: metrics.assigned },
                     { id: 'in-progress', label: 'In Progress', count: metrics.inProgress },
@@ -1099,15 +1024,15 @@ export default function FieldEngineerDashboard() {
                       <button
                         key={tab.id}
                         onClick={() => setActiveReportTab(tab.id)}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                           active
-                            ? 'bg-teal-600 text-white shadow-sm'
-                            : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+                            ? 'bg-white text-slate-950 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
                         <span>{tab.label}</span>
                         <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
-                          active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                          active ? 'bg-teal-600 text-white' : 'bg-white text-slate-700'
                         }`}>{tab.count}</span>
                       </button>
                     );
@@ -1116,7 +1041,7 @@ export default function FieldEngineerDashboard() {
               </div>
 
               {/* Senior Engineer Filter, Search & Sort Control Bar */}
-              <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-medium">
                   {/* Search Input */}
                   <div className="relative">
@@ -1125,7 +1050,7 @@ export default function FieldEngineerDashboard() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search barangay, sitio, ref #..."
-                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-medium placeholder-slate-400"
+                        className="w-full pl-9 pr-8 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-medium placeholder-slate-400"
                     />
                     <svg className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607z" />
@@ -1142,7 +1067,7 @@ export default function FieldEngineerDashboard() {
                     <select
                       value={selectedMunicipality}
                       onChange={(e) => setSelectedMunicipality(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                     >
                       <option value="all">All Municipalities ({availableMunicipalities.length})</option>
                       {availableMunicipalities.map((mun) => (
@@ -1156,7 +1081,7 @@ export default function FieldEngineerDashboard() {
                     <select
                       value={selectedVerification}
                       onChange={(e) => setSelectedVerification(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                     >
                       <option value="all">All Verifications</option>
                       <option value="Needs Review">Needs Review</option>
@@ -1170,7 +1095,7 @@ export default function FieldEngineerDashboard() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/40 text-slate-800 text-xs font-semibold cursor-pointer"
+                        className="w-full px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 text-slate-800 text-xs font-semibold cursor-pointer"
                     >
                       <option value="newest">Sort: Newest First</option>
                       <option value="oldest">Sort: Oldest First (Backlog)</option>
@@ -1198,12 +1123,12 @@ export default function FieldEngineerDashboard() {
 
               {/* Reports List */}
               {loading ? (
-                <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-xs">
+                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
                   <div className="animate-spin mx-auto w-8 h-8 border-2 border-slate-300 border-t-teal-600 rounded-full mb-3" />
                   <p className="text-xs text-slate-500 font-bold">Loading assigned inspection reports…</p>
                 </div>
               ) : filteredReports.length === 0 ? (
-                <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-xs">
+                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
                   <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
                   </svg>
@@ -1213,12 +1138,12 @@ export default function FieldEngineerDashboard() {
                   </p>
                 </div>
               ) : (
-                <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
                   {/* Tabular Data Table */}
-                  <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs">
+                  <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                           <th className="py-3 px-4">Ref ID</th>
                           <th className="py-3 px-4">Location</th>
                           <th className="py-3 px-4">Description</th>
@@ -1246,7 +1171,7 @@ export default function FieldEngineerDashboard() {
                             <td className="py-3.5 px-4 max-w-sm truncate text-slate-600">
                               <div className="flex items-center gap-2">
                                 {rpt.photo_url && (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">Photo</span>
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">Photo</span>
                                 )}
                                 <span className="truncate">{rpt.description}</span>
                               </div>
@@ -1264,7 +1189,7 @@ export default function FieldEngineerDashboard() {
                               <button
                                 type="button"
                                 onClick={() => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
-                                className="px-3.5 py-1.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[11px] hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                                className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
                               >
                                 Inspect Case →
                               </button>
@@ -1288,7 +1213,7 @@ export default function FieldEngineerDashboard() {
                         <select
                           value={pageSize}
                           onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 cursor-pointer"
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-semibold text-slate-700 cursor-pointer"
                         >
                           <option value={5}>5</option>
                           <option value={10}>10</option>
@@ -1303,7 +1228,7 @@ export default function FieldEngineerDashboard() {
                       <button
                         onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                         disabled={currentPage === 1}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
                       >
                         ‹ Prev
                       </button>
@@ -1313,9 +1238,9 @@ export default function FieldEngineerDashboard() {
                           <button
                             key={pg}
                             onClick={() => setCurrentPage(pg)}
-                            className={`w-7 h-7 rounded-xl font-bold text-xs transition ${
+                              className={`w-7 h-7 rounded-lg font-semibold text-xs transition ${
                               currentPage === pg
-                                ? 'bg-teal-600 text-white shadow-xs'
+                                ? 'bg-teal-600 text-white shadow-sm'
                                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                             }`}
                           >
@@ -1327,7 +1252,7 @@ export default function FieldEngineerDashboard() {
                       <button
                         onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                         disabled={currentPage === totalPages}
-                        className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
+                          className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-600 disabled:opacity-40 hover:bg-slate-100 transition"
                       >
                         Next ›
                       </button>
@@ -1340,13 +1265,13 @@ export default function FieldEngineerDashboard() {
 
           {/* ── VIEW 3: PROGRESS CERTIFICATION QUEUE ── */}
           {activeNav === 'certify' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm">
-                <h2 className="text-xl font-bold text-slate-900">Contractor Progress Certification</h2>
+            <div className="space-y-5 animate-fadeIn">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <h2 className="text-xl font-semibold text-slate-950">Contractor Progress Certification</h2>
                 <p className="text-xs text-slate-500 mt-0.5">DA Region VI Requirement: Verify on-site accomplishment before payment recognition</p>
               </div>
 
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm text-slate-900">
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm text-slate-900">
                 <ProgressCertificationPanel
                   onCountChange={setCertifyCount}
                   showNotification={showNotification}
@@ -1357,18 +1282,18 @@ export default function FieldEngineerDashboard() {
 
           {/* ── VIEW 4: GIS FIELD MAP EXPLORER ── */}
           {activeNav === 'gis-map' && (
-            <div className="space-y-6 animate-fadeIn">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-5 animate-fadeIn">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Geospatial GIS Field Map</h2>
+                  <h2 className="text-xl font-semibold text-slate-950">Geospatial GIS Field Map</h2>
                   <p className="text-xs text-slate-500 mt-0.5">Interactive map of assigned public damage reports across Region VI</p>
                 </div>
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <div className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800">
                   <span className="w-3 h-3 rounded-full bg-teal-500 inline-block" /> {mapReportPoints.length} Geotagged Sites
                 </div>
               </div>
 
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm overflow-hidden">
                 <PublicReportRouteMapPanel
                   reportLatitude={mapReportPoints[0]?.lat}
                   reportLongitude={mapReportPoints[0]?.lng}
@@ -1381,36 +1306,36 @@ export default function FieldEngineerDashboard() {
 
           {/* ── VIEW 5: ENGINEER PROFILE ── */}
           {activeNav === 'profile' && (
-            <div className="space-y-6 animate-fadeIn max-w-3xl mx-auto">
-              <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm space-y-6">
+            <div className="space-y-5 animate-fadeIn max-w-3xl mx-auto">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                 <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-600 to-emerald-600 text-white font-black text-2xl flex items-center justify-center shadow-md">
+                  <div className="w-16 h-16 rounded-xl bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-md">
                     {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900">{profile.full_name || 'Field Engineer'}</h2>
-                    <p className="text-xs font-bold text-teal-600 uppercase tracking-wider mt-0.5">DA RAED Authorized Inspector</p>
+                    <h2 className="text-xl font-semibold text-slate-950">{profile.full_name || 'Field Engineer'}</h2>
+                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mt-0.5">DA RAED Authorized Inspector</p>
                     <p className="text-xs text-slate-500 mt-1">{profile.email}</p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60">
-                    <span className="text-slate-500 uppercase font-bold block mb-1">Role Permission</span>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 uppercase font-semibold block mb-1">Role Permission</span>
                     <span className="font-bold text-slate-800">Field Supervising Engineer</span>
                   </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60">
-                    <span className="text-slate-500 uppercase font-bold block mb-1">Region / Jurisdiction</span>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 uppercase font-semibold block mb-1">Region / Jurisdiction</span>
                     <span className="font-bold text-slate-800">DA Region VI (Western Visayas)</span>
                   </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60">
-                    <span className="text-slate-500 uppercase font-bold block mb-1">PWA Sync Status</span>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 uppercase font-semibold block mb-1">PWA Sync Status</span>
                     <span className={`font-bold ${isOffline ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {isOffline ? 'Offline Mode (Local Storage)' : 'Online (Direct Cloud Sync)'}
                     </span>
                   </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60">
-                    <span className="text-slate-500 uppercase font-bold block mb-1">Active Assigned Cases</span>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <span className="text-slate-500 uppercase font-semibold block mb-1">Active Assigned Cases</span>
                     <span className="font-bold text-teal-600">{reports.length} Reports</span>
                   </div>
                 </div>
@@ -1418,7 +1343,7 @@ export default function FieldEngineerDashboard() {
                 <div className="pt-4 border-t border-slate-100 flex justify-end">
                   <button
                     onClick={handleSignOut}
-                    className="px-5 py-2.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white font-bold text-xs uppercase tracking-wider transition-all"
+                    className="px-5 py-2.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white font-semibold text-xs transition-all"
                   >
                     Sign Out of Field Portal
                   </button>
@@ -1433,39 +1358,39 @@ export default function FieldEngineerDashboard() {
       {selectedReport && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setSelectedReport(null)}>
           <div
-            className="bg-white border border-slate-200 w-full max-w-3xl max-h-[92vh] rounded-3xl shadow-2xl overflow-y-auto text-slate-900 flex flex-col"
+            className="bg-white border border-slate-200 w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl overflow-y-auto text-slate-900 flex flex-col"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="sticky top-0 bg-slate-900 text-white px-6 py-4 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-slate-950 text-white px-5 sm:px-6 py-4 flex items-center justify-between z-10">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-teal-500/20 text-teal-300 rounded-xl flex items-center justify-center border border-teal-400/30 font-bold text-sm">
+                <div className="w-9 h-9 bg-white/10 text-teal-200 rounded-lg flex items-center justify-center border border-white/10 font-semibold text-sm">
                   FE
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">On-Site Field Inspection</h3>
+                  <h3 className="text-base font-semibold text-white">On-Site Field Inspection</h3>
                   <p className="text-xs text-slate-300">Ref #{selectedReport.id.slice(0, 8).toUpperCase()} &middot; {selectedReport.barangay}, {selectedReport.municipality}</p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedReport(null)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
               >
                 ✕
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-6">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="p-4 sm:p-6 space-y-5">
+              <div className="flex items-center gap-2 flex-wrap rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                 <EngineerStatusBadge status={selectedReport.engineer_status} />
                 <VerifyBadge verification={selectedReport.verification} />
                 <ReportStatusBadge status={selectedReport.status} />
               </div>
 
               {selectedReport.engineer_status === 'rejected' && (
-                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-1">
-                  <p className="text-xs font-bold text-rose-800 uppercase tracking-wide">DA Admin Returned For Re-Inspection</p>
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-1">
+                  <p className="text-xs font-semibold text-rose-800 uppercase tracking-wide">DA Admin Returned For Re-Inspection</p>
                   <p className="text-sm text-slate-800">{rejectionReason || 'No reason specified.'}</p>
                   <p className="text-xs text-rose-600 mt-1">Re-examine site findings below and resubmit once verified.</p>
                 </div>
@@ -1482,22 +1407,22 @@ export default function FieldEngineerDashboard() {
 
               {/* Photos */}
               {selectedReport.photo_url && (
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Citizen On-Site Photo Evidence</p>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Citizen On-Site Photo Evidence</p>
                   <a href={selectedReport.photo_url} target="_blank" rel="noopener noreferrer">
-                    <img src={selectedReport.photo_url} alt="Site" className="w-full max-h-60 object-cover rounded-xl border border-slate-200 hover:opacity-90 transition" />
+                    <img src={selectedReport.photo_url} alt="Site" className="w-full max-h-60 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition" />
                   </a>
                 </div>
               )}
 
               {/* Status Actions */}
-              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-                <p className="text-xs font-bold text-slate-700 uppercase">Update Field Inspection Workflow Status</p>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <p className="text-xs font-semibold text-slate-700 uppercase">Update Field Inspection Workflow Status</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     onClick={() => updateReportStatus(selectedReport.id, 'in_progress')}
                     disabled={updatingStatus || selectedReport.engineer_status === 'in_progress'}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 ${
+                    className={`px-4 py-3 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 ${
                       selectedReport.engineer_status === 'in_progress'
                         ? 'bg-amber-100 text-amber-800 border-amber-300'
                         : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
@@ -1513,7 +1438,7 @@ export default function FieldEngineerDashboard() {
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
-                  className="px-6 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs uppercase tracking-wider transition-all"
+                  className="px-6 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all"
                 >
                   Cancel & Close
                 </button>
@@ -1531,16 +1456,16 @@ export default function FieldEngineerDashboard() {
             <button
               key={item.id}
               onClick={() => setActiveNav(item.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all relative ${
-                active ? 'text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-900'
+              className={`flex min-w-0 flex-1 flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-all relative ${
+                active ? 'bg-slate-100 text-slate-950 font-semibold' : 'text-slate-500 hover:text-slate-900'
               }`}
             >
               <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
               </svg>
-              <span className="text-[10px] leading-none font-bold">{item.label.split(' ')[0]}</span>
+              <span className="text-[10px] leading-none font-semibold truncate max-w-full">{item.label.split(' ')[0]}</span>
               {item.count > 0 && (
-                <span className="absolute -top-1 right-2 w-4 h-4 rounded-full bg-teal-600 text-white font-black text-[9px] flex items-center justify-center shadow-xs">
+                <span className="absolute -top-1 right-2 w-4 h-4 rounded-full bg-teal-600 text-white font-black text-[9px] flex items-center justify-center shadow-sm">
                   {item.count}
                 </span>
               )}

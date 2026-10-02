@@ -12,24 +12,18 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
     if (!report) return [];
 
     const status = String(report.status || '').toLowerCase();
-    const engineerStatus = String(report.engineer_status || '').toLowerCase();
+    const workflowStage = String(report.citizen_workflow_stage || '').toLowerCase();
     const createdAt = report.created_at || null;
-    const reviewedAt = report.reviewed_at || report.updated_at || null;
-    const dispatchedAt = report.assigned_at || null;
-    const inspectionStartedAt = ['in_progress', 'inspected', 'validated', 'rejected'].includes(engineerStatus)
-      ? (report.updated_at || null)
-      : null;
-    const inspectionDoneAt = ['inspected', 'validated', 'rejected'].includes(engineerStatus)
-      ? (report.updated_at || null)
-      : null;
-    const forAdminDecisionAt = ['validated', 'rejected'].includes(engineerStatus) && status !== 'resolved'
-      ? (report.updated_at || null)
-      : null;
-    const resolvedAt = status === 'resolved' ? (report.updated_at || report.reviewed_at || null) : null;
+    const reviewedAt = report.citizen_reviewed_at || null;
+    const dispatchedAt = report.citizen_field_dispatched_at || null;
+    const inspectionStartedAt = report.citizen_inspection_started_at || null;
+    const inspectionDoneAt = report.citizen_assessment_submitted_at || null;
+    const forAdminDecisionAt = report.citizen_admin_decision_at || null;
+    const resolvedAt = status === 'resolved' ? (report.resolved_at || report.updated_at || null) : null;
 
-    const dynamicAssessmentLabel = engineerStatus === 'rejected'
+    const dynamicAssessmentLabel = workflowStage === 'reinspection_needed'
       ? 'Field Assessment: Re-inspection Needed'
-      : engineerStatus === 'validated'
+      : ['validated', 'resolved'].includes(workflowStage)
         ? 'Field Assessment: Confirmed'
         : 'Field Assessment';
 
@@ -38,31 +32,34 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
       {
         key: 'under_review',
         label: 'Under Review',
-        done: ['reviewed', 'resolved'].includes(status) || Boolean(report.assigned_engineer_id),
+        done: ['reviewed', 'resolved'].includes(status) || Boolean(reviewedAt || dispatchedAt),
         timestamp: reviewedAt,
       },
       {
         key: 'dispatched',
         label: 'Field Engineer Dispatched',
-        done: Boolean(report.assigned_engineer_id),
+        done: Boolean(dispatchedAt)
+          || ['field_engineer_dispatched', 'inspection_in_progress', 'assessment_submitted', 'validated', 'reinspection_needed', 'resolved'].includes(workflowStage),
         timestamp: dispatchedAt,
       },
       {
         key: 'inspection_started',
         label: 'Inspection In Progress',
-        done: ['in_progress', 'inspected', 'validated', 'rejected'].includes(engineerStatus),
+        done: Boolean(inspectionStartedAt)
+          || ['inspection_in_progress', 'assessment_submitted', 'validated', 'reinspection_needed', 'resolved'].includes(workflowStage),
         timestamp: inspectionStartedAt,
       },
       {
         key: 'assessment_done',
         label: dynamicAssessmentLabel,
-        done: ['inspected', 'validated', 'rejected'].includes(engineerStatus),
+        done: Boolean(inspectionDoneAt)
+          || ['assessment_submitted', 'validated', 'reinspection_needed', 'resolved'].includes(workflowStage),
         timestamp: inspectionDoneAt,
       },
       {
         key: 'admin_decision',
         label: 'DA Admin Review',
-        done: ['validated', 'rejected'].includes(engineerStatus) || status === 'resolved',
+        done: ['validated', 'reinspection_needed', 'resolved'].includes(workflowStage) || status === 'resolved',
         timestamp: status === 'resolved' ? (resolvedAt || forAdminDecisionAt) : forAdminDecisionAt,
       },
       {
@@ -111,7 +108,7 @@ export default function CitizenReportTimeline({ report, resolutionSummary }) {
         </div>
       )}
 
-      {String(report.status || '').toLowerCase() !== 'resolved' && String(report.engineer_status || '').toLowerCase() === 'rejected' && (
+      {String(report.status || '').toLowerCase() !== 'resolved' && String(report.citizen_workflow_stage || '').toLowerCase() === 'reinspection_needed' && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="text-xs text-amber-700 uppercase font-semibold">Re-inspection In Progress</p>
           <p className="text-sm text-amber-900 mt-1">Your report has not been dismissed — the DA admin requested another on-site check before this can be resolved. The field engineer will visit again.</p>

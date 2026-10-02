@@ -1,0 +1,2152 @@
+[
+  {
+    "id": 48,
+    "project_name": "Concreting of Brgy. Camando to Brgy. Paoy FMR, Brgy. Camando and Brgy. Paoy, Leon, Iloilo",
+    "location": "Brgy. Camando and Brgy. Paoy, Leon, Iloilo",
+    "target_km": 0.55,
+    "original_straight_km": 5.94,
+    "original_delta_km": 5.39,
+    "corrected_mapped_km": 0.55,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Camando",
+      "Paoy"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 50,
+    "project_name": "Concreting of Brgy. Malublub, Leon to Brgy. Abang-abang, Alimodian FMR, Brgy. Malublub, Leon and Abang-abang, Alimodian, Iloilo",
+    "location": "Brgy. Malublub, Leon and Abang-abang, Alimodian, Iloilo",
+    "target_km": 2.15,
+    "original_straight_km": 1.84,
+    "original_delta_km": -0.31,
+    "corrected_mapped_km": 2.15,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 133,
+    "project_name": "Construction/Opening of Brgy. Bobon, Leon to Brgy. Manasa, Alimodian FMR",
+    "location": "Brgy. Bobon, Leon and Brgy. Manasa, Alimodian, Iloilo",
+    "target_km": 0.83,
+    "original_straight_km": 1.13,
+    "original_delta_km": 0.3,
+    "corrected_mapped_km": 0.83,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Bobon"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 152,
+    "project_name": "Concreting of Brgy. Nagbangi - Brgy. Agboy Sur FMR, Leon, Iloilo",
+    "location": "Brgy. Nagbangi and Brgy. Agboy Sur, Leon, Iloilo",
+    "target_km": 0.97,
+    "original_straight_km": 0.91,
+    "original_delta_km": -0.06,
+    "corrected_mapped_km": 0.97,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Nagbangi",
+      "Agboy Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 187,
+    "project_name": "Concreting of Brgy. Igcadios to Brgy. Ayabang FMR, Leon, Iloilo",
+    "location": "Brgy. Igcadios and Brgy. Ayabang, Leon, Iloilo",
+    "target_km": 0.69,
+    "original_straight_km": 0.65,
+    "original_delta_km": -0.04,
+    "corrected_mapped_km": 0.69,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Igcadios",
+      "Ayabang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 201,
+    "project_name": "Agboy Norte-Siol Norte Rd",
+    "location": "Agboy Norte",
+    "target_km": 1.47,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.47,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Agboy Norte",
+      "Siol Norte"
+    ],
+    "road_gap_km": 1.44
+  },
+  {
+    "id": 202,
+    "project_name": "Agta Road",
+    "location": "Agta",
+    "target_km": 4.85,
+    "original_straight_km": 4.39,
+    "original_delta_km": -0.46,
+    "corrected_mapped_km": 4.85,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Agta"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 203,
+    "project_name": "Anonang-Sitio Bangalad",
+    "location": "Anonang",
+    "target_km": 0.62,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.62,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Anonang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 204,
+    "project_name": "Apian Road",
+    "location": "Apian",
+    "target_km": 0.96,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.96,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Apian"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 205,
+    "project_name": "Apian-Coyugan Norte Rd",
+    "location": "Apian",
+    "target_km": 1.58,
+    "original_straight_km": 1.37,
+    "original_delta_km": -0.21,
+    "corrected_mapped_km": 1.58,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Apian",
+      "Coyugan Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 206,
+    "project_name": "Avanzada-Baje Road",
+    "location": "Avanzada",
+    "target_km": 1.63,
+    "original_straight_km": 1.5,
+    "original_delta_km": -0.13,
+    "corrected_mapped_km": 1.63,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Avanzada",
+      "Baje"
+    ],
+    "road_gap_km": 2.6
+  },
+  {
+    "id": 207,
+    "project_name": "Awis Road",
+    "location": "Awis",
+    "target_km": 0.18,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.18,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Awis"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 208,
+    "project_name": "Ayabang Road",
+    "location": "Ayabang",
+    "target_km": 1.63,
+    "original_straight_km": 1.45,
+    "original_delta_km": -0.18,
+    "corrected_mapped_km": 1.63,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Ayabang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 209,
+    "project_name": "Ayubo Road",
+    "location": "Ayubo",
+    "target_km": 0.13,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.13,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Ayubo"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 210,
+    "project_name": "Bacolod Road",
+    "location": "Bacolod",
+    "target_km": 1.05,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.05,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bacolod"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 211,
+    "project_name": "Bacolod-Cabunga-an Rd.",
+    "location": "Bacolod",
+    "target_km": 1.26,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.26,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Bacolod",
+      "Cabunga-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 212,
+    "project_name": "Banagan Road",
+    "location": "Banagan",
+    "target_km": 1.27,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.27,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Banagan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 213,
+    "project_name": "Barangbang Road",
+    "location": "Barangbang",
+    "target_km": 1.21,
+    "original_straight_km": 0.8,
+    "original_delta_km": -0.41,
+    "corrected_mapped_km": 1.21,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Barangbang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 214,
+    "project_name": "Barasan Road",
+    "location": "Barasan",
+    "target_km": 0.55,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.55,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Barasan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 215,
+    "project_name": "Bayag Norte-Sitio Danao Rd",
+    "location": "Bayag Norte",
+    "target_km": 0.36,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.36,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bayag Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 216,
+    "project_name": "Bayag Norte-Sitio Raug Rd",
+    "location": "Bayag Norte",
+    "target_km": 1.59,
+    "original_straight_km": 1.49,
+    "original_delta_km": -0.1,
+    "corrected_mapped_km": 1.59,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Bayag Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 217,
+    "project_name": "Binolbog Road",
+    "location": "Binolbog",
+    "target_km": 0.69,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.69,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Binolbog"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 218,
+    "project_name": "Binolbog Road (new)",
+    "location": "Binolbog",
+    "target_km": 0.48,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.48,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Binolbog"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 219,
+    "project_name": "Binolbog-Ambulong Road",
+    "location": "Binolbog",
+    "target_km": 2.28,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.28,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Binolbog",
+      "Ambulong"
+    ],
+    "road_gap_km": 2.28
+  },
+  {
+    "id": 220,
+    "project_name": "Biri Norte-Isian Norte Road",
+    "location": "Biri Norte",
+    "target_km": 1.35,
+    "original_straight_km": 1.29,
+    "original_delta_km": -0.06,
+    "corrected_mapped_km": 1.35,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Isian Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 221,
+    "project_name": "Biri Norte-Tina-an Sur Road",
+    "location": "Biri Norte",
+    "target_km": 0.61,
+    "original_straight_km": 0.55,
+    "original_delta_km": -0.06,
+    "corrected_mapped_km": 0.61,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Tina-an Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 222,
+    "project_name": "Biri Sur Road",
+    "location": "Biri Sur",
+    "target_km": 0.78,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.78,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Biri Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 223,
+    "project_name": "Biri Sur-Sitio Dulaca Road",
+    "location": "Biri Sur",
+    "target_km": 1.21,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.21,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Biri Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 224,
+    "project_name": "Bucari Road",
+    "location": "Bucari",
+    "target_km": 1.19,
+    "original_straight_km": 1.06,
+    "original_delta_km": -0.13,
+    "corrected_mapped_km": 1.19,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Bucari"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 225,
+    "project_name": "Bucari Road Second Section",
+    "location": "Bucari",
+    "target_km": 0.09,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.09,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bucari"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 226,
+    "project_name": "Bucari-Cagay-Ingay Road",
+    "location": "Bucari",
+    "target_km": 4.54,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 4.54,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Bucari",
+      "Cagay",
+      "Ingay"
+    ],
+    "road_gap_km": 3.44
+  },
+  {
+    "id": 227,
+    "project_name": "Bucari-Camandag Road",
+    "location": "Bucari",
+    "target_km": 3.02,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 3.02,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Bucari",
+      "Camandag"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 228,
+    "project_name": "Bucari-Cumpan-Sibucao",
+    "location": "Bucari",
+    "target_km": 2.11,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.11,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bucari"
+    ],
+    "road_gap_km": 2.11
+  },
+  {
+    "id": 229,
+    "project_name": "Bucari-Tabionan Road",
+    "location": "Bucari",
+    "target_km": 0.44,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.44,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bucari"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 230,
+    "project_name": "Buga Road",
+    "location": "Buga",
+    "target_km": 0.74,
+    "original_straight_km": 0.43,
+    "original_delta_km": -0.31,
+    "corrected_mapped_km": 0.74,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 231,
+    "project_name": "Buga-Sitio Dao-Baong Rd.",
+    "location": "Buga",
+    "target_km": 2.46,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.46,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": 2.47
+  },
+  {
+    "id": 232,
+    "project_name": "Buga-Kananghan-Iguaras",
+    "location": "Buga",
+    "target_km": 3.82,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 3.82,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": 3.68
+  },
+  {
+    "id": 233,
+    "project_name": "Buga-Jct-Kananghan Rd",
+    "location": "Buga",
+    "target_km": 0.29,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.29,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 234,
+    "project_name": "Buga-Jct-Lampigaw-Pinon-an Road",
+    "location": "Buga",
+    "target_km": 0.72,
+    "original_straight_km": 0.41,
+    "original_delta_km": -0.31,
+    "corrected_mapped_km": 0.72,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 235,
+    "project_name": "Buga-Sitio Bugtong Road",
+    "location": "Buga",
+    "target_km": 0.75,
+    "original_straight_km": 0.44,
+    "original_delta_km": -0.31,
+    "corrected_mapped_km": 0.75,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Buga"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 236,
+    "project_name": "Buga-Sitio Tibod-Lanag Rd",
+    "location": "Buga",
+    "target_km": 1.9,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.9,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Buga",
+      "Lanag"
+    ],
+    "road_gap_km": 1.9
+  },
+  {
+    "id": 237,
+    "project_name": "Bulad Road",
+    "location": "Bulad",
+    "target_km": 0.87,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.87,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Bulad"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 238,
+    "project_name": "Cabunga-an-Caboloan Rd",
+    "location": "Cabunga-an",
+    "target_km": 1.87,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.87,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Cabunga-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 239,
+    "project_name": "Cabutongan Road",
+    "location": "Cabutongan",
+    "target_km": 0.71,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.71,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Cabutongan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 240,
+    "project_name": "Cagay Road",
+    "location": "Cagay",
+    "target_km": 0.3,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.3,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Cagay"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 241,
+    "project_name": "Camandag-Bobon Road",
+    "location": "Camandag",
+    "target_km": 6.25,
+    "original_straight_km": 3.08,
+    "original_delta_km": -3.17,
+    "corrected_mapped_km": 6.25,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Camandag",
+      "Bobon"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 242,
+    "project_name": "Camandag-Bulwang Rd",
+    "location": "Camandag",
+    "target_km": 0.8,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.8,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Camandag",
+      "Bulwang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 243,
+    "project_name": "Cananaman Road",
+    "location": "Cananaman",
+    "target_km": 2.05,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.05,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Cananaman"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 244,
+    "project_name": "Capt. Fernando-Paoy Rd",
+    "location": "Capt. Fernando",
+    "target_km": 0.75,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.75,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Capt. Fernando",
+      "Paoy"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 245,
+    "project_name": "Capt. Fernando-Sitio Limotan Road",
+    "location": "Capt. Fernando",
+    "target_km": 0.68,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.68,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Capt. Fernando"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 246,
+    "project_name": "Capt. Fernando-Lang-og Rd.",
+    "location": "Capt. Fernando",
+    "target_km": 2.35,
+    "original_straight_km": 1.46,
+    "original_delta_km": -0.89,
+    "corrected_mapped_km": 2.35,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Capt. Fernando",
+      "Lang-og"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 247,
+    "project_name": "Carara-an-Sitio Talibong Rd",
+    "location": "Carara-an",
+    "target_km": 1.94,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.94,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Carara-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 248,
+    "project_name": "Carolina Road",
+    "location": "Carolina",
+    "target_km": 0.8,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.8,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Carolina"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 249,
+    "project_name": "Carolina Rd. Jct Langog Rd",
+    "location": "Carolina",
+    "target_km": 0.83,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.83,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Carolina"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 250,
+    "project_name": "Coyugan Norte Road",
+    "location": "Coyugan Norte",
+    "target_km": 0.53,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.53,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Coyugan Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 251,
+    "project_name": "Coyugan Sur Road",
+    "location": "Coyugan Sur",
+    "target_km": 3.06,
+    "original_straight_km": 2.64,
+    "original_delta_km": -0.42,
+    "corrected_mapped_km": 3.06,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Coyugan Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 252,
+    "project_name": "Coyugan Sur Road New",
+    "location": "Coyugan Sur",
+    "target_km": 1.68,
+    "original_straight_km": 1.49,
+    "original_delta_km": -0.19,
+    "corrected_mapped_km": 1.68,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Coyugan Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 253,
+    "project_name": "Danao Road",
+    "location": "Danao",
+    "target_km": 1.5,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.5,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Danao"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 254,
+    "project_name": "Dorog Road",
+    "location": "Dorog",
+    "target_km": 0.63,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.63,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Dorog"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 255,
+    "project_name": "Dorog-Marirong Road",
+    "location": "Dorog",
+    "target_km": 3.02,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 3.02,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Dorog",
+      "Marirong"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 256,
+    "project_name": "Dorog-Carara-an Road",
+    "location": "Dorog",
+    "target_km": 1.92,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.92,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Dorog",
+      "Carara-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 257,
+    "project_name": "Dorog-Cawilihan Road",
+    "location": "Dorog",
+    "target_km": 2.62,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.62,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Dorog",
+      "Cawilihan"
+    ],
+    "road_gap_km": 2.49
+  },
+  {
+    "id": 258,
+    "project_name": "Dusacan Road (new)",
+    "location": "Dusacan",
+    "target_km": 0.27,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.27,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Dusacan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 259,
+    "project_name": "Gines Brgy. Proper New Rd",
+    "location": "Gines",
+    "target_km": 0.39,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.39,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Gines"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 260,
+    "project_name": "Gines-Ayabang Road",
+    "location": "Gines",
+    "target_km": 0.75,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.75,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Gines",
+      "Ayabang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 261,
+    "project_name": "Gines-Ticuan Road",
+    "location": "Gines",
+    "target_km": 0.91,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.91,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Gines",
+      "Ticuan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 262,
+    "project_name": "Gines-Tunguan Road",
+    "location": "Gines",
+    "target_km": 2.1,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.1,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Gines",
+      "Tunguan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 263,
+    "project_name": "Gines-Sitio Mayang",
+    "location": "Gines",
+    "target_km": 0.49,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.49,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Gines"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 264,
+    "project_name": "Gumboc-Awis-Paoy-Camando Road",
+    "location": "Gumboc",
+    "target_km": 5.11,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 5.11,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Gumboc",
+      "Awis",
+      "Paoy",
+      "Camando"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 265,
+    "project_name": "Gumboc-Jct Capt. Fernando Road",
+    "location": "Gumboc",
+    "target_km": 1.6,
+    "original_straight_km": 1.52,
+    "original_delta_km": -0.08,
+    "corrected_mapped_km": 1.6,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Gumboc",
+      "Capt. Fernando"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 266,
+    "project_name": "Gumboc-Sitio Biasong",
+    "location": "Gumboc",
+    "target_km": 0.57,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.57,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Gumboc"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 267,
+    "project_name": "Gumboc-Sitio Taal",
+    "location": "Gumboc",
+    "target_km": 1.31,
+    "original_straight_km": 1.12,
+    "original_delta_km": -0.19,
+    "corrected_mapped_km": 1.31,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Gumboc"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 268,
+    "project_name": "Igcadios Road",
+    "location": "Igcadios",
+    "target_km": 1.42,
+    "original_straight_km": 0.56,
+    "original_delta_km": -0.86,
+    "corrected_mapped_km": 1.42,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Igcadios"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 269,
+    "project_name": "Igcadios-Ayabang Road",
+    "location": "Igcadios",
+    "target_km": 1.18,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.18,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Igcadios",
+      "Ayabang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 270,
+    "project_name": "Igcadios-Carara-an Road",
+    "location": "Igcadios",
+    "target_km": 1.8,
+    "original_straight_km": 1.41,
+    "original_delta_km": -0.39,
+    "corrected_mapped_km": 1.8,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Igcadios",
+      "Carara-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 271,
+    "project_name": "Isian Norte-Casling Road",
+    "location": "Isian Norte",
+    "target_km": 1.67,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.67,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Isian Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 272,
+    "project_name": "Isian Norte-Sitio Gaspangan",
+    "location": "Isian Norte",
+    "target_km": 0.27,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.27,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Isian Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 273,
+    "project_name": "Isian Norte-Sitio Lanag",
+    "location": "Isian Norte",
+    "target_km": 3.1,
+    "original_straight_km": 2.45,
+    "original_delta_km": -0.65,
+    "corrected_mapped_km": 3.1,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Isian Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 274,
+    "project_name": "Isian Norte-Sitio Lanag-Isian Victoria Road",
+    "location": "Isian Norte",
+    "target_km": 0.77,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.77,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Isian Norte",
+      "Isian Victoria"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 275,
+    "project_name": "Isian Victoria Road",
+    "location": "Isian Victoria",
+    "target_km": 2.89,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.89,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Isian Victoria"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 276,
+    "project_name": "Jamog Gines Road",
+    "location": "Jamog Gines",
+    "target_km": 0.14,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.14,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Jamog Gines",
+      "Gines"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 277,
+    "project_name": "Jamog Gines Road Section 2",
+    "location": "Jamog Gines",
+    "target_km": 3.44,
+    "original_straight_km": 2.95,
+    "original_delta_km": -0.49,
+    "corrected_mapped_km": 3.44,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Jamog Gines",
+      "Gines"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 278,
+    "project_name": "Lanag-ISAT U Demo Farm Rd",
+    "location": "Lanag",
+    "target_km": 1.19,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.19,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Lanag"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 279,
+    "project_name": "Lang-og Road",
+    "location": "Lang-og",
+    "target_km": 1.07,
+    "original_straight_km": 0.92,
+    "original_delta_km": -0.15,
+    "corrected_mapped_km": 1.07,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Lang-og"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 280,
+    "project_name": "Lanag Road",
+    "location": "Lanag",
+    "target_km": 1.14,
+    "original_straight_km": 1.11,
+    "original_delta_km": -0.03,
+    "corrected_mapped_km": 1.14,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Lanag"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 281,
+    "project_name": "Lanag-Nagbangi-Tuog",
+    "location": "Lanag",
+    "target_km": 1.71,
+    "original_straight_km": 1.71,
+    "original_delta_km": 0,
+    "corrected_mapped_km": 1.71,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Lanag",
+      "Nagbangi"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 282,
+    "project_name": "Lanag Resor Road",
+    "location": "Lanag",
+    "target_km": 1.25,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.25,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Lanag"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 283,
+    "project_name": "Lanag-Sitio Puro Gamay",
+    "location": "Lanag",
+    "target_km": 0.51,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.51,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Lanag"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 284,
+    "project_name": "Lanag-Tu-og Road",
+    "location": "Lanag",
+    "target_km": 0.93,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.93,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Lanag",
+      "Tu-og"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 285,
+    "project_name": "Ligtos Road",
+    "location": "Ligtos",
+    "target_km": 0.47,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.47,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Ligtos"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 286,
+    "project_name": "Ligtos-Gines Road",
+    "location": "Ligtos",
+    "target_km": 3.75,
+    "original_straight_km": 3.24,
+    "original_delta_km": -0.51,
+    "corrected_mapped_km": 3.75,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Ligtos",
+      "Gines"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 287,
+    "project_name": "Magcapay-Sitio Kalapadan Road",
+    "location": "Magcapay",
+    "target_km": 0.55,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.55,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Magcapay"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 288,
+    "project_name": "Magcapay-Sitio Bungad Rd",
+    "location": "Magcapay",
+    "target_km": 0.48,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.48,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Magcapay"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 289,
+    "project_name": "Magcapay Road",
+    "location": "Magcapay",
+    "target_km": 1.75,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.75,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Magcapay"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 290,
+    "project_name": "Maliao Road",
+    "location": "Maliao",
+    "target_km": 5.05,
+    "original_straight_km": 4.11,
+    "original_delta_km": -0.94,
+    "corrected_mapped_km": 5.05,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Maliao"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 291,
+    "project_name": "Maliao-Cabunga-an Rd",
+    "location": "Maliao",
+    "target_km": 2.65,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.65,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Maliao",
+      "Cabunga-an"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 292,
+    "project_name": "Maliao-Lampaya Road",
+    "location": "Maliao",
+    "target_km": 1.76,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.76,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Maliao",
+      "Lampaya"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 293,
+    "project_name": "Malublub Road",
+    "location": "Malublub",
+    "target_km": 1.87,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.87,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 294,
+    "project_name": "Malublub-Abang-Abang Rd",
+    "location": "Malublub",
+    "target_km": 2.24,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.24,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 295,
+    "project_name": "Malublub-Sitio Lintian Rd",
+    "location": "Malublub",
+    "target_km": 0.59,
+    "original_straight_km": 0.45,
+    "original_delta_km": -0.14,
+    "corrected_mapped_km": 0.59,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": 2
+  },
+  {
+    "id": 296,
+    "project_name": "Malublub-Sitio Buyo",
+    "location": "Malublub",
+    "target_km": 0.89,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.89,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 297,
+    "project_name": "Malublub-Sitio Tumotob",
+    "location": "Malublub",
+    "target_km": 1.82,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.82,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Malublub"
+    ],
+    "road_gap_km": 1.82
+  },
+  {
+    "id": 298,
+    "project_name": "Manampunay-Tac. Norte Rd",
+    "location": "Manampunay",
+    "target_km": 1.14,
+    "original_straight_km": 1.05,
+    "original_delta_km": -0.09,
+    "corrected_mapped_km": 1.14,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Manampunay",
+      "Tacuyong Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 299,
+    "project_name": "Marirong Road",
+    "location": "Marirong",
+    "target_km": 0.29,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.29,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Marirong"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 300,
+    "project_name": "Mina Road",
+    "location": "Mina",
+    "target_km": 1.06,
+    "original_straight_km": 0.9,
+    "original_delta_km": -0.16,
+    "corrected_mapped_km": 1.06,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Mina"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 301,
+    "project_name": "Mocol Road",
+    "location": "Mocol",
+    "target_km": 6.36,
+    "original_straight_km": 4.96,
+    "original_delta_km": -1.4,
+    "corrected_mapped_km": 6.36,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Mocol"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 302,
+    "project_name": "Nagbangi Road",
+    "location": "Nagbangi",
+    "target_km": 0.32,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.32,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Nagbangi"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 303,
+    "project_name": "Nagbangi-Siol Norte-Agboy Sur Road",
+    "location": "Nagbangi",
+    "target_km": 1.47,
+    "original_straight_km": 1.23,
+    "original_delta_km": -0.24,
+    "corrected_mapped_km": 1.47,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Nagbangi",
+      "Siol Norte",
+      "Agboy Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 304,
+    "project_name": "Nalbang Road",
+    "location": "Nalbang",
+    "target_km": 8.69,
+    "original_straight_km": 6.82,
+    "original_delta_km": -1.87,
+    "corrected_mapped_km": 8.69,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Nalbang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 305,
+    "project_name": "Odong-Odong Road",
+    "location": "Odong-odong",
+    "target_km": 1.47,
+    "original_straight_km": 1.34,
+    "original_delta_km": -0.13,
+    "corrected_mapped_km": 1.47,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Odong-odong"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 306,
+    "project_name": "Oluangan Road",
+    "location": "Oluangan",
+    "target_km": 2.11,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.11,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Oluangan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 307,
+    "project_name": "Paga Road",
+    "location": "Paga",
+    "target_km": 1.51,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.51,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Paga"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 308,
+    "project_name": "Pandan-Buenavista Rd.",
+    "location": "Pandan",
+    "target_km": 1.57,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.57,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Pandan",
+      "Buenavista"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 309,
+    "project_name": "Pandan-Barawbaraw Rd",
+    "location": "Pandan",
+    "target_km": 0.87,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.87,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Pandan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 310,
+    "project_name": "Pandan-Composting Center Road",
+    "location": "Pandan",
+    "target_km": 0.45,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.45,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Pandan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 311,
+    "project_name": "Paoy Road",
+    "location": "Paoy",
+    "target_km": 0.6,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.6,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Paoy"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 312,
+    "project_name": "Pepe-Binolbog Road",
+    "location": "Pepe",
+    "target_km": 1.16,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.16,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Pepe",
+      "Binolbog"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 313,
+    "project_name": "Poblacion-Sitio Buntalan Sitio Dugo Road",
+    "location": "Poblacion",
+    "target_km": 0.44,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.44,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Poblacion"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 314,
+    "project_name": "Poblacion-Sitio Dugo Rd",
+    "location": "Poblacion",
+    "target_km": 1.03,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.03,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Poblacion"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 315,
+    "project_name": "Poblacion-Sitio Miac-ac",
+    "location": "Poblacion",
+    "target_km": 0.41,
+    "original_straight_km": 0.39,
+    "original_delta_km": -0.02,
+    "corrected_mapped_km": 0.41,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Poblacion"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 316,
+    "project_name": "Salngan Road",
+    "location": "Salngan",
+    "target_km": 1.12,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.12,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Salngan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 317,
+    "project_name": "Salngan-Isian Victoria Rd",
+    "location": "Salngan",
+    "target_km": 1.01,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.01,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Salngan",
+      "Isian Victoria"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 318,
+    "project_name": "Samlague Road",
+    "location": "Samlague",
+    "target_km": 1,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Samlague"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 319,
+    "project_name": "Siol Sur Road",
+    "location": "Siol Sur",
+    "target_km": 1.09,
+    "original_straight_km": 0.95,
+    "original_delta_km": -0.14,
+    "corrected_mapped_km": 1.09,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Siol Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 320,
+    "project_name": "Siol Sur-Anonang Road",
+    "location": "Siol Sur",
+    "target_km": 1.24,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.24,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Siol Sur",
+      "Anonang"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 321,
+    "project_name": "Tacuyong Norte Road",
+    "location": "Tacuyong Norte",
+    "target_km": 0.57,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.57,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Tacuyong Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 322,
+    "project_name": "Tac. Norte-Marirong Rd.",
+    "location": "Tacuyong Norte",
+    "target_km": 1.29,
+    "original_straight_km": 1.19,
+    "original_delta_km": -0.1,
+    "corrected_mapped_km": 1.29,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Tacuyong Norte",
+      "Marirong"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 323,
+    "project_name": "Tacuyong Sur Road",
+    "location": "Tacuyong Sur",
+    "target_km": 1.16,
+    "original_straight_km": 0.99,
+    "original_delta_km": -0.17,
+    "corrected_mapped_km": 1.16,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Tacuyong Sur"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 324,
+    "project_name": "Tac. Sur-Baje Road",
+    "location": "Tacuyong Sur",
+    "target_km": 2.24,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 2.24,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Tacuyong Sur",
+      "Baje"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 325,
+    "project_name": "Tagsing Road",
+    "location": "Tagsing",
+    "target_km": 1.75,
+    "original_straight_km": 1.2,
+    "original_delta_km": -0.55,
+    "corrected_mapped_km": 1.75,
+    "needs_correction": true,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Tagsing"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 326,
+    "project_name": "Talacu-an-Takasi-Panginman Road",
+    "location": "Talacuan",
+    "target_km": 0.81,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.81,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Talacuan",
+      "Panginman"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 327,
+    "project_name": "Takasi-Bunga Road",
+    "location": "Talacuan",
+    "target_km": 0.39,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.39,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Talacuan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 328,
+    "project_name": "Tina-an Norte Road",
+    "location": "Tina-an Norte",
+    "target_km": 0.73,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.73,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Tina-an Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 329,
+    "project_name": "Tina-an Norte-Sitio Bugo",
+    "location": "Tina-an Norte",
+    "target_km": 0.47,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.47,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Tina-an Norte"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 330,
+    "project_name": "Tunguan-Lampaya Road",
+    "location": "Tunguan",
+    "target_km": 1.5,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.5,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Tunguan",
+      "Lampaya"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 331,
+    "project_name": "Tunguan-Banagan Road",
+    "location": "Tunguan",
+    "target_km": 0.6,
+    "original_straight_km": 0.57,
+    "original_delta_km": -0.03,
+    "corrected_mapped_km": 0.6,
+    "needs_correction": false,
+    "method": "trimmed existing start/end bearing to declared length",
+    "barangays": [
+      "Tunguan",
+      "Banagan"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 332,
+    "project_name": "Tu-og Road",
+    "location": "Tu-og",
+    "target_km": 0.41,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.41,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Tu-og"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 333,
+    "project_name": "Tu-og-Lanot Road",
+    "location": "Tu-og",
+    "target_km": 0.55,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.55,
+    "needs_correction": true,
+    "method": "single-barangay declared-length route",
+    "barangays": [
+      "Tu-og"
+    ],
+    "road_gap_km": null
+  },
+  {
+    "id": 334,
+    "project_name": "Tu-og-Siol Norte Road",
+    "location": "Tu-og",
+    "target_km": 1.44,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 1.44,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Tu-og",
+      "Siol Norte"
+    ],
+    "road_gap_km": 1.44
+  },
+  {
+    "id": 335,
+    "project_name": "Dorog-Marirong-Dorog Cemetery Road.",
+    "location": "Dorog",
+    "target_km": 0.9,
+    "original_straight_km": null,
+    "original_delta_km": null,
+    "corrected_mapped_km": 0.9,
+    "needs_correction": true,
+    "method": "barangay-to-barangay bearing scaled to declared length",
+    "barangays": [
+      "Dorog",
+      "Marirong"
+    ],
+    "road_gap_km": null
+  }
+]

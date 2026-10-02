@@ -125,7 +125,7 @@ export default function PublicReportsPage() {
       setLoading(true);
       try {
         const { data, error: err } = await supabase
-          .from('public_reports')
+          .from('public_reports_citizen_view')
           .select('*')
           .order('created_at', { ascending: false });
 

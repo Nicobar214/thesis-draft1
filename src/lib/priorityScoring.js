@@ -210,11 +210,12 @@ export function computeRoadGapPriorityScores(projects, roadInventory = [], repor
       (inv.barangay && barangay.includes(String(inv.barangay).toLowerCase()))
     );
 
-    // Calculate unpaved gap length (Earth + Gravel or Poor/Critical condition)
-    let gapKm = Number(project.project_length_km || project.length_km || 1.2);
-    let gapType = 'Barangay Road Gap';
+    // Explicit road gap fields win over inferred inventory matches.
+    let gapKm = Number(project.road_gap_km || project.project_length_km || project.length_km || 1.2);
+    let gapType = project.road_gap_type || 'Barangay Road Gap';
+    let gapReason = project.road_gap_reason || '';
 
-    if (invMatch) {
+    if (!project.road_gap_km && invMatch) {
       const earthSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Earth');
       const gravelSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Gravel');
       const earthLen = Number(earthSurfaces?.length || 0);
@@ -231,7 +232,8 @@ export function computeRoadGapPriorityScores(projects, roadInventory = [], repor
 
     const isConnectingRoad = projName.includes('-') || projName.includes('rd') || projName.includes('road');
     const connectivityIndex = isConnectingRoad ? 85 : 60;
-    const marketAccessScore = projName.includes('poblacion') || barangay.includes('poblacion') ? 95 : 75;
+    const gapSeverityBoost = /critical|earth|poor/i.test(`${gapType} ${gapReason}`) ? 10 : 0;
+    const marketAccessScore = Math.min(100, (projName.includes('poblacion') || barangay.includes('poblacion') ? 95 : 75) + gapSeverityBoost);
 
     const projectReports = (reports || []).filter(
       (r) => String(r.project_name || '').trim().toLowerCase() === projName
@@ -245,6 +247,7 @@ export function computeRoadGapPriorityScores(projects, roadInventory = [], repor
       marketAccessScore,
       reportCount: projectReports.length,
       invMatch: Boolean(invMatch),
+      gapReason,
     };
   });
 

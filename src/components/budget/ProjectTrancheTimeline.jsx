@@ -5,6 +5,7 @@ import {
   realTranchesToScheduleShape,
   formatPeso,
 } from '../../lib/budgetEstimate';
+import { formatPercentage } from '../../lib/percentageFormat';
 
 function todayISO() {
   const d = new Date();
@@ -120,7 +121,7 @@ export default function ProjectTrancheTimeline({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{t.name}</p>
-                  <p className="text-xs text-slate-500">{t.percentage}% • {formatPeso(t.amount)} • requires {t.requiredProgress}% progress</p>
+                  <p className="text-xs text-slate-500">{formatPercentage(t.percentage)} • {formatPeso(t.amount)} • requires {formatPercentage(t.requiredProgress)} progress</p>
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -193,7 +194,7 @@ export default function ProjectTrancheTimeline({
                     </button>
                   )
                 ) : (
-                  <p className="mt-2 text-xs text-slate-400">Needs {t.requiredProgress}% progress (currently {accomplishment}%).</p>
+                  <p className="mt-2 text-xs text-slate-400">Needs {t.requiredProgress}% progress (currently {formatPercentage(accomplishment)}).</p>
                 )
               )}
             </div>

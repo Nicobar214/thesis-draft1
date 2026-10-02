@@ -9,7 +9,7 @@ import CitizenReportTimeline from '../components/publicReports/CitizenReportTime
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
 
-export const SEVERITY_TAXONOMY = {
+const SEVERITY_TAXONOMY = {
   safety: {
     label: 'Safety Hazard',
     color: 'bg-red-100 text-red-700 border-red-200',
@@ -168,9 +168,9 @@ function UserReports() {
         setUserId(user.id);
 
         const { data, error: err } = await supabase
-          .from('public_reports')
+          .from('public_reports_citizen_view')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('is_current_user_report', true)
           .order('created_at', { ascending: false });
 
         if (err) {
@@ -190,9 +190,9 @@ function UserReports() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, async () => {
         if (!userId) return;
         const { data } = await supabase
-          .from('public_reports')
+          .from('public_reports_citizen_view')
           .select('*')
-          .eq('user_id', userId)
+          .eq('is_current_user_report', true)
           .order('created_at', { ascending: false });
         if (data) setReports(data);
       })
@@ -226,8 +226,9 @@ function UserReports() {
     if (
       latest.updated_at !== selected.updated_at ||
       latest.status !== selected.status ||
-      latest.engineer_status !== selected.engineer_status ||
-      latest.verification !== selected.verification
+      latest.verification !== selected.verification ||
+      latest.citizen_status !== selected.citizen_status ||
+      latest.citizen_workflow_stage !== selected.citizen_workflow_stage
     ) {
       setSelected(latest);
     }
@@ -252,14 +253,14 @@ function UserReports() {
       try {
         const [resolutionRes, findingRes, lguDecisionRes] = await Promise.all([
           supabase
-            .from('public_report_resolutions')
+            .from('public_report_resolutions_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('resolved_at', { ascending: false })
             .limit(1)
             .maybeSingle(),
           supabase
-            .from('public_report_field_findings')
+            .from('public_report_field_findings_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('submitted_at', { ascending: false })
@@ -691,13 +692,11 @@ function UserReports() {
                   { label: 'Status', value: selected.status?.charAt(0).toUpperCase() + selected.status?.slice(1) },
                   {
                     label: 'Field Engineer Status',
-                    value: selected.engineer_status
-                      ? selected.engineer_status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
-                      : 'Waiting for assignment',
+                    value: selected.citizen_status || 'Submitted',
                   },
                   {
                     label: 'Assigned Engineer',
-                    value: selected.assigned_engineer_name || 'Not assigned yet',
+                    value: selected.citizen_field_dispatched_at ? 'Dispatched' : 'Not dispatched yet',
                   },
                   { label: 'Verification', value: selected.verification },
                   selected.severity_category && {

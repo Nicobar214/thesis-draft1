@@ -9,13 +9,15 @@
  * stored separately from the contractor's own claim — it never overwrites it —
  * and downstream payment/valuation views prefer the certified number.
  *
- * Writes go through the certify_progress_update_engineer RPC (SECURITY
- * DEFINER, role-checked) rather than a direct table update, matching how every
- * other privileged action in this app is enforced.
+ * Legacy writes use certify_progress_update_engineer; Work Plan quantity
+ * submissions use certify_progress_with_quantities. Both are role-checked
+ * SECURITY DEFINER RPCs, and the UI never writes progress tables directly.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { getWorkflowMeta } from '../../lib/progressWorkflow';
+import { formatPercentage } from '../../lib/percentageFormat';
+import QuantityCertificationReview from './QuantityCertificationReview';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-xl text-sm ' +
@@ -30,6 +32,8 @@ const fmtDate = (value) => {
 /* Labels come from the shared workflow module so the engineer, the contractor
    and the admin all read the same words for the same state. */
 const statusBadge = (update) => getWorkflowMeta(update);
+const isQuantitySubmission = (update) => Array.isArray(update.progress_update_items)
+  && update.progress_update_items.length > 0;
 
 export default function ProgressCertificationPanel({ onCountChange, showNotification }) {
   const [rows, setRows] = useState([]);
@@ -52,7 +56,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     setLoading(true);
     const { data, error } = await supabase
       .from('progress_updates')
-      .select('*, fmr_projects(project_name, municipality)')
+      .select('*, fmr_projects(project_name, municipality, work_plan_adoption_baseline), progress_update_items(id)')
       .order('submitted_at', { ascending: false })
       .limit(100);
 
@@ -382,6 +386,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                   const certified = row.certified_accomplishment;
                   const isOpen = openId === row.id;
                   const isAwaiting = row.status === 'pending' && row.certification_status !== 'certified';
+                  const quantityBased = isQuantitySubmission(row);
 
                   return (
                     <tr key={row.id} className={`transition-colors ${isAwaiting ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/50'}`}>
@@ -396,11 +401,11 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                         {fmtDate(row.period_start)} – {fmtDate(row.period_end)}
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-800 whitespace-nowrap">
-                        {reported.toFixed(1)}%
+                        {formatPercentage(reported)}
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold whitespace-nowrap">
                         <span className={certified === null || certified === undefined ? 'text-slate-300' : 'text-teal-700'}>
-                          {certified === null || certified === undefined ? '—' : `${Number(certified).toFixed(1)}%`}
+                          {formatPercentage(certified)}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
@@ -416,13 +421,28 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                       </td>
                       {activeTab === 'pending' && (
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          {quantityBased && (
+                            <button
+                              type="button"
+                              onClick={() => openRow(row)}
+                              className={`inline-flex px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors ${isOpen
+                                ? 'bg-slate-800 text-white border-slate-800'
+                                : 'bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white hover:border-teal-600'}`}
+                            >
+                              {isOpen ? 'Close' : 'Review quantities'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => openRow(row)}
-                            className={`px-3.5 py-1.5 rounded-xl font-bold text-[11px] cursor-pointer transition-all active:scale-95 shadow-xs ${
-                              isOpen
+                            disabled={quantityBased}
+                            title={quantityBased ? 'This submission uses the quantity workflow. Quantity validation is enabled in Phase 4.' : undefined}
+                            className={`px-3.5 py-1.5 rounded-xl font-bold text-[11px] transition-all shadow-xs ${
+                              quantityBased
+                                ? 'hidden'
+                                : isOpen
                                 ? 'bg-slate-800 text-white border border-slate-800'
-                                : 'bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:shadow-md'
+                                : 'bg-teal-50 border border-teal-200 text-teal-700 hover:bg-teal-600 hover:text-white hover:border-teal-600 hover:shadow-md cursor-pointer active:scale-95'
                             }`}
                           >
                             {isOpen ? 'Close' : 'Review & Certify →'}
@@ -440,6 +460,16 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
           {openId && (() => {
             const row = rows.find(r => r.id === openId);
             if (!row) return null;
+            if (isQuantitySubmission(row)) {
+              return (
+                <QuantityCertificationReview
+                  row={row}
+                  onClose={() => setOpenId(null)}
+                  onSaved={fetchRows}
+                  showNotification={showNotification}
+                />
+              );
+            }
             const reported = Number(row.reported_accomplishment ?? 0);
             const workItems = Array.isArray(row.work_items) ? row.work_items : [];
 
@@ -451,7 +481,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                       Certify: {row.fmr_projects?.project_name || `Project #${row.fmr_project_id}`}
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Period: {fmtDate(row.period_start)} – {fmtDate(row.period_end)} &middot; Contractor Claim: <strong className="text-slate-800">{reported.toFixed(1)}%</strong>
+                      Period: {fmtDate(row.period_start)} – {fmtDate(row.period_end)} &middot; Contractor Claim: <strong className="text-slate-800">{formatPercentage(reported)}</strong>
                     </p>
                   </div>
                   <button onClick={() => setOpenId(null)} className="p-1 text-slate-400 hover:text-slate-600">✕</button>
@@ -608,7 +638,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                           disabled={saving}
                           className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 shadow-md shadow-teal-500/20 transition-all disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
                         >
-                          {saving ? 'Saving…' : `Certify Accomplishment (${reported.toFixed(1)}%)`}
+                          {saving ? 'Saving…' : `Certify Accomplishment (${formatPercentage(reported)})`}
                         </button>
                       ) : (
                         <button

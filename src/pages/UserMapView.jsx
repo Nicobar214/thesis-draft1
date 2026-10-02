@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import {
   buildRoutePoints,
   boundsFromPoints,
+  createDisplayRoutePoints,
   fetchRoadAlignedPolyline,
   getProjectBarangay,
   getRouteStatusTheme,
@@ -14,6 +15,7 @@ import {
   getJitteredCentroid,
 } from '../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
+import { formatPercentage } from '../lib/percentageFormat';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -165,6 +167,7 @@ export default function UserMapView({ embedded = false } = {}) {
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [hoveredProjectId, setHoveredProjectId] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [routeByProjectId, setRouteByProjectId] = useState({});
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
@@ -310,7 +313,7 @@ export default function UserMapView({ embedded = false } = {}) {
   async function fetchProjectReportCounts() {
     try {
       const { data, error } = await supabase
-        .from('public_reports')
+        .from('public_reports_citizen_view')
         .select('project_id, project_name');
 
       if (error) return;
@@ -685,6 +688,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 {mappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
+                  const isFocused = isSelected || hoveredProjectId === project.id;
                   const isNearby = nearbyProjects.has(project.id);
                   const normalizedStatus = normalizeStatus(project.status);
                   const progress = Number(project.accomplishment || 0);
@@ -692,6 +696,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   const reportsCount = reportCountByProjectId[project.id] || 0;
                   const targetChip = getTargetDateChip(project.target_completion_date, normalizedStatus === 'Completed');
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
+                  const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
                   const routeStart = routePoints[0] || route.startPoint;
                   const routeEnd = routePoints[routePoints.length - 1] || route.endPoint;
 
@@ -699,14 +704,22 @@ export default function UserMapView({ embedded = false } = {}) {
                     <div key={project.id}>
                       {route.hasPolyline && !isCentroidFallback && (
                         <>
+                          {isFocused && (
+                            <Polyline
+                              positions={displayRoutePoints}
+                              pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
+                            />
+                          )}
                           <Polyline
-                            positions={routePoints}
-                            pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.92 }}
-                          />
-                          <Polyline
-                            positions={routePoints}
-                            pathOptions={{ color: isNearby ? '#0d9488' : color.fill, weight: 5, opacity: 0.95 }}
+                            positions={displayRoutePoints}
+                            pathOptions={{
+                              color: isNearby ? '#0d9488' : color.fill,
+                              weight: isFocused ? 5.5 : 3.4,
+                              opacity: isFocused ? 0.96 : 0.72,
+                            }}
                             eventHandlers={{
+                              mouseover: () => setHoveredProjectId(project.id),
+                              mouseout: () => setHoveredProjectId(null),
                               click: () => {
                                 setSelectedProject(project);
                                 setShowSidebar(true);
@@ -731,7 +744,7 @@ export default function UserMapView({ embedded = false } = {}) {
                                 <div>
                                   <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                                     <span>Progress</span>
-                                    <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                    <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
                                   </div>
                                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                     <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
@@ -775,11 +788,9 @@ export default function UserMapView({ embedded = false } = {}) {
                           {routeStart && (
                             <CircleMarker
                               center={routeStart}
-                              radius={8}
-                              pathOptions={{ color: '#166534', fillColor: '#22c55e', fillOpacity: 1, weight: 2 }}
-                            >
-                              <Tooltip direction="top" permanent className="!bg-green-600 !text-white !border-0 !rounded !px-1.5 !py-0">S</Tooltip>
-                            </CircleMarker>
+                              radius={4}
+                              pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
+                            />
                           )}
 
                           {routeEnd && (
@@ -787,9 +798,9 @@ export default function UserMapView({ embedded = false } = {}) {
                               position={routeEnd}
                               icon={L.divIcon({
                                 className: 'route-end-marker',
-                                html: '<div style="width:16px;height:16px;background:#ef4444;border:2px solid #991b1b;border-radius:3px;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">E</div>',
-                                iconSize: [16, 16],
-                                iconAnchor: [8, 8],
+                                html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
+                                iconSize: [10, 10],
+                                iconAnchor: [5, 5],
                               })}
                             />
                           )}
@@ -799,15 +810,17 @@ export default function UserMapView({ embedded = false } = {}) {
                       {hasFallbackPin && coordinates && (
                         <CircleMarker
                           center={coordinates}
-                          radius={isSelected ? 11 : 8}
+                          radius={isSelected ? 9 : 6}
                           pathOptions={{
                             fillColor: color.fill,
                             color: color.stroke,
-                            weight: isSelected ? 3.5 : 2,
-                            fillOpacity: 0.9,
+                            weight: isSelected ? 3 : 1.5,
+                            fillOpacity: isSelected ? 0.9 : 0.7,
                             dashArray: isCentroidFallback ? '3, 4' : undefined
                           }}
                           eventHandlers={{
+                            mouseover: () => setHoveredProjectId(project.id),
+                            mouseout: () => setHoveredProjectId(null),
                             click: () => {
                               setSelectedProject(project);
                               setShowSidebar(true);
@@ -839,7 +852,7 @@ export default function UserMapView({ embedded = false } = {}) {
                               <div>
                                 <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
                                   <span>Progress</span>
-                                  <span className="font-semibold text-slate-700">{progress.toFixed(0)}%</span>
+                                  <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
                                 </div>
                                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                   <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />

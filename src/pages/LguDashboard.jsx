@@ -2410,16 +2410,16 @@ export default function LguDashboard() {
 
                             const startIcon = new L.DivIcon({
                               className: 'lgu-route-start',
-                              html: '<div style="background:#16a34a;color:#fff;width:22px;height:22px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:700">S</div>',
-                              iconSize: [22, 22],
-                              iconAnchor: [11, 11],
+                              html: '<div style="background:#16a34a;width:10px;height:10px;border-radius:9999px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(22,101,52,.55),0 1px 3px rgba(0,0,0,.25)"></div>',
+                              iconSize: [10, 10],
+                              iconAnchor: [5, 5],
                             });
 
                             const endIcon = new L.DivIcon({
                               className: 'lgu-route-end',
-                              html: '<div style="background:#dc2626;color:#fff;width:22px;height:22px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:700">E</div>',
-                              iconSize: [22, 22],
-                              iconAnchor: [11, 11],
+                              html: '<div style="background:#f97316;width:10px;height:10px;border-radius:9999px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25)"></div>',
+                              iconSize: [10, 10],
+                              iconAnchor: [5, 5],
                             });
 
                             return (

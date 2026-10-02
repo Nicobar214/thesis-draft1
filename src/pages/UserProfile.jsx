@@ -113,9 +113,9 @@ export default function UserProfile() {
       setActivityLoading(true);
       const [{ data: reports }, { data: feedbacks }] = await Promise.all([
         supabase
-          .from('public_reports')
-          .select('id, project_name, user_id')
-          .eq('user_id', user.id),
+          .from('public_reports_citizen_view')
+          .select('id, project_name, is_current_user_report')
+          .eq('is_current_user_report', true),
         supabase
           .from('feedbacks')
           .select('id, project_name, user_id')

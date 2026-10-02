@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
+import { updatePublicReportWorkflowMeta } from '../../services/publicReportWorkflow';
 import BillingHoldControl from './BillingHoldControl';
 
 const priorityTone = {
@@ -28,7 +29,6 @@ function fmtRecommendedDate(iso) {
 export default function AdminWorkflowControls({
   report,
   resolution,
-  adminIdentity,
   onNotify,
   onResolve,
   fieldEngineers = [],
@@ -76,19 +76,11 @@ export default function AdminWorkflowControls({
     if (!report?.id) return;
     setSaving(true);
     try {
-      const payload = {
-        report_id: report.id,
-        priority_level: priority,
-        visit_deadline: deadline || null,
-        assigned_engineer_id: report.assigned_engineer_id || null,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('public_report_workflow_meta')
-        .upsert(payload, { onConflict: 'report_id' });
-
-      if (error) throw error;
+      await updatePublicReportWorkflowMeta(supabase, {
+        reportId: report.id,
+        priority,
+        visitDeadline: deadline || null,
+      });
       if (onNotify) onNotify('Priority and deadline saved');
     } catch (err) {
       if (onNotify) onNotify(`Save failed: ${err.message}`, 'error');
@@ -105,22 +97,8 @@ export default function AdminWorkflowControls({
 
     setSaving(true);
     try {
-      const payload = {
-        report_id: report.id,
-        summary: resolutionSummary.trim(),
-        resolved_by_name: adminIdentity?.full_name || 'Administrator',
-        resolved_by_email: adminIdentity?.email || null,
-        resolved_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase
-        .from('public_report_resolutions')
-        .insert(payload);
-
-      if (error) throw error;
-
       if (typeof onResolve === 'function') {
-        await onResolve(payload.summary);
+        await onResolve(resolutionSummary.trim());
       }
 
       setResolutionSummary('');
@@ -137,6 +115,16 @@ export default function AdminWorkflowControls({
     if (!selectedEngineerId || typeof onAssignEngineer !== 'function') return;
     onAssignEngineer(selectedEngineerId);
     setSelectedEngineerId('');
+  };
+
+  const unassignEngineer = () => {
+    if (typeof onUnassignEngineer !== 'function') return;
+    const reason = window.prompt('Reason for unassigning this field engineer:');
+    if (!reason?.trim()) {
+      if (onNotify) onNotify('Unassignment reason is required', 'error');
+      return;
+    }
+    onUnassignEngineer(reason.trim());
   };
 
   // Recommend a date for whichever engineer is relevant right now — the one
@@ -166,7 +154,7 @@ export default function AdminWorkflowControls({
             </div>
             <button
               type="button"
-              onClick={onUnassignEngineer}
+              onClick={unassignEngineer}
               className="shrink-0 px-2.5 py-1 text-xs font-bold text-red-700 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors"
             >
               Unassign

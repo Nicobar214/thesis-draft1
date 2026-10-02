@@ -7,6 +7,7 @@ import UserLayout from '../components/UserLayout';
 import { normalizeProjectName } from '../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
+import { formatPercentage } from '../lib/percentageFormat';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 
 function normalizeUserProjectStatus(status) {
@@ -124,7 +125,7 @@ function FMRProjectCard({ project, onClick, tranches = [] }) {
         <div>
           <div className="flex items-center justify-between text-xs font-semibold mb-1">
             <span className="text-slate-500">Progress</span>
-            <span className="text-slate-800 tabular-nums font-bold">{accomplishment}%</span>
+            <span className="text-slate-800 tabular-nums font-bold">{formatPercentage(accomplishment)}</span>
           </div>
           <div className="h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
             <div
@@ -298,7 +299,7 @@ function FMRProjectTable({ projects, loading, onSelect, tranchesByProjectId = {}
                           <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                             <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.min(accomplishment, 100)}%` }} />
                           </div>
-                          <span className="text-xs font-bold text-slate-800 tabular-nums w-9 text-right">{accomplishment}%</span>
+                          <span className="text-xs font-bold text-slate-800 tabular-nums w-14 text-right">{formatPercentage(accomplishment)}</span>
                         </div>
                       </td>
 
@@ -382,7 +383,7 @@ function FMRProjectDetail({ project, onBack, tranches = [], isModal = false }) {
           <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-slate-700">Accomplishment</span>
-              <span className="text-sm font-bold text-slate-900">{project.accomplishment || 0}%</span>
+              <span className="text-sm font-bold text-slate-900">{formatPercentage(project.accomplishment ?? 0)}</span>
             </div>
             <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
               <div className={`h-full rounded-full ${style.bar} transition-all duration-500`} style={{ width: `${project.accomplishment || 0}%` }} />
@@ -488,7 +489,7 @@ function FMRProjectDetail({ project, onBack, tranches = [], isModal = false }) {
           <div>
             <div className="flex items-center justify-between text-xs font-medium mb-1.5">
               <span className="text-slate-500">Utilization</span>
-              <span className="text-slate-700 font-bold">{utilizationPct.toFixed(0)}%</span>
+              <span className="text-slate-700 font-bold">{formatPercentage(utilizationPct)}</span>
             </div>
             <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
               <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
@@ -542,7 +543,7 @@ function FMRProjectDetail({ project, onBack, tranches = [], isModal = false }) {
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-sm font-medium text-slate-700">Accomplishment</span>
-                <span className="text-sm font-semibold text-slate-900">{project.accomplishment || 0}%</span>
+                <span className="text-sm font-semibold text-slate-900">{formatPercentage(project.accomplishment ?? 0)}</span>
               </div>
               <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full ${style.bar} transition-all`} style={{ width: `${project.accomplishment || 0}%` }} />
@@ -647,7 +648,7 @@ function FMRProjectDetail({ project, onBack, tranches = [], isModal = false }) {
         <div>
           <div className="flex items-center justify-between text-xs font-medium mb-1.5">
             <span className="text-slate-500">Utilization</span>
-            <span className="text-slate-700 font-bold">{utilizationPct.toFixed(0)}%</span>
+            <span className="text-slate-700 font-bold">{formatPercentage(utilizationPct)}</span>
           </div>
           <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
             <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
@@ -788,7 +789,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           .order('status', { ascending: true })
           .order('accomplishment', { ascending: false }),
         supabase
-          .from('public_reports')
+          .from('public_reports_citizen_view')
           .select('project_name'),
         supabase
           .from('project_tranches')

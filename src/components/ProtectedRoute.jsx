@@ -10,15 +10,6 @@ function normalizeRole(role) {
     .replace(/[\s-]+/g, '_');
 }
 
-function resolveEffectiveRole(profileRole, metadataRole) {
-  const normalizedProfileRole = normalizeRole(profileRole);
-  const normalizedMetadataRole = normalizeRole(metadataRole);
-
-  if (normalizedProfileRole && normalizedProfileRole !== 'user') return normalizedProfileRole;
-  if (normalizedMetadataRole && normalizedMetadataRole !== 'user') return normalizedMetadataRole;
-  return normalizedProfileRole || normalizedMetadataRole || 'user';
-}
-
 function getLoginRouteForRequiredRole(requiredRole) {
   const role = normalizeRole(requiredRole);
   if (role === 'admin') return '/admin';
@@ -51,7 +42,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
         setUser(currentUser);
 
-        // Fetch role from profiles table, fall back to user_metadata
+        // Database profile roles are authoritative for protected routes.
         try {
           const { data: profile, error: profileError } = await client
             .from('profiles')
@@ -60,16 +51,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
             .maybeSingle();
 
           if (profileError) {
-            console.warn('Profile query error, using metadata fallback:', profileError);
-            setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
+            console.warn('Profile query error:', profileError);
+            setRole('user');
           } else if (profile) {
-            setRole(resolveEffectiveRole(profile.role, currentUser.user_metadata?.role));
+            setRole(normalizeRole(profile.role) || 'user');
           } else {
-            // No profile row – use metadata role or requiredRole as fallback
-            setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
+            setRole('user');
           }
         } catch {
-          setRole(normalizeRole(currentUser.user_metadata?.role || requiredRole || 'user'));
+          setRole('user');
         }
       } catch (err) {
         console.error('Auth check error:', err);

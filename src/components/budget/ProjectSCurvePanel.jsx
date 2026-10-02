@@ -21,10 +21,11 @@ import {
   classifyVariance,
   computeSlippage,
 } from '../../lib/accomplishmentAnalytics';
+import { formatPercentage } from '../../lib/percentageFormat';
 
 const cardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm';
 
-const fmtPct = (value) => (value === null || value === undefined ? '—' : `${Number(value).toFixed(1)}%`);
+const fmtPct = formatPercentage;
 
 export default function ProjectSCurvePanel({ project, progressUpdates = [], tranches = [] }) {
   const [tasks, setTasks] = useState([]);
@@ -140,10 +141,10 @@ export default function ProjectSCurvePanel({ project, progressUpdates = [], tran
               <YAxis
                 tick={{ fill: '#64748b', fontSize: 11 }}
                 domain={[0, 100]}
-                tickFormatter={(v) => `${v}%`}
+                tickFormatter={formatPercentage}
               />
               <RechartsTooltip
-                formatter={(value, name) => [value === null ? '—' : `${Number(value).toFixed(1)}%`, name]}
+                formatter={(value, name) => [formatPercentage(value), name]}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Line

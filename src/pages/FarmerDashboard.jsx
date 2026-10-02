@@ -196,9 +196,9 @@ export default function FarmerDashboard() {
 
       // Fetch farmer's submitted road reports
       const { data: reports } = await supabase
-        .from("public_reports")
+        .from("public_reports_citizen_view")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("is_current_user_report", true)
         .order("created_at", { ascending: false });
       setMyReports(reports || []);
     } catch (err) {
@@ -769,8 +769,8 @@ export default function FarmerDashboard() {
                             onClick={async () => {
                               setSelectedReportCert(rpt);
                               const [res1, res2] = await Promise.all([
-                                supabase.from('public_report_field_findings').select('*').eq('report_id', rpt.id).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
-                                supabase.from('public_report_resolutions').select('*').eq('report_id', rpt.id).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
+                                supabase.from('public_report_field_findings_citizen_view').select('*').eq('report_id', rpt.id).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
+                                supabase.from('public_report_resolutions_citizen_view').select('*').eq('report_id', rpt.id).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
                               ]);
                               setCertFieldFinding(res1?.data || null);
                               setCertResolution(res2?.data || null);
