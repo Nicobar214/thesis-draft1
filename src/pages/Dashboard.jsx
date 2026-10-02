@@ -69,7 +69,13 @@ import {
   updatePublicReportWorkflowMeta,
   validatePublicReportInspection,
 } from '../services/publicReportWorkflow';
-import { friendlyReportError } from '../lib/publicReportStatus';
+import {
+  ADMIN_BUCKETS,
+  ADMIN_BUCKET_BY_KEY,
+  countAdminBuckets,
+  friendlyReportError,
+  getAdminBucket,
+} from '../lib/publicReportStatus';
 import { assessReport } from '../lib/publicReportTriage';
 
 function normalizeFmrStatus(s) {
@@ -708,7 +714,7 @@ export default function Dashboard() {
   // Public reports state (admin view)
   const [publicReports, setPublicReports] = useState([]);
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
-  const [publicReportFilter, setPublicReportFilter] = useState('pending');
+  const [publicReportFilter, setPublicReportFilter] = useState('needs_review');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportAssignedFilter, setPublicReportAssignedFilter] = useState('all');
   const [publicReportViewMode, setPublicReportViewMode] = useState('grid');
@@ -2811,6 +2817,12 @@ export default function Dashboard() {
     return { totalProjects, inProgress, completed, totalBudget, disbursed, avgProgress, totalReports };
   }, [unifiedProjects, publicReports]);
   const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
+  // Sidebar badge: everything the admin personally owes an action on, not just
+  // untriaged reports. A submitted inspection waiting on validation is work too.
+  const actionNeededPublicReportsCount = useMemo(
+    () => countAdminBuckets(publicReports).actionNeeded,
+    [publicReports]
+  );
   const topPriorityProjects = useMemo(
     () => computePriorityScores(fmrProjects, publicReports, escalations).slice(0, 3),
     [fmrProjects, publicReports, escalations]
@@ -3611,7 +3623,7 @@ export default function Dashboard() {
     { id: 'project-mgmt', label: 'Project Mgmt', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
     { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-    { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: pendingPublicReportsCount },
+    { id: 'public-reports', label: 'Public Reports', icon: 'M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418', badgeCount: actionNeededPublicReportsCount },
     { id: 'progress-updates', label: 'Progress Updates', icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z', badgeCount: progressUpdates.filter(u => u.status === 'pending').length },
     { id: 'lgu-proposals', label: 'LGU Proposals', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', badgeCount: lguProposals.filter(p => p.status === 'Submitted' || p.status === 'Under Validation').length },
   ];
@@ -7033,7 +7045,7 @@ export default function Dashboard() {
             })();
 
             const filteredPublicReports = publicReports.filter(rpt => {
-              const matchesStatus = rpt.status === publicReportFilter;
+              const matchesStatus = publicReportFilter === 'all' || getAdminBucket(rpt) === publicReportFilter;
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
               const matchesAssigned = publicReportAssignedFilter === 'all' ||
                 (publicReportAssignedFilter === 'unassigned' && !rpt.assigned_engineer_id) ||
@@ -7059,9 +7071,9 @@ export default function Dashboard() {
               const bTime = new Date(b.updated_at || b.created_at || 0).getTime() || 0;
               return bTime - aTime;
             });
-            const pendingCount = publicReports.filter(r => r.status === 'pending').length;
-            const reviewedCount = publicReports.filter(r => r.status === 'reviewed').length;
-            const resolvedCount = publicReports.filter(r => r.status === 'resolved').length;
+            // Workload buckets split 'reviewed' by engineer_status so the admin
+            // can see what is actually waiting on them.
+            const bucketCounts = countAdminBuckets(publicReports);
             const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
 
             const startOfDay = (value) => {
@@ -7378,14 +7390,21 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          {(() => {
+                            // Same workflow bucket the filter tabs use, so a row
+                            // never shows a label the tabs cannot explain.
+                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt)];
+                            return (
+                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                                bucket?.owner === 'admin'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {bucket?.label || rpt.status}
+                              </span>
+                            );
+                          })()}
                           {verifyBadge(rpt.verification)}
-                          {statusBadge(rpt.status)}
-                          {rpt.photo_url && (
-                            <span className="flex items-center gap-1 text-xs text-slate-400">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /></svg>
-                              Photo
-                            </span>
-                          )}
                         </div>
                         <p className="text-sm font-medium text-slate-900 group-hover:text-teal-700 transition-colors">
                           {rpt.project_name || `${rpt.barangay}, ${rpt.municipality}`}
@@ -7418,51 +7437,88 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-6">
-                {/* Stats */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-                    <p className="text-3xl font-bold text-slate-900">{publicReports.length}</p>
-                    <p className="text-sm text-slate-500 mt-1">Total Reports</p>
+                {/* Section header: what this is, and the one number that
+                    matters — how much work is sitting with the admin. */}
+                <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+                      Citizen Reports
+                    </h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Public reports on Region VI farm-to-market roads
+                      <span className="text-slate-300"> · </span>
+                      {bucketCounts.all} total
+                      <span className="text-slate-300"> · </span>
+                      {verifiedCount} verified on-site
+                    </p>
                   </div>
-                  <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-amber-700">{pendingCount}</p>
-                    <p className="text-sm text-amber-600 mt-1">Pending</p>
+                  <div className="flex items-end gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setPublicReportFilter('all')}
+                      aria-pressed={publicReportFilter === 'all'}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        publicReportFilter === 'all'
+                          ? 'border-slate-800 bg-slate-800 text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      All reports
+                    </button>
+                  <div className="text-left sm:text-right">
+                    <p className="text-2xl font-semibold tabular-nums leading-none text-slate-900">
+                      {bucketCounts.actionNeeded}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {bucketCounts.actionNeeded === 1 ? 'report awaits you' : 'reports await you'}
+                    </p>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-blue-700">{reviewedCount}</p>
-                    <p className="text-sm text-blue-600 mt-1">Reviewed</p>
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-emerald-700">{resolvedCount}</p>
-                    <p className="text-sm text-emerald-600 mt-1">Resolved</p>
-                  </div>
-                  <div className="bg-teal-50 border border-teal-200/60 rounded-2xl p-5">
-                    <p className="text-3xl font-bold text-teal-700">{verifiedCount}</p>
-                    <p className="text-sm text-teal-600 mt-1">Verified On-Site</p>
                   </div>
                 </div>
 
-                {/* Executive DA Citizen Reports Header Banner */}
-                <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white p-5 rounded-2xl border border-emerald-900/60 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className="size-12 rounded-xl bg-emerald-500/20 text-emerald-400 grid place-items-center border border-emerald-500/30 shrink-0 shadow-inner">
-                      <Icons.AlertTriangle />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="text-lg font-bold text-white tracking-tight">Citizen Damage & Incident Reports</h2>
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30 flex items-center gap-1.5">
-                          <span className="size-2 rounded-full bg-amber-400 inline-block animate-pulse"></span>
-                          {pendingCount} Pending Review
+                {/* Workload cards. Each is also the filter for the list below.
+                    Colour is a structural accent — a rule down the left edge and
+                    the figure itself — on a white surface, so six cards read as
+                    one system instead of six competing blocks. Selection is
+                    shown by border + ring, which survives greyscale printing and
+                    does not rely on hue alone. */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+                  {ADMIN_BUCKETS.map((bucket) => {
+                    const active = publicReportFilter === bucket.key;
+                    const count = bucketCounts[bucket.key] || 0;
+                    return (
+                      <button
+                        key={bucket.key}
+                        type="button"
+                        onClick={() => setPublicReportFilter(bucket.key)}
+                        aria-pressed={active}
+                        title={bucket.hint}
+                        className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-3 text-left transition-colors ${
+                          active
+                            ? `ring-2 ${bucket.activeRing}`
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`absolute inset-y-0 left-0 w-1 ${bucket.bar}`}
+                        />
+                        <span
+                          className={`block text-2xl font-semibold leading-none tabular-nums ${
+                            count === 0 ? 'text-slate-300' : bucket.value
+                          }`}
+                        >
+                          {count}
                         </span>
-                      </div>
-                      <p className="text-xs text-slate-300 mt-1 font-medium">
-                        Direct public feedback channel for Region VI Farm-to-Market Road damage, landslides, and infrastructure issues.
-                      </p>
-                    </div>
-                  </div>
+                        <span className="mt-1.5 block text-xs font-medium leading-tight text-slate-600">
+                          {bucket.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="bg-white border border-slate-200/70 rounded-2xl p-4 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.3)]">
+
+                <div className="bg-white border border-slate-200 rounded-xl p-4">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -7479,11 +7535,11 @@ export default function Dashboard() {
                         <span className="inline-block h-2 w-2 rounded-full bg-indigo-500" />
                         {publicReports.length} total reports
                       </div>
-                      {(publicReportSearch || publicReportFilter !== 'pending' || publicReportCategoryFilter !== 'all' || publicReportDateFrom || publicReportDateTo || publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all' || publicReportProjectFilter) && (
+                      {(publicReportSearch || publicReportFilter !== 'all' || publicReportCategoryFilter !== 'all' || publicReportDateFrom || publicReportDateTo || publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all' || publicReportProjectFilter) && (
                         <button
                           onClick={() => {
                             setPublicReportSearch('');
-                            setPublicReportFilter('pending');
+                            setPublicReportFilter('all');
                             setPublicReportCategoryFilter('all');
                             setPublicReportDateFrom('');
                             setPublicReportDateTo('');
@@ -7520,9 +7576,10 @@ export default function Dashboard() {
                         onChange={e => setPublicReportFilter(e.target.value)}
                         className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-700 outline-none transition-all hover:border-slate-300 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
                       >
-                        <option value="pending">Pending</option>
-                        <option value="reviewed">Reviewed</option>
-                        <option value="resolved">Resolved</option>
+                        <option value="all">All reports</option>
+                        {ADMIN_BUCKETS.map((bucket) => (
+                          <option key={bucket.key} value={bucket.key}>{bucket.label}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -7579,7 +7636,7 @@ export default function Dashboard() {
                       />
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 xl:col-span-12">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 xl:col-span-12">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Location Filters</p>
@@ -7713,10 +7770,10 @@ export default function Dashboard() {
 
                   return (
                     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200" onClick={() => setSelectedPublicReport(null)}>
-                      <div className="bg-white rounded-2xl shadow-2xl w-[98vw] lg:w-[90vw] max-w-7xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200/80" onClick={e => e.stopPropagation()}>
+                      <div className="bg-white rounded-xl shadow-xl w-[98vw] lg:w-[90vw] max-w-7xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()}>
 
                         {/* Top Government Case Header */}
-                        <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between shrink-0 border-b border-emerald-900/50">
+                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-700">
                           <div className="flex items-center gap-3.5">
                             <div className="size-11 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/30 shadow-inner">
                               <Icons.Road />
@@ -8053,7 +8110,7 @@ export default function Dashboard() {
                 })()}
 
                 {/* Reports List */}
-                <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl shadow-xs overflow-hidden">
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200/60 bg-white">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -8066,7 +8123,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setPublicReportViewMode('grid')}
-                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'grid' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'grid' ? 'bg-white shadow-xs text-slate-900 font-semibold' : 'text-slate-500 hover:text-slate-800'
                               }`}
                             title="Grid of Cards"
                           >
@@ -8075,7 +8132,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setPublicReportViewMode('list')}
-                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'list' ? 'bg-white shadow-xs text-teal-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                            className={`p-1.5 rounded-md transition-all ${publicReportViewMode === 'list' ? 'bg-white shadow-xs text-slate-900 font-semibold' : 'text-slate-500 hover:text-slate-800'
                               }`}
                             title="Detailed List"
                           >
@@ -8083,23 +8140,6 @@ export default function Dashboard() {
                           </button>
                         </div>
 
-                        {/* Status Buttons */}
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {[
-                            { key: 'pending', label: 'Pending', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-                            { key: 'reviewed', label: 'Reviewed', tone: 'bg-blue-50 text-blue-700 border-blue-200' },
-                            { key: 'resolved', label: 'Resolved', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                          ].map((option) => (
-                            <button
-                              key={option.key}
-                              onClick={() => setPublicReportFilter(option.key)}
-                              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${publicReportFilter === option.key ? option.tone : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                                }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -8114,7 +8154,7 @@ export default function Dashboard() {
                       description="No records match your current report and location filters."
                       buttonLabel="Clear Filters"
                       onButtonClick={() => {
-                        setPublicReportFilter('pending');
+                        setPublicReportFilter('all');
                         setPublicReportCategoryFilter('all');
                         setPublicReportAssignedFilter('all');
                         setPublicReportSearch('');
@@ -8129,71 +8169,83 @@ export default function Dashboard() {
                   ) : (
                     <div>
                       {publicReportViewMode === 'grid' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 p-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
                           {sortedFilteredPublicReports.map((rpt) => {
                             const reportDate = rpt.updated_at || rpt.created_at;
                             const formattedReportDate = reportDate
-                              ? new Date(reportDate).toLocaleString('en-US', {
-                                year: 'numeric',
+                              ? new Date(reportDate).toLocaleDateString('en-US', {
                                 month: 'short',
                                 day: 'numeric',
+                                year: 'numeric',
                               })
                               : 'No date';
+
+                            // Same workflow bucket as the cards above, so a
+                            // report's colour means the same thing everywhere.
+                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt)];
 
                             return (
                               <button
                                 key={rpt.id}
                                 onClick={() => setSelectedPublicReport(rpt)}
-                                className="group flex flex-col text-left bg-white rounded-2xl border border-slate-200/80 hover:border-teal-500/50 hover:shadow-lg transition-[box-shadow,border-color] duration-200 overflow-hidden relative shadow-2xs"
+                                className="group relative flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition-colors hover:border-slate-400"
                               >
-                                {/* Card Image Preview / Vector Placeholder */}
-                                <div className="h-40 w-full relative bg-slate-900 overflow-hidden shrink-0">
-                                  {rpt.photo_url ? (
-                                    <img
-                                      src={rpt.photo_url}
-                                      alt="Damage Inspection"
-                                      className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500"
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 bg-gradient-to-br from-slate-900 via-slate-950 to-emerald-950 p-4 text-center">
-                                      <svg className="w-8 h-8 text-teal-600 mb-1.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m2.25 15.75 5.159-5.159a6 6 0 0 1 8.486 0L21.75 15.75m-18-10.5h18A2.25 2.25 0 0 1 21.75 7.5v9a2.25 2.25 0 0 1-2.25 2.25h-15A2.25 2.25 0 0 1 2.25 16.5v-9a2.25 2.25 0 0 1 2.25-2.25z" /></svg>
-                                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">No Image Uploaded</span>
-                                    </div>
-                                  )}
-                                  {/* Floating Badges */}
-                                  <div className="absolute top-3 left-3 right-3 flex justify-between items-center gap-2 pointer-events-none">
-                                    {verifyBadge(rpt.verification)}
-                                    {statusBadge(rpt.status)}
-                                  </div>
-                                </div>
+                                <span
+                                  aria-hidden="true"
+                                  className={`absolute inset-x-0 top-0 h-1 ${bucket?.bar || 'bg-slate-300'}`}
+                                />
 
-                                {/* Card Body */}
-                                <div className="p-4.5 flex-1 flex flex-col justify-between space-y-3.5">
-                                  <div>
-                                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold mb-1">
-                                      <span className="text-teal-600 uppercase tracking-wider">{rpt.municipality}</span>
-                                      <span>{formattedReportDate}</span>
-                                    </div>
-                                    <h4 className="text-sm font-bold text-slate-900 group-hover:text-teal-700 transition-colors line-clamp-1 leading-snug">
-                                      {rpt.project_name || 'Unlinked Damage Site'}
-                                    </h4>
-                                    <p className="text-[11px] font-semibold text-slate-500 mt-0.5 line-clamp-1">
-                                      📍 Barangay {rpt.barangay}{rpt.street ? `, ${rpt.street}` : ''}
-                                    </p>
-                                    <p className="text-xs text-slate-600 mt-2 line-clamp-3 leading-relaxed">
-                                      {rpt.description || 'No description provided.'}
-                                    </p>
+                                {rpt.photo_url ? (
+                                  <img
+                                    src={rpt.photo_url}
+                                    alt=""
+                                    loading="lazy"
+                                    className="h-36 w-full shrink-0 border-b border-slate-200 object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-36 w-full shrink-0 items-center justify-center border-b border-slate-200 bg-slate-50">
+                                    <span className="text-xs text-slate-400">No photo submitted</span>
+                                  </div>
+                                )}
+
+                                <div className="flex flex-1 flex-col p-4">
+                                  <div className="mb-2 flex items-center justify-between gap-2">
+                                    <span className={`text-[11px] font-semibold ${bucket?.value || 'text-slate-600'}`}>
+                                      {bucket?.label || rpt.status}
+                                    </span>
+                                    <span className="shrink-0 text-[11px] tabular-nums text-slate-500">
+                                      {formattedReportDate}
+                                    </span>
                                   </div>
 
-                                  {/* Footer with Assignment */}
-                                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-500 font-medium">
-                                    <span className="truncate">Reporter: {rpt.full_name || 'Anonymous'}</span>
-                                    {rpt.assigned_engineer_name ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200/60 font-semibold text-[10px]">
-                                        👤 {rpt.assigned_engineer_name.split(' ')[0]}
+                                  <h4 className="line-clamp-1 text-sm font-semibold leading-snug text-slate-900">
+                                    {rpt.project_name || 'Unlinked road'}
+                                  </h4>
+                                  <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                                    Brgy. {rpt.barangay || '--'}{rpt.street ? `, ${rpt.street}` : ''}
+                                    {rpt.municipality ? ` · ${rpt.municipality}` : ''}
+                                  </p>
+
+                                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
+                                    {rpt.description || 'No description provided.'}
+                                  </p>
+
+                                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+                                    <span className="truncate">
+                                      {rpt.assigned_engineer_name
+                                        ? `Eng. ${rpt.assigned_engineer_name}`
+                                        : 'No engineer assigned'}
+                                    </span>
+                                    {rpt.verification && rpt.verification !== 'Needs Review' && (
+                                      <span
+                                        className={`shrink-0 font-medium ${
+                                          rpt.verification === 'Verified On-Site'
+                                            ? 'text-emerald-700'
+                                            : 'text-red-700'
+                                        }`}
+                                      >
+                                        {rpt.verification}
                                       </span>
-                                    ) : (
-                                      <span className="text-[10px] text-slate-400 italic">Unassigned</span>
                                     )}
                                   </div>
                                 </div>
@@ -8203,9 +8255,9 @@ export default function Dashboard() {
                         </div>
                       ) : (
                         <div className="p-4">
-                          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                          <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
                             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-                              <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">{publicReportFilter}</span>
+                              <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">{publicReportFilter === 'all' ? 'All reports' : (ADMIN_BUCKET_BY_KEY[publicReportFilter]?.label || publicReportFilter)}</span>
                               <span className="text-xs font-semibold text-slate-500">{sortedFilteredPublicReports.length}</span>
                             </div>
                             <div className="max-h-[500px] overflow-y-auto divide-y divide-slate-100 bg-white">
@@ -8219,10 +8271,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* Reports Analytics */}
-                <section className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
+                <section className="bg-white border border-slate-200 rounded-xl p-5">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">Reports Analytics</h3>
+                      <h3 className="text-base font-semibold text-slate-900">Reports Analytics</h3>
                       <p className="text-xs text-slate-500 mt-1">Operational signals for report concentration, trend, and resolution performance.</p>
                     </div>
                     <button
@@ -8245,7 +8297,7 @@ export default function Dashboard() {
                               onClick={() => {
                                 const cutoff = new Date(today);
                                 cutoff.setDate(cutoff.getDate() - 14);
-                                setPublicReportFilter('pending');
+                                setPublicReportFilter('all');
                                 setPublicReportDateTo(formatDateInput(cutoff));
                               }}
                               className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
@@ -8258,7 +8310,7 @@ export default function Dashboard() {
                               onClick={() => {
                                 const cutoff = new Date(today);
                                 cutoff.setDate(cutoff.getDate() - 30);
-                                setPublicReportFilter('pending');
+                                setPublicReportFilter('all');
                                 setPublicReportDateTo(formatDateInput(cutoff));
                               }}
                               className="w-full text-left rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 transition-colors"

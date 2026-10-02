@@ -298,6 +298,124 @@ export function buildCitizenTrack(report, { finding = null, resolution = null } 
   return { current, closed: false, needsReinspection, steps };
 }
 
+// ── Admin workload buckets ──────────────────────────────────
+/* `status` alone cannot answer "what needs me?" — a single 'reviewed' value
+ * covers five different situations, from nobody-assigned-yet to
+ * ready-to-resolve. These buckets split on (status, engineer_status) so the
+ * admin list can group reports by WHO owes the next action.
+ *
+ * Derived from the same column pair the workflow RPCs guard on, so a bucket
+ * can never disagree with the action panel inside the case file.
+ *
+ * `owner` says who is expected to act next, and drives the emphasis the UI
+ * puts on the admin's own queue. */
+/* Each bucket carries a design token set rather than a loose colour string.
+ * Hue is assigned by meaning, not decoration:
+ *
+ *   amber  -> new and unexamined        (warm = needs attention)
+ *   orange -> triaged but still stalled (warmer = ageing)
+ *   blue   -> active work, elsewhere    (cool = informational, not yours)
+ *   violet -> a decision is back with you, and must stand out from the
+ *             "in motion" blues
+ *   emerald-> positive terminal step    (go)
+ *   slate  -> archived and inert
+ *
+ * Tailwind needs literal class names, so each token is written out in full
+ * rather than composed at runtime. */
+export const ADMIN_BUCKETS = [
+  {
+    key: 'needs_review',
+    label: 'Needs Review',
+    hint: 'New citizen reports awaiting triage',
+    owner: 'admin',
+    bar: 'bg-amber-500',
+    value: 'text-amber-700',
+    activeRing: 'ring-amber-500/40 border-amber-400 bg-amber-50/60',
+  },
+  {
+    key: 'needs_assignment',
+    label: 'Needs Assignment',
+    hint: 'Reviewed, but no engineer dispatched yet',
+    owner: 'admin',
+    bar: 'bg-orange-500',
+    value: 'text-orange-700',
+    activeRing: 'ring-orange-500/40 border-orange-400 bg-orange-50/60',
+  },
+  {
+    key: 'in_field',
+    label: 'In the Field',
+    hint: 'With the assigned engineer for inspection',
+    owner: 'engineer',
+    bar: 'bg-blue-500',
+    value: 'text-blue-700',
+    activeRing: 'ring-blue-500/40 border-blue-400 bg-blue-50/60',
+  },
+  {
+    key: 'needs_validation',
+    label: 'Needs Validation',
+    hint: 'Inspection submitted and waiting on your review',
+    owner: 'admin',
+    bar: 'bg-violet-500',
+    value: 'text-violet-700',
+    activeRing: 'ring-violet-500/40 border-violet-400 bg-violet-50/60',
+  },
+  {
+    key: 'ready_to_resolve',
+    label: 'Ready to Resolve',
+    hint: 'Findings validated — issue the resolution',
+    owner: 'admin',
+    bar: 'bg-emerald-500',
+    value: 'text-emerald-700',
+    activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60',
+  },
+  {
+    key: 'closed',
+    label: 'Closed',
+    hint: 'Resolved, or closed without inspection',
+    owner: null,
+    bar: 'bg-slate-400',
+    value: 'text-slate-600',
+    activeRing: 'ring-slate-400/40 border-slate-400 bg-slate-50',
+  },
+];
+
+export const ADMIN_BUCKET_BY_KEY = Object.fromEntries(ADMIN_BUCKETS.map((b) => [b.key, b]));
+
+/* Buckets where the admin personally owes the next action. */
+export const ADMIN_ACTION_BUCKETS = ADMIN_BUCKETS
+  .filter((b) => b.owner === 'admin')
+  .map((b) => b.key);
+
+export function getAdminBucket(report) {
+  const status = String(report?.status || '').trim().toLowerCase();
+  const engineerStatus = String(report?.engineer_status || '').trim().toLowerCase();
+
+  if (status === 'resolved' || status === 'dismissed') return 'closed';
+  if (status === 'pending') return 'needs_review';
+
+  if (status === 'reviewed') {
+    if (engineerStatus === 'inspected') return 'needs_validation';
+    if (engineerStatus === 'validated') return 'ready_to_resolve';
+    // 'rejected' means the admin sent it back — the engineer owes the re-visit.
+    if (['assigned', 'in_progress', 'rejected'].includes(engineerStatus)) return 'in_field';
+    return 'needs_assignment';
+  }
+
+  // Unknown/legacy status: surface it rather than hiding it from every bucket.
+  return 'needs_review';
+}
+
+export function countAdminBuckets(reports = []) {
+  const counts = Object.fromEntries(ADMIN_BUCKETS.map((b) => [b.key, 0]));
+  reports.forEach((r) => {
+    const key = getAdminBucket(r);
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  counts.all = reports.length;
+  counts.actionNeeded = ADMIN_ACTION_BUCKETS.reduce((sum, k) => sum + (counts[k] || 0), 0);
+  return counts;
+}
+
 // ── Error presentation ──────────────────────────────────────
 /* Workflow RPCs raise plain-text exceptions intended for developers. Surface a
  * useful sentence to the user and keep the technical text for the console. */
