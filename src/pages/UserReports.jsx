@@ -14,6 +14,8 @@ import {
   getCitizenStatus,
   resolveCategory,
   resolveSpecificProblem,
+  resolutionTypeLabel,
+  siteRatingLabel,
 } from '../lib/publicReportStatus';
 
 /* Status badge — derived from the citizen view's citizen_status so a closed or
@@ -649,6 +651,15 @@ function UserReports() {
                   </p>
 
                   <dl className="text-sm space-y-2 text-slate-800">
+                    {siteRatingLabel(selectedFieldFinding.site_rating) && (
+                      <div>
+                        <dt className="text-xs font-semibold text-slate-600">Road Condition Rating</dt>
+                        <dd className="mt-0.5">
+                          {siteRatingLabel(selectedFieldFinding.site_rating)}
+                          <span className="text-slate-500"> ({selectedFieldFinding.site_rating} of 5)</span>
+                        </dd>
+                      </div>
+                    )}
                     <div>
                       <dt className="text-xs font-semibold text-slate-600">Condition Observed</dt>
                       <dd className="mt-0.5">{selectedFieldFinding.condition_observed}</dd>
@@ -681,11 +692,30 @@ function UserReports() {
               {selected.status === 'resolved' && (
                 <section className="space-y-2.5">
                   <h3 className="text-sm font-semibold text-slate-900">Outcome</h3>
-                  {selectedLguDecision?.decision === 'endorsed' && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
-                      Endorsed by LGU
-                    </span>
-                  )}
+
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {resolutionTypeLabel(selectedResolution?.resolution_type) && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-700 text-white text-xs font-semibold">
+                          {resolutionTypeLabel(selectedResolution.resolution_type)}
+                        </span>
+                      )}
+                      {selectedLguDecision?.decision === 'endorsed' && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-semibold">
+                          Endorsed by LGU
+                        </span>
+                      )}
+                      {selectedResolution?.resolved_at && (
+                        <span className="text-xs text-emerald-800">
+                          {fmtDate(selectedResolution.resolved_at)}
+                        </span>
+                      )}
+                    </div>
+                    {selectedResolutionSummary && (
+                      <p className="text-sm text-emerald-900">{selectedResolutionSummary}</p>
+                    )}
+                  </div>
+
                   <button
                     onClick={() => setShowCertModal(true)}
                     className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-colors"

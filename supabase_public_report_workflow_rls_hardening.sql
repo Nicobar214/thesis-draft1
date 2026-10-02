@@ -234,6 +234,31 @@ select
   pr.resolved_at,
   pr.dismissed_at,
   (pr.user_id = auth.uid()) as is_current_user_report,
+  -- Citizen-safe milestone timestamps. These expose only *when* a stage was
+  -- reached, never who acted or what they recorded internally.
+  pr.reviewed_at as citizen_reviewed_at,
+  pr.assigned_at as citizen_field_dispatched_at,
+  latest_finding.inspection_started_at as citizen_inspection_started_at,
+  latest_finding.submitted_at as citizen_assessment_submitted_at,
+  case
+    when pr.engineer_status in ('validated', 'rejected') then latest_finding.updated_at
+    else null::timestamptz
+  end as citizen_admin_decision_at,
+  -- Machine-readable stage. Finer-grained than citizen_status: it separates
+  -- 'reinspection_needed' so the UI can reassure the citizen that a returned
+  -- inspection is not a rejection of their report.
+  case
+    when pr.status = 'resolved' then 'resolved'
+    when pr.status = 'dismissed' then 'closed'
+    when pr.engineer_status = 'validated' then 'validated'
+    when pr.engineer_status = 'rejected' then 'reinspection_needed'
+    when pr.engineer_status = 'inspected' then 'assessment_submitted'
+    when pr.engineer_status = 'in_progress' then 'inspection_in_progress'
+    when pr.engineer_status = 'assigned' then 'field_engineer_dispatched'
+    when pr.status = 'reviewed' then 'under_review'
+    else 'submitted'
+  end as citizen_workflow_stage,
+  -- Human-readable label rendered directly in the citizen UI.
   case
     when pr.status = 'resolved' then 'Resolved'
     when pr.status = 'dismissed' then 'Closed'
@@ -244,6 +269,13 @@ select
     else 'Submitted'
   end as citizen_status
 from public.public_reports pr
+left join lateral (
+  select f.inspection_started_at, f.submitted_at, f.updated_at
+  from public.public_report_field_findings f
+  where f.report_id = pr.id
+  order by f.inspection_number desc nulls last, f.created_at desc nulls last
+  limit 1
+) latest_finding on true
 where pr.status <> 'dismissed'
    or pr.user_id = auth.uid();
 

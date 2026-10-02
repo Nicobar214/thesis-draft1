@@ -36,7 +36,7 @@ export default function CitizenReportTimeline({
 
   if (!report || !track) return null;
 
-  const { current, closed, steps } = track;
+  const { current, closed, needsReinspection, steps } = track;
   const reference = String(report.id || '').slice(0, 8).toUpperCase();
   const summary = resolutionSummary || resolution?.summary || '';
 
@@ -102,6 +102,18 @@ export default function CitizenReportTimeline({
           </p>
           <p className="text-sm text-emerald-900 mt-1">
             {summary || 'This report has been marked as resolved.'}
+          </p>
+        </div>
+      )}
+
+      {needsReinspection && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs text-amber-800 uppercase font-semibold tracking-wide">
+            Second Visit Scheduled
+          </p>
+          <p className="text-sm text-amber-900 mt-1">
+            Your report has not been rejected. Staff asked the field engineer for another on-site
+            check before this can be closed, so the inspection step is running again.
           </p>
         </div>
       )}

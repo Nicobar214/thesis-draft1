@@ -93,6 +93,34 @@ export function resolveSpecificProblem(report) {
   return cat.problems.find((p) => p.value === report.specific_problem) || null;
 }
 
+/* Resolution outcomes. The server validates this exact set in
+ * resolve_public_report; public_report_resolutions_citizen_view exposes
+ * resolution_type to citizens, so these labels are citizen-facing. */
+export const RESOLUTION_TYPE_LABELS = {
+  repaired: 'Repaired',
+  scheduled_for_repair: 'Scheduled for repair',
+  referred_to_contractor: 'Referred to contractor',
+  monitoring_required: 'Monitoring required',
+  no_action_required: 'No action required',
+  outside_project_scope: 'Outside project scope',
+  duplicate_case: 'Duplicate case',
+  other: 'Other',
+};
+
+export function resolutionTypeLabel(value) {
+  return RESOLUTION_TYPE_LABELS[String(value || '').toLowerCase()] || null;
+}
+
+/* The engineer's 1-5 site condition rating, exposed to citizens via
+ * public_report_field_findings_citizen_view. */
+export const SITE_RATING_LABELS = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'];
+
+export function siteRatingLabel(rating) {
+  const n = Number(rating);
+  if (!Number.isInteger(n) || n < 1 || n > 5) return null;
+  return SITE_RATING_LABELS[n - 1];
+}
+
 // ── Citizen status ──────────────────────────────────────────
 /* These keys mirror the `citizen_status` CASE expression in
  * public_reports_citizen_view (supabase_public_report_workflow_rls_hardening.sql).
@@ -207,19 +235,23 @@ export const CITIZEN_TRACK = [
 /**
  * Build the citizen progress track.
  *
- * Only timestamps the citizen is actually allowed to see are used — the
- * citizen views expose created_at / dismissed_at / resolved_at on the report,
- * submitted_at + validated_at on a published finding, and resolved_at on a
- * resolution. Stages the backend does not timestamp for citizens (review,
- * assignment) are marked reached without a date rather than faking one.
+ * Timestamps come from public_reports_citizen_view, which exposes a
+ * citizen-safe milestone for each stage (citizen_reviewed_at,
+ * citizen_field_dispatched_at, citizen_inspection_started_at,
+ * citizen_assessment_submitted_at). `finding` and `resolution` are fallbacks
+ * for deployments whose view predates those columns, so the track degrades to
+ * "Completed" without a date rather than breaking.
  */
 export function buildCitizenTrack(report, { finding = null, resolution = null } = {}) {
   const current = getCitizenStatus(report);
+  const needsReinspection =
+    String(report?.citizen_workflow_stage || '').toLowerCase() === 'reinspection_needed';
 
   if (current.key === 'closed') {
     return {
       current,
       closed: true,
+      needsReinspection: false,
       steps: [
         {
           key: 'submitted',
@@ -243,9 +275,11 @@ export function buildCitizenTrack(report, { finding = null, resolution = null } 
 
   const timestamps = {
     submitted: report?.created_at || null,
-    under_review: null,
-    inspection_scheduled: null,
-    under_verification: finding?.submitted_at || null,
+    under_review: report?.citizen_reviewed_at || null,
+    inspection_scheduled:
+      report?.citizen_inspection_started_at || report?.citizen_field_dispatched_at || null,
+    under_verification:
+      report?.citizen_assessment_submitted_at || finding?.submitted_at || null,
     resolved: resolution?.resolved_at || report?.resolved_at || null,
   };
 
@@ -261,7 +295,7 @@ export function buildCitizenTrack(report, { finding = null, resolution = null } 
     };
   });
 
-  return { current, closed: false, steps };
+  return { current, closed: false, needsReinspection, steps };
 }
 
 // ── Error presentation ──────────────────────────────────────
