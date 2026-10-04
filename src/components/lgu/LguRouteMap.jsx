@@ -4,7 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
-import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints } from '../../lib/mapRouteUtils';
+import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints, isAlreadyRoadAligned } from '../../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 
 function FitToData({ points }) {
@@ -154,6 +154,14 @@ export default function LguRouteMap({
     (projects || []).forEach((project) => {
       const routeRecord = routesByProjectId?.[project.id] || null;
       const routeData = buildRoutePoints(project, routeRecord);
+
+      // Only snap routes that have no stored geometry of their own. Without this
+      // guard a stored multi-vertex route gets round-tripped through OSRM on every
+      // load, which re-routes it through a sampled subset of its own vertices and
+      // throws away the surveyed alignment and its calibrated length. Dashboard.jsx
+      // and UserMapView.jsx already guarded this way; this map did not.
+      if (routeData.hasRouteRecord || isAlreadyRoadAligned(routeRecord)) return;
+
       if (routeData.points && routeData.points.length >= 2) {
         fetchRoadAlignedPolyline(routeData.points).then((snapped) => {
           if (active && snapped && snapped.length >= 2) {

@@ -1,0 +1,306 @@
+{
+  "generatedAt": "2026-10-02T12:37:30.735Z",
+  "source": "Leon_barangay_roads.csv",
+  "roads": 143,
+  "preservedFieldDrift": [],
+  "duplicateRoadNames": [
+    {
+      "roadName": "Bucari Road",
+      "count": 2,
+      "lengthsKm": [
+        0.99,
+        0.09
+      ]
+    },
+    {
+      "roadName": "Isian Victoria Road",
+      "count": 2,
+      "lengthsKm": [
+        0.77,
+        2.89
+      ]
+    },
+    {
+      "roadName": "Jamog Gines Road",
+      "count": 2,
+      "lengthsKm": [
+        0.14,
+        0.3
+      ]
+    }
+  ],
+  "barangayChanges": [
+    {
+      "roadName": "Binolbog Road (new)",
+      "before": "Binolbog Road (new)",
+      "after": "Binolbog",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Cabunga-an-Caboloan Rd",
+      "before": "Cabunga",
+      "after": "Cabunga-an",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Limotan Road",
+      "before": "Limotan",
+      "after": null,
+      "source": "unresolved",
+      "note": "Limotan is a sitio; no barangay in the road name."
+    },
+    {
+      "roadName": "Carara-an-Sitio Talibong Rd",
+      "before": "Carara",
+      "after": "Carara-an",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Carolina Rd. Jct Langog Rd",
+      "before": "Carolina Rd. Jct Langog",
+      "after": "Carolina",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Coyugan Sur Road New",
+      "before": "Coyugan Sur Road New",
+      "after": "Coyugan Sur",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Dusacan Road (new)",
+      "before": "Dusacan Road (new)",
+      "after": "Dusacan",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Gines Brgy. Proper New Rd",
+      "before": "Gines Brgy. Proper New",
+      "after": "Gines",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Lang-og Road",
+      "before": "Lang",
+      "after": "Lang-og",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Lanag (going to Don Felimon Inland Resort",
+      "before": "Lanag (going to Don Felimon Inland Resort",
+      "after": "Lanag",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Kalapadan Road",
+      "before": "Kalapadan",
+      "after": null,
+      "source": "unresolved",
+      "note": "Kalapadan is a sitio; no barangay in the road name."
+    },
+    {
+      "roadName": "Odong-Odong Road",
+      "before": "Odong",
+      "after": "Odong-odong",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Center Road",
+      "before": "Center",
+      "after": "Poblacion",
+      "source": "manual-inferred",
+      "note": "Municipal centre road; Leon town centre is Poblacion."
+    },
+    {
+      "roadName": "Sitio Dugo Road",
+      "before": "Sitio Dugo",
+      "after": null,
+      "source": "unresolved",
+      "note": "Sitio Dugo; parent barangay not stated in the CSV."
+    },
+    {
+      "roadName": "Tac. Norte-Marirong Rd.",
+      "before": "Tac. Norte",
+      "after": "Tacuyong Norte",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Tac. Sur-Baje Road",
+      "before": "Tac. Sur",
+      "after": "Tacuyong Sur",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Talacu-an-Takasi-",
+      "before": "Talacu",
+      "after": "Talacuan",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Takasi-Bunga Road",
+      "before": "Takasi",
+      "after": null,
+      "source": "unresolved",
+      "note": "Takasi and Bunga are both sitios."
+    },
+    {
+      "roadName": "Tina-an Norte Road",
+      "before": "Tina",
+      "after": "Tina-an Norte",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Tina-an Norte-Sitio Bugo",
+      "before": "Tina",
+      "after": "Tina-an Norte",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Tu-og Road",
+      "before": "Tu",
+      "after": "Tu-og",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Tu-og-Lanot Road",
+      "before": "Tu",
+      "after": "Tu-og",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Tu-og-Siol Norte Road",
+      "before": "Tu",
+      "after": "Tu-og",
+      "source": "name-parse",
+      "note": null
+    },
+    {
+      "roadName": "Cemetery Road.",
+      "before": "Cemetery",
+      "after": "Poblacion",
+      "source": "manual-inferred",
+      "note": "Leon public cemetery is in Poblacion."
+    }
+  ],
+  "barangaySourceCounts": {
+    "name-parse": 137,
+    "unresolved": 4,
+    "manual-inferred": 2
+  },
+  "unresolved": [
+    {
+      "roadName": "Limotan Road",
+      "note": "Limotan is a sitio; no barangay in the road name."
+    },
+    {
+      "roadName": "Kalapadan Road",
+      "note": "Kalapadan is a sitio; no barangay in the road name."
+    },
+    {
+      "roadName": "Sitio Dugo Road",
+      "note": "Sitio Dugo; parent barangay not stated in the CSV."
+    },
+    {
+      "roadName": "Takasi-Bunga Road",
+      "note": "Takasi and Bunga are both sitios."
+    }
+  ],
+  "distinctBarangays": [
+    "Agboy Norte",
+    "Agboy Sur",
+    "Agta",
+    "Anonang",
+    "Apian",
+    "Avanzada",
+    "Awis",
+    "Ayabang",
+    "Ayubo",
+    "Bacolod",
+    "Banagan",
+    "Barangbang",
+    "Barasan",
+    "Bayag Norte",
+    "Binolbog",
+    "Biri Norte",
+    "Biri Sur",
+    "Bucari",
+    "Buga",
+    "Bulad",
+    "Cabunga-an",
+    "Cabutongan",
+    "Cagay",
+    "Camandag",
+    "Cananaman",
+    "Capt. Fernando",
+    "Carara-an",
+    "Carolina",
+    "Coyugan Norte",
+    "Coyugan Sur",
+    "Danao",
+    "Dorog",
+    "Dusacan",
+    "Gines",
+    "Gumboc",
+    "Igcadios",
+    "Isian Norte",
+    "Isian Victoria",
+    "Jamog Gines",
+    "Lanag",
+    "Lang-og",
+    "Ligtos",
+    "Magcapay",
+    "Maliao",
+    "Malublub",
+    "Manampunay",
+    "Marirong",
+    "Mina",
+    "Mocol",
+    "Nagbangi",
+    "Nalbang",
+    "Odong-odong",
+    "Oluangan",
+    "Paga",
+    "Pandan",
+    "Panginman",
+    "Paoy",
+    "Pepe",
+    "Poblacion",
+    "Salngan",
+    "Samlague",
+    "Siol Sur",
+    "Tacuyong Norte",
+    "Tacuyong Sur",
+    "Tagsing",
+    "Talacuan",
+    "Tina-an Norte",
+    "Tu-og",
+    "Tunguan"
+  ],
+  "unpaved": {
+    "roadsWithUnpavedSection": 104,
+    "totalUnpavedKm": 104.54,
+    "minKm": 0.04,
+    "medianKm": 0.66,
+    "maxKm": 4.01,
+    "atOrAbove0_8Km": 41,
+    "atOrAbove1_2Km": 30
+  },
+  "problems": []
+}
