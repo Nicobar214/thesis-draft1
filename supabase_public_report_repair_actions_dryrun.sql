@@ -150,6 +150,9 @@ create trigger trg_repair_actions_touch
 before update on public.public_report_repair_actions
 for each row execute function public._public_report_touch_updated_at();
 
+-- Trigger-only helper: no client needs to be able to execute it.
+revoke execute on function public._public_report_touch_updated_at() from public, anon, authenticated;
+
 -- ------------------------------------------------------------
 -- 2. Row-level security: read-only for staff, nothing writable directly
 -- ------------------------------------------------------------
@@ -348,6 +351,21 @@ begin
     );
   end if;
 
+  -- A repaired claim starts as 'completed', so the engineer who inspected the
+  -- site is the one who has to confirm it. Tell them, server-side, rather than
+  -- relying on the client to remember.
+  if v_status = 'completed' and v_report.assigned_engineer_id is not null then
+    insert into public.notifications (user_id, type, title, message, report_id, is_read)
+    values (
+      v_report.assigned_engineer_id,
+      'public_report_repair_ready_to_verify',
+      'Repair ready to verify',
+      'Follow-up work on a report you inspected was recorded as done. Please confirm it on site.',
+      p_report_id,
+      false
+    );
+  end if;
+
   return v_action_id;
 end;
 $function$;
@@ -368,6 +386,7 @@ set row_security = off
 as $function$
 declare
   v_action public.public_report_repair_actions%rowtype;
+  v_eng uuid;
 begin
   perform public._public_report_require_admin();
 
@@ -403,6 +422,22 @@ begin
     btrim(p_note),
     jsonb_build_object('repair_action_id', p_action_id)
   );
+
+  select assigned_engineer_id into v_eng
+  from public.public_reports
+  where id = v_action.report_id;
+
+  if v_eng is not null then
+    insert into public.notifications (user_id, type, title, message, report_id, is_read)
+    values (
+      v_eng,
+      'public_report_repair_ready_to_verify',
+      'Repair ready to verify',
+      'Follow-up work on a report you inspected was recorded as done. Please confirm it on site.',
+      v_action.report_id,
+      false
+    );
+  end if;
 end;
 $function$;
 
@@ -694,8 +729,12 @@ grant execute on function public.cancel_public_report_repair(uuid, text) to auth
   r := r || E'--- overall ---\n';
   select count(*) into n from public.public_report_activity_logs where report_id in (rep1, rep4) and action like 'REPAIR_%';
   r := r || case when n = 5 then 'PASS' else 'FAIL' end || '  audit entries for the two repairs: ' || n || ' (expect 5: plan+complete+verify, plan+verify)' || E'\n';
-  select count(*) into n from public.notifications where report_id in (rep1, rep4) and type like 'public_report_repair_%';
+  select count(*) into n from public.notifications where report_id in (rep1, rep4) and user_id = cit and type like 'public_report_repair_%';
   r := r || case when n = 4 then 'PASS' else 'FAIL' end || '  citizen notifications created: ' || n || ' (expect 4: planned+verified for each)' || E'\n';
+  select count(*) into n from public.notifications where report_id in (rep1, rep4) and user_id = eng_1 and type = 'public_report_repair_ready_to_verify';
+  r := r || case when n = 2 then 'PASS' else 'FAIL' end || '  assigned engineer told a repair is ready to verify: ' || n || ' (expect 2: one per repair)' || E'\n';
+  select count(*) into n from public.notifications where report_id in (rep1, rep4) and user_id = eng_2;
+  r := r || case when n = 0 then 'PASS' else 'FAIL' end || '  the OTHER engineer is not notified: ' || n || E'\n';
   select verification_distance_m into dist from public.public_report_repair_actions where id = act1;
   r := r || 'INFO  recorded verification distance (m): ' || round(coalesce(dist, -1)::numeric, 1) || E'\n';
   select status into rstat from public.public_reports where id = rep1;

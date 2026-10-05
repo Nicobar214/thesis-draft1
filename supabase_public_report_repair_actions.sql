@@ -118,6 +118,9 @@ create trigger trg_repair_actions_touch
 before update on public.public_report_repair_actions
 for each row execute function public._public_report_touch_updated_at();
 
+-- Trigger-only helper: no client needs to be able to execute it.
+revoke execute on function public._public_report_touch_updated_at() from public, anon, authenticated;
+
 -- ------------------------------------------------------------
 -- 2. Row-level security: read-only for staff, nothing writable directly
 -- ------------------------------------------------------------
@@ -316,6 +319,21 @@ begin
     );
   end if;
 
+  -- A repaired claim starts as 'completed', so the engineer who inspected the
+  -- site is the one who has to confirm it. Tell them, server-side, rather than
+  -- relying on the client to remember.
+  if v_status = 'completed' and v_report.assigned_engineer_id is not null then
+    insert into public.notifications (user_id, type, title, message, report_id, is_read)
+    values (
+      v_report.assigned_engineer_id,
+      'public_report_repair_ready_to_verify',
+      'Repair ready to verify',
+      'Follow-up work on a report you inspected was recorded as done. Please confirm it on site.',
+      p_report_id,
+      false
+    );
+  end if;
+
   return v_action_id;
 end;
 $function$;
@@ -336,6 +354,7 @@ set row_security = off
 as $function$
 declare
   v_action public.public_report_repair_actions%rowtype;
+  v_eng uuid;
 begin
   perform public._public_report_require_admin();
 
@@ -371,6 +390,22 @@ begin
     btrim(p_note),
     jsonb_build_object('repair_action_id', p_action_id)
   );
+
+  select assigned_engineer_id into v_eng
+  from public.public_reports
+  where id = v_action.report_id;
+
+  if v_eng is not null then
+    insert into public.notifications (user_id, type, title, message, report_id, is_read)
+    values (
+      v_eng,
+      'public_report_repair_ready_to_verify',
+      'Repair ready to verify',
+      'Follow-up work on a report you inspected was recorded as done. Please confirm it on site.',
+      v_action.report_id,
+      false
+    );
+  end if;
 end;
 $function$;
 
