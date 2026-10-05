@@ -13,6 +13,9 @@ const TYPE_META = {
   public_report_finding_validated: { label: 'Validated',    accent: 'bg-emerald-500' },
   public_report_finding_rejected:  { label: 'Re-inspect',   accent: 'bg-amber-500' },
   field_engineer_assignment:       { label: 'Assignment',   accent: 'bg-blue-500' },
+  public_report_repair_planned:         { label: 'Repair',   accent: 'bg-blue-500' },
+  public_report_repair_ready_to_verify: { label: 'Verify',   accent: 'bg-amber-500' },
+  public_report_repair_verified:        { label: 'Repaired', accent: 'bg-emerald-500' },
   // LGU
   lgu_threshold_alert:             { label: 'Alert',        accent: 'bg-red-500' },
   lgu_resolution_summary:          { label: 'Resolution',   accent: 'bg-emerald-500' },

@@ -105,6 +105,57 @@ export async function resolvePublicReport(client, { reportId, resolutionType = '
   return data;
 }
 
+/* Repair tracking — a separate record beside the report. Every transition is an
+ * RPC; the table has no client write policies. */
+export async function planPublicReportRepair(client, { reportId, responsibleParty, targetDate = null, note = null }) {
+  const { data, error } = await client.rpc('plan_public_report_repair', {
+    p_report_id: reportId,
+    p_responsible_party: responsibleParty,
+    p_target_date: targetDate,
+    p_note: note,
+  });
+  assertRpc(error, 'Failed to plan the repair');
+  return data;
+}
+
+export async function completePublicReportRepair(client, { actionId, note }) {
+  const { data, error } = await client.rpc('complete_public_report_repair', {
+    p_action_id: actionId,
+    p_note: note,
+  });
+  assertRpc(error, 'Failed to record the repair as completed');
+  return data;
+}
+
+export async function verifyPublicReportRepair(client, {
+  actionId,
+  photoUrl,
+  latitude,
+  longitude,
+  accuracyMeters = null,
+  note = null,
+}) {
+  const { data, error } = await client.rpc('verify_public_report_repair', {
+    p_action_id: actionId,
+    p_photo_url: photoUrl,
+    p_latitude: latitude,
+    p_longitude: longitude,
+    p_accuracy_m: accuracyMeters,
+    p_note: note,
+  });
+  assertRpc(error, 'Failed to verify the repair');
+  return data;
+}
+
+export async function cancelPublicReportRepair(client, { actionId, reason }) {
+  const { data, error } = await client.rpc('cancel_public_report_repair', {
+    p_action_id: actionId,
+    p_reason: reason,
+  });
+  assertRpc(error, 'Failed to cancel the follow-up');
+  return data;
+}
+
 export async function updatePublicReportWorkflowMeta(client, { reportId, priority = null, visitDeadline = null }) {
   const { data, error } = await client.rpc('update_public_report_workflow_meta', {
     p_report_id: reportId,

@@ -8,6 +8,7 @@ import { supabaseFieldEngineer as supabase } from '../lib/supabase';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
 import NotificationBell from '../components/NotificationBell';
+import RepairVerifyPanel from '../components/publicReports/RepairVerifyPanel';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import { startPublicReportInspection } from '../services/publicReportWorkflow';
@@ -1495,12 +1496,26 @@ export default function FieldEngineerDashboard() {
 
                 if (finished) {
                   return (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                      <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Inspection Complete</p>
-                      <p className="text-sm text-slate-800 mt-1">
-                        Your findings were validated by the DA admin. This report is closed for field edits.
-                      </p>
-                    </div>
+                    <>
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Inspection Complete</p>
+                        <p className="text-sm text-slate-800 mt-1">
+                          Your findings were validated by the DA admin. This report is closed for field edits.
+                        </p>
+                      </div>
+                      {/* A resolved report may carry follow-up work that someone
+                          has to confirm on site; that someone is the engineer. */}
+                      {reportStatus === 'resolved' && (
+                        <RepairVerifyPanel
+                          report={selectedReport}
+                          client={supabase}
+                          onDone={(message, type = 'success') => {
+                            showNotification(message, type);
+                            fetchReports();
+                          }}
+                        />
+                      )}
+                    </>
                   );
                 }
 

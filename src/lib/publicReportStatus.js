@@ -156,6 +156,65 @@ export function resolutionTypeMeaning(value) {
   return RESOLUTION_TYPE_INFO[String(value || '').toLowerCase()]?.meaning || null;
 }
 
+// ── Repair tracking ─────────────────────────────────────────
+/* Outcomes plan_public_report_repair accepts. 'repaired' is included: it is a
+ * claim, so it still gets an independent verification. */
+export const REPAIR_ELIGIBLE_TYPES = [
+  'repaired',
+  'scheduled_for_repair',
+  'referred_to_contractor',
+  'monitoring_required',
+];
+
+export function resolutionAllowsRepairFollowUp(value) {
+  return REPAIR_ELIGIBLE_TYPES.includes(String(value || '').toLowerCase());
+}
+
+export const RESPONSIBLE_PARTY_LABELS = {
+  da: 'DA Region VI',
+  lgu: 'Local government (LGU)',
+  contractor: 'Project contractor',
+};
+
+export function responsiblePartyLabel(value) {
+  return RESPONSIBLE_PARTY_LABELS[String(value || '').toLowerCase()] || null;
+}
+
+/* `citizen` is the plain-language line shown to the person who filed the
+ * report; `staff` is the neutral label for admin and engineer screens. */
+export const REPAIR_STATUS = {
+  planned: {
+    staff: 'Scheduled',
+    citizen: 'Follow-up work is scheduled.',
+    tone: 'bg-sky-100 text-sky-800 border-sky-200',
+  },
+  completed: {
+    staff: 'Awaiting verification',
+    citizen: 'The work has been recorded as done. An engineer will confirm it on site.',
+    tone: 'bg-amber-100 text-amber-900 border-amber-200',
+  },
+  verified: {
+    staff: 'Verified on site',
+    citizen: 'An engineer visited the location and confirmed the work.',
+    tone: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  },
+  cancelled: {
+    staff: 'Cancelled',
+    citizen: 'The follow-up was cancelled.',
+    tone: 'bg-slate-200 text-slate-700 border-slate-300',
+  },
+};
+
+export function repairStatusInfo(status) {
+  return REPAIR_STATUS[String(status || '').toLowerCase()] || null;
+}
+
+export function isRepairOverdue(action, today = new Date()) {
+  if (!action?.target_date || action.status !== 'planned') return false;
+  const target = new Date(`${action.target_date}T23:59:59`);
+  return !Number.isNaN(target.getTime()) && target < today;
+}
+
 /* The engineer's 1-5 site condition rating, exposed to citizens via
  * public_report_field_findings_citizen_view. */
 export const SITE_RATING_LABELS = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'];
@@ -465,6 +524,27 @@ export function countAdminBuckets(reports = []) {
 /* Workflow RPCs raise plain-text exceptions intended for developers. Surface a
  * useful sentence to the user and keep the technical text for the console. */
 const RPC_MESSAGE_PATTERNS = [
+  // Repair tracking. A function value receives the regex match, so the message
+  // can carry the distance the server measured.
+  [/verification location is (\d+) m from the reported site/i, (m) => `Your location is ${m[1]} m from the reported site. Move within 500 m and try again.`],
+  [/repair can only be planned for a resolved report/i, 'Resolve the report first, then plan the repair.'],
+  [/resolution record is required before planning/i, 'This report has no resolution record, so a repair cannot be planned for it.'],
+  [/repair action does not exist/i, 'This follow-up could not be found. Refresh the page and try again.'],
+  [/only a field engineer or admin can verify/i, 'You do not have permission to verify repairs.'],
+  [/follow-up already exists/i, 'A follow-up has already been planned for this report.'],
+  [/does not call for follow-up work/i, 'This outcome does not need a follow-up.'],
+  [/must be assigned to the contractor/i, 'A report referred to a contractor has to be assigned to the contractor.'],
+  [/target date is required/i, 'Choose a target date.'],
+  [/target date cannot be in the past/i, 'The target date cannot be in the past.'],
+  [/only a planned repair can be marked completed/i, 'This repair is not in a state where it can be marked completed.'],
+  [/note describing the work/i, 'Describe the work that was done.'],
+  [/cannot also verify/i, 'Someone other than the person who recorded the work has to verify it.'],
+  [/only the engineer assigned to this report can verify/i, 'Only the engineer assigned to this report can verify its repair.'],
+  [/only a completed repair can be verified/i, 'This repair is not ready to be verified yet.'],
+  [/after-photo is required/i, 'Take an after-photo first.'],
+  [/gps coordinates are required/i, 'Your location could not be read. Turn on location and try again.'],
+  [/cancellation reason is required/i, 'Give a reason for cancelling.'],
+  [/only a planned or completed repair can be cancelled/i, 'This follow-up can no longer be cancelled.'],
   [/not pending or already has an active engineer workflow/i, 'This report has already been reviewed.'],
   [/not in a reviewable assignment state/i, 'This report must be reviewed before an engineer can be assigned.'],
   [/not in an assignable unassignment state/i, 'There is no engineer assignment to remove right now.'],
@@ -488,6 +568,9 @@ const RPC_MESSAGE_PATTERNS = [
 export function friendlyReportError(error, fallback = 'Something went wrong. Please try again.') {
   const raw = typeof error === 'string' ? error : error?.message || '';
   if (!raw) return fallback;
-  const match = RPC_MESSAGE_PATTERNS.find(([pattern]) => pattern.test(raw));
-  return match ? match[1] : fallback;
+  for (const [pattern, message] of RPC_MESSAGE_PATTERNS) {
+    const m = raw.match(pattern);
+    if (m) return typeof message === 'function' ? message(m) : message;
+  }
+  return fallback;
 }

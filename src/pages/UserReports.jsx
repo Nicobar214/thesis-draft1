@@ -14,8 +14,10 @@ import {
   getCitizenStatus,
   resolveCategory,
   resolveSpecificProblem,
+  repairStatusInfo,
   resolutionTypeLabel,
   resolutionTypeMeaning,
+  responsiblePartyLabel,
   siteRatingLabel,
 } from '../lib/publicReportStatus';
 
@@ -56,6 +58,7 @@ function UserReports() {
   const [selectedResolution, setSelectedResolution] = useState(null);
   const [selectedFieldFinding, setSelectedFieldFinding] = useState(null);
   const [selectedLguDecision, setSelectedLguDecision] = useState(null);
+  const [selectedRepair, setSelectedRepair] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [showCertModal, setShowCertModal] = useState(false);
@@ -174,6 +177,7 @@ function UserReports() {
           setSelectedResolution(null);
           setSelectedFieldFinding(null);
           setSelectedLguDecision(null);
+          setSelectedRepair(null);
           setSelectedProject(null);
           setSelectedProjectRoute(null);
         }
@@ -181,7 +185,7 @@ function UserReports() {
       }
 
       try {
-        const [resolutionRes, findingRes, lguDecisionRes] = await Promise.all([
+        const [resolutionRes, findingRes, lguDecisionRes, repairRes] = await Promise.all([
           supabase
             .from('public_report_resolutions_citizen_view')
             .select('*')
@@ -202,6 +206,14 @@ function UserReports() {
             .eq('report_id', selected.id)
             .order('created_at', { ascending: false })
             .limit(1)
+            .maybeSingle(),
+          // Citizen-safe view: what is happening and when, never notes or who.
+          // A deployment without repair tracking simply returns an error here,
+          // which is ignored below.
+          supabase
+            .from('public_report_repair_actions_citizen_view')
+            .select('*')
+            .eq('report_id', selected.id)
             .maybeSingle(),
         ]);
 
@@ -225,6 +237,7 @@ function UserReports() {
         setSelectedResolutionSummary(resolutionRes?.data?.summary || '');
         setSelectedFieldFinding(findingRes?.data || null);
         setSelectedLguDecision(lguDecisionRes?.data || null);
+        setSelectedRepair(repairRes?.error ? null : repairRes?.data || null);
         setSelectedProject(projectRow);
 
         if (projectRow?.id) {
@@ -243,6 +256,7 @@ function UserReports() {
         setSelectedResolution(null);
         setSelectedFieldFinding(null);
         setSelectedLguDecision(null);
+        setSelectedRepair(null);
         setSelectedProject(null);
         setSelectedProjectRoute(null);
       }
@@ -734,6 +748,73 @@ function UserReports() {
                     <Icons.Document />
                     <span>View Resolution Certificate</span>
                   </button>
+                </section>
+              )}
+
+              {/* 6. Repair follow-up. "Resolved" records a decision; this shows
+                   whether the work was actually done, and confirmed on site. */}
+              {selectedRepair && repairStatusInfo(selectedRepair.status) && (
+                <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {selectedRepair.kind === 'monitoring' ? 'Monitoring' : 'Repair'} progress
+                    </h3>
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${repairStatusInfo(selectedRepair.status).tone}`}>
+                      {repairStatusInfo(selectedRepair.status).staff}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-slate-700">{repairStatusInfo(selectedRepair.status).citizen}</p>
+
+                  <dl className="space-y-1.5 text-sm">
+                    {responsiblePartyLabel(selectedRepair.responsible_party) && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Handled by</dt>
+                        <dd className="text-slate-800">{responsiblePartyLabel(selectedRepair.responsible_party)}</dd>
+                      </div>
+                    )}
+                    {selectedRepair.target_date && selectedRepair.status === 'planned' && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Target date</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.target_date)}</dd>
+                      </div>
+                    )}
+                    {selectedRepair.completed_at && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Recorded done</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.completed_at)}</dd>
+                      </div>
+                    )}
+                    {selectedRepair.verified_at && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Confirmed</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.verified_at)}</dd>
+                      </div>
+                    )}
+                  </dl>
+
+                  {selectedRepair.status === 'verified'
+                    && selectedRepair.verification_photo_url
+                    && selected.photo_url && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <figure className="space-y-1">
+                        <figcaption className="text-xs font-semibold text-slate-600">Before (your photo)</figcaption>
+                        <img
+                          src={selected.photo_url}
+                          alt="The condition you reported"
+                          className="h-32 w-full rounded-lg border border-slate-200 object-cover"
+                        />
+                      </figure>
+                      <figure className="space-y-1">
+                        <figcaption className="text-xs font-semibold text-emerald-800">After (confirmed on site)</figcaption>
+                        <img
+                          src={selectedRepair.verification_photo_url}
+                          alt="The same location after the follow-up work"
+                          className="h-32 w-full rounded-lg border border-emerald-200 object-cover"
+                        />
+                      </figure>
+                    </div>
+                  )}
                 </section>
               )}
             </div>
