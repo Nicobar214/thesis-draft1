@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
+import NotificationBell from '../components/NotificationBell';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import { startPublicReportInspection } from '../services/publicReportWorkflow';
@@ -654,6 +655,19 @@ export default function FieldEngineerDashboard() {
 
             {/* Top Right Quick Profile */}
             <div className="flex items-center gap-3">
+              {/* Assignment and re-inspection requests are pushed here; before
+                  this they were written to the notifications table and never
+                  shown to the engineer. */}
+              <NotificationBell
+                client={supabase}
+                onSelect={(n) => {
+                  const match = reports.find((r) => r.id === n.report_id);
+                  if (match) {
+                    setSelectedReport(match);
+                    setActiveNav('reports');
+                  }
+                }}
+              />
               <div className="hidden sm:block text-right">
                 <p className="text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</p>
                 <p className="text-[10px] font-semibold text-teal-700 uppercase tracking-wider">DA Region VI Inspector</p>

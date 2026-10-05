@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import UserSidebar from './UserSidebar';
 import Icons from './Icons';
+import NotificationBell from './NotificationBell';
 
 /**
  * UserLayout - Shared layout wrapper for all user pages.
@@ -74,6 +75,13 @@ export default function UserLayout({
                   <Icons.Warning />
                   <span>Report Road Issue</span>
                 </Link>
+
+                {/* Closes the citizen feedback loop: status changes were already
+                    being written to notifications, but never displayed. */}
+                <NotificationBell
+                  client={supabase}
+                  onSelect={() => navigate('/user/reports')}
+                />
 
                 <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
                   <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white font-bold text-xs flex items-center justify-center shadow-xs">

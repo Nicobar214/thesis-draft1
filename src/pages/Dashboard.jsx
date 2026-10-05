@@ -77,6 +77,7 @@ import {
   getAdminBucket,
 } from '../lib/publicReportStatus';
 import { assessReport } from '../lib/publicReportTriage';
+import NotificationBell from '../components/NotificationBell';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -3832,6 +3833,18 @@ export default function Dashboard() {
                 {activeTab === 'lgu-proposals' && 'Validate LGU-submitted Farm-to-Market Road project proposals for feasibility'}
                 {activeTab === 'settings' && 'Configure system preferences'}
               </p>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <NotificationBell
+                client={supabase}
+                onSelect={(n) => {
+                  const match = publicReports.find((r) => r.id === n.report_id);
+                  if (match) {
+                    setActiveTab('public-reports');
+                    setSelectedPublicReport(match);
+                  }
+                }}
+              />
             </div>
             {activeTab === 'projects' && (
               <button
