@@ -36,7 +36,7 @@ function defaultTargetDate(days = 14) {
  * finished until a different person (normally the assigned engineer) verifies
  * it on site. That separation is enforced in the database, not just here.
  */
-export default function RepairActionPanel({ report, resolution, client = defaultClient, onNotify }) {
+export default function RepairActionPanel({ report, resolution, client = defaultClient, onNotify, onChanged }) {
   const [action, setAction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -92,6 +92,7 @@ export default function RepairActionPanel({ report, resolution, client = default
       await fn();
       if (onNotify) onNotify(successMessage);
       await load();
+      if (onChanged) onChanged();
       return true;
     } catch (err) {
       console.error('[repair] action failed:', err);

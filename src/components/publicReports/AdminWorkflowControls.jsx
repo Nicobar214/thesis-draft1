@@ -43,6 +43,7 @@ export default function AdminWorkflowControls({
   resolution,
   triage,
   onNotify,
+  onRepairChanged,
   onResolve,
   onDismiss,
   fieldEngineers = [],
@@ -299,7 +300,7 @@ export default function AdminWorkflowControls({
           )}
           {/* Resolving records a decision. This tracks whether the road was
               actually fixed, and who confirmed it. */}
-          <RepairActionPanel report={report} resolution={resolution} onNotify={onNotify} />
+          <RepairActionPanel report={report} resolution={resolution} onNotify={onNotify} onChanged={onRepairChanged} />
         </SectionShell>
       );
     }

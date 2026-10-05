@@ -215,6 +215,52 @@ export function isRepairOverdue(action, today = new Date()) {
   return !Number.isNaN(target.getTime()) && target < today;
 }
 
+/* Repair follow-up queue. These are not report statuses: a resolved report stays
+ * in "Closed". They are extra views, keyed off the repair action, that surface
+ * work an admin still has to chase. A planned repair counts as "due" once it is
+ * overdue or within REPAIR_DUE_SOON_DAYS of its target date. */
+export const REPAIR_DUE_SOON_DAYS = 7;
+
+export const REPAIR_QUEUE_BUCKETS = [
+  {
+    key: 'repairs_due',
+    label: 'Repairs Due',
+    hint: 'Planned repairs that are overdue or due within a week',
+    bar: 'bg-rose-500',
+    value: 'text-rose-700',
+    activeRing: 'ring-rose-500/40 border-rose-400 bg-rose-50/60',
+  },
+  {
+    key: 'repairs_verify',
+    label: 'Awaiting Verification',
+    hint: 'Work recorded as done, not yet confirmed on site by an engineer',
+    bar: 'bg-teal-500',
+    value: 'text-teal-700',
+    activeRing: 'ring-teal-500/40 border-teal-400 bg-teal-50/60',
+  },
+];
+
+export function getRepairQueueKey(action, today = new Date()) {
+  if (!action) return null;
+  if (action.status === 'completed') return 'repairs_verify';
+  if (action.status === 'planned' && action.target_date) {
+    if (isRepairOverdue(action, today)) return 'repairs_due';
+    const target = new Date(`${action.target_date}T23:59:59`);
+    const horizon = new Date(today.getTime() + REPAIR_DUE_SOON_DAYS * 86400000);
+    if (!Number.isNaN(target.getTime()) && target <= horizon) return 'repairs_due';
+  }
+  return null;
+}
+
+export function countRepairQueue(actionsByReport = {}, today = new Date()) {
+  const counts = { repairs_due: 0, repairs_verify: 0 };
+  Object.values(actionsByReport).forEach((a) => {
+    const key = getRepairQueueKey(a, today);
+    if (key) counts[key] += 1;
+  });
+  return counts;
+}
+
 /* The engineer's 1-5 site condition rating, exposed to citizens via
  * public_report_field_findings_citizen_view. */
 export const SITE_RATING_LABELS = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'];

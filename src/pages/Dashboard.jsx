@@ -73,6 +73,9 @@ import {
   ADMIN_BUCKETS,
   ADMIN_BUCKET_BY_KEY,
   countAdminBuckets,
+  REPAIR_QUEUE_BUCKETS,
+  countRepairQueue,
+  getRepairQueueKey,
   friendlyReportError,
   getAdminBucket,
 } from '../lib/publicReportStatus';
@@ -715,6 +718,8 @@ export default function Dashboard() {
   // Public reports state (admin view)
   const [publicReports, setPublicReports] = useState([]);
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
+  // report_id -> repair action; feeds the "Repair follow-up" queue cards.
+  const [repairActions, setRepairActions] = useState({});
   const [publicReportFilter, setPublicReportFilter] = useState('needs_review');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportAssignedFilter, setPublicReportAssignedFilter] = useState('all');
@@ -1164,8 +1169,25 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Repair follow-ups are a separate table, so a failure here must never block
+  // the report list; the queue just shows zero.
+  const fetchRepairActions = useCallback(async () => {
+    try {
+      const { data, error: fetchErr } = await supabase
+        .from('public_report_repair_actions')
+        .select('id, report_id, status, target_date')
+        .in('status', ['planned', 'completed']);
+      if (fetchErr) throw fetchErr;
+      setRepairActions(Object.fromEntries((data || []).map((a) => [a.report_id, a])));
+    } catch (err) {
+      console.warn('[repair] could not load follow-up queue:', err?.message || err);
+      setRepairActions({});
+    }
+  }, []);
+
   // Fetch public reports from Supabase
   const fetchPublicReports = useCallback(async () => {
+    fetchRepairActions();
     setPublicReportsLoading(true);
     try {
       const { data, error: fetchErr } = await supabase
@@ -7058,7 +7080,10 @@ export default function Dashboard() {
             })();
 
             const filteredPublicReports = publicReports.filter(rpt => {
-              const matchesStatus = publicReportFilter === 'all' || getAdminBucket(rpt) === publicReportFilter;
+              const matchesStatus = publicReportFilter === 'all'
+                || (publicReportFilter.startsWith('repairs_')
+                  ? getRepairQueueKey(repairActions[rpt.id]) === publicReportFilter
+                  : getAdminBucket(rpt) === publicReportFilter);
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
               const matchesAssigned = publicReportAssignedFilter === 'all' ||
                 (publicReportAssignedFilter === 'unassigned' && !rpt.assigned_engineer_id) ||
@@ -7086,7 +7111,7 @@ export default function Dashboard() {
             });
             // Workload buckets split 'reviewed' by engineer_status so the admin
             // can see what is actually waiting on them.
-            const bucketCounts = countAdminBuckets(publicReports);
+            const bucketCounts = { ...countAdminBuckets(publicReports), ...countRepairQueue(repairActions) };
             const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
 
             const startOfDay = (value) => {
@@ -7531,6 +7556,47 @@ export default function Dashboard() {
                   })}
                 </div>
 
+                {/* Repair follow-up queue: resolved reports whose repair still needs
+                    someone. Same card language as above, kept as its own row so it
+                    reads as "after resolution" rather than a seventh workflow step. */}
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Repair follow-up
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+                    {REPAIR_QUEUE_BUCKETS.map((bucket) => {
+                      const active = publicReportFilter === bucket.key;
+                      const count = bucketCounts[bucket.key] || 0;
+                      return (
+                        <button
+                          key={bucket.key}
+                          type="button"
+                          onClick={() => setPublicReportFilter(active ? 'all' : bucket.key)}
+                          aria-pressed={active}
+                          title={bucket.hint}
+                          className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-3 text-left transition-colors ${
+                            active
+                              ? `ring-2 ${bucket.activeRing}`
+                              : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                          }`}
+                        >
+                          <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${bucket.bar}`} />
+                          <span
+                            className={`block text-2xl font-semibold leading-none tabular-nums ${
+                              count === 0 ? 'text-slate-300' : bucket.value
+                            }`}
+                          >
+                            {count}
+                          </span>
+                          <span className="mt-1.5 block text-xs font-medium leading-tight text-slate-600">
+                            {bucket.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
@@ -7592,6 +7658,9 @@ export default function Dashboard() {
                         <option value="all">All reports</option>
                         {ADMIN_BUCKETS.map((bucket) => (
                           <option key={bucket.key} value={bucket.key}>{bucket.label}</option>
+                        ))}
+                        {REPAIR_QUEUE_BUCKETS.map((bucket) => (
+                          <option key={bucket.key} value={bucket.key}>Repair: {bucket.label}</option>
                         ))}
                       </select>
                     </div>
@@ -7932,6 +8001,7 @@ export default function Dashboard() {
                               resolution={selectedResolution}
                               triage={triage}
                               onNotify={showNotification}
+                              onRepairChanged={fetchRepairActions}
                               onResolve={(summary, resolutionType) =>
                                 finalizeResolution(selectedPublicReport.id, summary, resolutionType)
                               }
