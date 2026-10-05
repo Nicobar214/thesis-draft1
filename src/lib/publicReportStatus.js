@@ -111,6 +111,51 @@ export function resolutionTypeLabel(value) {
   return RESOLUTION_TYPE_LABELS[String(value || '').toLowerCase()] || null;
 }
 
+/* What each outcome means to the person who filed the report. Wording is kept
+ * to what is true of the system today — it records the decision, not repair
+ * progress — so it can stay accurate if repair tracking is added later.
+ *
+ * `followUp` marks outcomes where physical work is still expected after the
+ * decision. Nothing reads it yet; it is the hook for repair tracking. */
+export const RESOLUTION_TYPE_INFO = {
+  repaired: {
+    meaning: 'Staff recorded that the problem has been repaired.',
+    followUp: false,
+  },
+  scheduled_for_repair: {
+    meaning: 'Repair work has been scheduled by the responsible office.',
+    followUp: true,
+  },
+  referred_to_contractor: {
+    meaning: 'The issue was referred to the project contractor for correction.',
+    followUp: true,
+  },
+  monitoring_required: {
+    meaning: 'The condition will be monitored, and staff may revisit the site.',
+    followUp: true,
+  },
+  no_action_required: {
+    meaning: 'After inspection, staff found no action is needed. If the condition worsens, you can submit a new report.',
+    followUp: false,
+  },
+  outside_project_scope: {
+    meaning: 'This issue falls outside the scope of the project it was reported against.',
+    followUp: false,
+  },
+  duplicate_case: {
+    meaning: 'This matches another report that is already being handled.',
+    followUp: false,
+  },
+  other: {
+    meaning: null,
+    followUp: false,
+  },
+};
+
+export function resolutionTypeMeaning(value) {
+  return RESOLUTION_TYPE_INFO[String(value || '').toLowerCase()]?.meaning || null;
+}
+
 /* The engineer's 1-5 site condition rating, exposed to citizens via
  * public_report_field_findings_citizen_view. */
 export const SITE_RATING_LABELS = ['Defective', 'Substandard', 'Fair', 'Good', 'Excellent'];

@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import Icons from '../Icons';
 import Logo from '../Logo';
+import { resolutionTypeLabel, resolutionTypeMeaning } from '../../lib/publicReportStatus';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -183,6 +184,17 @@ export default function DAResolutionCertificate({
                 <span className="font-bold text-emerald-900 text-sm">RESOLUTION STATUS: RESOLVED</span>
                 <span className="font-medium text-slate-500">{fmtDate(resolution?.resolved_at || report.updated_at)}</span>
               </div>
+              {resolutionTypeLabel(resolution?.resolution_type) && (
+                <div>
+                  <span className="text-slate-600 block font-medium mb-0.5">Outcome:</span>
+                  <p className="font-semibold text-slate-900">
+                    {resolutionTypeLabel(resolution.resolution_type)}
+                    {resolutionTypeMeaning(resolution.resolution_type) && (
+                      <span className="font-normal text-slate-600"> &mdash; {resolutionTypeMeaning(resolution.resolution_type)}</span>
+                    )}
+                  </p>
+                </div>
+              )}
               <div>
                 <span className="text-slate-600 block font-medium mb-0.5">Official Resolution Summary & Action Taken:</span>
                 <p className="font-semibold text-slate-900 bg-white p-3 rounded-lg border border-emerald-200 leading-relaxed">
@@ -210,8 +222,15 @@ export default function DAResolutionCertificate({
             <div className="space-y-8">
               <div className="border-b border-slate-400 w-4/5 mx-auto" />
               <div>
-                <p className="font-bold text-slate-900">{resolution?.resolved_by_name || 'RAED REGIONAL DIRECTOR'}</p>
-                <p className="text-slate-500">DA-RAED Region VI Chief / LGU Officer</p>
+                {/* The citizen-safe view deliberately withholds who resolved the
+                    report, so name the approving office rather than implying a
+                    specific official signed off. */}
+                <p className="font-bold text-slate-900">{resolution?.resolved_by_name || 'DA-RAED Region VI'}</p>
+                <p className="text-slate-500">
+                  {resolution?.resolved_by_name
+                    ? 'DA-RAED Region VI Chief / LGU Officer'
+                    : 'Approving office (officer name withheld from the public copy)'}
+                </p>
               </div>
             </div>
           </div>

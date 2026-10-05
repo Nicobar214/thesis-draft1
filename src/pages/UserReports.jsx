@@ -15,6 +15,7 @@ import {
   resolveCategory,
   resolveSpecificProblem,
   resolutionTypeLabel,
+  resolutionTypeMeaning,
   siteRatingLabel,
 } from '../lib/publicReportStatus';
 
@@ -711,8 +712,18 @@ function UserReports() {
                         </span>
                       )}
                     </div>
+                    {resolutionTypeMeaning(selectedResolution?.resolution_type) && (
+                      <p className="text-sm font-medium text-emerald-950">
+                        {resolutionTypeMeaning(selectedResolution.resolution_type)}
+                      </p>
+                    )}
                     {selectedResolutionSummary && (
-                      <p className="text-sm text-emerald-900">{selectedResolutionSummary}</p>
+                      <p className="text-sm text-emerald-900">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                          Staff note{' '}
+                        </span>
+                        {selectedResolutionSummary}
+                      </p>
                     )}
                   </div>
 

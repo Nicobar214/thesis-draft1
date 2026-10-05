@@ -8,19 +8,13 @@ import {
   formatRecommendedDate,
   recommendInspectionDate,
 } from '../../lib/publicReportTriage';
+import { RESOLUTION_TYPE_LABELS, resolutionTypeMeaning } from '../../lib/publicReportStatus';
 import BillingHoldControl from './BillingHoldControl';
 
-/* resolve_public_report validates this list server-side; keep the two in sync. */
-const RESOLUTION_TYPES = [
-  { value: 'repaired', label: 'Repaired' },
-  { value: 'scheduled_for_repair', label: 'Scheduled for repair' },
-  { value: 'referred_to_contractor', label: 'Referred to contractor' },
-  { value: 'monitoring_required', label: 'Monitoring required' },
-  { value: 'no_action_required', label: 'No action required' },
-  { value: 'outside_project_scope', label: 'Outside project scope' },
-  { value: 'duplicate_case', label: 'Duplicate case' },
-  { value: 'other', label: 'Other' },
-];
+/* resolve_public_report validates this list server-side. The labels and the
+ * citizen-facing meaning live in publicReportStatus.js so the form and the
+ * citizen's report cannot drift apart. */
+const RESOLUTION_TYPES = Object.entries(RESOLUTION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
 
 function SectionShell({ tone, eyebrow, title, description, children }) {
   return (
@@ -337,6 +331,12 @@ export default function AdminWorkflowControls({
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
+              <p className="text-[11px] text-slate-500">
+                The citizen will see:{' '}
+                <span className="text-slate-700">
+                  {resolutionTypeMeaning(resolutionType) || 'only your note below.'}
+                </span>
+              </p>
 
               <label htmlFor="resolution-summary" className="text-[11px] font-semibold text-slate-600 block">
                 What was done? <span className="text-red-600">*</span>
