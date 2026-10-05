@@ -281,6 +281,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
         longitude: shotGeo.longitude,
         accuracyMeters: shotGeo.accuracy ?? null,
         note: note.trim() || null,
+        capturedAt: shotGeo.capturedAt,
       });
 
       if (onDone) onDone('Repair verified. Thank you.');

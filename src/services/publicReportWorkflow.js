@@ -134,6 +134,7 @@ export async function verifyPublicReportRepair(client, {
   longitude,
   accuracyMeters = null,
   note = null,
+  capturedAt = null,
 }) {
   const { data, error } = await client.rpc('verify_public_report_repair', {
     p_action_id: actionId,
@@ -142,6 +143,7 @@ export async function verifyPublicReportRepair(client, {
     p_longitude: longitude,
     p_accuracy_m: accuracyMeters,
     p_note: note,
+    p_captured_at: capturedAt,
   });
   assertRpc(error, 'Failed to verify the repair');
   return data;

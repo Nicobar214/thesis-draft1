@@ -573,6 +573,11 @@ const RPC_MESSAGE_PATTERNS = [
   // Repair tracking. A function value receives the regex match, so the message
   // can carry the distance the server measured.
   [/verification location is (\d+) m from the reported site/i, (m) => `Your location is ${m[1]} m from the reported site. Move within 500 m and try again.`],
+  [/GPS accuracy is too low \((\d+) m/i, (m) => `Your GPS accuracy is only ±${m[1]} m. Move to open sky, check your location again and retake the photo.`],
+  [/photo was taken more than 48 hours ago/i, 'This photo is more than 48 hours old. Retake it on site.'],
+  [/photo was taken before the work was recorded/i, 'This photo was taken before the work was recorded as done. Retake it on site.'],
+  [/photo capture time is in the future/i, 'Your device clock looks wrong. Fix the date and time, then retake the photo.'],
+  [/time the photo was taken is required|accuracy reading is required/i, 'The photo is missing its location details. Retake it with the camera.'],
   [/repair can only be planned for a resolved report/i, 'Resolve the report first, then plan the repair.'],
   [/resolution record is required before planning/i, 'This report has no resolution record, so a repair cannot be planned for it.'],
   [/repair action does not exist/i, 'This follow-up could not be found. Refresh the page and try again.'],
