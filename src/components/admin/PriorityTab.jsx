@@ -4,8 +4,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { computePriorityScores, computeRoadGapPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
-import roadInventory from '../../data/leonRoadInventory.json';
-import { boundsFromPoints, fetchRoadAlignedPolyline } from '../../lib/mapRouteUtils';
+import { boundsFromPoints, parsePointList } from '../../lib/mapRouteUtils';
+import { GAP_PATH_OPTIONS, gapEndcapIcon } from '../map/routeMarkerIcons';
 
 const roadPinIcon = new L.DivIcon({
   className: 'prio-road-pin-marker',
@@ -27,74 +27,94 @@ function FitBoundsComponent({ points }) {
   return null;
 }
 
-function PriorityRoadMiniMap({ project, onViewOnMap }) {
-  const [roadPolyline, setRoadPolyline] = useState([]);
+function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
+  // Geometry comes from the stored gap row. This panel used to default the start to
+  // the Leon market centroid when a project had no coordinates, and invent an
+  // endpoint 0.015 degrees north-east of it -- roughly 2.3 km on an arbitrary
+  // diagonal -- then OSRM-snap that invented pair and draw the result as this
+  // specific road. Nothing is drawn now unless there is real geometry to draw.
+  const gapPoints = useMemo(() => parsePointList(gap?.gap_points), [gap]);
 
-  const baseStart = useMemo(() => {
-    const lat = Number(project.start_latitude || 10.7853);
-    const lng = Number(project.start_longitude || 122.3831);
-    return [lat, lng];
-  }, [project]);
+  const endpointPair = useMemo(() => {
+    const pair = [
+      [Number(gap?.start_latitude), Number(gap?.start_longitude)],
+      [Number(gap?.end_latitude), Number(gap?.end_longitude)],
+    ].filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+    return pair.length === 2 ? pair : [];
+  }, [gap]);
 
-  const baseEnd = useMemo(() => {
-    const lat = Number(project.end_latitude);
-    const lng = Number(project.end_longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) return [lat, lng];
-    return [baseStart[0] + 0.015, baseStart[1] + 0.015];
-  }, [project, baseStart]);
+  const points = gapPoints.length >= 2 ? gapPoints : endpointPair;
 
-  useEffect(() => {
-    let active = true;
-    const initialPoints = [baseStart, baseEnd];
-    fetchRoadAlignedPolyline(initialPoints).then((snapped) => {
-      if (active) {
-        setRoadPolyline(snapped && snapped.length >= 2 ? snapped : initialPoints);
-      }
-    });
-    return () => { active = false; };
-  }, [baseStart, baseEnd]);
+  if (points.length < 2) {
+    return (
+      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-500">
+        No mapped geometry for this gap yet.
+      </div>
+    );
+  }
 
-  const mapPoints = roadPolyline.length >= 2 ? roadPolyline : [baseStart, baseEnd];
+  const km = Number(gap?.gap_km);
 
   return (
     <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden shadow-xs">
-      <div className="px-3.5 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-          <span className="text-teal-600">🗺 Visual Map Location:</span>
-          <span className="text-slate-700">{project.project_name}</span>
+      <div className="px-3.5 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 min-w-0">
+          <span className="text-red-600 shrink-0">🗺 Unpaved gap:</span>
+          <span className="text-slate-700 truncate">{gap?.source_road_name || project.project_name}</span>
         </div>
+        {onViewOnMap && (
+          <button
+            type="button"
+            onClick={() => onViewOnMap(project)}
+            className="shrink-0 text-[11px] font-semibold text-teal-700 hover:text-teal-900 underline"
+          >
+            View on main map
+          </button>
+        )}
       </div>
 
       <div className="h-44 w-full relative z-0">
         <MapContainer
-          center={baseStart}
-          zoom={13}
+          center={points[0]}
+          zoom={14}
           style={{ width: '100%', height: '100%' }}
           scrollWheelZoom={false}
           className="z-0"
         >
           <TileLayer
-            attribution='&copy; OpenStreetMap'
+            attribution="&copy; OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {roadPolyline.length >= 2 && (
-            <Polyline
-              positions={roadPolyline}
-              pathOptions={{ color: '#0f766e', weight: 4.5, opacity: 0.9 }}
-            />
-          )}
+          {/* White casing under the dashed red, matching the main maps' gap styling. */}
+          <Polyline positions={points} pathOptions={{ color: '#ffffff', weight: 7, opacity: 0.75 }} />
+          <Polyline positions={points} pathOptions={GAP_PATH_OPTIONS} />
 
-          <Marker position={baseStart} icon={roadPinIcon}>
+          {[points[0], points[points.length - 1]].map((position, index) => (
+            <Marker key={index} position={position} icon={gapEndcapIcon} />
+          ))}
+
+          <Marker position={points[0]} icon={roadPinIcon}>
             <Popup>
-              <div className="text-xs p-1">
-                <p className="font-bold text-teal-700">{project.project_name}</p>
-                <p>{project.barangay}, {project.municipality || 'Leon'}</p>
+              <div className="text-xs p-1 space-y-0.5">
+                <p className="font-bold text-red-700">{gap?.source_road_name || project.project_name}</p>
+                <p>
+                  {gap?.barangay || project.barangay || 'Barangay not resolved'}
+                  {gap?.barangay_end ? ` → ${gap.barangay_end}` : ''}, {project.municipality || 'Leon'}
+                </p>
+                {Number.isFinite(km) && (
+                  <p>
+                    {km.toFixed(2)} km unpaved{gap?.gap_type ? ` (${gap.gap_type})` : ''}
+                  </p>
+                )}
+                {gap?.source_surface_summary && (
+                  <p className="text-slate-600">{gap.source_surface_summary}</p>
+                )}
               </div>
             </Popup>
           </Marker>
 
-          <FitBoundsComponent points={mapPoints} />
+          <FitBoundsComponent points={points} />
         </MapContainer>
       </div>
     </div>
@@ -118,12 +138,12 @@ function formatTimestamp(value) {
   return value.toLocaleString();
 }
 
-export default function PriorityTab({ projects, reports, escalations, onViewReports, onViewProjectDetail, onViewOnMap }) {
+export default function PriorityTab({ projects, roadGaps = [], reports, escalations, onViewReports, onViewProjectDetail, onViewOnMap }) {
   const [moduleMode, setModuleMode] = useState('network_gaps'); // 'network_gaps' | 'agri_production'
 
   const computedGapScores = useMemo(
-    () => computeRoadGapPriorityScores(projects, roadInventory, reports),
-    [projects, reports]
+    () => computeRoadGapPriorityScores(roadGaps, projects, reports),
+    [roadGaps, projects, reports]
   );
 
   const computedAgriScores = useMemo(
@@ -146,7 +166,7 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
 
   const handleRecalculate = () => {
     setRankings(moduleMode === 'network_gaps' 
-      ? computeRoadGapPriorityScores(projects, roadInventory, reports)
+      ? computeRoadGapPriorityScores(roadGaps, projects, reports)
       : computePriorityScores(projects, reports, escalations)
     );
     setLastCalculated(new Date());
@@ -247,15 +267,8 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
       </div>
 
       <div className="space-y-4">
-        {(() => {
-          const start = (currentPage - 1) * itemsPerPage;
-          const end = start + itemsPerPage;
-          return rankings.slice(start, end).map((entry) => {
-            return entry;
-          });
-        })() && null}
         {rankings.slice((currentPage - 1) * itemsPerPage, (currentPage - 1) * itemsPerPage + itemsPerPage).map((entry) => {
-          const { project, bySeverity, cropData, score, rank, reason, hasEscalation } = entry;
+          const { project, gap, bySeverity, cropData, score, rank, reason, hasEscalation } = entry;
           const hasGapDetails = moduleMode === 'network_gaps' && (entry.gapKm || entry.gapType || entry.gapReason);
           const severityPills = [
             { key: 'safety', label: `Safety ×${bySeverity.safety}`, tone: 'bg-red-100 text-red-700' },
@@ -309,12 +322,14 @@ export default function PriorityTab({ projects, reports, escalations, onViewRepo
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-400">
-                      Simulated: {cropData.primary_crop} · {cropData.hectares.toLocaleString()} ha
-                    </p>
+                    {moduleMode === 'agri_production' && (
+                      <p className="text-xs text-slate-400">
+                        Simulated: {cropData.primary_crop} · {cropData.hectares.toLocaleString()} ha
+                      </p>
+                    )}
 
-                    {/* Embedded Visual Map Preview */}
-                    <PriorityRoadMiniMap project={project} onViewOnMap={onViewOnMap} />
+                    {/* Embedded map: real gap geometry under Module 1 */}
+                    <PriorityRoadMiniMap project={project} gap={gap} onViewOnMap={onViewOnMap} />
                   </div>
                 </div>
 

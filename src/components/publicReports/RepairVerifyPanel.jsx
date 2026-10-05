@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { buttonClass } from '../ui/Button';
 
 import { supabaseFieldEngineer as defaultClient } from '../../lib/supabase';
 import { haversineMeters, toPoint } from './routeGeometry';
@@ -208,7 +209,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
               accept="image/*"
               capture="environment"
               onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
-              className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
+              className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-teal-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
             />
             {photoPreview && (
               <img src={photoPreview} alt="Your after-photo" className="mt-2 h-36 w-full rounded-lg border border-slate-200 object-cover" />
@@ -257,7 +258,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
             type="button"
             onClick={submit}
             disabled={busy || !photoFile || !geo || tooFar}
-            className="w-full rounded-lg bg-emerald-700 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+            className={buttonClass('primary', 'md', 'w-full')}
           >
             {busy ? 'Submitting...' : 'Confirm repair on site'}
           </button>

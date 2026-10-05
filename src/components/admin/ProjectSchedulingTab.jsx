@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import { formatPercentage } from '../../lib/percentageFormat';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 import {
   CATEGORY_STYLES,
   MILESTONE_STYLE,
@@ -24,7 +26,7 @@ function InfoCard({ label, value, helper }) {
 
 function CloseButton({ onClick }) {
   return (
-    <button type="button" onClick={onClick} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+    <button type="button" onClick={onClick} aria-label="Close dialog" className="rounded-xl p-2.5 text-slate-500 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
       <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
@@ -696,8 +698,9 @@ function TableView({ tasks, contractors, statusFilter, setStatusFilter, assigned
 function ScheduleDetailModal({ detail, contractors, latestProgress, onClose, onEdit }) {
   const { type, record } = detail;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-lg`} role="dialog" aria-modal="true" aria-label="Schedule item details" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
             {type === 'task' ? 'Task' : type === 'milestone' ? 'Milestone' : 'Suspension'}
@@ -749,8 +752,8 @@ function ScheduleDetailModal({ detail, contractors, latestProgress, onClose, onE
           )}
         </div>
         <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
-          <button type="button" onClick={onEdit} className="rounded-xl bg-teal-600 hover:bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white">Edit</button>
+          <button type="button" onClick={onClose} className={buttonClass('secondary')}>Close</button>
+          <button type="button" onClick={onEdit} className={buttonClass('primary')}>Edit</button>
         </div>
       </div>
     </div>
@@ -759,8 +762,9 @@ function ScheduleDetailModal({ detail, contractors, latestProgress, onClose, onE
 
 function TaskFormModal({ form, setForm, contractors, onSubmit, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-lg`} role="dialog" aria-modal="true" aria-label="Task form" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h3 className="text-lg font-bold text-slate-900">{form.id ? 'Edit Task' : 'New Task'}</h3>
           <CloseButton onClick={onClose} />
@@ -795,8 +799,8 @@ function TaskFormModal({ form, setForm, contractors, onSubmit, onClose }) {
           </select>
           <textarea value={form.remarks} onChange={(e) => setForm((c) => ({ ...c, remarks: e.target.value }))} rows={2} placeholder="Remarks" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" className="rounded-xl bg-teal-600 hover:bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white">Save Task</button>
+            <button type="button" onClick={onClose} className={buttonClass('secondary')}>Cancel</button>
+            <button type="submit" className={buttonClass('primary')}>Save Task</button>
           </div>
         </form>
       </div>
@@ -806,8 +810,9 @@ function TaskFormModal({ form, setForm, contractors, onSubmit, onClose }) {
 
 function MilestoneFormModal({ form, setForm, contractors, onSubmit, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-lg`} role="dialog" aria-modal="true" aria-label="Milestone form" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h3 className="text-lg font-bold text-slate-900">{form.id ? 'Edit Milestone' : 'New Milestone'}</h3>
           <CloseButton onClick={onClose} />
@@ -827,8 +832,8 @@ function MilestoneFormModal({ form, setForm, contractors, onSubmit, onClose }) {
           </select>
           <textarea value={form.remarks} onChange={(e) => setForm((c) => ({ ...c, remarks: e.target.value }))} rows={2} placeholder="Remarks" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" className="rounded-xl bg-amber-600 hover:bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white">Save Milestone</button>
+            <button type="button" onClick={onClose} className={buttonClass('secondary')}>Cancel</button>
+            <button type="submit" className={buttonClass('primary')}>Save Milestone</button>
           </div>
         </form>
       </div>
@@ -838,8 +843,9 @@ function MilestoneFormModal({ form, setForm, contractors, onSubmit, onClose }) {
 
 function SuspensionFormModal({ form, setForm, onSubmit, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-lg`} role="dialog" aria-modal="true" aria-label="Suspension form" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h3 className="text-lg font-bold text-slate-900">{form.id ? 'Edit Suspension' : 'New Suspension'}</h3>
           <CloseButton onClick={onClose} />
@@ -858,8 +864,8 @@ function SuspensionFormModal({ form, setForm, onSubmit, onClose }) {
           <input value={form.time_extension_ref} onChange={(e) => setForm((c) => ({ ...c, time_extension_ref: e.target.value }))} placeholder="Time extension ref (e.g. T.E. #1)" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <textarea required value={form.reason} onChange={(e) => setForm((c) => ({ ...c, reason: e.target.value }))} rows={3} placeholder="Reason for suspension *" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="submit" className="rounded-xl bg-red-600 hover:bg-red-700 px-5 py-2.5 text-sm font-semibold text-white">Save Suspension</button>
+            <button type="button" onClick={onClose} className={buttonClass('secondary')}>Cancel</button>
+            <button type="submit" className={buttonClass('primary')}>Save Suspension</button>
           </div>
         </form>
       </div>

@@ -25,6 +25,8 @@ import LguDashboard from "./pages/LguDashboard";
 import FarmerAuth from "./pages/FarmerAuth";
 import FarmerDashboard from "./pages/FarmerDashboard";
 import PWAInstallBanner from "./components/PWAInstallBanner";
+import ToastViewport from "./components/ToastViewport";
+import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import { triggerQueuedSync } from "./lib/offlineSync";
 
 function App() {
@@ -53,6 +55,8 @@ function App() {
   return (
     <Router>
       <PWAInstallBanner />
+      <ToastViewport />
+      <ConfirmDialogHost />
       <Routes>
         {/* ===== USER SIDE (with landing page) ===== */}
         <Route path="/" element={<LandingPage />} />

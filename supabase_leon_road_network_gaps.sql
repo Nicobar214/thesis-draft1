@@ -52,7 +52,13 @@ CREATE TABLE IF NOT EXISTS public.road_network_gaps (
   barangay           TEXT,
   barangay_end       TEXT,
 
+  -- The SURVEYED unpaved length from Leon_barangay_roads.csv. This is the
+  -- authoritative figure and the one the prioritization module scores on.
   gap_km             DOUBLE PRECISION NOT NULL CHECK (gap_km > 0),
+  -- How much of that length the generator could actually draw on the road network.
+  -- Usually equal to gap_km; smaller where the mapped corridor ran out. Kept
+  -- separate so a drawing limitation never silently changes the ranking input.
+  mapped_gap_km      DOUBLE PRECISION,
   gap_type           TEXT,                          -- Earth / Gravel / Mixed Earth-Gravel Gap
   surface_condition  TEXT,                          -- worst condition among the unpaved surfaces
   gap_reason         TEXT,

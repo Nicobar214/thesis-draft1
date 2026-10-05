@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPercentage } from '../../lib/percentageFormat';
+import { confirm } from '../../lib/confirm';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 import {
   OTHER_ACTIVITY,
   OTHER_UNIT,
@@ -89,12 +92,6 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
     return () => { cancelled = true; };
   }, [projectId, project?.work_plan_status, project?.work_plan_adoption_baseline, supabase, showNotification]);
 
-  useEffect(() => {
-    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const updateItem = (clientKey, field, value) => {
     setItems((current) => current.map((item) => (
       item.clientKey === clientKey ? { ...item, [field]: value } : item
@@ -165,7 +162,13 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
     const warning = costSummary.state === 'below'
       ? `\n\nWarning: planned cost is ${formatPesoAmount(costSummary.difference)} below the ${costBasis.label.toLowerCase()}.`
       : '';
-    if (!window.confirm(`Finalize this Work Plan? It will become read-only for normal edits.${warning}`)) return;
+    const confirmed = await confirm({
+      title: 'Finalize this Work Plan?',
+      message: `It will become read-only for normal edits.${warning}`,
+      confirmLabel: 'Finalize Work Plan',
+      tone: warning ? 'warning' : 'primary',
+    });
+    if (!confirmed) return;
 
     setSaving(true);
     try {
@@ -186,8 +189,9 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
   if (!project) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4" onClick={onClose} role="presentation">
-      <div className="flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Work Plan for ${project.project_name}`}>
+    <div className={MODAL_OVERLAY} onClick={onClose} role="presentation">
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-7xl`} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Work Plan for ${project.project_name}`}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-6">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Work Plan</p>
@@ -196,7 +200,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
           </div>
           <div className="flex items-center gap-2">
             <span className={`rounded-lg border px-3 py-1.5 text-xs font-bold uppercase ${statusStyles[status] || statusStyles.none}`}>{status}</span>
-            <button type="button" onClick={onClose} aria-label="Close Work Plan" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50">
+            <button type="button" onClick={onClose} aria-label="Close Work Plan" className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" /></svg>
             </button>
           </div>
@@ -244,8 +248,8 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>{!isFinalized && <button type="button" onClick={() => setItems((current) => [...current, blankItem(nextWorkPlanSortOrder(current))])} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">+ Add Activity</button>}</div>
-          <div className="flex flex-col gap-3 sm:flex-row"><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700">Close</button>{!isFinalized && <><button type="button" onClick={saveDraft} disabled={saving || loading} className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Saving...' : 'Save Draft'}</button><button type="button" onClick={finalize} disabled={saving || loading} className="rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">Finalize</button></>}</div>
+          <div>{!isFinalized && <button type="button" onClick={() => setItems((current) => [...current, blankItem(nextWorkPlanSortOrder(current))])} className={buttonClass('secondary')}>+ Add Activity</button>}</div>
+          <div className="flex flex-col gap-3 sm:flex-row"><button type="button" onClick={onClose} className={buttonClass('secondary')}>Close</button>{!isFinalized && <><button type="button" onClick={saveDraft} disabled={saving || loading} className={buttonClass('secondary')}>{saving ? 'Saving...' : 'Save Draft'}</button><button type="button" onClick={finalize} disabled={saving || loading} className={buttonClass('primary')}>Finalize</button></>}</div>
         </div>
       </div>
     </div>

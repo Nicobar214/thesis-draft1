@@ -22,12 +22,19 @@
 //   node scripts/fetch_leon_osm_roads.mjs             # use cache if present
 //   node scripts/fetch_leon_osm_roads.mjs --refresh   # re-query Overpass
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { REPO_ROOT, loadBarangayCentroids, normalizeRoadName } from './lib/leonPlaceChain.mjs';
 
 const REFRESH = process.argv.includes('--refresh');
+const USE_PARTIAL = process.argv.includes('--use-partial');
 const CACHE_PATH = resolve(REPO_ROOT, 'scripts', 'leon_osm_local_roads.geojson');
+// Per-tile progress, so an interrupted fetch resumes instead of restarting.
+const PARTIAL_PATH = resolve(REPO_ROOT, 'scripts', '.leon_osm_tiles_partial.json');
+
+const bboxKey = (b) =>
+  [b.south, b.west, b.north, b.east].map((n) => n.toFixed(5)).join(',') +
+  '|' + LOCAL_HIGHWAY_CLASSES.join('+') + '|' + TILES_PER_SIDE;
 
 const ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter',
@@ -43,6 +50,23 @@ const ENDPOINTS = [
  */
 const LOCAL_HIGHWAY_CLASSES = [
   'residential', 'unclassified', 'track', 'service', 'living_street', 'road',
+];
+
+/**
+ * Trunk classes, fetched too but marked so the router can charge a high cost for
+ * them (see leonRoadGraph.CLASS_COST).
+ *
+ * Excluding them outright was wrong: Leon's barangay roads largely connect to one
+ * another THROUGH the tertiary/secondary network, so dropping those classes left a
+ * graph of 12,012 nodes with only 11,819 edges -- a forest of 279 disconnected
+ * fragments, in which most corridors were far too short to host a project route.
+ * Including them at a heavy cost instead keeps routes on local roads wherever a
+ * local route exists, while still allowing a barangay-to-barangay path to exist at
+ * all. There are only ~160 of these ways, so the extra query is cheap.
+ */
+const TRUNK_HIGHWAY_CLASSES = [
+  'primary', 'secondary', 'tertiary',
+  'primary_link', 'secondary_link', 'tertiary_link',
 ];
 
 const TILES_PER_SIDE = 3;
@@ -79,9 +103,9 @@ function tileBoundingBox(bbox, n) {
   return tiles;
 }
 
-const buildQuery = (tile) => `[out:json][timeout:300];
+const buildQuery = (tile, classes = LOCAL_HIGHWAY_CLASSES) => `[out:json][timeout:300];
 (
-  way["highway"~"^(${LOCAL_HIGHWAY_CLASSES.join('|')})$"](${tile.south},${tile.west},${tile.north},${tile.east});
+  way["highway"~"^(${classes.join('|')})$"](${tile.south},${tile.west},${tile.north},${tile.east});
 );
 out geom tags;`;
 
@@ -109,40 +133,131 @@ async function postQuery(query) {
 }
 
 /**
- * Fetch every tile, retrying individually. The free endpoints fail a third of
- * requests with 504/502, and a tile silently returning nothing leaves a hole in
- * the network graph -- so failures are retried and then reported, never ignored.
+ * Fetch every tile, retrying individually, saving progress after each one.
+ *
+ * The free endpoints fail roughly a third of requests with 504/502, and a tile
+ * that silently returns nothing leaves a hole in the network graph -- so failures
+ * are retried and then reported, never ignored.
+ *
+ * Each completed tile is written to a partial-progress file immediately. A full
+ * run takes 10-20 minutes against these endpoints, and losing all of it to one
+ * interruption (a closed terminal, a killed background job) means starting over;
+ * with this, a re-run skips the tiles already in hand.
  */
 async function fetchLocalNetwork(bbox) {
   const tiles = tileBoundingBox(bbox, TILES_PER_SIDE);
-  const merged = new Map();
-  const failedTiles = [];
+
+  let done = {};
+  if (existsSync(PARTIAL_PATH)) {
+    try {
+      const saved = JSON.parse(readFileSync(PARTIAL_PATH, 'utf8'));
+      if (saved.bboxKey === bboxKey(bbox)) {
+        done = saved.tiles || {};
+        const count = Object.keys(done).length;
+        if (count > 0) console.log(`  resuming: ${count}/${tiles.length} tile(s) already fetched`);
+      }
+    } catch {
+      // A corrupt partial file is not worth failing over; start fresh.
+    }
+  }
 
   for (const [index, tile] of tiles.entries()) {
-    let got = null;
+    const id = String(index + 1);
+    if (done[id]) {
+      console.log(`  tile ${id}/${tiles.length}: cached (${done[id].length} ways)`);
+      continue;
+    }
+
+    // --use-partial builds the network from whatever tiles are already cached
+    // instead of querying. Leon's northern tiles sit over the Bucari highlands,
+    // where Overpass times out repeatedly and there is little mapped road to find;
+    // this allows work to proceed on a network with documented holes rather than
+    // blocking on endpoints that may never answer. The holes are recorded in the
+    // output's properties and reported in the coverage summary.
+    if (USE_PARTIAL) {
+      console.log(`  tile ${id}/${tiles.length}: skipped (--use-partial)`);
+      continue;
+    }
+
     for (let attempt = 1; attempt <= ATTEMPTS_PER_TILE; attempt += 1) {
-      process.stdout.write(`  tile ${index + 1}/${tiles.length} attempt ${attempt}: `);
+      process.stdout.write(`  tile ${id}/${tiles.length} attempt ${attempt}: `);
       try {
-        got = await postQuery(buildQuery(tile));
-        console.log(`${got.length} ways`);
+        const got = await postQuery(buildQuery(tile));
+
+        // An empty result is treated as a failure and retried. These endpoints
+        // sometimes answer 200 with no elements instead of erroring, and a tile
+        // over inhabited Leon should never have zero local roads -- accepting the
+        // empty answer silently punches a hole in the routing graph and makes
+        // barangays look unreachable. Only a repeated empty answer is believed.
+        if (got.length === 0 && attempt < ATTEMPTS_PER_TILE) {
+          console.log('0 ways (suspicious, retrying)');
+          await sleep(4000 * attempt);
+          continue;
+        }
+
+        console.log(`${got.length} ways${got.length === 0 ? ' (empty after all attempts)' : ''}`);
+        done[id] = got;
+        writeFileSync(PARTIAL_PATH, JSON.stringify({ bboxKey: bboxKey(bbox), tiles: done }));
         break;
       } catch (error) {
         console.log(`failed (${error.message})`);
         if (attempt < ATTEMPTS_PER_TILE) await sleep(4000 * attempt);
       }
     }
-    if (got) {
-      for (const el of got) merged.set(el.id, el);
-    } else {
-      failedTiles.push({ tile, index: index + 1 });
-    }
     await sleep(1500);
   }
 
-  return { elements: [...merged.values()], failedTiles };
+  // One extra whole-bbox query for the trunk classes -- only ~160 ways, light
+  // enough not to need tiling. Cached under its own key alongside the tiles.
+  // Attempted even under --use-partial: it is a single light query, and without the
+  // trunk classes the graph is too fragmented to route on at all.
+  if (done.trunk) {
+    console.log(`  trunk classes: cached (${done.trunk.length} ways)`);
+  } else {
+    for (let attempt = 1; attempt <= ATTEMPTS_PER_TILE; attempt += 1) {
+      process.stdout.write(`  trunk classes attempt ${attempt}: `);
+      try {
+        const got = await postQuery(buildQuery(bbox, TRUNK_HIGHWAY_CLASSES));
+
+        // Same empty-response guard as the tiles: Leon is crossed by named
+        // secondary and tertiary roads, so zero trunk ways means the endpoint
+        // answered without data, not that none exist.
+        if (got.length === 0 && attempt < ATTEMPTS_PER_TILE) {
+          console.log('0 ways (suspicious, retrying)');
+          await sleep(4000 * attempt);
+          continue;
+        }
+
+        console.log(`${got.length} ways${got.length === 0 ? ' (empty after all attempts)' : ''}`);
+        done.trunk = got;
+        writeFileSync(PARTIAL_PATH, JSON.stringify({ bboxKey: bboxKey(bbox), tiles: done }));
+        break;
+      } catch (error) {
+        console.log(`failed (${error.message})`);
+        if (attempt < ATTEMPTS_PER_TILE) await sleep(4000 * attempt);
+      }
+    }
+  }
+
+  const merged = new Map();
+  for (const elements of Object.values(done)) {
+    for (const el of elements) merged.set(el.id, el);
+  }
+  const failedTiles = tiles
+    .map((tile, index) => ({ tile, index: index + 1 }))
+    .filter(({ index }) => !done[String(index)]);
+
+  // Tiles that answered, but with nothing. Reported separately from outright
+  // failures because they are the more dangerous case: the run looks clean while
+  // the routing graph quietly has a hole in it.
+  const emptyTiles = tiles
+    .map((tile, index) => ({ tile, index: index + 1 }))
+    .filter(({ index }) => done[String(index)] && done[String(index)].length === 0);
+
+  return { elements: [...merged.values()], failedTiles, emptyTiles };
 }
 
-function toFeatureCollection(elements, bbox, failedTiles) {
+function toFeatureCollection(elements, bbox, failedTiles, emptyTiles = []) {
   const features = [];
   for (const el of elements) {
     if (el.type !== 'way' || !Array.isArray(el.geometry)) continue;
@@ -162,6 +277,10 @@ function toFeatureCollection(elements, bbox, failedTiles) {
         name: tags.name || null,
         nameNormalized: tags.name ? normalizeRoadName(tags.name) : null,
         highway: tags.highway || null,
+        // How the router should treat this way. Trunk ways are kept for
+        // connectivity but charged a heavy cost, so a route only uses one when no
+        // local alternative exists.
+        routingClass: TRUNK_HIGHWAY_CLASSES.includes(tags.highway) ? 'trunk' : 'local',
         surface: tags.surface || null,
         tracktype: tags.tracktype || null,
       },
@@ -177,11 +296,16 @@ function toFeatureCollection(elements, bbox, failedTiles) {
       fetchedAt: new Date().toISOString(),
       bbox,
       highwayClasses: LOCAL_HIGHWAY_CLASSES,
-      excludedClasses: ['primary', 'secondary', 'tertiary', 'path'],
-      excludedReason:
-        'Trunk classes are excluded so routing cannot detour via the national road; path is excluded as footpaths are not farm-to-market roads.',
+      trunkClasses: TRUNK_HIGHWAY_CLASSES,
+      excludedClasses: ['path', 'footway', 'cycleway', 'steps'],
+      routingNote:
+        'Local classes route at true cost. Trunk classes are included for connectivity '
+        + '(Leon barangay roads interconnect through them) but charged a heavy cost multiplier, '
+        + 'so a path only uses a trunk road where no local alternative exists. Footpaths are '
+        + 'excluded entirely as they are not farm-to-market roads.',
       wayCount: features.length,
       failedTiles,
+      emptyTiles: emptyTiles.map((t) => t.index),
     },
     features,
   };
@@ -199,7 +323,7 @@ const haversineMeters = (aLat, aLng, bLat, bLng) => {
 // ---------------------------------------------------------------------------
 
 let collection;
-if (existsSync(CACHE_PATH) && !REFRESH) {
+if (existsSync(CACHE_PATH) && !REFRESH && !USE_PARTIAL) {
   collection = JSON.parse(readFileSync(CACHE_PATH, 'utf8'));
   console.log(`Using cached ${CACHE_PATH}`);
   console.log(`  fetched ${collection.properties?.fetchedAt}   ways ${collection.features.length}`);
@@ -208,12 +332,19 @@ if (existsSync(CACHE_PATH) && !REFRESH) {
   console.log(
     `Overpass bbox  S${bbox.south.toFixed(4)} W${bbox.west.toFixed(4)} N${bbox.north.toFixed(4)} E${bbox.east.toFixed(4)}`
   );
-  const { elements, failedTiles } = await fetchLocalNetwork(bbox);
+  const { elements, failedTiles, emptyTiles } = await fetchLocalNetwork(bbox);
   if (elements.length === 0) throw new Error('Overpass returned no ways at all; try again later.');
 
-  collection = toFeatureCollection(elements, bbox, failedTiles);
+  collection = toFeatureCollection(elements, bbox, failedTiles, emptyTiles);
   writeFileSync(CACHE_PATH, `${JSON.stringify(collection)}\n`);
   console.log(`\nWrote ${CACHE_PATH}`);
+  // Keep the per-tile progress file only while tiles are still outstanding, so a
+  // later --refresh can resume them rather than re-fetching what already worked.
+  if (failedTiles.length === 0 && emptyTiles.length === 0 && existsSync(PARTIAL_PATH)) rmSync(PARTIAL_PATH);
+  if (emptyTiles.length > 0) {
+    console.log('  WARNING: tile(s) ' + emptyTiles.map((t) => t.index).join(', ') + ' returned zero ways after every attempt.');
+    console.log('  Verify against the coverage report below; a hole here makes barangays look unreachable.');
+  }
   if (failedTiles.length > 0) {
     console.log(`  WARNING: ${failedTiles.length} tile(s) never succeeded (${failedTiles.map((f) => f.index).join(', ')}).`);
     console.log('  The network has holes there. Re-run with --refresh to fill them.');

@@ -10,7 +10,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "inventory:repair": "node scripts/regenerate_leon_road_inventory.mjs",
+    "osm:fetch": "node scripts/fetch_leon_osm_roads.mjs",
+    "gen:routes": "node scripts/generate_leon_route_corridors.mjs",
+    "verify:routes": "node scripts/verify_route_geometry.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",

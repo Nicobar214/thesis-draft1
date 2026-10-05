@@ -5,6 +5,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
+import { notify } from '../lib/toast';
+import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
+import { buttonClass } from '../components/ui/Button';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
 import NotificationBell from '../components/NotificationBell';
@@ -106,14 +109,11 @@ export default function FieldEngineerDashboard() {
   const [selectedReport, setSelectedReport] = useState(null);
   const [engineerNotes, setEngineerNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [notification, setNotification] = useState(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3500);
-  };
+  // Shared toast (see lib/toast.js); signature kept so call sites are unchanged.
+  const showNotification = notify;
 
   useEffect(() => {
     const updateStatus = () => setIsOffline(!navigator.onLine);
@@ -448,16 +448,6 @@ export default function FieldEngineerDashboard() {
             <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
           PWA Offline Mode: Field updates will be saved locally and queued for automatic sync when online.
-        </div>
-      )}
-
-      {/* Notification Toast */}
-      {notification && (
-        <div className={`fixed top-4 right-4 left-4 sm:left-auto sm:w-auto z-[100] px-4 py-3 rounded-xl shadow-xl text-white font-semibold text-sm flex items-center gap-2 ${
-          notification.type === 'error' ? 'bg-rose-600 border border-rose-500' : 'bg-slate-900 border border-slate-800'
-        }`}>
-          <span>{notification.type === 'error' ? '✕' : '✓'}</span>
-          <span>{notification.message}</span>
         </div>
       )}
 
@@ -1359,7 +1349,7 @@ export default function FieldEngineerDashboard() {
                 <div className="pt-4 border-t border-slate-100 flex justify-end">
                   <button
                     onClick={handleSignOut}
-                    className="px-5 py-2.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white font-semibold text-xs transition-all"
+                    className={buttonClass('secondary')}
                   >
                     Sign Out of Field Portal
                   </button>
@@ -1372,25 +1362,31 @@ export default function FieldEngineerDashboard() {
 
       {/* ── REPORT DETAIL MODAL ── */}
       {selectedReport && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setSelectedReport(null)}>
+        <div className={MODAL_OVERLAY} onClick={() => setSelectedReport(null)}>
+          <ModalEffects onClose={() => setSelectedReport(null)} />
           <div
-            className="bg-white border border-slate-200 w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl overflow-y-auto text-slate-900 flex flex-col"
+            className={`${MODAL_PANEL_SCROLL} max-w-5xl text-slate-900`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="On-site field inspection"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="sticky top-0 bg-slate-950 text-white px-5 sm:px-6 py-4 flex items-center justify-between z-10">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-white/10 text-teal-200 rounded-lg flex items-center justify-center border border-white/10 font-semibold text-sm">
+                <div className="flex size-9 items-center justify-center rounded-lg border border-teal-100 bg-teal-50 text-sm font-semibold text-teal-700">
                   FE
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-white">On-Site Field Inspection</h3>
-                  <p className="text-xs text-slate-300">Ref #{selectedReport.id.slice(0, 8).toUpperCase()} &middot; {selectedReport.barangay}, {selectedReport.municipality}</p>
+                  <h3 className="text-base font-semibold text-slate-900">On-Site Field Inspection</h3>
+                  <p className="text-xs text-slate-500">Ref #{selectedReport.id.slice(0, 8).toUpperCase()} &middot; {selectedReport.barangay}, {selectedReport.municipality}</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedReport(null)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                aria-label="Close dialog"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 ✕
               </button>
@@ -1452,7 +1448,7 @@ export default function FieldEngineerDashboard() {
                       <button
                         onClick={() => updateReportStatus(selectedReport.id, 'in_progress')}
                         disabled={updatingStatus}
-                        className="w-full px-4 py-3 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-all"
+                        className={buttonClass('primary', 'md', 'w-full')}
                       >
                         {updatingStatus ? 'Starting...' : 'Start On-Site Inspection'}
                       </button>
@@ -1534,9 +1530,9 @@ export default function FieldEngineerDashboard() {
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
-                  className="px-6 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all"
+                  className={buttonClass('secondary')}
                 >
-                  Cancel & Close
+                  Close
                 </button>
               </div>
             </div>

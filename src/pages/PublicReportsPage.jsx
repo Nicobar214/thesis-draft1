@@ -8,6 +8,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PublicReportForm from '../components/PublicReportForm';
 import Logo from '../components/Logo';
+import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 
 /* ─── Icons ─── */
 const Icons = {
@@ -431,9 +432,13 @@ export default function PublicReportsPage() {
 
       {/* ── Detail modal ── */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setSelected(null)}>
+        <div className={MODAL_OVERLAY} onClick={() => setSelected(null)}>
+          <ModalEffects onClose={() => setSelected(null)} />
           <div
-            className="bg-white border border-zinc-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto"
+            className={`${MODAL_PANEL_SCROLL} max-w-lg`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Report details"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -444,7 +449,7 @@ export default function PublicReportsPage() {
                   {classifyReport(selected.description)}
                 </span>
               </div>
-              <button onClick={() => setSelected(null)} className="text-zinc-400 hover:text-zinc-700 transition p-1 -mr-1">
+              <button onClick={() => setSelected(null)} aria-label="Close dialog" className="-mr-1 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400">
                 <Icons.X />
               </button>
             </div>
@@ -486,9 +491,14 @@ export default function PublicReportsPage() {
 
       {/* ── Report form modal ── */}
       {showReportForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowReportForm(false)}>
+        <div className={MODAL_OVERLAY} onClick={() => setShowReportForm(false)}>
+          {/* Esc stays off here so a half-written report is never lost by accident. */}
+          <ModalEffects onClose={() => setShowReportForm(false)} closeOnEscape={false} />
           <div
-            className="bg-white border border-zinc-200 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            className={`${MODAL_PANEL_SCROLL} max-w-2xl`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Report from the ground"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal header */}
@@ -497,7 +507,7 @@ export default function PublicReportsPage() {
                 <p className="text-sm font-medium text-emerald-600 uppercase tracking-wider">Location-Verified Feedback</p>
                 <h3 className="text-lg font-semibold text-zinc-900 mt-1">Report from the Ground</h3>
               </div>
-              <button onClick={() => setShowReportForm(false)} className="text-zinc-400 hover:text-zinc-700 transition p-1 -mr-1">
+              <button onClick={() => setShowReportForm(false)} aria-label="Close dialog" className="-mr-1 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400">
                 <Icons.X />
               </button>
             </div>

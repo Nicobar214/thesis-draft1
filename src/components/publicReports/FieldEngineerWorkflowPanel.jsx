@@ -6,6 +6,7 @@ import PublicReportRouteMapPanel from './PublicReportRouteMapPanel';
 import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
 import { submitPublicReportInspection } from '../../services/publicReportWorkflow';
 import { friendlyReportError } from '../../lib/publicReportStatus';
+import { buttonClass } from '../ui/Button';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -545,7 +546,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         <button
           type="button"
           onClick={() => setMapFocus([report?.latitude, report?.longitude])}
-          className="rounded-lg border border-teal-200 bg-white text-teal-700 px-3 py-2 text-sm font-semibold hover:bg-teal-50 transition flex items-center justify-center gap-2"
+          className={buttonClass('secondary')}
         >
           <svg className="w-4 h-4 shrink-0 text-teal-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
@@ -559,7 +560,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (startPoint) setMapFocus(startPoint);
             else if (onSaved) onSaved('Start point coordinates unavailable.', 'error');
           }}
-          className="rounded-lg border border-emerald-200 bg-white text-emerald-700 px-3 py-2 text-sm font-semibold hover:bg-emerald-50 transition flex items-center justify-center gap-2"
+          className={buttonClass('secondary')}
         >
           <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
@@ -572,7 +573,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             if (endPoint) setMapFocus(endPoint);
             else if (onSaved) onSaved('End point coordinates unavailable.', 'error');
           }}
-          className="rounded-lg border border-rose-200 bg-white text-rose-700 px-3 py-2 text-sm font-semibold hover:bg-rose-50 transition flex items-center justify-center gap-2"
+          className={buttonClass('secondary')}
         >
           <svg className="w-4 h-4 shrink-0 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.779V4.5l-3.114.778a9 9 0 0 1-6.086-.71l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5" />
@@ -583,7 +584,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           type="button"
           onClick={markVisited}
           disabled={saving}
-          className="rounded-lg border border-teal-600 bg-teal-600 text-white px-3 py-2 text-sm font-semibold hover:bg-teal-700 transition disabled:opacity-60 flex items-center justify-center gap-2"
+          className={buttonClass('primary')}
         >
           <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
@@ -685,7 +686,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={captureFromCamera}
                 disabled={!cameraReady || saving}
-                className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
+                className={buttonClass('primary')}
               >
                 Capture Photo
               </button>
@@ -694,7 +695,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={retakeCapture}
                 disabled={saving}
-                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                className={buttonClass('secondary')}
               >
                 Retake Photo
               </button>
@@ -704,7 +705,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 type="button"
                 onClick={startCamera}
                 disabled={saving}
-                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                className={buttonClass('secondary')}
               >
                 Restart Camera
               </button>
@@ -751,7 +752,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             type="button"
             onClick={submitFindings}
             disabled={saving || loading || !engineerCertified}
-            className="px-4 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 disabled:opacity-60"
+            className={buttonClass('primary')}
           >
             {saving ? 'Submitting...' : 'Submit Findings'}
           </button>

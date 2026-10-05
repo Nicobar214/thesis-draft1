@@ -6,6 +6,8 @@ import 'leaflet.heat';
 
 import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints, isAlreadyRoadAligned } from '../../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
+import GapSegmentLayer from '../map/GapSegmentLayer';
+import { centroidFallbackIcon } from '../map/routeMarkerIcons';
 
 function FitToData({ points }) {
   const map = useMap();
@@ -95,7 +97,8 @@ export default function LguRouteMap({
   markets = [],
   mapCenter = null,
   mapZoom = 11,
-  searchMarker = null
+  searchMarker = null,
+  roadGaps = [],
 }) {
   const [showFarmerDots, setShowFarmerDots] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
@@ -106,6 +109,7 @@ export default function LguRouteMap({
   const [snappedConnectionPoints, setSnappedConnectionPoints] = useState({ key: null, points: null });
   const [snappedProjectRoutes, setSnappedProjectRoutes] = useState({});
   const [focusedProjectId, setFocusedProjectId] = useState(null);
+  const [focusedGapId, setFocusedGapId] = useState(null);
 
   const connectionPoints = useMemo(() => {
     if (!selectedFarmerForPath) return [];
@@ -176,64 +180,6 @@ export default function LguRouteMap({
     return () => { active = false; };
   }, [projects, routesByProjectId]);
 
-  // Simulated & inventory-matched Road Network Gap segments in Leon
-  const roadGapSegments = useMemo(() => {
-    const marketPos = [10.7853, 122.3831];
-    return [
-      {
-        id: 'gap-1',
-        title: 'Agboy Norte - Siol Norte Gap',
-        barangay: 'Agboy Norte',
-        gapKm: 1.47,
-        condition: 'Earth (98% Poor)',
-        points: [[10.8250, 122.3450], [10.8120, 122.3600], marketPos],
-        description: 'Unpaved 1.47 km Earth road gap isolating Agboy Norte produce from Leon Central Market.',
-      },
-      {
-        id: 'gap-2',
-        title: 'Avanzada - Baje Connecting Link',
-        barangay: 'Avanzada',
-        gapKm: 2.60,
-        condition: 'Gravel (Poor Condition)',
-        points: [[10.8350, 122.3300], [10.8100, 122.3550], marketPos],
-        description: 'Critical 2.60 km unpaved link connecting high-altitude farmers to trading post.',
-      },
-      {
-        id: 'gap-3',
-        title: 'Bucari - Camando Access Gap',
-        barangay: 'Bucari',
-        gapKm: 3.20,
-        condition: 'Earth/Gravel Gap',
-        points: [[10.8050, 122.3150], [10.7950, 122.3450], marketPos],
-        description: 'Missing edge-to-edge paved road link between Bucari highland road network and Leon center.',
-      },
-      {
-        id: 'gap-4',
-        title: 'Binolbog - Ambulong Road Gap',
-        barangay: 'Binolbog',
-        gapKm: 2.28,
-        condition: 'Earth (100% Unpaved)',
-        points: [[10.7650, 122.3550], [10.7750, 122.3700], marketPos],
-        description: '2.28 km earth gap causing market access delays during heavy rain.',
-      },
-    ];
-  }, []);
-
-  const [snappedGaps, setSnappedGaps] = useState([]);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all(
-      roadGapSegments.map(async (gap) => {
-        const snapped = await fetchRoadAlignedPolyline(gap.points);
-        return { ...gap, points: snapped && snapped.length >= 2 ? snapped : gap.points };
-      })
-    ).then((res) => {
-      if (active) setSnappedGaps(res);
-    });
-    return () => { active = false; };
-  }, [roadGapSegments]);
-
   const farmerCropOptions = useMemo(() => {
     const crops = new Set((farmerBeneficiaries || []).map((f) => f.crop).filter(Boolean));
     return ['All', ...[...crops].sort()];
@@ -263,6 +209,9 @@ export default function LguRouteMap({
       project,
       routeData,
       coordinates,
+      // False when coordinates is a jittered municipal centroid rather than a real
+      // route start, so the marker does not label a guess as the road's start.
+      hasRealCoordinates: hasActualCoordinates,
     };
   });
 
@@ -306,7 +255,7 @@ export default function LguRouteMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {routeLayers.map(({ project, routeData, coordinates }) => {
+        {routeLayers.map(({ project, routeData, coordinates, hasRealCoordinates }) => {
           const effectivePoints = snappedProjectRoutes[project.id] || routeData.points;
           const displayPoints = createDisplayRoutePoints(effectivePoints, project.id);
           const isFocused = focusedProjectId === project.id;
@@ -339,13 +288,29 @@ export default function LguRouteMap({
               {coordinates && (() => {
                 const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
                 return (
-                  <Marker position={coordinates} icon={startIcon} eventHandlers={lineHandlers}>
+                  <Marker position={coordinates} icon={hasRealCoordinates ? startIcon : centroidFallbackIcon} eventHandlers={lineHandlers}>
                     <Popup>
                       <div className="p-1 space-y-0.5 text-xs text-slate-800">
                         <p className="font-bold text-teal-700">{project.project_name}</p>
                         <p><span className="font-semibold text-slate-500">Status:</span> {project.status || project.project_status || 'Completed'}</p>
                         <p><span className="font-semibold text-slate-500">Length:</span> {project.project_length_km || project.length_km || 0} km</p>
-                        <p><span className="font-semibold text-teal-600">Road Snapped:</span> ✓ Real OSRM Network</p>
+                        {/* Reports the route's actual stored provenance. This used to print
+                            "Road Snapped: ✓ Real OSRM Network" unconditionally -- including when
+                            fetchRoadAlignedPolyline had silently returned the unmodified input
+                            after a failed request, and when the geometry was only a centroid
+                            fallback. A route with no stored alignment now says so. */}
+                        {routeData.routeSource ? (
+                          <p>
+                            <span className="font-semibold text-teal-600">Alignment:</span>{' '}
+                            {routeData.routeSource}
+                            {routeData.routeQuality ? ` (${routeData.routeQuality})` : ''}
+                          </p>
+                        ) : (
+                          <p>
+                            <span className="font-semibold text-slate-500">Alignment:</span>{' '}
+                            approximate — no surveyed route on file
+                          </p>
+                        )}
                         <p className="pt-1 border-t border-slate-100">
                           <span className="font-semibold text-slate-500">Budget:</span> {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
                           {' · '}Released {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
@@ -364,32 +329,13 @@ export default function LguRouteMap({
           );
         })}
 
-        {/* Module 1: Road Network Gaps Layer */}
-        {showRoadGaps && (snappedGaps.length > 0 ? snappedGaps : roadGapSegments).map((gap) => (
-          <Polyline
-            key={gap.id}
-            positions={gap.points}
-            pathOptions={{
-              color: '#ef4444',
-              weight: 3,
-              dashArray: '6, 8',
-              opacity: 0.72,
-            }}
-          >
-            <Popup>
-              <div className="p-1 space-y-1 text-slate-800 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-bold text-[10px] uppercase">Road Network Gap</span>
-                  <span className="font-bold text-slate-900">{gap.title}</span>
-                </div>
-                <p><span className="font-semibold text-slate-500">Barangay:</span> {gap.barangay}</p>
-                <p><span className="font-semibold text-slate-500">Gap Length:</span> {gap.gapKm} km</p>
-                <p><span className="font-semibold text-slate-500">Surface Condition:</span> {gap.condition}</p>
-                <p className="text-slate-600 pt-1 border-t border-slate-100">{gap.description}</p>
-              </div>
-            </Popup>
-          </Polyline>
-        ))}
+        {/* Module 1: road network gaps, from public.road_network_gaps */}
+        <GapSegmentLayer
+          gaps={roadGaps}
+          visible={showRoadGaps}
+          focusedGapId={focusedGapId}
+          onFocusGap={setFocusedGapId}
+        />
 
         {reportPoints.map((row) => (
           <CircleMarker
@@ -591,7 +537,9 @@ export default function LguRouteMap({
             onChange={(e) => setShowRoadGaps(e.target.checked)}
             className="rounded border-slate-300 text-red-600 focus:ring-red-500"
           />
-          <span className="text-red-700 font-semibold">Road Network Gaps (Red Dashed)</span>
+          <span className="text-red-700 font-semibold">
+            Road Network Gaps ({roadGaps.length})
+          </span>
         </label>
 
         <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">

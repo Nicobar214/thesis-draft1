@@ -4,6 +4,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { supabaseLgu as supabase } from '../../lib/supabase';
+import { notify } from '../../lib/toast';
+import { confirm } from '../../lib/confirm';
 import { getBarangays, getMunicipalities } from '../../data/iloiloLocations';
 import { getMunicipalityCentroid } from '../../lib/mapRouteUtils';
 import { BENEFICIARY_CROPS } from '../../utils/farmerBeneficiaryData';
@@ -102,7 +104,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
     const lng = Number(form.longitude);
 
     if (!lat || !lng) {
-      alert("Please pin the market location on the map to set coordinates.");
+      notify("Please pin the market location on the map to set coordinates.");
       return;
     }
 
@@ -132,7 +134,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
           .eq('id', editingId);
 
         if (error) throw error;
-        alert('Market location updated successfully.');
+        notify('Market location updated successfully.');
         setEditingId(null);
       } else {
         const { error } = await supabase
@@ -140,7 +142,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
           .insert(payload);
 
         if (error) throw error;
-        alert('Market location added successfully.');
+        notify('Market location added successfully.');
       }
 
       setForm({
@@ -161,12 +163,18 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
       fetchMarkets();
       setActiveSubTab('list');
     } catch (err) {
-      alert(`Error saving market: ${err.message}`);
+      notify(`Error saving market: ${err.message}`);
     }
   };
 
   const handleDelete = async (id, name) => {
-    if (!confirm(`Are you sure you want to delete the market "${name}"?`)) return;
+    const confirmed = await confirm({
+      title: 'Delete market location?',
+      message: `"${name}" will be permanently removed from the market directory. This cannot be undone.`,
+      confirmLabel: 'Delete market',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     try {
       const { error } = await supabase
         .from('market_locations')
@@ -174,10 +182,10 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
         .eq('id', id);
 
       if (error) throw error;
-      alert('Market location deleted.');
+      notify('Market location deleted.');
       fetchMarkets();
     } catch (err) {
-      alert(`Error deleting market: ${err.message}`);
+      notify(`Error deleting market: ${err.message}`);
     }
   };
 
@@ -426,11 +434,11 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
                               longitude: lon
                             }));
                           } else {
-                            alert('Location not found. Try adding the municipality name.');
+                            notify('Location not found. Try adding the municipality name.');
                           }
                         } catch (err) {
                           console.error(err);
-                          alert('Error searching location.');
+                          notify('Error searching location.');
                         }
                       }}
                       className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"

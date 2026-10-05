@@ -4,6 +4,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { supabaseLgu as supabase } from '../../lib/supabase';
+import { notify } from '../../lib/toast';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 import { getBarangays } from '../../data/iloiloLocations';
 import { boundsFromPoints, getMunicipalityCentroid, fetchRoadAlignedPolyline, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
@@ -289,7 +292,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     const eLng = Number(form.end_longitude);
 
     if (![sLat, sLng, eLat, eLng].every(Number.isFinite)) {
-      alert('Please set both Start and End points on the map first.');
+      notify('Please set both Start and End points on the map first.');
       return;
     }
 
@@ -315,12 +318,12 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
           end_longitude: last[1].toFixed(6),
           estimated_length_km: polylineDistanceKm(snappedPoints).toFixed(2),
         }));
-        alert('Snapped successfully to road alignment!');
+        notify('Snapped successfully to road alignment!');
       } else {
-        alert('Could not find a road connection between the coordinates.');
+        notify('Could not find a road connection between the coordinates.', 'warning');
       }
     } catch (err) {
-      alert(`Failed to connect coordinates to the road network: ${err.message}`);
+      notify(`Failed to connect coordinates to the road network: ${err.message}`);
     } finally {
       setSnapping(false);
     }
@@ -331,7 +334,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     if (!user) return;
 
     if (!form.project_name.trim() || !form.justification.trim()) {
-      alert('Project name and justification are required.');
+      notify('Project name and justification are required.', 'warning');
       return;
     }
 
@@ -397,7 +400,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
           `${municipalityScope || 'An LGU'} resubmitted "${basePayload.project_name}" after revision.`,
           editingId
         );
-        alert('Proposal resubmitted for DA validation.');
+        notify('Proposal resubmitted for DA validation.');
       } else {
         const { data: inserted, error } = await supabase
           .from('lgu_project_proposals')
@@ -424,14 +427,14 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
           `${municipalityScope || 'An LGU'} submitted a new proposal: "${basePayload.project_name}".`,
           inserted.id
         );
-        alert('Proposal submitted to DA for validation.');
+        notify('Proposal submitted to DA for validation.');
       }
 
       resetForm();
       await fetchProposals();
       setActiveSubTab('list');
     } catch (err) {
-      alert(`Error saving proposal: ${err.message}`);
+      notify(`Error saving proposal: ${err.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -820,11 +823,11 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                           if (data && data.length > 0) {
                             setSearchCenter([Number(data[0].lat), Number(data[0].lon)]);
                           } else {
-                            alert('Location not found. Try adding the municipality name.');
+                            notify('Location not found. Try adding the municipality name.');
                           }
                         } catch (err) {
                           console.error(err);
-                          alert('Error searching location.');
+                          notify('Error searching location.');
                         }
                       }}
                       className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"
@@ -906,12 +909,12 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-grow px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition"
+                  className={buttonClass('primary', 'md', 'flex-grow')}
                 >
                   {submitting ? 'Submitting…' : editingId ? 'Resubmit Proposal' : 'Submit Proposal to DA'}
                 </button>
                 {editingId && (
-                  <button type="button" onClick={resetForm} className="px-4 py-2.5 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition">
+                  <button type="button" onClick={resetForm} className={buttonClass('secondary')}>
                     Cancel
                   </button>
                 )}
@@ -1041,7 +1044,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     {p.status === 'Needs Revision' && (
                       <button
                         onClick={() => startResubmit(p)}
-                        className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold"
+                        className={buttonClass('warning', 'sm')}
                       >
                         Edit & Resubmit
                       </button>
@@ -1099,8 +1102,9 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
 
       {/* Detail Modal Dialog */}
       {selectedProposalForModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+        <div className={MODAL_OVERLAY} onClick={() => setSelectedProposalForModal(null)}>
+          <ModalEffects onClose={() => setSelectedProposalForModal(null)} />
+          <div className={`${MODAL_PANEL} max-w-2xl`} role="dialog" aria-modal="true" aria-label={`Proposal details: ${selectedProposalForModal.project_name}`} onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 p-5 bg-slate-50/50">
               <div>
@@ -1112,7 +1116,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               <button
                 type="button"
                 onClick={() => setSelectedProposalForModal(null)}
-                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition"
+                aria-label="Close dialog"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1283,9 +1288,9 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               <button
                 type="button"
                 onClick={() => setSelectedProposalForModal(null)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition shadow"
+                className={buttonClass('secondary')}
               >
-                Close Details
+                Close
               </button>
             </div>
           </div>

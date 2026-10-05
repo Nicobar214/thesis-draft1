@@ -499,7 +499,7 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Portals Sign In</h4>
               <ul className="space-y-2 text-xs sm:text-sm">
-                <li><Link to="/farmer/login" className="group inline-block text-emerald-400 hover:text-emerald-300 font-bold transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">🌾 Farmer Sign In</span></Link></li>
+                <li><Link to="/farmer/login" className="group inline-block text-emerald-400 hover:text-emerald-300 font-bold transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Farmer Sign In</span></Link></li>
                 <li><Link to="/lgu/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">LGU Officer Sign In</span></Link></li>
                 <li><Link to="/field-engineer/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Field Engineer Sign In</span></Link></li>
                 <li><Link to="/contractor/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Contractor Sign In</span></Link></li>

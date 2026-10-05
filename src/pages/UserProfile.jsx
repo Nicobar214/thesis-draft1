@@ -3,6 +3,8 @@ import UserLayout from '../components/UserLayout';
 import Icons from '../components/Icons';
 import { supabase } from '../lib/supabase';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
+import { Modal } from '../components/ui/Modal';
+import { Button } from '../components/ui/Button';
 
 export default function UserProfile() {
   const [user, setUser] = useState(null);
@@ -548,37 +550,54 @@ export default function UserProfile() {
       </div>
 
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-4 flex items-center justify-center" onClick={() => setShowDeleteModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md border border-slate-200 shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-slate-900">Delete Account</h3>
-            <p className="text-sm text-slate-500 mt-2">Type DELETE to confirm account deletion.</p>
-            <input
-              type="text"
-              value={deleteConfirmText}
-              onChange={(e) => setDeleteConfirmText(e.target.value)}
-              className="mt-4 w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none"
-              placeholder="DELETE"
-            />
-            <div className="mt-5 flex justify-end gap-2">
-              <button
+        <Modal
+          size="sm"
+          role="alertdialog"
+          title="Delete account"
+          description="This permanently removes your account and cannot be undone."
+          dismissible={!deletingAccount}
+          closeOnBackdrop={false}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setDeleteConfirmText('');
+          }}
+          footer={(
+            <>
+              <Button
+                variant="secondary"
+                disabled={deletingAccount}
                 onClick={() => {
                   setShowDeleteModal(false);
                   setDeleteConfirmText('');
                 }}
-                className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
+                loading={deletingAccount}
+                disabled={deleteConfirmText !== 'DELETE'}
                 onClick={handleDeleteAccount}
-                disabled={deletingAccount || deleteConfirmText !== 'DELETE'}
-                className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-medium disabled:bg-red-300"
               >
-                {deletingAccount ? 'Deleting...' : 'Confirm Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+                Delete account
+              </Button>
+            </>
+          )}
+        >
+          <label htmlFor="delete-account-confirm" className="block text-sm font-medium text-slate-700">
+            Type <span className="font-mono font-semibold text-red-600">DELETE</span> to confirm
+          </label>
+          <input
+            id="delete-account-confirm"
+            data-autofocus
+            type="text"
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            autoComplete="off"
+            className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+            placeholder="DELETE"
+          />
+        </Modal>
       )}
     </UserLayout>
   );

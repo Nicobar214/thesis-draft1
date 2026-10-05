@@ -2,6 +2,8 @@ import { useRef } from 'react';
 import Icons from '../Icons';
 import Logo from '../Logo';
 import { resolutionTypeLabel, resolutionTypeMeaning } from '../../lib/publicReportStatus';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 
 function fmtDate(iso) {
   if (!iso) return '—';
@@ -33,8 +35,9 @@ export default function DAResolutionCertificate({
   const serialNo = `DA-RAED-6-${String(report.id || '').slice(0, 8).toUpperCase()}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
-      <div className="bg-white rounded-2xl border border-slate-300 shadow-2xl max-w-3xl w-full my-8 flex flex-col max-h-[90vh]">
+    <div className={`${MODAL_OVERLAY} overflow-y-auto`}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-3xl my-8`} role="dialog" aria-modal="true" aria-label="DA-RAED Resolution Certificate">
         {/* Modal Action Header (Non-printable) */}
         <header className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0 print:hidden">
           <div className="flex items-center gap-2">
@@ -49,14 +52,15 @@ export default function DAResolutionCertificate({
           <div className="flex items-center gap-3">
             <button
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-colors"
+              className={buttonClass('primary', 'sm')}
             >
               <Icons.Document />
               <span>Print / Save PDF</span>
             </button>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-700 transition-colors p-1"
+              aria-label="Close certificate"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
             >
               <Icons.X />
             </button>

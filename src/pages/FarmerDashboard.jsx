@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
+import { notify } from "../lib/toast";
 import "leaflet/dist/leaflet.css";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 
@@ -80,12 +81,8 @@ export default function FarmerDashboard() {
     remarks: "",
   });
 
-  const [notification, setNotification] = useState({ message: "", type: "" });
-
-  const showNotification = (message, type = "success") => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification({ message: "", type: "" }), 4000);
-  };
+  // Shared toast (see lib/toast.js); signature kept so call sites are unchanged.
+  const showNotification = notify;
 
   // Resolve the FMR project for a report and toggle its inline route map.
   // project_id on public_reports can be stored as a prefixed string (e.g.
@@ -385,18 +382,6 @@ export default function FarmerDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans pb-20 md:pb-6">
-      {/* Dynamic Notification Popup */}
-      {notification.message && (
-        <div
-          className={`fixed top-4 right-4 z-[9999] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg transition-all duration-300 transform scale-100 ${
-            notification.type === "error"
-              ? "bg-red-50 text-red-800 border border-red-200"
-              : "bg-emerald-50 text-emerald-800 border border-emerald-200"
-          }`}
-        >
-          <span className="text-xs sm:text-sm font-semibold">{notification.message}</span>
-        </div>
-      )}
 
       {/* Header Panel */}
       <header className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white shadow-md sticky top-0 z-40">

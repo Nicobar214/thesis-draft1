@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import { formatPercentage } from '../../lib/percentageFormat';
+import { buttonClass } from '../ui/Button';
 
 /* public_reports.project_id is TEXT holding values like "fmr-123", while
    progress_updates.fmr_project_id is a BIGINT. Bridge the two carefully and
@@ -178,7 +179,7 @@ export default function BillingHoldControl({ report, onChanged }) {
                       <button
                         onClick={() => applyHold(u, true)}
                         disabled={busyId === u.id}
-                        className="flex-1 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors disabled:opacity-60"
+                        className={buttonClass('warning', 'xs', 'flex-1')}
                       >
                         {busyId === u.id ? 'Working…' : 'Confirm hold'}
                       </button>
@@ -187,7 +188,7 @@ export default function BillingHoldControl({ report, onChanged }) {
                 ) : (
                   <button
                     onClick={() => { setReasonFor(u.id); setReason(''); setError(null); }}
-                    className="mt-2 w-full px-3 py-1.5 rounded-lg border border-amber-200 bg-white text-[11px] font-semibold text-amber-700 hover:bg-amber-50 transition-colors"
+                    className={buttonClass('secondary', 'xs', 'mt-2 w-full')}
                   >
                     Hold for verification
                   </button>

@@ -5,6 +5,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { supabaseLgu as supabase, supabaseAdmin } from '../lib/supabase';
+import { notify } from '../lib/toast';
+import { confirm } from '../lib/confirm';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../components/ui/Modal';
 import NotificationBell from '../components/NotificationBell';
 import LguRouteMap from '../components/lgu/LguRouteMap';
 import LguAnalyticsTab from '../components/lgu/LguAnalyticsTab';
@@ -205,6 +208,7 @@ export default function LguDashboard() {
   const [reports, setReports] = useState([]);
   const [projects, setProjects] = useState([]);
   const [routesByProjectId, setRoutesByProjectId] = useState({});
+  const [roadGaps, setRoadGaps] = useState([]);
   const [projectTranches, setProjectTranches] = useState([]);
   const [escalations, setEscalations] = useState([]);
   const [findings, setFindings] = useState([]);
@@ -459,10 +463,8 @@ export default function LguDashboard() {
     autoLinkedProjectIdRef.current = nextId || null;
   }, [rankedSuggestedProjects, beneficiaryForm.barangay, beneficiaryForm.municipality]);
 
-  // Transient toast telling the officer how many roads were found for the
-  // selected barangay, so they don't have to notice the map/legend themselves.
-  const [roadSuggestionToast, setRoadSuggestionToast] = useState(null);
-
+  // Toast telling the officer how many roads were found for the selected
+  // barangay, so they don't have to notice the map/legend themselves.
   useEffect(() => {
     if (!beneficiaryForm.barangay || !beneficiaryForm.municipality) return undefined;
 
@@ -484,9 +486,8 @@ export default function LguDashboard() {
       text = `No FMR road project found near ${beneficiaryForm.barangay}, ${beneficiaryForm.municipality} — link one manually if needed.`;
     }
 
-    setRoadSuggestionToast({ text, tone: count > 0 ? 'success' : 'warn' });
-    const timer = setTimeout(() => setRoadSuggestionToast(null), 4500);
-    return () => clearTimeout(timer);
+    notify(text, count > 0 ? 'success' : 'warning');
+    return undefined;
   }, [beneficiaryForm.barangay, beneficiaryForm.municipality, suggestedProjects, suggestedProjectCoords, rankedSuggestedProjects]);
 
   // Memoized so ModalMapController's bounds-fit effect (below) only re-runs
@@ -617,9 +618,8 @@ export default function LguDashboard() {
     return filteredBeneficiaries.slice(start, start + beneficiaryRowsPerPage);
   }, [filteredBeneficiaries, beneficiaryPage]);
 
-  const showNotification = (message) => {
-    window.alert(message);
-  };
+  // Shared toast (see lib/toast.js); previously a blocking window.alert.
+  const showNotification = notify;
 
   const handleLguMapSearchSubmit = async () => {
     const query = lguMapSearch.trim();
@@ -635,7 +635,7 @@ export default function LguDashboard() {
       setLguMapCenter([Number(matchedProject.start_latitude), Number(matchedProject.start_longitude)]);
       setLguMapZoom(15);
       setLguMapSearchMarker(null); // Clear search marker since project has its own start icon
-      showNotification(`Map focused on project: ${matchedProject.project_name}`);
+      showNotification(`Map focused on project: ${matchedProject.project_name}`, 'info');
       return;
     }
 
@@ -650,13 +650,13 @@ export default function LguDashboard() {
         setLguMapCenter(coords);
         setLguMapZoom(14);
         setLguMapSearchMarker(coords); // Set custom search marker!
-        showNotification(`Map focused on location: ${results[0].display_name.split(',')[0]}`);
+        showNotification(`Map focused on location: ${results[0].display_name.split(',')[0]}`, 'info');
       } else {
-        showNotification('No matching project or location found.');
+        showNotification('No matching project or location found.', 'warning');
       }
     } catch (err) {
       console.error(err);
-      showNotification('Error performing map search.');
+      showNotification('Error performing map search.', 'error');
     }
   };
 
@@ -820,9 +820,15 @@ export default function LguDashboard() {
           return;
         }
 
+        // Reject rather than silently strip characters: the farmer types the
+        // username exactly as given to them, so what's stored must match it.
         const normalizedUsername = normalizeUsername(beneficiaryForm.accountUsername);
-        if (normalizedUsername.length < 3) {
-          showNotification('Username must be at least 3 characters (letters, numbers, underscore only).', 'error');
+        if (normalizedUsername !== beneficiaryForm.accountUsername.trim().toLowerCase()) {
+          showNotification('Username can only contain letters, numbers, and underscores (no spaces, "@", or ".").', 'error');
+          return;
+        }
+        if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+          showNotification('Username must be 3-30 characters (letters, numbers, underscore only).', 'error');
           return;
         }
 
@@ -851,9 +857,13 @@ export default function LguDashboard() {
             email: syntheticEmail,
             password: beneficiaryForm.accountPassword,
             options: {
+              // handle_new_user copies these into public.profiles; the LGU
+              // session can't write another user's profile row under RLS.
               data: {
                 role: 'farmer',
-                full_name: `${beneficiaryForm.firstName.trim()} ${beneficiaryForm.lastName.trim()}`
+                username: normalizedUsername,
+                full_name: `${beneficiaryForm.firstName.trim()} ${beneficiaryForm.lastName.trim()}`,
+                phone: beneficiaryForm.contactNumber
               }
             }
           });
@@ -875,19 +885,6 @@ export default function LguDashboard() {
 
           if (signUpData?.user) {
             userUuid = signUpData.user.id;
-
-            const { error: profErr } = await supabase.from('profiles').insert({
-              id: userUuid,
-              email: syntheticEmail,
-              username: normalizedUsername,
-              full_name: `${beneficiaryForm.firstName.trim()} ${beneficiaryForm.lastName.trim()}`,
-              role: 'farmer',
-              phone: beneficiaryForm.contactNumber
-            });
-
-            if (profErr) {
-              console.warn('Profile direct insert error:', profErr);
-            }
           }
         } catch (signUpErr) {
           showNotification(`Auth creation failed: ${signUpErr.message}`, 'error');
@@ -950,7 +947,7 @@ export default function LguDashboard() {
         escalationsQuery = escalationsQuery.eq('municipality', municipalityScope);
       }
 
-      const [reportsRes, projectsRes, escalationsRes, routesRes, findingsRes, marketsRes, tranchesRes] = await Promise.all([
+      const [reportsRes, projectsRes, escalationsRes, routesRes, findingsRes, marketsRes, tranchesRes, gapsRes] = await Promise.all([
         reportsQuery,
         projectsQuery,
         escalationsQuery,
@@ -958,6 +955,7 @@ export default function LguDashboard() {
         supabase.from('public_report_field_findings').select('*').order('submitted_at', { ascending: false }),
         supabase.from('market_locations').select('*').order('market_name', { ascending: true }),
         supabase.from('project_tranches').select('*').order('tranche_order', { ascending: true }),
+        supabase.from('road_network_gaps').select('*').order('gap_km', { ascending: false }),
       ]);
 
       setReports(reportsRes.data || []);
@@ -966,6 +964,7 @@ export default function LguDashboard() {
       setFindings(findingsRes.data || []);
       setMarkets(marketsRes.data || []);
       setProjectTranches(tranchesRes.data || []);
+      setRoadGaps(gapsRes.data || []);
 
       const nextRoutes = {};
       (routesRes.data || []).forEach((row) => {
@@ -1140,17 +1139,6 @@ export default function LguDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 lg:flex">
-      {roadSuggestionToast && (
-        <div
-          className={`fixed top-4 right-4 z-[9999] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border max-w-xs transition-all duration-300 ${
-            roadSuggestionToast.tone === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-amber-50 text-amber-800 border-amber-200'
-          }`}
-        >
-          <span className="text-xs sm:text-sm font-semibold">{roadSuggestionToast.text}</span>
-        </div>
-      )}
       <aside className={`fixed inset-y-0 left-0 z-40 border-r border-slate-800 bg-slate-900 text-white shadow-2xl transition-all duration-300 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       } lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-80'}`}>
@@ -1479,6 +1467,7 @@ export default function LguDashboard() {
                     mapCenter={lguMapCenter}
                     mapZoom={lguMapZoom}
                     searchMarker={lguMapSearchMarker}
+                    roadGaps={roadGaps}
                   />
                 </div>
 
@@ -1754,11 +1743,11 @@ export default function LguDashboard() {
                                   farmLongitude: lon
                                 }));
                               } else {
-                                alert('Location not found. Try adding the municipality name.');
+                                notify('Location not found. Try adding the municipality name.');
                               }
                             } catch (err) {
                               console.error(err);
-                              alert('Error searching location.');
+                              notify('Error searching location.');
                             }
                           }}
                           className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"
@@ -1910,6 +1899,8 @@ export default function LguDashboard() {
                                 value={beneficiaryForm.accountUsername}
                                 onChange={(e) => setBeneficiaryForm((current) => ({ ...current, accountUsername: e.target.value }))}
                                 placeholder="e.g. juan_delacruz"
+                                pattern="[A-Za-z0-9_]{3,30}"
+                                title="3-30 characters: letters, numbers, and underscores only"
                                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
                               />
                             </div>
@@ -2181,7 +2172,13 @@ export default function LguDashboard() {
                                         <button
                                           type="button"
                                           onClick={async () => {
-                                            if (confirm(`Are you sure you want to delete the profile of ${row.fullName}?`)) {
+                                            const confirmed = await confirm({
+                                              title: 'Delete farmer profile?',
+                                              message: `The profile of ${row.fullName} will be permanently removed. This cannot be undone.`,
+                                              confirmLabel: 'Delete profile',
+                                              tone: 'danger',
+                                            });
+                                            if (confirmed) {
                                               const { error } = await supabase.from('farmer_beneficiaries').delete().eq('id', row.id);
                                               if (error) {
                                                 showNotification(`Error: ${error.message}`);
@@ -2296,8 +2293,9 @@ export default function LguDashboard() {
 
             {/* Farmer Profile Modal */}
             {selectedFarmerForModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-                <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-slide-up">
+              <div className={MODAL_OVERLAY} onClick={() => setSelectedFarmerForModal(null)}>
+                <ModalEffects onClose={() => setSelectedFarmerForModal(null)} />
+                <div className={`${MODAL_PANEL} relative max-w-4xl`} role="dialog" aria-modal="true" aria-label="Farmer profile details" onClick={(e) => e.stopPropagation()}>
                   {/* Modal Header */}
                   <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/80">
                     <div className="flex items-center gap-3">
@@ -2320,7 +2318,8 @@ export default function LguDashboard() {
                       <button
                         type="button"
                         onClick={() => setSelectedFarmerForModal(null)}
-                        className="rounded-full p-1.5 hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 transition-colors"
+                        aria-label="Close dialog"
+                        className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-200/80 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

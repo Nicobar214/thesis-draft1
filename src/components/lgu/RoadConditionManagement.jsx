@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { confirm } from '../../lib/confirm';
 
 const CONDITION_OPTIONS = ['Good', 'Fair', 'Poor', 'Critical'];
 
@@ -220,7 +221,12 @@ export default function RoadConditionManagement({
   };
 
   const handleDelete = async (record) => {
-    const confirmed = window.confirm(`Delete road condition record for ${record.roadName}?`);
+    const confirmed = await confirm({
+      title: 'Delete road condition record?',
+      message: `The record for "${record.roadName}" will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete record',
+      tone: 'danger',
+    });
     if (!confirmed) return;
 
     if (typeof onDeleteRecord === 'function') {

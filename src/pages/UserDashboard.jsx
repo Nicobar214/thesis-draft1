@@ -99,6 +99,56 @@ function StatSkeleton() {
   );
 }
 
+function NearbyProjectSkeleton() {
+  return (
+    <div className="w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 animate-pulse">
+      <div className="flex items-start justify-between gap-2">
+        <div className="h-4 w-2/3 bg-zinc-200 rounded" />
+        <div className="h-4 w-14 bg-zinc-200 rounded-full" />
+      </div>
+      <div className="h-3 w-1/2 bg-zinc-200 rounded" />
+      <div className="space-y-1.5">
+        <div className="h-1.5 bg-zinc-200 rounded-full" />
+        <div className="flex justify-between">
+          <div className="h-3 w-20 bg-zinc-200 rounded" />
+          <div className="h-3 w-14 bg-zinc-200 rounded" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DonutSkeleton() {
+  return (
+    <div className="h-full grid place-items-center animate-pulse" aria-hidden="true">
+      <div className="size-36 rounded-full border-[18px] border-zinc-200" />
+    </div>
+  );
+}
+
+function ActivitySkeleton() {
+  return (
+    <div className="px-5 py-3.5 flex items-start gap-3 animate-pulse">
+      <div className="size-9 bg-zinc-200 rounded-lg shrink-0" />
+      <div className="flex-1 space-y-2 pt-0.5">
+        <div className="h-3.5 w-3/4 bg-zinc-200 rounded" />
+        <div className="h-3 w-24 bg-zinc-200 rounded" />
+      </div>
+    </div>
+  );
+}
+
+function RankingRowSkeleton() {
+  return (
+    <tr className="animate-pulse">
+      <td className="px-5 py-3"><div className="h-4 w-32 bg-zinc-200 rounded" /></td>
+      <td className="px-5 py-3"><div className="h-4 w-8 bg-zinc-200 rounded" /></td>
+      <td className="px-5 py-3"><div className="h-4 w-8 bg-zinc-200 rounded" /></td>
+      <td className="px-5 py-3"><div className="h-4 w-12 bg-zinc-200 rounded" /></td>
+    </tr>
+  );
+}
+
 function ProjectSkeleton() {
   return (
     <div className="p-4 animate-pulse">
@@ -490,7 +540,13 @@ export default function UserDashboard() {
               )}
             </header>
 
-            {nearbyProjects.length === 0 ? (
+            {loading ? (
+              <div className="p-4 overflow-x-auto">
+                <div className="flex gap-4 min-w-max">
+                  {Array.from({ length: 3 }).map((_, i) => <NearbyProjectSkeleton key={i} />)}
+                </div>
+              </div>
+            ) : nearbyProjects.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-xs sm:text-sm">No nearby FMR projects found for {userMunicipality} yet.</div>
             ) : (
               <div className="p-4 overflow-x-auto">
@@ -543,6 +599,7 @@ export default function UserDashboard() {
             </div>
 
             <div className="mt-4 h-48 relative">
+              {loading ? <DonutSkeleton /> : (<>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={donutData} dataKey="value" innerRadius={50} outerRadius={72} paddingAngle={2}>
@@ -557,10 +614,15 @@ export default function UserDashboard() {
                 <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Total FMRs</p>
                 <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
               </div>
+              </>)}
             </div>
 
             <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-semibold">
-              {donutData.map((item) => (
+              {loading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-8 bg-zinc-200 rounded-lg animate-pulse" />
+                ))
+              ) : donutData.map((item) => (
                 <div key={item.name} className="flex items-center gap-1.5 text-slate-700 bg-slate-50 p-1.5 rounded-lg border border-slate-100 justify-center">
                   <span className="inline-block size-2 rounded-full" style={{ backgroundColor: item.color }} />
                   <span>{item.name}</span>
@@ -639,7 +701,9 @@ export default function UserDashboard() {
             </header>
 
             <div className="divide-y divide-slate-100">
-              {activityFeed.length === 0 ? (
+              {loading ? (
+                Array.from({ length: 4 }).map((_, i) => <ActivitySkeleton key={i} />)
+              ) : activityFeed.length === 0 ? (
                 <div className="p-6 text-xs text-slate-500">No recent activity logged yet.</div>
               ) : (
                 visibleRecentActivity.map((item) => (
@@ -710,7 +774,8 @@ export default function UserDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {municipalityProgressRows.map((row) => {
+                  {loading && Array.from({ length: 5 }).map((_, i) => <RankingRowSkeleton key={i} />)}
+                  {!loading && municipalityProgressRows.map((row) => {
                     const isUserMunicipality = userMunicipality && row.municipality.toLowerCase() === userMunicipality.toLowerCase();
                     return (
                       <tr key={row.municipality} className={isUserMunicipality ? 'bg-emerald-50/60 font-semibold' : 'hover:bg-slate-50/60 transition-colors'}>

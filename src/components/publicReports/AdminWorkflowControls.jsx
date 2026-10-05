@@ -10,6 +10,7 @@ import {
 } from '../../lib/publicReportTriage';
 import { RESOLUTION_TYPE_LABELS, resolutionTypeMeaning } from '../../lib/publicReportStatus';
 import BillingHoldControl from './BillingHoldControl';
+import { buttonClass } from '../ui/Button';
 import RepairActionPanel from './RepairActionPanel';
 
 /* resolve_public_report validates this list server-side. The labels and the
@@ -189,7 +190,7 @@ export default function AdminWorkflowControls({
           <button
             type="button"
             onClick={() => setShowUnassign((v) => !v)}
-            className="shrink-0 px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+            className={buttonClass('secondary', 'xs', 'shrink-0')}
           >
             Replace
           </button>
@@ -228,7 +229,7 @@ export default function AdminWorkflowControls({
             type="button"
             onClick={() => saveDeadline(deadline)}
             disabled={savingDate}
-            className="px-2.5 py-1 rounded-md bg-slate-900 text-white text-[11px] font-semibold disabled:opacity-50"
+            className={buttonClass('primary', 'xs')}
           >
             {savingDate ? 'Saving...' : 'Save'}
           </button>
@@ -252,7 +253,7 @@ export default function AdminWorkflowControls({
             <button
               type="button"
               onClick={() => { setShowUnassign(false); setUnassignReason(''); }}
-              className="py-1.5 rounded-md text-[11px] font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              className={buttonClass('secondary', 'xs')}
             >
               Cancel
             </button>
@@ -260,7 +261,7 @@ export default function AdminWorkflowControls({
               type="button"
               onClick={handleUnassign}
               disabled={!unassignReason.trim()}
-              className="py-1.5 rounded-md text-[11px] font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
+              className={buttonClass('warning', 'xs')}
             >
               Remove engineer
             </button>
@@ -317,7 +318,7 @@ export default function AdminWorkflowControls({
             <button
               type="button"
               onClick={() => setShowResolveForm(true)}
-              className="w-full py-2.5 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 transition-colors"
+              className={buttonClass('primary', 'md', 'w-full')}
             >
               Resolve Report
             </button>
@@ -359,7 +360,7 @@ export default function AdminWorkflowControls({
                   type="button"
                   onClick={() => setShowResolveForm(false)}
                   disabled={saving}
-                  className="py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className={buttonClass('secondary', 'sm')}
                 >
                   Cancel
                 </button>
@@ -367,7 +368,7 @@ export default function AdminWorkflowControls({
                   type="button"
                   onClick={handleResolve}
                   disabled={saving || !resolutionSummary.trim()}
-                  className="py-2 rounded-lg text-xs font-semibold bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
+                  className={buttonClass('primary', 'sm')}
                 >
                   {saving ? 'Saving...' : 'Confirm Resolution'}
                 </button>
@@ -454,7 +455,7 @@ export default function AdminWorkflowControls({
                   setDismissReason(triage?.suggestedDismissalReason || '');
                   setShowDismiss(true);
                 }}
-                className="w-full py-2.5 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors"
+                className={buttonClass('danger', 'md', 'w-full')}
               >
                 Close Report as Not Credible
               </button>
@@ -483,7 +484,7 @@ export default function AdminWorkflowControls({
                     type="button"
                     onClick={handleAssign}
                     disabled={!selectedEngineerId || assigningEngineer}
-                    className="w-full py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold disabled:opacity-50 hover:bg-slate-800"
+                    className={buttonClass('primary', 'sm', 'w-full')}
                   >
                     {assigningEngineer ? 'Assigning...' : 'Assign & Dispatch'}
                   </button>
@@ -507,7 +508,7 @@ export default function AdminWorkflowControls({
                   type="button"
                   onClick={() => setShowDismiss(false)}
                   disabled={dismissing}
-                  className="py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className={buttonClass('secondary', 'sm')}
                 >
                   Cancel
                 </button>
@@ -515,7 +516,7 @@ export default function AdminWorkflowControls({
                   type="button"
                   onClick={handleDismiss}
                   disabled={dismissing || !dismissReason.trim()}
-                  className="py-2 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  className={buttonClass('danger', 'sm')}
                 >
                   {dismissing ? 'Closing...' : 'Confirm Close'}
                 </button>
@@ -568,7 +569,7 @@ export default function AdminWorkflowControls({
             type="button"
             onClick={handleAssign}
             disabled={!selectedEngineerId || assigningEngineer}
-            className="w-full py-2.5 rounded-lg bg-teal-700 text-white text-sm font-semibold hover:bg-teal-800 disabled:opacity-50 transition-colors"
+            className={buttonClass('primary', 'md', 'w-full')}
           >
             {assigningEngineer ? 'Assigning...' : 'Assign & Dispatch'}
           </button>
@@ -594,7 +595,7 @@ export default function AdminWorkflowControls({
                   type="button"
                   onClick={handleDismiss}
                   disabled={dismissing || !dismissReason.trim()}
-                  className="w-full py-2 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  className={buttonClass('danger', 'sm', 'w-full')}
                 >
                   {dismissing ? 'Closing...' : 'Close Report'}
                 </button>

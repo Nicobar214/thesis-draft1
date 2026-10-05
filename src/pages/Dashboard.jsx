@@ -4,6 +4,10 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import { supabaseAdminPortal as supabase, supabaseAdmin } from '../lib/supabase';
 import { formatPercentage } from '../lib/percentageFormat';
+import { notify } from '../lib/toast';
+import { MODAL_OVERLAY, MODAL_PANEL, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
+import ConfirmModal from '../components/ui/ConfirmModal';
+import { buttonClass } from '../components/ui/Button';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet.heat';
@@ -53,7 +57,9 @@ import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectSchedulingTab from '../components/admin/ProjectSchedulingTab';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
-import { computePriorityScores } from '../lib/priorityScoring';
+import { computeRoadGapPriorityScores } from '../lib/priorityScoring';
+import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
+import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
 import Logo from '../components/Logo';
@@ -712,7 +718,6 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState('projectName');
   const [sortDirection, setSortDirection] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [notification, setNotification] = useState(null);
   const projectsPerPage = 5;
 
   // Public reports state (admin view)
@@ -766,6 +771,8 @@ export default function Dashboard() {
   const [adminMapSelectedProject, setAdminMapSelectedProject] = useState(null);
   const [adminMapHoveredProjectId, setAdminMapHoveredProjectId] = useState(null);
   const [routeByProjectId, setRouteByProjectId] = useState({});
+  const [roadGaps, setRoadGaps] = useState([]);
+  const [adminMapShowGaps, setAdminMapShowGaps] = useState(true);
   const [reportCountByProjectId, setReportCountByProjectId] = useState({});
   // Raw unresolved report locations (with created_at) rather than pre-baked heat
   // points, so the heatmap can be re-filtered by time interval without refetching.
@@ -1069,11 +1076,8 @@ export default function Dashboard() {
 
   const [formData, setFormData] = useState(emptyForm);
 
-  // Show notification helper
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
+  // Shared toast (see lib/toast.js); signature kept so call sites are unchanged.
+  const showNotification = notify;
 
   const normalizeFarmerBeneficiaryRow = useCallback((row) => {
     if (!row) return null;
@@ -1552,6 +1556,25 @@ export default function Dashboard() {
       setRouteByProjectId(next);
     } catch {
       setRouteByProjectId({});
+    }
+  }, []);
+
+  // Road-network gaps: the surveyed unpaved remainder of each barangay road.
+  // Ordered longest-gap-first so any consumer that slices the list without
+  // scoring still surfaces the most significant ones.
+  const fetchRoadGaps = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('road_network_gaps')
+        .select('*')
+        .order('gap_km', { ascending: false });
+      if (error) {
+        setRoadGaps([]);
+        return;
+      }
+      setRoadGaps(data || []);
+    } catch {
+      setRoadGaps([]);
     }
   }, []);
 
@@ -2651,6 +2674,7 @@ export default function Dashboard() {
       fetchFarmerBeneficiaries();
       fetchMarkets();
       fetchProjectRoutes();
+      fetchRoadGaps();
       fetchMapReportData();
       fetchFieldEngineers();
       fetchContractors();
@@ -2681,6 +2705,7 @@ export default function Dashboard() {
       .channel('admin-fmr-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => { fetchFmrProjects(); fetchMapReportData(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, () => fetchProjectRoutes())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'road_network_gaps' }, () => fetchRoadGaps())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, () => fetchProjectTranches())
       .subscribe();
 
@@ -2723,7 +2748,7 @@ export default function Dashboard() {
       supabase.removeChannel(progressUpdatesChannel);
       supabase.removeChannel(lguProposalsChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectTranches, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectTranches, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchRoadGaps, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2846,9 +2871,14 @@ export default function Dashboard() {
     () => countAdminBuckets(publicReports).actionNeeded,
     [publicReports]
   );
+  // Module 1 (road network gaps) is the active module -- PriorityTab labels it so --
+  // but these headline cards used to call computePriorityScores, the agri module,
+  // whose crop figures are the hardcoded SIMULATED_CROP_DATA table. The dashboard
+  // was therefore ranking on simulated data while the Priorities tab ranked on
+  // surveyed gaps, and the two disagreed.
   const topPriorityProjects = useMemo(
-    () => computePriorityScores(fmrProjects, publicReports, escalations).slice(0, 3),
-    [fmrProjects, publicReports, escalations]
+    () => computeRoadGapPriorityScores(roadGaps, fmrProjects, publicReports).slice(0, 3),
+    [roadGaps, fmrProjects, publicReports]
   );
   const priorityRankById = useMemo(() => {
     const map = new Map();
@@ -3304,7 +3334,7 @@ export default function Dashboard() {
       await fetchProjects();
       setShowDeleteModal(false);
       setSelectedProject(null);
-      showNotification('Project deleted successfully!', 'error');
+      showNotification('Project deleted successfully!', 'info');
     } catch (err) {
       console.error('Failed to delete project:', err.message);
       showNotification(`Failed to delete project: ${err.message}`, 'error');
@@ -3590,7 +3620,7 @@ export default function Dashboard() {
       await fetchFmrProjects();
       setShowFmrDeleteModal(false);
       setSelectedFmrProject(null);
-      showNotification('FMR project deleted successfully!', 'error');
+      showNotification('FMR project deleted successfully!', 'info');
     } catch (err) {
       console.error('Failed to delete FMR project:', err.message);
       showNotification(`Failed to delete FMR project: ${err.message}`, 'error');
@@ -3659,13 +3689,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen flex bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Notification */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-lg shadow-lg text-white font-medium transition-all ${notification.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
-          }`}>
-          {notification.message}
-        </div>
-      )}
 
       {/* Sidebar Toggle Button (Mobile) */}
       <button
@@ -4577,25 +4600,19 @@ export default function Dashboard() {
                                   </Tooltip>
                                 </Polyline>
 
-                                {routePoints[0] && (
-                                  <CircleMarker
-                                    center={routePoints[0]}
-                                    radius={4}
-                                    pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
-                                  />
-                                )}
-
-                                {(routePoints[routePoints.length - 1] || route.endPoint) && (
-                                  <Marker
-                                    position={routePoints[routePoints.length - 1] || route.endPoint}
-                                    icon={L.divIcon({
-                                      className: 'route-end-marker-admin',
-                                      html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
-                                      iconSize: [10, 10],
-                                      iconAnchor: [5, 5],
-                                    })}
-                                  />
-                                )}
+                                {/* Labelled S/E pins plus a mid-route direction arrow, replacing
+                                    two same-sized coloured dots that did not say which end was which. */}
+                                <RouteEndpointMarkers
+                                  project={project}
+                                  routeData={{
+                                    ...route,
+                                    startPoint: routePoints[0] || route.startPoint,
+                                    endPoint: routePoints[routePoints.length - 1] || route.endPoint,
+                                  }}
+                                  displayPoints={displayRoutePoints}
+                                  isFocused={isFocused}
+                                  lineColor={theme.line}
+                                />
                               </>
                             )}
 
@@ -5435,6 +5452,9 @@ export default function Dashboard() {
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
                       <MapSearchController searchCoords={mainMapGeopSearchCoords} />
+
+                      {/* Unpaved gaps beyond each funded route, from public.road_network_gaps */}
+                      <GapSegmentLayer gaps={roadGaps} visible={adminMapShowGaps} />
                       {mainMapGeopSearchCoords && (
                         <Marker position={mainMapGeopSearchCoords}>
                           <Popup>
@@ -5529,25 +5549,19 @@ export default function Dashboard() {
                                   </Popup>
                                 </Polyline>
 
-                                {routePoints[0] && (
-                                  <CircleMarker
-                                    center={routePoints[0]}
-                                    radius={4}
-                                    pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
-                                  />
-                                )}
-
-                                {(routePoints[routePoints.length - 1] || route.endPoint) && (
-                                  <Marker
-                                    position={routePoints[routePoints.length - 1] || route.endPoint}
-                                    icon={L.divIcon({
-                                      className: 'route-end-marker-admin',
-                                      html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
-                                      iconSize: [10, 10],
-                                      iconAnchor: [5, 5],
-                                    })}
-                                  />
-                                )}
+                                {/* Labelled S/E pins plus a mid-route direction arrow, replacing
+                                    two same-sized coloured dots that did not say which end was which. */}
+                                <RouteEndpointMarkers
+                                  project={project}
+                                  routeData={{
+                                    ...route,
+                                    startPoint: routePoints[0] || route.startPoint,
+                                    endPoint: routePoints[routePoints.length - 1] || route.endPoint,
+                                  }}
+                                  displayPoints={displayRoutePoints}
+                                  isFocused={isFocused}
+                                  lineColor={theme.line}
+                                />
                               </>
                             )}
 
@@ -5782,7 +5796,30 @@ export default function Dashboard() {
                           <span>Centroid Fallback (No GPS)</span>
                         </div>
                       </div>
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold grid place-items-center shrink-0">S</span>
+                          <span>Route start</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold grid place-items-center shrink-0">E</span>
+                          <span>Route end</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 border-t-[3px] border-dashed border-red-500 inline-block shrink-0" />
+                          <span>Unpaved road gap</span>
+                        </div>
+                      </div>
                       <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={adminMapShowGaps}
+                          onChange={(e) => setAdminMapShowGaps(e.target.checked)}
+                          className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                        />
+                        Show Road Gaps ({roadGaps.length})
+                      </label>
+                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
                         <input
                           type="checkbox"
                           checked={adminMapShowHeatmap}
@@ -6747,6 +6784,7 @@ export default function Dashboard() {
           {activeTab === 'priorities' && (
             <PriorityTab
               projects={fmrProjects}
+              roadGaps={roadGaps}
               reports={publicReports}
               escalations={escalations}
               onViewReports={(project) => {
@@ -7851,30 +7889,31 @@ export default function Dashboard() {
                   const credibility = triage.credibility;
 
                   return (
-                    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-200" onClick={() => setSelectedPublicReport(null)}>
-                      <div className="bg-white rounded-xl shadow-xl w-[98vw] lg:w-[90vw] max-w-7xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200" onClick={e => e.stopPropagation()}>
+                    <div className={MODAL_OVERLAY} onClick={() => setSelectedPublicReport(null)}>
+                      <ModalEffects onClose={() => setSelectedPublicReport(null)} />
+                      <div className={`${MODAL_PANEL} max-w-7xl`} role="dialog" aria-modal="true" aria-label="Public road damage case file" onClick={e => e.stopPropagation()}>
 
                         {/* Top Government Case Header */}
-                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-700">
+                        <div className="px-6 py-4 bg-white text-slate-900 flex items-center justify-between shrink-0 border-b border-slate-200">
                           <div className="flex items-center gap-3.5">
-                            <div className="size-11 bg-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center border border-emerald-500/30 shadow-inner">
+                            <div className="size-11 bg-teal-50 text-teal-700 rounded-xl flex items-center justify-center border border-teal-100">
                               <Icons.Road />
                             </div>
                             <div>
                               <div className="flex items-center gap-2.5 flex-wrap">
-                                <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">Public Road Damage Case File</h3>
-                                <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 font-mono border border-emerald-800/60 font-bold">
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Public Road Damage Case File</h3>
+                                <span className="text-[11px] px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono border border-slate-200 font-bold">
                                   REF #{selectedPublicReport.id.slice(0, 8).toUpperCase()}
                                 </span>
                                 {statusBadge(selectedPublicReport.status)}
                                 {verifyBadge(selectedPublicReport.verification)}
                               </div>
-                              <p className="text-xs text-slate-300 font-medium mt-0.5">
+                              <p className="text-xs text-slate-500 font-medium mt-0.5">
                                 DA RAED Region VI &middot; {selectedPublicReport.project_name || 'General Road Sector Area'}
                               </p>
                             </div>
                           </div>
-                          <button onClick={() => setSelectedPublicReport(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                          <button onClick={() => setSelectedPublicReport(null)} aria-label="Close dialog" className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                             <Icons.X />
                           </button>
                         </div>
@@ -8063,18 +8102,18 @@ export default function Dashboard() {
                                   <div className="space-y-2">
                                     <div className="grid grid-cols-2 gap-2">
                                       <button
-                                        onClick={() => validateFieldFinding(selectedPublicReport.id)}
-                                        disabled={findingActionSaving}
-                                        className="py-2 rounded-lg text-xs font-bold border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 transition-all"
-                                      >
-                                        Validate Finding
-                                      </button>
-                                      <button
                                         onClick={() => setShowRejectReason((v) => !v)}
                                         disabled={findingActionSaving}
-                                        className="py-2 rounded-lg text-xs font-bold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60 transition-all"
+                                        className={buttonClass('dangerOutline', 'sm')}
                                       >
                                         Reject & Send Back
+                                      </button>
+                                      <button
+                                        onClick={() => validateFieldFinding(selectedPublicReport.id)}
+                                        disabled={findingActionSaving}
+                                        className={buttonClass('primary', 'sm')}
+                                      >
+                                        Validate Finding
                                       </button>
                                     </div>
                                     {showRejectReason && (
@@ -8089,7 +8128,7 @@ export default function Dashboard() {
                                         <button
                                           onClick={() => rejectFieldFinding(selectedPublicReport.id, rejectReasonDraft)}
                                           disabled={findingActionSaving || !rejectReasonDraft.trim()}
-                                          className="w-full py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-all"
+                                          className={buttonClass('danger', 'sm', 'w-full')}
                                         >
                                           Confirm Rejection
                                         </button>
@@ -8178,7 +8217,7 @@ export default function Dashboard() {
                                 <button
                                   onClick={saveAdminPrivateNote}
                                   disabled={adminPrivateNoteSaving || !adminUserId}
-                                  className="px-3.5 py-1.5 rounded-md bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 disabled:opacity-50"
+                                  className={buttonClass('primary', 'sm')}
                                 >
                                   {adminPrivateNoteSaving ? 'Saving...' : 'Save Note'}
                                 </button>
@@ -9233,14 +9272,16 @@ export default function Dashboard() {
 
       {/* Add Project Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className={MODAL_OVERLAY}>
+          {/* Esc is off for data-entry forms so a stray key never discards typed work; use Cancel. */}
+          <ModalEffects onClose={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} closeOnEscape={false} />
+          <div className={`${MODAL_PANEL} max-w-4xl`} role="dialog" aria-modal="true" aria-label="New road project">
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">New Road Project</h2>
                 <p className="text-sm text-slate-500 mt-1">Create a new farm-to-market road project</p>
               </div>
-              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} aria-label="Close dialog" className="rounded-xl p-2.5 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -9660,13 +9701,13 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
+              <button type="button" onClick={() => { setShowAddModal(false); setNewProjectContractorId(''); setNewProjectRouteWaypoints([]); setNewProjectRouteWaypointsOpen(false); setPendingProposalLink(null); }} className={buttonClass('secondary')}>Cancel</button>
               <button
                 type="submit"
                 onClick={handleAddProject}
                 disabled={!newProjectContractorId}
                 title={!newProjectContractorId ? 'Select a contractor before creating this project.' : 'Create project'}
-                className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                className={buttonClass('primary')}
               >
                 Create Project
               </button>
@@ -9677,14 +9718,16 @@ export default function Dashboard() {
 
       {/* Edit Project Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className={MODAL_OVERLAY}>
+          {/* Esc is off for data-entry forms so a stray key never discards typed work; use Cancel. */}
+          <ModalEffects onClose={() => { setShowEditModal(false); setSelectedProject(null); }} closeOnEscape={false} />
+          <div className={`${MODAL_PANEL} max-w-4xl`} role="dialog" aria-modal="true" aria-label="Edit project">
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Edit Project</h2>
                 <p className="text-sm text-slate-500 mt-1">{selectedProject?.projectCode}</p>
               </div>
-              <button onClick={() => { setShowEditModal(false); setSelectedProject(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowEditModal(false); setSelectedProject(null); }} aria-label="Close dialog" className="rounded-xl p-2.5 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -9768,8 +9811,8 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowEditModal(false); setSelectedProject(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
-              <button type="submit" onClick={handleEditProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Save Changes</button>
+              <button type="button" onClick={() => { setShowEditModal(false); setSelectedProject(null); }} className={buttonClass('secondary')}>Cancel</button>
+              <button type="submit" onClick={handleEditProject} className={buttonClass('primary')}>Save Changes</button>
             </div>
           </div>
         </div>
@@ -9777,47 +9820,27 @@ export default function Dashboard() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-            <div className="text-center">
-              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ width: '72px', height: '72px' }}>
-                <svg className="w-9 h-9 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">Delete Project?</h3>
-              <p className="text-slate-500 mb-8">
-                Are you sure you want to delete <span className="font-semibold text-slate-700">{selectedProject?.projectName}</span>? This action cannot be undone.
-              </p>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => { setShowDeleteModal(false); setSelectedProject(null); }}
-                  className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteProject}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
-                >
-                  Delete Project
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          tone="danger"
+          title="Delete project?"
+          message={<><span className="font-semibold text-slate-800">{selectedProject?.projectName}</span> will be permanently deleted. This cannot be undone.</>}
+          confirmLabel="Delete project"
+          onCancel={() => { setShowDeleteModal(false); setSelectedProject(null); }}
+          onConfirm={handleDeleteProject}
+        />
       )}
 
       {/* Assign Contractor Modal */}
       {assignContractorModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+        <div className={MODAL_OVERLAY} onClick={() => setAssignContractorModal(null)}>
+          <ModalEffects onClose={() => setAssignContractorModal(null)} />
+          <div className={`${MODAL_PANEL} max-w-md`} role="dialog" aria-modal="true" aria-label="Assign contractor" onClick={(e) => e.stopPropagation()}>
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Assign Contractor</h2>
                 <p className="text-sm text-slate-500 mt-1 line-clamp-1">{assignContractorModal.project_name}</p>
               </div>
-              <button onClick={() => setAssignContractorModal(null)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => setAssignContractorModal(null)} aria-label="Close dialog" className="rounded-xl p-2.5 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -9844,7 +9867,7 @@ export default function Dashboard() {
                   <div className="flex gap-3">
                     <button
                       onClick={() => setAssignContractorModal(null)}
-                      className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
+                      className={buttonClass('secondary', 'md', 'flex-1')}
                     >
                       Cancel
                     </button>
@@ -9854,7 +9877,7 @@ export default function Dashboard() {
                         await assignContractorToProject(assignContractorModal.id, selectedContractorId || null);
                         setAssignContractorModal(null);
                       }}
-                      className="flex-1 px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25 disabled:opacity-50"
+                      className={buttonClass('primary', 'md', 'flex-1')}
                     >
                       {assigningContractor ? 'Saving…' : 'Assign'}
                     </button>
@@ -9868,14 +9891,16 @@ export default function Dashboard() {
 
       {/* FMR Edit Modal */}
       {showFmrEditModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className={MODAL_OVERLAY}>
+          {/* Esc is off for data-entry forms so a stray key never discards typed work; use Cancel. */}
+          <ModalEffects onClose={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} closeOnEscape={false} />
+          <div className={`${MODAL_PANEL} max-w-4xl`} role="dialog" aria-modal="true" aria-label="Edit FMR project">
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Edit FMR Project</h2>
                 <p className="text-sm text-slate-500 mt-1">{selectedFmrProject?.project_name}</p>
               </div>
-              <button onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors duration-200">
+              <button onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} aria-label="Close dialog" className="rounded-xl p-2.5 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -10231,8 +10256,8 @@ export default function Dashboard() {
               </div>
             </form>
             <div className="px-8 py-5 border-t border-slate-200/60 bg-slate-50/50 flex justify-end gap-4">
-              <button type="button" onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} className="px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200">Cancel</button>
-              <button type="submit" onClick={handleEditFmrProject} className="px-6 py-3 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-teal-500/25">Save Changes</button>
+              <button type="button" onClick={() => { setShowFmrEditModal(false); setSelectedFmrProject(null); }} className={buttonClass('secondary')}>Cancel</button>
+              <button type="submit" onClick={handleEditFmrProject} className={buttonClass('primary')}>Save Changes</button>
             </div>
           </div>
         </div>
@@ -10250,35 +10275,14 @@ export default function Dashboard() {
 
       {/* FMR Delete Confirmation Modal */}
       {showFmrDeleteModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-            <div className="text-center">
-              <div className="w-18 h-18 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-5" style={{ width: '72px', height: '72px' }}>
-                <svg className="w-9 h-9 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">Delete FMR Project?</h3>
-              <p className="text-slate-500 mb-8">
-                Are you sure you want to delete <span className="font-semibold text-slate-700">{selectedFmrProject?.project_name}</span>? This action cannot be undone.
-              </p>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => { setShowFmrDeleteModal(false); setSelectedFmrProject(null); }}
-                  className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-all duration-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteFmrProject}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white rounded-xl font-semibold text-sm transition-all duration-200 shadow-lg shadow-red-500/25"
-                >
-                  Delete Project
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          tone="danger"
+          title="Delete FMR project?"
+          message={<><span className="font-semibold text-slate-800">{selectedFmrProject?.project_name}</span> will be permanently deleted. This cannot be undone.</>}
+          confirmLabel="Delete project"
+          onCancel={() => { setShowFmrDeleteModal(false); setSelectedFmrProject(null); }}
+          onConfirm={handleDeleteFmrProject}
+        />
       )}
 
       {/* Project Reports Modal — shows public reports linked to a project */}
@@ -10311,15 +10315,16 @@ export default function Dashboard() {
         const projectCode = detailValue('projectCode', 'project_code') || (isFmrProject ? `FMR-${rawProject.id}` : 'N/A');
 
         return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setSelectedProjectDetail(null)}>
-            <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className={MODAL_OVERLAY} onClick={() => setSelectedProjectDetail(null)}>
+            <ModalEffects onClose={() => setSelectedProjectDetail(null)} />
+            <div className={`${MODAL_PANEL_SCROLL} max-w-5xl`} role="dialog" aria-modal="true" aria-label={`Project details: ${projectName}`} onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 bg-gradient-to-r from-slate-50 to-white">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Project Details</p>
                   <h3 className="mt-1 text-2xl font-bold text-slate-900">{projectName}</h3>
                   <p className="mt-1 text-sm text-slate-500">Detailed {sourceLabel.toLowerCase()} record for DA review.</p>
                 </div>
-                <button onClick={() => setSelectedProjectDetail(null)} className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 hover:bg-slate-50">
+                <button onClick={() => setSelectedProjectDetail(null)} aria-label="Close dialog" className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -10413,7 +10418,7 @@ export default function Dashboard() {
                         href={`https://www.google.com/maps?q=${latitude},${longitude}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-4 inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                        className={buttonClass('secondary', 'md', 'mt-4')}
                       >
                         Open on Google Maps
                       </a>
@@ -10430,7 +10435,14 @@ export default function Dashboard() {
 
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedProjectDetail(null)}
+                  className={buttonClass('secondary')}
+                >
+                  Close
+                </button>
                 {isFmrProject && (
                   <button
                     type="button"
@@ -10438,7 +10450,7 @@ export default function Dashboard() {
                       setSelectedProjectDetail(null);
                       openWorkPlanModal(rawProject);
                     }}
-                    className="rounded-xl border border-teal-200 bg-teal-50 px-5 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-100"
+                    className={buttonClass('secondary')}
                   >
                     Work Plan
                   </button>
@@ -10450,18 +10462,11 @@ export default function Dashboard() {
                       setSelectedProjectDetail(null);
                       openFmrEditModal(rawProject);
                     }}
-                    className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 shadow-md shadow-teal-600/10"
+                    className={buttonClass('primary')}
                   >
                     Define Route / GPS
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setSelectedProjectDetail(null)}
-                  className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Close
-                </button>
               </div>
             </div>
           </div>
@@ -10469,14 +10474,15 @@ export default function Dashboard() {
       })()}
 
       {projectFeedbackModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setProjectFeedbackModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className={MODAL_OVERLAY} onClick={() => setProjectFeedbackModal(null)}>
+          <ModalEffects onClose={() => setProjectFeedbackModal(null)} />
+          <div className={`${MODAL_PANEL} max-w-3xl`} role="dialog" aria-modal="true" aria-label="Public reports for this project" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-slate-200/60 flex items-start justify-between bg-gradient-to-r from-slate-50 to-white">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Public Reports</h3>
                 <p className="text-sm text-slate-500 mt-0.5">{projectFeedbackModal.projectName} — {projectFeedbackModal.barangay}, {projectFeedbackModal.municipality}</p>
               </div>
-              <button onClick={() => setProjectFeedbackModal(null)} className="p-2 hover:bg-slate-100 rounded-xl transition">
+              <button onClick={() => setProjectFeedbackModal(null)} aria-label="Close dialog" className="rounded-xl p-2 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>

@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { getSupabaseForRole } from '../lib/supabase';
 import Logo from './Logo';
+import UserPageSkeleton from './UserPageSkeleton';
+import {
+  LguPageSkeleton,
+  FieldEngineerPageSkeleton,
+  ContractorPageSkeleton,
+  FarmerPageSkeleton,
+  AdminPageSkeleton,
+} from './PortalSkeletons';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -72,6 +80,15 @@ export default function ProtectedRoute({ children, requiredRole }) {
   }, [requiredRole]);
 
   if (loading) {
+    const Skeleton = {
+      user: UserPageSkeleton,
+      lgu: LguPageSkeleton,
+      field_engineer: FieldEngineerPageSkeleton,
+      contractor: ContractorPageSkeleton,
+      farmer: FarmerPageSkeleton,
+      admin: AdminPageSkeleton,
+    }[normalizeRole(requiredRole)];
+    if (Skeleton) return <Skeleton />;
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

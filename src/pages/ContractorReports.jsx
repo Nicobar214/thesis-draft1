@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import { formatPercentage } from '../lib/percentageFormat';
+import { toast } from '../lib/toast';
 
 // ── Status badge ─────────────────────────────────────────────
 function ReportStatusBadge({ status }) {
@@ -56,7 +57,6 @@ export default function ContractorReports() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [remarkState, setRemarkState] = useState({}); // { [reportId]: { open, text, saving } }
-  const [notification, setNotification] = useState(null);
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -112,8 +112,7 @@ export default function ContractorReports() {
       setLastSyncedAt(new Date());
     } catch (err) {
       console.error('ContractorReports fetch error:', err);
-      setNotification({ message: `Failed to refresh data: ${err.message}`, type: 'error' });
-      setTimeout(() => setNotification(null), 3500);
+      toast.error(`Failed to refresh data: ${err.message}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -160,14 +159,12 @@ export default function ContractorReports() {
         })
         .eq('id', reportId);
       if (error) throw error;
-      setNotification({ message: 'Remark saved.', type: 'success' });
-      setTimeout(() => setNotification(null), 3000);
+      toast.success('Remark saved.');
       await fetchData(false);
       closeRemark(reportId);
     } catch (err) {
       console.error('Save remark error:', err);
-      setNotification({ message: `Failed: ${err.message}`, type: 'error' });
-      setTimeout(() => setNotification(null), 3000);
+      toast.error(`Failed to save remark: ${err.message}`);
       setRemarkState((prev) => ({ ...prev, [reportId]: { ...prev[reportId], saving: false } }));
     }
   };
@@ -189,15 +186,6 @@ export default function ContractorReports() {
 
   return (
     <ContractorLayout>
-      {/* Toast */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-white text-sm font-medium ${
-          notification.type === 'error' ? 'bg-red-600' : 'bg-emerald-600'
-        }`}>
-          {notification.message}
-        </div>
-      )}
-
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

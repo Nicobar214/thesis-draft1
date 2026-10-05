@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
+import { notify } from '../../lib/toast';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 import { getMunicipalities } from '../../data/iloiloLocations';
 import { getCropData, computeProposalPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
 import { boundsFromPoints, getMunicipalityCentroid, getPendingDaysChip } from '../../lib/mapRouteUtils';
@@ -237,7 +240,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
 
   const runAction = async (action) => {
     if (action !== 'validate' && !notes.trim()) {
-      alert('Please add review notes explaining the decision.');
+      notify('Please add review notes explaining the decision.');
       return;
     }
     setBusy(action);
@@ -252,8 +255,9 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-5xl`} role="dialog" aria-modal="true" aria-label={`Review proposal: ${proposal.project_name}`} onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-col gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">LGU Project Proposal</p>
@@ -414,29 +418,30 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
                 <p className="text-xs text-slate-500 max-w-xs">
                   Validate marks this as feasible and takes you to the standard Add New Project form to log the official record yourself.
                 </p>
+                {/* Decision order: destructive, cautionary, then the primary action last. */}
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={() => runAction('validate')}
-                  className="ml-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
+                  onClick={() => runAction('reject')}
+                  className={buttonClass('danger', 'md', 'ml-auto')}
                 >
-                  {busy === 'validate' ? 'Validating…' : 'Validate'}
+                  {busy === 'reject' ? 'Rejecting…' : 'Reject'}
                 </button>
                 <button
                   type="button"
                   disabled={!!busy}
                   onClick={() => runAction('revision')}
-                  className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-semibold disabled:opacity-50"
+                  className={buttonClass('warning')}
                 >
                   {busy === 'revision' ? 'Sending…' : 'Request Revision'}
                 </button>
                 <button
                   type="button"
                   disabled={!!busy}
-                  onClick={() => runAction('reject')}
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-50"
+                  onClick={() => runAction('validate')}
+                  className={buttonClass('primary')}
                 >
-                  {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+                  {busy === 'validate' ? 'Validating…' : 'Validate'}
                 </button>
               </div>
             </div>
@@ -446,7 +451,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
               <button
                 type="button"
                 onClick={() => { onCreateProject(proposal); onClose(); }}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shrink-0"
+                className={buttonClass('primary', 'md', 'shrink-0')}
               >
                 Create Project From This Proposal
               </button>
@@ -462,8 +467,8 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
           )}
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <button type="button" onClick={onClose} className={buttonClass('secondary')}>
             Close
           </button>
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { buttonClass } from '../ui/Button';
 
 export default function LguEscalationPanel({ report, onEscalate, decision }) {
   const [reason, setReason] = useState('');
@@ -49,7 +50,7 @@ export default function LguEscalationPanel({ report, onEscalate, decision }) {
       <button
         onClick={submitEscalation}
         disabled={!reason.trim() || saving || !report?.id}
-        className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+        className={buttonClass('primary')}
       >
         {saving ? 'Escalating...' : 'Escalate to LGU'}
       </button>

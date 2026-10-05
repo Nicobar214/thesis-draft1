@@ -34,6 +34,36 @@ export function haversineKm(aLat, aLng, bLat, bLng) {
 
 const nodeKey = (lat, lng) => `${lat.toFixed(7)},${lng.toFixed(7)}`;
 
+/**
+ * Cost multipliers by road class.
+ *
+ * Routing minimizes COST while distances are always measured in true km, so these
+ * change which roads a path prefers without distorting any reported length.
+ *
+ * A farm-to-market route should stay on barangay roads. But excluding trunk classes
+ * from the graph outright left it disconnected -- 12,012 nodes, 11,819 edges, 279
+ * fragments -- because Leon's barangay roads largely interconnect THROUGH the
+ * tertiary network. Charging a trunk road several times its length keeps it
+ * available as a last resort while ensuring any local detour of comparable length
+ * wins, which is the behaviour a car router does not give us.
+ */
+export const CLASS_COST = {
+  residential: 1,
+  unclassified: 1,
+  living_street: 1,
+  road: 1.2,
+  track: 1.3,          // slightly discouraged: often rough, but genuinely used as FMR
+  service: 1.6,        // driveways and yard roads; real but rarely the through route
+  tertiary: 4,
+  tertiary_link: 4,
+  secondary: 8,
+  secondary_link: 8,
+  primary: 16,
+  primary_link: 16,
+};
+
+const costFor = (highway) => CLASS_COST[highway] ?? 2;
+
 /** Minimal binary min-heap, enough for Dijkstra over ~15k nodes. */
 class MinHeap {
   constructor() { this.items = []; }
@@ -98,10 +128,14 @@ export function buildGraph(collection) {
   };
 
   let edgeCount = 0;
+  let trunkEdgeCount = 0;
   for (const feature of collection.features || []) {
     const coords = feature.geometry?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) continue;
     const wayId = feature.properties?.osmWayId ?? feature.id ?? null;
+    const highway = feature.properties?.highway ?? null;
+    const isTrunk = feature.properties?.routingClass === 'trunk';
+    const multiplier = costFor(highway);
 
     let prevKey = addNode(coords[0][1], coords[0][0]);
     for (let i = 1; i < coords.length; i += 1) {
@@ -113,15 +147,25 @@ export function buildGraph(collection) {
       const b = nodes.get(key);
       const km = haversineKm(a.lat, a.lng, b.lat, b.lng);
       if (km > 0) {
-        adjacency.get(prevKey).push({ to: key, km, wayId });
-        adjacency.get(key).push({ to: prevKey, km, wayId });
+        // `km` is the true distance used for every length we report; `cost` only
+        // steers which path Dijkstra picks.
+        const edge = { km, cost: km * multiplier, wayId, highway, isTrunk };
+        adjacency.get(prevKey).push({ ...edge, to: key });
+        adjacency.get(key).push({ ...edge, to: prevKey });
         edgeCount += 1;
+        if (isTrunk) trunkEdgeCount += 1;
       }
       prevKey = key;
     }
   }
 
-  return { nodes, adjacency, wayCount: (collection.features || []).length, edgeCount };
+  return {
+    nodes,
+    adjacency,
+    wayCount: (collection.features || []).length,
+    edgeCount,
+    trunkEdgeCount,
+  };
 }
 
 /**
@@ -178,7 +222,9 @@ export function shortestPath(graph, fromKey, toKey) {
     return { points: [[n.lat, n.lng]], km: 0, wayIds: [] };
   }
 
-  const dist = new Map([[fromKey, 0]]);
+  // Dijkstra on COST so local roads are preferred; true km is accumulated
+  // alongside and is what gets reported.
+  const cost = new Map([[fromKey, 0]]);
   const prev = new Map();
   const settled = new Set();
   const heap = new MinHeap();
@@ -190,13 +236,13 @@ export function shortestPath(graph, fromKey, toKey) {
     settled.add(key);
     if (key === toKey) break;
 
-    const base = dist.get(key) ?? Infinity;
+    const base = cost.get(key) ?? Infinity;
     for (const edge of graph.adjacency.get(key) || []) {
       if (settled.has(edge.to)) continue;
-      const candidate = base + edge.km;
-      if (candidate < (dist.get(edge.to) ?? Infinity)) {
-        dist.set(edge.to, candidate);
-        prev.set(edge.to, { from: key, wayId: edge.wayId });
+      const candidate = base + edge.cost;
+      if (candidate < (cost.get(edge.to) ?? Infinity)) {
+        cost.set(edge.to, candidate);
+        prev.set(edge.to, { from: key, wayId: edge.wayId, km: edge.km, isTrunk: edge.isTrunk });
         heap.push(edge.to, candidate);
       }
     }
@@ -205,20 +251,38 @@ export function shortestPath(graph, fromKey, toKey) {
   if (!settled.has(toKey)) return null;
 
   const points = [];
+  const nodeKeys = [];
   const wayIds = [];
+  let km = 0;
+  let trunkKm = 0;
   let cursor = toKey;
   while (cursor !== undefined && cursor !== null) {
     const node = graph.nodes.get(cursor);
     points.push([node.lat, node.lng]);
+    nodeKeys.push(cursor);
     const step = prev.get(cursor);
     if (!step) break;
     if (step.wayId !== null && step.wayId !== undefined) wayIds.push(step.wayId);
+    km += step.km;
+    if (step.isTrunk) trunkKm += step.km;
     cursor = step.from;
   }
   points.reverse();
+  nodeKeys.reverse();
   wayIds.reverse();
 
-  return { points, km: dist.get(toKey), wayIds: [...new Set(wayIds)] };
+  return {
+    points,
+    // Returned so a caller extending this path can seed walkOutward's visited set
+    // with it; otherwise the extension walks straight back along the path.
+    nodeKeys,
+    km,
+    // How much of the path had to fall back to a trunk road -- recorded so route
+    // quality can reflect it instead of silently presenting a highway as an FMR.
+    trunkKm,
+    trunkShare: km > 0 ? trunkKm / km : 0,
+    wayIds: [...new Set(wayIds)],
+  };
 }
 
 /**
@@ -230,14 +294,18 @@ export function shortestPath(graph, fromKey, toKey) {
  * Greedy longest-first with no revisiting, which keeps the walk heading away from
  * where it started instead of doubling back on itself.
  */
-export function walkOutward(graph, startKey, maxKm, preferBearing = null) {
+export function walkOutward(graph, startKey, maxKm, preferBearing = null, visitedSeed = null) {
   if (!graph.nodes.has(startKey)) return null;
 
   const start = graph.nodes.get(startKey);
-  const visited = new Set([startKey]);
+  // `visitedSeed` lets a caller forbid nodes already used by a path this walk is
+  // extending. Without it the walk reverses straight back down that path, and the
+  // gap drawn beyond the route ends up retracing the route itself.
+  const visited = new Set(visitedSeed ? [...visitedSeed, startKey] : [startKey]);
   const points = [[start.lat, start.lng]];
   const wayIds = [];
   let totalKm = 0;
+  let trunkKm = 0;
   let cursor = startKey;
 
   while (totalKm < maxKm) {
@@ -251,14 +319,19 @@ export function walkOutward(graph, startKey, maxKm, preferBearing = null) {
       ? bearing(points[points.length - 2], [from.lat, from.lng])
       : preferBearing;
 
+    // Score each option on how straight it continues and how local it is, so the
+    // walk follows the through-road rather than turning onto a trunk road or a
+    // driveway the moment one appears.
     let chosen = options[0];
-    if (incoming !== null && incoming !== undefined) {
-      let bestDelta = Infinity;
-      for (const edge of options) {
-        const to = graph.nodes.get(edge.to);
-        const delta = angleDelta(incoming, bearing([from.lat, from.lng], [to.lat, to.lng]));
-        if (delta < bestDelta) { bestDelta = delta; chosen = edge; }
-      }
+    let bestScore = Infinity;
+    for (const edge of options) {
+      const to = graph.nodes.get(edge.to);
+      const turn = incoming === null || incoming === undefined
+        ? 0
+        : angleDelta(incoming, bearing([from.lat, from.lng], [to.lat, to.lng]));
+      // 90 degrees of turning costs about as much as doubling the class penalty.
+      const score = turn + (edge.cost / Math.max(edge.km, 1e-6)) * 30;
+      if (score < bestScore) { bestScore = score; chosen = edge; }
     }
 
     const to = graph.nodes.get(chosen.to);
@@ -266,11 +339,108 @@ export function walkOutward(graph, startKey, maxKm, preferBearing = null) {
     points.push([to.lat, to.lng]);
     if (chosen.wayId !== null && chosen.wayId !== undefined) wayIds.push(chosen.wayId);
     totalKm += chosen.km;
+    if (chosen.isTrunk) trunkKm += chosen.km;
     cursor = chosen.to;
   }
 
   if (points.length < 2) return null;
-  return { points, km: totalKm, wayIds: [...new Set(wayIds)] };
+  return {
+    points,
+    km: totalKm,
+    trunkKm,
+    trunkShare: totalKm > 0 ? trunkKm / totalKm : 0,
+    wayIds: [...new Set(wayIds)],
+  };
+}
+
+/**
+ * Find a path from `startKey` whose length is as close as possible to `targetKm`
+ * without falling short, using the whole reachable component.
+ *
+ * This replaces a greedy outward walk for the single-anchor case. A greedy walk
+ * picks the straightest-and-most-local edge at each step and cannot backtrack, so
+ * it strands itself in cul-de-sacs: it produced a 0.04 km line for a 0.87 km
+ * project, and 17 routes came out below half their declared length. Searching the
+ * component instead guarantees that if enough connected road exists anywhere
+ * reachable, the route gets it.
+ *
+ * `forbidden` excludes nodes already used by a path being extended, so an
+ * extension cannot double back along it.
+ */
+export function farthestPathWithinKm(graph, startKey, targetKm, forbidden = null) {
+  if (!graph.nodes.has(startKey)) return null;
+  const blocked = forbidden instanceof Set ? forbidden : new Set(forbidden || []);
+
+  const cost = new Map([[startKey, 0]]);
+  const km = new Map([[startKey, 0]]);
+  const prev = new Map();
+  const settled = new Set();
+  const heap = new MinHeap();
+  heap.push(startKey, 0);
+
+  let best = { key: startKey, km: 0 };
+
+  while (heap.size > 0) {
+    const key = heap.pop();
+    if (settled.has(key)) continue;
+    settled.add(key);
+
+    const hereKm = km.get(key) ?? 0;
+    // Prefer the smallest path that still meets the target; otherwise track the
+    // longest path found anywhere.
+    const meets = hereKm >= targetKm;
+    const bestMeets = best.km >= targetKm;
+    if (meets && (!bestMeets || hereKm < best.km)) best = { key, km: hereKm };
+    else if (!meets && !bestMeets && hereKm > best.km) best = { key, km: hereKm };
+
+    // No point expanding beyond a comfortable margin past the target.
+    if (hereKm > targetKm * 1.5 + 1) continue;
+
+    const baseCost = cost.get(key) ?? Infinity;
+    for (const edge of graph.adjacency.get(key) || []) {
+      if (settled.has(edge.to) || blocked.has(edge.to)) continue;
+      const candidate = baseCost + edge.cost;
+      if (candidate < (cost.get(edge.to) ?? Infinity)) {
+        cost.set(edge.to, candidate);
+        km.set(edge.to, hereKm + edge.km);
+        prev.set(edge.to, { from: key, wayId: edge.wayId, km: edge.km, isTrunk: edge.isTrunk });
+        heap.push(edge.to, candidate);
+      }
+    }
+  }
+
+  if (best.key === startKey) return null;
+
+  const points = [];
+  const nodeKeys = [];
+  const wayIds = [];
+  let totalKm = 0;
+  let trunkKm = 0;
+  let cursor = best.key;
+  while (cursor !== undefined && cursor !== null) {
+    const node = graph.nodes.get(cursor);
+    points.push([node.lat, node.lng]);
+    nodeKeys.push(cursor);
+    const step = prev.get(cursor);
+    if (!step) break;
+    if (step.wayId !== null && step.wayId !== undefined) wayIds.push(step.wayId);
+    totalKm += step.km;
+    if (step.isTrunk) trunkKm += step.km;
+    cursor = step.from;
+  }
+  points.reverse();
+  nodeKeys.reverse();
+  wayIds.reverse();
+
+  if (points.length < 2) return null;
+  return {
+    points,
+    nodeKeys,
+    km: totalKm,
+    trunkKm,
+    trunkShare: totalKm > 0 ? trunkKm / totalKm : 0,
+    wayIds: [...new Set(wayIds)],
+  };
 }
 
 function bearing(from, to) {

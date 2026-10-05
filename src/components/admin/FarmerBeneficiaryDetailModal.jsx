@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
+import { buttonClass } from '../ui/Button';
 import { BENEFICIARY_VALIDATION_STATUSES } from '../../utils/farmerBeneficiaryData';
 
 function formatDate(dateValue) {
@@ -67,8 +69,9 @@ export default function FarmerBeneficiaryDetailModal({ beneficiary, onClose, onU
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+    <div className={MODAL_OVERLAY} onClick={onClose}>
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL} max-w-6xl`} role="dialog" aria-modal="true" aria-label="Farmer beneficiary details" onClick={(event) => event.stopPropagation()}>
         <div className="flex flex-col gap-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Farmer Beneficiary Profile</p>
@@ -147,7 +150,7 @@ export default function FarmerBeneficiaryDetailModal({ beneficiary, onClose, onU
                     key={status}
                     type="button"
                     onClick={() => applyDecision(status)}
-                    className="rounded-xl border border-slate-200 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className={buttonClass('primary', 'md', 'w-full')}
                   >
                     Mark as {status}
                   </button>
@@ -157,11 +160,11 @@ export default function FarmerBeneficiaryDetailModal({ beneficiary, onClose, onU
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className={buttonClass('secondary')}
           >
             Close
           </button>

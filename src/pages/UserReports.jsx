@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
+import { buttonClass } from '../components/ui/Button';
 
 import Icons from '../components/Icons';
 import PublicReportForm from '../components/PublicReportForm';
@@ -562,9 +564,14 @@ function UserReports() {
 
       {/* Detail modal */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setSelected(null)}>
+        <div className={MODAL_OVERLAY} onClick={() => setSelected(null)}>
+          {/* Esc is already handled by this page (it closes the top-most layer). */}
+          <ModalEffects onClose={() => setSelected(null)} closeOnEscape={false} />
           <div
-            className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto"
+            className={`${MODAL_PANEL_SCROLL} max-w-lg`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Report details"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between p-6 pb-0">
@@ -577,7 +584,7 @@ function UserReports() {
                   </span>
                 )}
               </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700 transition p-1 -mr-1">
+              <button onClick={() => setSelected(null)} aria-label="Close dialog" className="-mr-1 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <Icons.X />
               </button>
             </div>
@@ -743,7 +750,7 @@ function UserReports() {
 
                   <button
                     onClick={() => setShowCertModal(true)}
-                    className="w-full flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold py-2.5 px-4 rounded-xl text-sm transition-colors"
+                    className={buttonClass('primary', 'md', 'w-full')}
                   >
                     <Icons.Document />
                     <span>View Resolution Certificate</span>
@@ -823,11 +830,15 @@ function UserReports() {
       )}
       {reportStep === 'form' && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          className={MODAL_OVERLAY}
           onClick={() => setReportStep('idle')}
         >
+          <ModalEffects onClose={() => setReportStep('idle')} closeOnEscape={false} />
           <div
-            className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            className={`${MODAL_PANEL_SCROLL} max-w-2xl`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="New location-verified report"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100">
@@ -835,7 +846,7 @@ function UserReports() {
                 <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report</p>
                 <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Location-Verified Report</h3>
               </div>
-              <button onClick={() => setReportStep('idle')} className="text-slate-400 hover:text-slate-700 transition p-1">
+              <button onClick={() => setReportStep('idle')} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 ✕
               </button>
             </div>

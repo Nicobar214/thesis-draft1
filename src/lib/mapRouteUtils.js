@@ -310,7 +310,12 @@ export function cutPolylineAtKm(points, km) {
 
     if (accKm + segmentKm >= km) {
       out.push(interpolateSegment(valid[i], valid[i + 1], (km - accKm) / segmentKm));
-      return { points: dedupePoints(out), lengthKm: km, truncated: true };
+      // Deliberately NOT dedupePoints: that is a global dedupe keyed on 6 decimal
+      // places, so it drops any vertex whose key appeared anywhere earlier in the
+      // line. On a detailed corridor that deletes interior vertices and shortens
+      // the result -- it cost project 205 61 m against a 1.58 km target. A cut
+      // whose whole purpose is an exact length must preserve every vertex.
+      return { points: out, lengthKm: km, truncated: true };
     }
 
     accKm += segmentKm;
@@ -337,7 +342,8 @@ export function slicePolylineFromKm(points, km) {
     if (accKm + segmentKm > km) {
       const cut = interpolateSegment(valid[i], valid[i + 1], (km - accKm) / segmentKm);
       const rest = [cut, ...valid.slice(i + 1)];
-      return { points: dedupePoints(rest), lengthKm: calculatePolylineDistanceKm(rest) };
+      // Same reason as cutPolylineAtKm: no global dedupe on a length-critical slice.
+      return { points: rest, lengthKm: calculatePolylineDistanceKm(rest) };
     }
     accKm += segmentKm;
   }

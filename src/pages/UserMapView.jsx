@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
+import GapSegmentLayer from '../components/map/GapSegmentLayer';
+import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import {
   buildRoutePoints,
   boundsFromPoints,
@@ -177,6 +179,8 @@ export default function UserMapView({ embedded = false } = {}) {
   const [farmerBeneficiaries, setFarmerBeneficiaries] = useState([]);
   const [markets, setMarkets] = useState([]);
   const [showFarmerDots, setShowFarmerDots] = useState(false);
+  const [roadGaps, setRoadGaps] = useState([]);
+  const [showRoadGaps, setShowRoadGaps] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
   const [showMarketsMap, setShowMarketsMap] = useState(true);
 
@@ -210,6 +214,7 @@ export default function UserMapView({ embedded = false } = {}) {
   useEffect(() => {
     fetchProjects();
     fetchProjectRoutes();
+    fetchRoadGaps();
     fetchProjectReportCounts();
     fetchFarmerBeneficiaries();
     fetchMarkets();
@@ -219,6 +224,7 @@ export default function UserMapView({ embedded = false } = {}) {
       .channel('map-view-fmr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchProjects)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, fetchProjectRoutes)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'road_network_gaps' }, fetchRoadGaps)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchProjectReportCounts)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, fetchFarmerBeneficiaries)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, fetchMarkets)
@@ -287,6 +293,19 @@ export default function UserMapView({ embedded = false } = {}) {
       setTranchesByProjectId(map);
     } catch (e) {
       console.error('Error fetching project tranches:', e);
+    }
+  }
+
+  async function fetchRoadGaps() {
+    try {
+      const { data, error } = await supabase
+        .from('road_network_gaps')
+        .select('*')
+        .order('gap_km', { ascending: false });
+      // Keep the map usable if the table is absent in a given deployment.
+      setRoadGaps(error ? [] : data || []);
+    } catch {
+      setRoadGaps([]);
     }
   }
 
@@ -785,25 +804,16 @@ export default function UserMapView({ embedded = false } = {}) {
                             </Popup>
                           </Polyline>
 
-                          {routeStart && (
-                            <CircleMarker
-                              center={routeStart}
-                              radius={4}
-                              pathOptions={{ color: '#ffffff', fillColor: '#16a34a', fillOpacity: 1, weight: 2 }}
-                            />
-                          )}
-
-                          {routeEnd && (
-                            <Marker
-                              position={routeEnd}
-                              icon={L.divIcon({
-                                className: 'route-end-marker',
-                                html: '<div style="width:10px;height:10px;background:#f97316;border:2px solid #fff;border-radius:9999px;box-shadow:0 0 0 1px rgba(194,65,12,.6),0 1px 3px rgba(0,0,0,.25);"></div>',
-                                iconSize: [10, 10],
-                                iconAnchor: [5, 5],
-                              })}
-                            />
-                          )}
+                          {/* Labelled S/E pins plus a mid-route direction arrow. Previously a
+                              4px green dot and a 10px orange dot, which showed that something was
+                              at each end but not which way the road ran. */}
+                          <RouteEndpointMarkers
+                            project={project}
+                            routeData={{ ...route, startPoint: routeStart, endPoint: routeEnd }}
+                            displayPoints={displayRoutePoints}
+                            isFocused={isFocused}
+                            lineColor={color}
+                          />
                         </>
                       )}
 
@@ -900,6 +910,9 @@ export default function UserMapView({ embedded = false } = {}) {
                 {/* Farmer Heatmap Layer */}
                 <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
 
+                {/* Unpaved gaps beyond each funded route, from public.road_network_gaps */}
+                <GapSegmentLayer gaps={roadGaps} visible={showRoadGaps} />
+
                 {/* Markets Layer */}
                 {showMarketsMap && (markets || []).map(m => (
                   <Marker
@@ -976,6 +989,18 @@ export default function UserMapView({ embedded = false } = {}) {
                 </div>
                 <div className="pt-2 border-t border-slate-200 space-y-1.5">
                   <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold grid place-items-center shrink-0">S</span>
+                    <span>Route start</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold grid place-items-center shrink-0">E</span>
+                    <span>Route end</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 border-t-[3px] border-dashed border-red-500 inline-block shrink-0" />
+                    <span>Unpaved road gap</span>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
                     <span>Barangay Geocoded</span>
                   </div>
@@ -993,6 +1018,16 @@ export default function UserMapView({ embedded = false } = {}) {
                       className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                     />
                     Show Farmers (Dots)
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
+                    <input
+                      type="checkbox"
+                      checked={showRoadGaps}
+                      onChange={(e) => setShowRoadGaps(e.target.checked)}
+                      className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+                    />
+                    Show Road Gaps ({roadGaps.length})
                   </label>
                   
                   <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
