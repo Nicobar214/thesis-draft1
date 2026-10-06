@@ -1,3 +1,4 @@
+import { CheckIcon, MapIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -6,10 +7,11 @@ import 'leaflet/dist/leaflet.css';
 import { computePriorityScores, computeRoadGapPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
 import { boundsFromPoints, parsePointList } from '../../lib/mapRouteUtils';
 import { GAP_PATH_OPTIONS, gapEndcapIcon } from '../map/routeMarkerIcons';
+import { pinGlyph } from '../../lib/mapMarkerIcons';
 
 const roadPinIcon = new L.DivIcon({
   className: 'prio-road-pin-marker',
-  html: '<div style="background:#0f766e;color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:14px;box-shadow:0 2px 5px rgba(0,0,0,0.3)">📍</div>',
+  html: '<div style="background:#0f766e;color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:14px;box-shadow:0 2px 5px rgba(0,0,0,0.3)">' + pinGlyph(14) + '</div>',
   iconSize: [28, 28],
   iconAnchor: [14, 14],
 });
@@ -59,7 +61,7 @@ function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
     <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden shadow-xs">
       <div className="px-3.5 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 min-w-0">
-          <span className="text-red-600 shrink-0">🗺 Unpaved gap:</span>
+          <span className="text-red-600 shrink-0"><MapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Unpaved gap:</span>
           <span className="text-slate-700 truncate">{gap?.source_road_name || project.project_name}</span>
         </div>
         {onViewOnMap && (
@@ -122,15 +124,15 @@ function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
 }
 
 const gapLegendItems = [
-  { label: 'Gap Distance 40%', tone: 'bg-blue-100 text-blue-700', icon: '🟦' },
-  { label: 'Connectivity 35%', tone: 'bg-red-100 text-red-700', icon: '🟥' },
-  { label: 'Market Access 25%', tone: 'bg-emerald-100 text-emerald-700', icon: '🟩' },
+  { label: 'Gap Distance 40%', tone: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  { label: 'Connectivity 35%', tone: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
+  { label: 'Market Access 25%', tone: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
 ];
 
 const agriLegendItems = [
-  { label: 'Volume 40%', tone: 'bg-blue-100 text-blue-700', icon: '🟦' },
-  { label: 'Severity 35%', tone: 'bg-red-100 text-red-700', icon: '🟥' },
-  { label: 'Crop Value 25%', tone: 'bg-amber-100 text-amber-700', icon: '🟨' },
+  { label: 'Volume 40%', tone: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  { label: 'Severity 35%', tone: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
+  { label: 'Crop Value 25%', tone: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
 ];
 
 function formatTimestamp(value) {
@@ -248,11 +250,11 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {moduleMode === 'network_gaps' ? (
             <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-teal-50 border border-teal-200 text-teal-800">
-              ✓ Active: Pure road network geometry & edge-to-edge market gap scoring (Disregards missing farmer data)
+              <CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Active: Pure road network geometry & edge-to-edge market gap scoring (Disregards missing farmer data)
             </span>
           ) : (
             <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800">
-              ⚠ Agricultural production & farmgate price data not readily available — simulated mode
+              <TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Agricultural production & farmgate price data not readily available — simulated mode
             </span>
           )}
         </div>
@@ -261,7 +263,7 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
       <div className="flex flex-wrap gap-2">
         {(moduleMode === 'network_gaps' ? gapLegendItems : agriLegendItems).map((item) => (
           <span key={item.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold ${item.tone}`}>
-            {item.icon} {item.label}
+            <span className={`inline-block size-2 rounded-sm mr-1.5 ${item.dot}`} aria-hidden="true" />{item.label}
           </span>
         ))}
       </div>
@@ -318,7 +320,7 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
                       ))}
                       {hasEscalation && (
                         <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                          ⚡ Escalated
+                          <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Escalated
                         </span>
                       )}
                     </div>

@@ -1,8 +1,17 @@
+import { MapPinIcon, TriangleAlertIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
-import { MapContainer, TileLayer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
+import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from '../components/map/MapPanels';
+import StableHeatLayer from '../components/map/StableHeatLayer';
+import MapSearchBox from '../components/map/MapSearchBox';
+import BaseTiles from '../components/map/BaseTiles';
+import { useBasemap } from '../lib/basemaps';
+import { norm } from '../lib/placeSearch';
+import { CITIZEN_STATUS_HEX, useMyReports } from '../lib/useMyReports';
+import { getCitizenStatus } from '../lib/publicReportStatus';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import {
   buildRoutePoints,
@@ -22,6 +31,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import 'leaflet/dist/leaflet.css';
+import { storeGlyph } from '../lib/mapMarkerIcons';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Normalize status for consistent filtering â”€â”€â”€ */
@@ -100,6 +110,15 @@ function FitBounds({ points, filterKey }) {
   return null;
 }
 
+/* Flies to the place picked in the search box. */
+function SearchFlyController({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) map.flyTo(target.coords, target.zoom, { duration: 1 });
+  }, [target, map]);
+  return null;
+}
+
 function SelectedProjectMapController({ selectedProject }) {
   const map = useMap();
 
@@ -126,24 +145,14 @@ function SelectedProjectMapController({ selectedProject }) {
 
 
 function FarmerHeatmapLayer({ visible, points }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
-    
-    const layer = window.L.heatLayer(points, {
-      radius: 30,
-      blur: 20,
-      maxZoom: 15,
-      gradient: { 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }
-    }).addTo(map);
-
-    return () => {
-      map.removeLayer(layer);
-    };
-  }, [map, visible, points]);
-
-  return null;
+  return (
+    <StableHeatLayer
+      visible={visible}
+      points={points}
+      radiusMeters={1500}
+      gradient={{ 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }}
+    />
+  );
 }
 
 /* ─── Status Filter Tabs ─── */
@@ -164,6 +173,7 @@ export default function UserMapView({ embedded = false } = {}) {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
+  const [searchTarget, setSearchTarget] = useState(null); // { coords, zoom }
   const [statusFilter, setStatusFilter] = useState('On-Going');
   const [yearFilter, setYearFilter] = useState('All');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
@@ -183,6 +193,10 @@ export default function UserMapView({ embedded = false } = {}) {
   const [showRoadGaps, setShowRoadGaps] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
   const [showMarketsMap, setShowMarketsMap] = useState(true);
+  const [showMyReports, setShowMyReports] = useState(true);
+  const [basemap, setBasemap] = useBasemap();
+  // Only signed-in citizens have reports; the embedded landing-page map has none.
+  const { reports: myReports } = useMyReports({ enabled: !embedded });
 
   // Geofencing state
   const [userLocation, setUserLocation] = useState(null); // { lat, lng, accuracy }
@@ -362,12 +376,10 @@ export default function UserMapView({ embedded = false } = {}) {
   // Filter logic
   const filtered = useMemo(() => {
     return projects.filter(p => {
-      const q = search.toLowerCase();
-      const name = (p.project_name || '').toLowerCase();
-      const loc = (p.location || '').toLowerCase();
-      const muni = (p.municipality || '').toLowerCase();
+      const q = norm(search).replace(/ /g, '');
+      const haystack = norm([p.project_name, p.location, p.municipality, getProjectBarangay(p)].join(' ')).replace(/ /g, '');
 
-      const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
+      const matchesSearch = !q || haystack.includes(q);
       const matchesStatus = statusFilter === 'All' || normalizeStatus(p.status) === statusFilter;
       const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
       const matchesMunicipality = municipalityFilter === 'All' || (p.municipality || '') === municipalityFilter;
@@ -552,15 +564,17 @@ export default function UserMapView({ embedded = false } = {}) {
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <Icons.Search />
-            </div>
-            <input
-              type="text"
+            <MapSearchBox
+              projects={projects}
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, municipality..."
-              className="w-full pl-10 pr-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-shadow"
+              onChange={setSearch}
+              placeholder="Search a barangay, road or project..."
+              inputClassName="py-2.5 text-sm"
+              onSelect={(place) => {
+                // A project narrows the list to itself; a place just moves the map.
+                setSearch(place.type === 'project' ? place.label : '');
+                setSearchTarget({ coords: [place.lat, place.lng], zoom: place.zoom });
+              }}
             />
           </div>
 
@@ -624,7 +638,7 @@ export default function UserMapView({ embedded = false } = {}) {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500" />
             </span>
             <span className="font-medium">
-              📍 {nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
+              <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
             </span>
           </div>
         )}
@@ -659,12 +673,10 @@ export default function UserMapView({ embedded = false } = {}) {
                 scrollWheelZoom={true}
                 className="z-0"
               >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                <BaseTiles basemap={basemap} />
                 <FitBounds points={mapBoundsPoints} filterKey={filterKey} />
                 <SelectedProjectMapController selectedProject={selectedProject} />
+                <SearchFlyController target={searchTarget} />
 
                 {/* User location: geofence zone + pulsing marker */}
                 {userLocation && (() => {
@@ -841,7 +853,7 @@ export default function UserMapView({ embedded = false } = {}) {
                             <div className="p-1">
                               <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
                               <span className="text-[10px] text-slate-500 block mt-0.5">
-                                {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                {isCentroidFallback ? <><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Centroid Fallback</> : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Barangay Center</>}
                               </span>
                             </div>
                           </Tooltip>
@@ -879,10 +891,10 @@ export default function UserMapView({ embedded = false } = {}) {
                                   </span>
                                 </p>
                                 {isCentroidFallback && (
-                                  <p className="text-[10px] text-amber-700 font-medium">⚠️ No exact coordinates. Placed at municipal center centroid.</p>
+                                  <p className="text-[10px] text-amber-700 font-medium"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No exact coordinates. Placed at municipal center centroid.</p>
                                 )}
                                 {isApproximate && (
-                                  <p className="text-[10px] text-orange-700 font-medium">📍 Coordinates auto-geocoded to Barangay center.</p>
+                                  <p className="text-[10px] text-orange-700 font-medium"><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Coordinates auto-geocoded to Barangay center.</p>
                                 )}
                               </div>
 
@@ -920,7 +932,7 @@ export default function UserMapView({ embedded = false } = {}) {
                     position={[Number(m.latitude), Number(m.longitude)]}
                     icon={new L.DivIcon({
                       className: 'custom-market-pin',
-                      html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                      html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">${storeGlyph(14)}</div>`,
                       iconSize: [30, 30],
                       iconAnchor: [15, 15],
                     })}
@@ -976,82 +988,85 @@ export default function UserMapView({ embedded = false } = {}) {
                     </CircleMarker>
                   );
                 })}
+                {/* The citizen's own reports, colored by where they are in the workflow */}
+                {!embedded && showMyReports && myReports.map((r) => {
+                  const lat = Number(r.latitude);
+                  const lng = Number(r.longitude);
+                  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+                  const status = getCitizenStatus(r);
+                  const color = CITIZEN_STATUS_HEX[status.key] || '#64748b';
+                  return (
+                    <Marker
+                      key={`my-report-${r.id}`}
+                      position={[lat, lng]}
+                      icon={L.divIcon({
+                        className: 'citizen-report-marker',
+                        html: `<div style="background:${color};width:24px;height:24px;border-radius:9999px;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center"><div style="width:7px;height:7px;border-radius:9999px;background:#fff"></div></div>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12],
+                        popupAnchor: [0, -12],
+                      })}
+                    >
+                      <Popup>
+                        <div className="space-y-1 text-xs">
+                          <p className="font-semibold text-slate-900">Your report: {status.label}</p>
+                          <p className="text-slate-600">{r.description}</p>
+                          <p className="text-slate-500">{status.helper}</p>
+                          <a href="/user/reports" className="font-semibold text-emerald-700 hover:underline">Open in My Reports</a>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
               </MapContainer>
             )}
 
-            <div className="pointer-events-none absolute bottom-4 left-4 z-[500]">
-              <div className="pointer-events-auto bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2">
-                <p className="font-semibold text-slate-900">Map Legend</p>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500" /> Completed</div>
-                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500" /> On-Going</div>
-                  <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500" /> Proposed</div>
-                </div>
-                <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold grid place-items-center shrink-0">S</span>
-                    <span>Route start</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold grid place-items-center shrink-0">E</span>
-                    <span>Route end</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 border-t-[3px] border-dashed border-red-500 inline-block shrink-0" />
-                    <span>Unpaved road gap</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
-                    <span>Barangay Geocoded</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
-                    <span>Centroid Fallback (No GPS)</span>
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-slate-200 space-y-1">
-                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-                    <input
-                      type="checkbox"
-                      checked={showFarmerDots}
-                      onChange={(e) => setShowFarmerDots(e.target.checked)}
-                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                    />
-                    Show Farmers (Dots)
-                  </label>
+            <MapLegend>
+              <LegendGroup label="Roads">
+                {stats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={stats.completed} />}
+                {stats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={stats.ongoing} />}
+                {stats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={stats.proposed} />}
+              </LegendGroup>
+              <LegendGroup label="Markers">
+                {mappable.length > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
+                {mappable.length > 0 && <LegendDot color="bg-orange-500" text="E" label="Route end" />}
+                {mapEntities.some((e) => e.isApproximate) && <LegendDot color="bg-emerald-50" ring="border-2 border-emerald-700" label="Barangay geocoded" />}
+                {mapEntities.some((e) => e.isCentroidFallback) && <LegendDot color="bg-amber-50" ring="border-2 border-dashed border-amber-600" label="Centroid fallback (no GPS)" />}
+              </LegendGroup>
+              {(showRoadGaps || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
+                <LegendGroup label="Layers">
+                  {showRoadGaps && <LegendLine color="border-red-500" dashed label="Unpaved road gap" />}
+                  {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
+                  {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer (anonymous)" />}
+                  {showFarmerHeatmap && (
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
+                      <span>Farmer density</span>
+                    </div>
+                  )}
+                </LegendGroup>
+              )}
+              {!embedded && showMyReports && myReports.length > 0 && (
+                <LegendGroup label="My reports">
+                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.submitted }} label="Submitted" />
+                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.under_review }} label="In review / inspection" />
+                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.resolved }} label="Resolved" />
+                </LegendGroup>
+              )}
+            </MapLegend>
 
-                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-                    <input
-                      type="checkbox"
-                      checked={showRoadGaps}
-                      onChange={(e) => setShowRoadGaps(e.target.checked)}
-                      className="rounded border-slate-300 text-red-600 focus:ring-red-500"
-                    />
-                    Show Road Gaps ({roadGaps.length})
-                  </label>
-                  
-                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-                    <input
-                      type="checkbox"
-                      checked={showFarmerHeatmap}
-                      onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
-                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                    />
-                    Show Farmer Density
-                  </label>
-                  
-                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-                    <input
-                      type="checkbox"
-                      checked={showMarketsMap}
-                      onChange={(e) => setShowMarketsMap(e.target.checked)}
-                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                    />
-                    Show Markets (Icons)
-                  </label>
-                </div>
-              </div>
-            </div>
+            <MapControlPanel>
+              <ControlGroup label="Layers">
+                <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
+                <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Road gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+                <LayerToggle checked={showFarmerDots} onChange={setShowFarmerDots} label="Farmers (dots)" />
+                <LayerToggle checked={showFarmerHeatmap} onChange={setShowFarmerHeatmap} label="Farmer density" />
+                {!embedded && <LayerToggle checked={showMyReports} onChange={setShowMyReports} label={`My reports (${myReports.length})`} />}
+              </ControlGroup>
+              <ControlGroup label="Basemap">
+                <BasemapSwitch value={basemap} onChange={setBasemap} />
+              </ControlGroup>
+            </MapControlPanel>
           </div>
 
           {/* Sidebar project list (desktop always visible, mobile toggled) */}
@@ -1121,7 +1136,7 @@ export default function UserMapView({ embedded = false } = {}) {
                             {p.project_length_km > 0 && <span>{p.project_length_km} km</span>}
                             {distM !== null && (
                               <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 font-medium">
-                                📍 {fmtDistance(distM)}
+                                <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{fmtDistance(distM)}
                               </span>
                             )}
                           </div>

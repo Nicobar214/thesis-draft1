@@ -2,6 +2,8 @@
  * Flow: locating → picking → classify → reporting → success
  * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
  */
+import { MapPinIcon } from 'lucide-react';
+import SeverityIcon from './SeverityIcon';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
@@ -580,7 +582,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
                 ? `Browsing all ${allProjects.length} projects`
                 : widerSearch
                 ? `${nearby.length} project${nearby.length !== 1 ? 's' : ''} within 1km`
-                : `📍 Found ${nearby.length} project${nearby.length !== 1 ? 's' : ''} near you`}
+                : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Found {nearby.length} project{nearby.length !== 1 ? 's' : ''} near you</>}
             </span>
           </div>
           <p className={`text-xs pl-4 ${lowAcc ? 'text-amber-700' : 'text-teal-700'}`}>
@@ -644,7 +646,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap mb-2">
                     {dist !== null && <span className="text-teal-600 font-semibold">{fmtDist(dist)}</span>}
-                    {p.municipality && <span>📍 {p.municipality}</span>}
+                    {p.municipality && <span><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{p.municipality}</span>}
                     {p.project_length_km > 0 && <span>{p.project_length_km} km road</span>}
                   </div>
                   {isOngoing && (
@@ -721,7 +723,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
                     : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
-                <span className="text-lg leading-none mt-0.5">{meta.icon}</span>
+                <span className="mt-0.5"><SeverityIcon category={key} className="size-5" /></span>
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
@@ -749,7 +751,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
             {specificProblem && (
               <div className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${categoryMeta.color}`}>
-                <span>{categoryMeta.icon}</span>
+                <SeverityIcon category={severityCategory} />
                 <span>
                   {categoryMeta.label} → {problemOptions.find((p) => p.value === specificProblem)?.label}
                 </span>
@@ -823,7 +825,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
             {gps && (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
                 <span className="text-xs text-teal-700 font-mono font-medium">
-                  📍 {gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}
+                  <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}
                 </span>
               </div>
             )}
@@ -864,7 +866,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
         {severityCategory && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium bg-slate-50 border-slate-200 text-slate-700">
-            <span>{SEVERITY_TAXONOMY[severityCategory]?.icon}</span>
+            <SeverityIcon category={severityCategory} />
             <span>
               {SEVERITY_TAXONOMY[severityCategory]?.label}
               {specificProblem ? ` → ${SEVERITY_TAXONOMY[severityCategory]?.problems.find((p) => p.value === specificProblem)?.label}` : ''}

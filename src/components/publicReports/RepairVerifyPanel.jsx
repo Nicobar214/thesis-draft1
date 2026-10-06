@@ -5,6 +5,15 @@ import { supabaseFieldEngineer as defaultClient } from '../../lib/supabase';
 import { haversineMeters, toPoint } from './routeGeometry';
 import { verifyPublicReportRepair } from '../../services/publicReportWorkflow';
 import {
+  REPAIR_SYNC_EVENT,
+  cacheRepairAction,
+  discardQueuedRepairVerification,
+  enqueueRepairVerification,
+  getCachedRepairAction,
+  getQueuedRepairVerification,
+  isNetworkError,
+} from '../../lib/offlineRepairVerifications';
+import {
   friendlyReportError,
   repairStatusInfo,
   responsiblePartyLabel,
@@ -81,6 +90,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const [photoPreview, setPhotoPreview] = useState('');
   const [shotGeo, setShotGeo] = useState(null); // position at the shutter
   const [note, setNote] = useState('');
+  const [queued, setQueued] = useState(null); // evidence saved on this device, awaiting upload
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -97,13 +107,24 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
         .maybeSingle();
       if (error) throw error;
       setAction(data || null);
+      if (data) cacheRepairAction(report.id, data);
     } catch (err) {
       console.warn('[repair] could not load follow-up:', err?.message || err);
-      setAction(null);
+      // With no signal the follow-up cannot be fetched, but the engineer may
+      // already be on site; fall back to what was loaded while online.
+      setAction(isNetworkError(err) ? await getCachedRepairAction(report.id) : null);
     } finally {
       setLoading(false);
     }
   }, [client, report?.id]);
+
+  const refreshQueued = useCallback(async () => {
+    if (!action?.id) {
+      setQueued(null);
+      return;
+    }
+    setQueued(await getQueuedRepairVerification(action.id));
+  }, [action?.id]);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -126,6 +147,20 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
+
+  useEffect(() => {
+    refreshQueued();
+  }, [refreshQueued]);
+
+  // The sync runs elsewhere (dashboard, on reconnect); reflect its outcome here.
+  useEffect(() => {
+    const onSync = () => {
+      load();
+      refreshQueued();
+    };
+    window.addEventListener(REPAIR_SYNC_EVENT, onSync);
+    return () => window.removeEventListener(REPAIR_SYNC_EVENT, onSync);
+  }, [load, refreshQueued]);
 
   useEffect(() => {
     if (!photoFile) {
@@ -264,7 +299,34 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const submit = async () => {
     if (!action || !photoFile || !shotGeo) return;
     setBusy(true);
+    const resetCapture = () => {
+      setPhotoFile(null);
+      setShotGeo(null);
+      setGeo(null);
+      setNote('');
+    };
+    const saveOffline = async () => {
+      const { data: sessionData } = await client.auth.getSession();
+      await enqueueRepairVerification({
+        actionId: action.id,
+        reportId: report.id,
+        engineerId: sessionData?.session?.user?.id || null,
+        photoBlob: photoFile,
+        latitude: shotGeo.latitude,
+        longitude: shotGeo.longitude,
+        accuracyMeters: shotGeo.accuracy ?? null,
+        capturedAt: shotGeo.capturedAt,
+        note: note.trim() || null,
+      });
+      resetCapture();
+      await refreshQueued();
+      if (onDone) onDone('No connection. Photo saved on this device and will upload automatically when you are back online.');
+    };
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        await saveOffline();
+        return;
+      }
       const path = `repair-verifications/${report.id}/${Date.now()}.jpg`;
       const { error: uploadErr } = await client.storage
         .from(PHOTO_BUCKET)
@@ -285,17 +347,29 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
       });
 
       if (onDone) onDone('Repair verified. Thank you.');
-      setPhotoFile(null);
-      setShotGeo(null);
-      setGeo(null);
-      setNote('');
+      resetCapture();
       await load();
     } catch (err) {
+      if (isNetworkError(err)) {
+        // The connection dropped mid-upload: keep the evidence rather than lose it.
+        try {
+          await saveOffline();
+          return;
+        } catch (saveErr) {
+          console.error('[repair] could not save offline:', saveErr);
+        }
+      }
       console.error('[repair] verification failed:', err);
       if (onDone) onDone(friendlyReportError(err, 'Could not verify this repair. Please try again.'), 'error');
     } finally {
       setBusy(false);
     }
+  };
+
+  const discardQueued = async () => {
+    if (!action?.id) return;
+    await discardQueuedRepairVerification(action.id);
+    await refreshQueued();
   };
 
   if (loading || !action || action.status === 'cancelled') return null;
@@ -339,7 +413,39 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
         </div>
       )}
 
-      {action.status === 'completed' && (
+      {action.status === 'completed' && queued && (
+        <div
+          className={`rounded-lg border p-3 ${
+            queued.status === 'rejected' ? 'border-red-200 bg-red-50' : 'border-sky-200 bg-sky-50'
+          }`}
+        >
+          {queued.status === 'rejected' ? (
+            <>
+              <p className="text-xs font-bold uppercase tracking-wide text-red-800">Upload was rejected</p>
+              <p className="mt-1 text-sm text-slate-800">
+                {friendlyReportError(new Error(queued.lastError || ''), 'The server did not accept this photo.')}
+              </p>
+              <button
+                type="button"
+                onClick={discardQueued}
+                className="mt-2 w-full rounded-lg border border-red-300 bg-white py-2 text-xs font-semibold text-red-700 hover:bg-red-50"
+              >
+                Discard and retake
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Saved on this device</p>
+              <p className="mt-1 text-sm text-slate-800">
+                Your after-photo was taken {new Date(queued.capturedAt).toLocaleString('en-PH')} and will upload
+                automatically when you are back online. Keep this page or the app open once you have signal.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {action.status === 'completed' && !queued && (
         <div className="space-y-3">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Action required</p>

@@ -989,7 +989,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
             <>
               <StatCard icon={<Icons.Road />} value={stats.total} label="Total Projects" variant="emerald" />
               <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="On-Going" variant="amber" />
-              <StatCard icon={<Icons.Lightbulb />} value={stats.pending} label="Pending" variant="violet" />
+              <StatCard icon={<Icons.Lightbulb />} value={stats.proposed} label="Proposed" variant="violet" />
               <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed" variant="sky" />
               <StatCard icon={<Icons.Ruler />} value={`${stats.totalKm} km`} label="Total Road Length" variant="default" />
             </>
@@ -1014,16 +1014,16 @@ export default function UserFMRProjects({ embedded = false } = {}) {
                     {stats.total ? `${Math.round((stats.ongoing / stats.total) * 100)}%` : '0%'}
                   </div>
                   <div
-                    className="h-full bg-slate-400 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
-                    style={{ width: `${stats.total ? (stats.pending / stats.total) * 100 : 0}%` }}
+                    className="h-full bg-sky-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
+                    style={{ width: `${stats.total ? (stats.proposed / stats.total) * 100 : 0}%` }}
                   >
-                    {stats.total ? `${Math.round((stats.pending / stats.total) * 100)}%` : '0%'}
+                    {stats.total ? `${Math.round((stats.proposed / stats.total) * 100)}%` : '0%'}
                   </div>
                 </div>
                 <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-teal-500" />Completed</span>
                   <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber-500" />On-Going</span>
-                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-slate-400" />Pending</span>
+                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-sky-500" />Proposed</span>
                 </div>
               </div>
               <p className="text-sm font-bold text-slate-800 whitespace-nowrap">Overall Completion Rate: {completionRate}%</p>

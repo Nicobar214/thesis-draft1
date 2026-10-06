@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import Icons from './Icons';
 import Logo from './Logo';
+import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
+import { SidebarConnectionStatus, SidebarReportSummary } from './UserSidebarStatus';
 
 const navItems = [
   { to: '/user', label: 'Dashboard', icon: Icons.Dashboard },
@@ -11,6 +13,13 @@ const navItems = [
   { to: '/user/reports', label: 'My Reports', icon: Icons.Document },
   { to: '/user/feedback', label: 'Community Feedback', icon: Icons.Feedback },
   { to: '/user/profile', label: 'Profile Settings', icon: Icons.Building },
+];
+
+const NAV_GROUPS = [
+  { label: 'Workspace', to: ['/user', '/user/map'] },
+  { label: 'Projects', to: ['/user/fmr-projects'] },
+  { label: 'My Activity', to: ['/user/reports', '/user/feedback'] },
+  { label: 'Account', to: ['/user/profile'] },
 ];
 
 export default function UserSidebar({ collapsed, setCollapsed, user }) {
@@ -45,8 +54,15 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+      <nav className="flex-1 px-3 py-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        {NAV_GROUPS.map((group, gi) => (
+        <div key={group.label} className="space-y-1">
+          {collapsed ? (
+            gi > 0 && <div className="mx-2 my-2 border-t border-slate-800" />
+          ) : (
+            <p className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${gi > 0 ? 'pt-4' : 'pt-1'}`}>{group.label}</p>
+          )}
+        {group.to.map((path) => navItems.find((n) => n.to === path)).filter(Boolean).map((item) => {
           const active = isActive(item.to);
           const Icon = item.icon;
           return (
@@ -68,10 +84,15 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
             </Link>
           );
         })}
+        </div>
+        ))}
+
+        {!collapsed && <SidebarReportSummary />}
       </nav>
 
       {/* User Info & Logout */}
       <div className="border-t border-slate-800 px-3 py-4 space-y-2 shrink-0">
+        <SidebarConnectionStatus collapsed={collapsed} />
         {!collapsed && user && (
           <Link to="/user/profile" className="block px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-colors">
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-0.5">Signed In</p>
@@ -87,16 +108,6 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
         >
           <Icons.Logout />
           {!collapsed && <span>Sign Out</span>}
-        </button>
-      </div>
-
-      {/* Collapse Toggle (desktop only) */}
-      <div className="hidden lg:block border-t border-slate-800 px-3 py-3 shrink-0">
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="flex items-center justify-center w-full py-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-        >
-          {collapsed ? <Icons.ChevronRight /> : <Icons.ChevronLeft />}
         </button>
       </div>
     </div>
@@ -143,6 +154,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
         }`}
       >
         {sidebarContent}
+        <SidebarEdgeToggle collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       </aside>
     </>
   );

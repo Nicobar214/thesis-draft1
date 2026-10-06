@@ -316,7 +316,7 @@ export default function LandingPage() {
               </div>
               <h3 className="font-bold text-slate-900 text-base mb-1.5">Access Platform</h3>
               <p className="text-slate-600 text-xs leading-relaxed">
-                Log in as a citizen, farmer, LGU officer, or DA engineer to access custom dashboards.
+                Log in as a citizen or a farmer to access your own dashboard.
               </p>
             </div>
 

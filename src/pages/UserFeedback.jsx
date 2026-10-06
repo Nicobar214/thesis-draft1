@@ -2,6 +2,10 @@
 import { supabase } from '../lib/supabase';
 
 import UserLayout from '../components/UserLayout';
+import ViewToggle, { useViewMode } from '../components/ui/ViewToggle';
+import Pagination, { usePagination } from '../components/ui/Pagination';
+import { ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react';
+import FeedbackDetailModal from '../components/publicReports/FeedbackDetailModal';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Feedback Type Options â”€â”€â”€ */
@@ -26,15 +30,36 @@ function StatusBadge({ status }) {
   );
 }
 
+/** Props that make a whole card or row open its detail, by mouse or keyboard. */
+function openProps(onOpen, label) {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onClick: () => onOpen(),
+    onKeyDown: (e) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onOpen();
+      }
+    },
+  };
+}
+const stop = (e) => e.stopPropagation();
+
 /* â”€â”€â”€ Feedback Card â”€â”€â”€ */
-function FeedbackCard({ feedback }) {
+function FeedbackCard({ feedback, onOpen }) {
   const [expanded, setExpanded] = useState(false);
   const typeInfo = feedbackTypes.find(t => t.value === feedback.type) || feedbackTypes[0];
 
   return (
-    <article className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden hover:border-zinc-300 hover:shadow-md transition-all duration-200 flex flex-col h-full">
+    <article
+      {...openProps(onOpen, `Open details: ${feedback.project_name || 'General Feedback'}`)}
+      className="group cursor-pointer bg-white rounded-2xl border border-slate-200/60 overflow-hidden hover:border-emerald-300 hover:shadow-md transition-all duration-200 flex flex-col h-full focus-visible:outline-2 focus-visible:outline-emerald-600"
+    >
       {feedback.photo_urls?.length > 0 && (
-        <a href={feedback.photo_urls[0]} target="_blank" rel="noopener noreferrer" className="relative block">
+        <a href={feedback.photo_urls[0]} target="_blank" rel="noopener noreferrer" onClick={stop} className="relative block">
           <img
             src={feedback.photo_urls[0]}
             alt="Report photo"
@@ -71,7 +96,7 @@ function FeedbackCard({ feedback }) {
           {feedback.message}
         </p>
         {feedback.message?.length > 120 && (
-          <button onClick={() => setExpanded(!expanded)} className="text-xs text-teal-600 hover:text-teal-700 mt-1 self-start">
+          <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }} className="text-xs text-teal-600 hover:text-teal-700 mt-1 self-start">
             {expanded ? 'Show less' : 'Read more'}
           </button>
         )}
@@ -79,7 +104,7 @@ function FeedbackCard({ feedback }) {
         {feedback.photo_urls?.length > 1 && (
           <div className="flex gap-1.5 mt-2 overflow-x-auto pb-0.5">
             {feedback.photo_urls.slice(1).map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer" onClick={stop} className="shrink-0">
                 <img
                   src={url}
                   alt={`Additional photo ${i + 2}`}
@@ -102,8 +127,113 @@ function FeedbackCard({ feedback }) {
           ) : <span />}
           <span>{new Date(feedback.created_at).toLocaleDateString()}</span>
         </div>
+        <p className="mt-3 flex items-center gap-1 border-t border-slate-100 pt-3 text-xs font-semibold text-emerald-700">
+          View details
+          <ChevronRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+        </p>
       </div>
     </article>
+  );
+}
+
+function itemTypeKey(f) {
+  return f._type === 'public_report' || f.source === 'public_report' ? 'public_report' : f.type;
+}
+
+const TYPE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All types' },
+  ...feedbackTypes.map((t) => ({ value: t.value, label: t.label })),
+  { value: 'public_report', label: 'Public Report' },
+];
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'reviewed', label: 'Reviewed' },
+  { value: 'resolved', label: 'Resolved' },
+];
+const VERIFICATION_FILTER_OPTIONS = [
+  { value: 'all', label: 'All verification' },
+  { value: 'Verified On-Site', label: 'Verified On-Site' },
+  { value: 'Needs Review', label: 'Needs Review' },
+  { value: 'Location Mismatch', label: 'Location Mismatch' },
+  { value: 'none', label: 'Not verified' },
+];
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+];
+
+function FilterSelect({ label, value, onChange, options }) {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none cursor-pointer focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+    >
+      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+/* --- Feedback Table --- */
+function verificationTone(v) {
+  if (v === 'Verified On-Site') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (v === 'Needs Review') return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-red-50 text-red-700 border-red-200';
+}
+
+function FeedbackTable({ items, onOpen }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/60 overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-4 py-3 font-semibold">Type</th>
+            <th className="px-4 py-3 font-semibold">Project</th>
+            <th className="px-4 py-3 font-semibold">Message</th>
+            <th className="px-4 py-3 font-semibold">Location</th>
+            <th className="px-4 py-3 font-semibold">Status</th>
+            <th className="px-4 py-3 font-semibold">Verification</th>
+            <th className="px-4 py-3 font-semibold whitespace-nowrap">Date</th>
+            <th className="px-2 py-3"><span className="sr-only">Details</span></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {items.map((f) => {
+            const isReport = f._type === 'public_report' || f.source === 'public_report';
+            const typeInfo = feedbackTypes.find((t) => t.value === f.type) || feedbackTypes[0];
+            return (
+              <tr key={f.id} {...openProps(() => onOpen(f), `Open details: ${f.project_name || 'General Feedback'}`)} className="group cursor-pointer hover:bg-emerald-50/40 align-top focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-600">
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className={`px-2 py-0.5 rounded-md text-xs font-medium border ${isReport ? 'bg-violet-50 text-violet-600 border-violet-200' : typeInfo.color}`}>
+                    {isReport ? 'Public Report' : typeInfo.label}
+                  </span>
+                </td>
+                <td className="px-4 py-3 font-medium text-slate-900">{f.project_name || 'General Feedback'}</td>
+                <td className="px-4 py-3 max-w-xs">
+                  <p className="line-clamp-2 text-slate-600">{f.message}</p>
+                  {f.photo_urls?.length > 0 && (
+                    <a href={f.photo_urls[0]} target="_blank" rel="noopener noreferrer" onClick={stop} className="text-xs text-teal-600 hover:text-teal-700">
+                      View photo{f.photo_urls.length > 1 ? `s (${f.photo_urls.length})` : ''}
+                    </a>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-slate-600">{[f.barangay, f.municipality].filter(Boolean).join(', ') || '—'}</td>
+                <td className="px-4 py-3"><StatusBadge status={f.status} /></td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {f.verification ? (
+                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium border ${verificationTone(f.verification)}`}>{f.verification}</span>
+                  ) : '—'}
+                </td>
+                <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(f.created_at).toLocaleDateString()}</td>
+                <td className="px-2 py-3 text-slate-300 group-hover:text-emerald-700"><ChevronRightIcon className="size-4" aria-hidden="true" /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -133,6 +263,13 @@ export default function UserFeedback() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useViewMode('userFeedback.viewMode');
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [verificationFilter, setVerificationFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [selectedItem, setSelectedItem] = useState(null);
 
   // Fetch feedbacks + user's public reports + projects
   useEffect(() => {
@@ -218,6 +355,35 @@ export default function UserFeedback() {
     return [...fbItems, ...prItems].sort((a, b) => new Date(b._sortDate) - new Date(a._sortDate));
   }, [feedbacks, publicReports]);
 
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const result = combinedItems.filter((f) => {
+      if (q) {
+        const hay = `${f.project_name || ''} ${f.message || ''} ${f.barangay || ''} ${f.municipality || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (typeFilter !== 'all' && itemTypeKey(f) !== typeFilter) return false;
+      if (statusFilter !== 'all' && (f.status || 'pending') !== statusFilter) return false;
+      if (verificationFilter === 'none') {
+        if (f.verification) return false;
+      } else if (verificationFilter !== 'all' && f.verification !== verificationFilter) return false;
+      return true;
+    });
+    const dir = sortBy === 'oldest' ? 1 : -1;
+    return result.sort((x, y) => dir * (new Date(x._sortDate) - new Date(y._sortDate)));
+  }, [combinedItems, search, typeFilter, statusFilter, verificationFilter, sortBy]);
+
+  // The road report behind an entry: the report itself, or the one a feedback is linked to.
+  const selectedReport = useMemo(() => {
+    if (!selectedItem) return null;
+    const reportId = selectedItem._originalId || selectedItem.public_report_id;
+    return reportId ? publicReports.find((r) => r.id === reportId) || null : null;
+  }, [selectedItem, publicReports]);
+
+  const pager = usePagination(filteredItems, [search, typeFilter, statusFilter, verificationFilter, sortBy].join('|'));
+  const hasFilters = Boolean(search) || typeFilter !== 'all' || statusFilter !== 'all' || verificationFilter !== 'all';
+  const clearFilters = () => { setSearch(''); setTypeFilter('all'); setStatusFilter('all'); setVerificationFilter('all'); };
+
   return (
     <UserLayout>
       <div className="space-y-8">
@@ -238,8 +404,38 @@ export default function UserFeedback() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-900">Recent Feedback</h2>
-            <span className="text-sm text-slate-400">{combinedItems.length} total</span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">{hasFilters ? `${filteredItems.length} of ${combinedItems.length}` : combinedItems.length} total</span>
+              {!loading && combinedItems.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
+            </div>
           </div>
+
+          {!loading && combinedItems.length > 0 && (
+            <div className="mb-4 flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1">
+                <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search project, message or location..."
+                  aria-label="Search feedback"
+                  className="h-10 w-full rounded-xl border border-slate-200 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <FilterSelect label="Filter by type" value={typeFilter} onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} />
+                <FilterSelect label="Filter by status" value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTER_OPTIONS} />
+                <FilterSelect label="Filter by verification" value={verificationFilter} onChange={setVerificationFilter} options={VERIFICATION_FILTER_OPTIONS} />
+                <FilterSelect label="Sort order" value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} />
+                {hasFilters && (
+                  <button type="button" onClick={clearFilters} className="inline-flex h-10 items-center gap-1 rounded-xl px-3 text-xs font-medium text-slate-500 hover:text-red-600 transition">
+                    <XIcon className="size-3.5" aria-hidden="true" /> Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -250,15 +446,31 @@ export default function UserFeedback() {
               <p className="font-medium text-slate-900">No activity yet</p>
               <p className="text-sm text-slate-500 mt-1">Reports you submit will show up here as they're reviewed.</p>
             </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/60 py-14 text-center">
+              <p className="font-medium text-slate-900">No feedback matches your filters</p>
+              <button type="button" onClick={clearFilters} className="mt-2 text-sm text-teal-600 hover:text-teal-700">Clear filters</button>
+            </div>
+          ) : viewMode === 'table' ? (
+            <FeedbackTable items={pager.pageItems} onOpen={setSelectedItem} />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {combinedItems.map(item => (
-                <FeedbackCard key={item.id} feedback={item} />
+              {pager.pageItems.map(item => (
+                <FeedbackCard key={item.id} feedback={item} onOpen={() => setSelectedItem(item)} />
               ))}
+            </div>
+          )}
+          {!loading && filteredItems.length > 0 && (
+            <div className="mt-4">
+              <Pagination pager={pager} noun="entry" />
             </div>
           )}
         </section>
       </div>
+
+      {selectedItem && (
+        <FeedbackDetailModal key={selectedItem.id} item={selectedItem} report={selectedReport} items={filteredItems} onSelect={setSelectedItem} onClose={() => setSelectedItem(null)} />
+      )}
     </UserLayout>
   );
 }

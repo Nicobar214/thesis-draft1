@@ -1,3 +1,4 @@
+import { SearchIcon } from 'lucide-react';
 import { useMemo, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -114,7 +115,7 @@ export default function PublicReportRouteMapPanel({
             onClick={onResetFocus}
             className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100 transition shrink-0 shadow-2xs"
           >
-            🔍 Reset Full View
+            <SearchIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Reset Full View
           </button>
         )}
       </div>

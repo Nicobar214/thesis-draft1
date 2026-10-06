@@ -44,6 +44,25 @@ export default function UserLayout({
     });
   }, [navigate, requireAuth]);
 
+  // The citizen session lives in one localStorage slot shared by every tab of this browser
+  // profile. If another tab signs in as a different account (or signs out), this tab must not
+  // keep showing the previous account's data: reload for the new user, or go to sign-in.
+  useEffect(() => {
+    if (!requireAuth) return undefined;
+    let loadedFor;
+    supabase.auth.getSession().then(({ data: { session } }) => { loadedFor = session?.user?.id ?? null; });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (loadedFor === undefined) return;
+      const nextId = session?.user?.id ?? null;
+      if (event === 'SIGNED_OUT' || !nextId) {
+        navigate('/signin');
+      } else if (loadedFor && nextId !== loadedFor) {
+        window.location.reload();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [navigate, requireAuth]);
+
   const rootClass = rootClassName ?? 'min-h-screen bg-slate-50 font-sans text-slate-800';
 
   return (
@@ -58,7 +77,7 @@ export default function UserLayout({
       >
         {showHeader && (
           <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4`}>
               <div className="flex items-center gap-3">
                 <h1 className="text-base sm:text-lg font-bold text-slate-900">{pageTitle}</h1>
                 <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -94,7 +113,7 @@ export default function UserLayout({
           </header>
         )}
 
-        <div className={`mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 pt-16 lg:pt-6 ${contentClassName}`}>
+        <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 py-6 pt-16 lg:pt-6 ${contentClassName}`}>
           {children}
         </div>
       </main>

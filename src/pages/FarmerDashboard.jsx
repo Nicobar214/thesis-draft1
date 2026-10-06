@@ -1,3 +1,4 @@
+import { ClipboardListIcon, MapPinIcon, StoreIcon, TriangleAlertIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline, useMap } from "react-leaflet";
@@ -13,6 +14,7 @@ import DAResolutionCertificate from "../components/publicReports/DAResolutionCer
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
 import Icons from "../components/Icons";
 import Logo from "../components/Logo";
+import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
@@ -481,7 +483,7 @@ export default function FarmerDashboard() {
                 activeTab === "overview" ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              📍 Logistics Map
+              <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Logistics Map
             </button>
             <button
               onClick={() => setActiveTab("report_damage")}
@@ -489,7 +491,7 @@ export default function FarmerDashboard() {
                 activeTab === "report_damage" ? "bg-amber-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              ⚠️ Report Issue
+              <TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Report Issue
             </button>
             <button
               onClick={() => setActiveTab("my_reports")}
@@ -497,7 +499,7 @@ export default function FarmerDashboard() {
                 activeTab === "my_reports" ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              📋 My Reports ({myReports.length})
+              <ClipboardListIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />My Reports ({myReports.length})
             </button>
             <button
               onClick={() => setActiveTab("markets")}
@@ -505,7 +507,7 @@ export default function FarmerDashboard() {
                 activeTab === "markets" ? "bg-emerald-700 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              🏪 Markets Directory
+              <StoreIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Markets Directory
             </button>
           </div>
 
@@ -554,7 +556,7 @@ export default function FarmerDashboard() {
                         </div>
                       </Popup>
                       <Tooltip permanent direction="top" opacity={0.9}>
-                        <span className="text-[10px] font-bold text-emerald-800">My Farm 🏡</span>
+                        <span className="text-[10px] font-bold text-emerald-800">My Farm</span>
                       </Tooltip>
                     </CircleMarker>
 
@@ -565,7 +567,7 @@ export default function FarmerDashboard() {
                           position={[Number(nearestFmr.start_latitude), Number(nearestFmr.start_longitude)]}
                           icon={new L.DivIcon({
                             className: 'fmr-endpoint-pin',
-                            html: `<div style="background:#f59e0b;color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:bold">🛣️</div>`,
+                            html: `<div style="background:#f59e0b;color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:bold">${routeGlyph(13)}</div>`,
                             iconSize: [24, 24],
                             iconAnchor: [12, 12],
                           })}
@@ -603,7 +605,7 @@ export default function FarmerDashboard() {
                         position={[Number(m.latitude), Number(m.longitude)]}
                         icon={new L.DivIcon({
                           className: 'market-pin',
-                          html: `<div style="background:${m.id === nearestMarket?.id ? '#4338ca' : '#64748b'};color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2)">🏪</div>`,
+                          html: `<div style="background:${m.id === nearestMarket?.id ? '#4338ca' : '#64748b'};color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2)">${storeGlyph(14)}</div>`,
                           iconSize: [28, 28],
                           iconAnchor: [14, 14],
                         })}
@@ -680,13 +682,13 @@ export default function FarmerDashboard() {
                   onClick={() => setActiveTab("report_damage")}
                   className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 w-full sm:w-auto"
                 >
-                  <span>⚠️ Submit New Report</span>
+                  <span><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Submit New Report</span>
                 </button>
               </div>
 
               {myReports.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
-                  <div className="text-3xl">📋</div>
+                  <ClipboardListIcon className="size-9 mx-auto text-slate-300" aria-hidden="true" />
                   <p className="font-semibold text-slate-700 text-sm">No reports submitted yet</p>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">If you encounter issues on your FMR access road, click "Submit New Report" to alert your LGU and DA engineers.</p>
                 </div>

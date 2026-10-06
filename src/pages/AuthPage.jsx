@@ -241,12 +241,12 @@ export default function AuthPage({ mode = "signin" }) {
     }
   };
 
-  const heading = isForgot ? "Reset your password" : isSignup ? "Create your account" : "Welcome back";
+  const heading = isForgot ? "Reset your password" : isSignup ? "Create your account" : "Sign in to KalsaTrack";
   const subheading = isForgot
     ? "Enter your email and we'll send you a reset link."
     : isSignup
       ? "Join the transparency movement in Region VI."
-      : "Sign in to track farm-to-market road projects.";
+      : "Use your registered email and password to continue.";
 
   const submitLabel = isForgot ? "Send reset link" : isSignup ? "Create Account" : "Sign In";
   const busyLabel = isForgot ? "Sending…" : isSignup ? "Creating account…" : "Signing in…";

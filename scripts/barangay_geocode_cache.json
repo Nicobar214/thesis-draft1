@@ -443,9 +443,10 @@
     "query": "Tagsing, Leon, Iloilo, Philippines"
   },
   "Talacuan": {
-    "lat": 10.947121814700694,
-    "lng": 122.37550392950438,
-    "source": "fallback-centroid"
+    "lat": 10.7744169,
+    "lng": 122.389445,
+    "source": "osm-place",
+    "note": "OSM place node Talacu-an; consistent with Talacu-an-Takasi-Panginman Road"
   },
   "Ticuan": {
     "lat": 10.8582148,
@@ -472,18 +473,21 @@
     "query": "Tu-og, Leon, Iloilo, Philippines"
   },
   "Tunguan": {
-    "lat": 10.614070453965695,
-    "lng": 122.36683830990069,
-    "source": "fallback-centroid"
+    "lat": 10.8708,
+    "lng": 122.3339,
+    "source": "osm-place",
+    "note": "nearest OSM Tunguan node; consistent with Tunguan-Lampaya, Tunguan-Banagan and Gines-Tunguan roads"
   },
   "Baje": {
-    "lat": 10.654696707574976,
-    "lng": 122.27427546229023,
-    "source": "fallback-centroid"
+    "lat": 10.785252,
+    "lng": 122.3406,
+    "source": "road-inferred",
+    "note": "no OSM place; end point of Avanzada-Baje Road. Estimate, between Avanzada and Tacuyong Sur"
   },
   "Salngan": {
-    "lat": 10.614070453965695,
-    "lng": 122.36683830990069,
-    "source": "fallback-centroid"
+    "lat": 10.7824303,
+    "lng": 122.364584,
+    "source": "osm-place",
+    "note": "OSM place node Salngan; consistent with Salngan-Isian Victoria Rd (other OSM node is outside Leon)"
   }
 }

@@ -1,3 +1,4 @@
+import { CameraIcon, FileTextIcon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -341,12 +342,12 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
               <div className="mt-3 flex flex-wrap gap-2">
                 {proposal.photo_url && (
                   <button type="button" onClick={() => openAttachment(proposal.photo_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
-                    📷 View Road Photo
+                    <CameraIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />View Road Photo
                   </button>
                 )}
                 {proposal.document_url && (
                   <button type="button" onClick={() => openAttachment(proposal.document_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
-                    📄 {proposal.document_name || 'View Document'}
+                    <FileTextIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{proposal.document_name || 'View Document'}
                   </button>
                 )}
               </div>
@@ -387,7 +388,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
 
           {duplicate && (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-widest text-orange-700">⚠ Possible Duplicate</p>
+              <p className="text-xs font-semibold uppercase tracking-widest text-orange-700"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Possible Duplicate</p>
               <p className="mt-1 text-sm text-orange-900">
                 {duplicate.reason === 'location' &&
                   `An existing project "${duplicate.project.project_name}" is only ~${Math.round(duplicate.distanceMeters)}m away (status: ${duplicate.project.status}). Same location — likely the same road.`}

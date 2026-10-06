@@ -1,3 +1,4 @@
+import { MapPinIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline } from 'react-leaflet';
@@ -17,11 +18,14 @@ import LguProjectProposalsTab from '../components/lgu/LguProjectProposalsTab';
 import BeneficiaryCsvImport from '../components/lgu/BeneficiaryCsvImport';
 import { getBarangays, getMunicipalities } from '../data/iloiloLocations';
 import { BENEFICIARY_CROPS } from '../utils/farmerBeneficiaryData';
-import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from '../lib/mapRouteUtils';
+import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm, isOverdueProject } from '../lib/mapRouteUtils';
+import { AttentionSummary, ConnectionStatus } from '../components/ui/SidebarStatusCards';
+import MapSearchBox from '../components/map/MapSearchBox';
 import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
 import roadInventory from '../data/leonRoadInventory.json';
 import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
+import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -77,7 +81,7 @@ function resolveProjectPoint(project, coordMap) {
 function suggestedRoadIcon(isExactMatch) {
   return new L.DivIcon({
     className: 'suggested-fmr-pin',
-    html: `<div style="background:#f59e0b;opacity:${isExactMatch ? 1 : 0.7};color:#fff;width:26px;height:26px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);font-size:12px">🛣️</div>`,
+    html: `<div style="background:#f59e0b;opacity:${isExactMatch ? 1 : 0.7};color:#fff;width:26px;height:26px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);font-size:12px">${routeGlyph(13)}</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
@@ -86,7 +90,7 @@ function suggestedRoadIcon(isExactMatch) {
 function beneficiaryMarketIcon(isNearest) {
   return new L.DivIcon({
     className: 'beneficiary-market-pin',
-    html: `<div style="background:${isNearest ? '#4338ca' : '#64748b'};color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:11px">🏪</div>`,
+    html: `<div style="background:${isNearest ? '#4338ca' : '#64748b'};color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:11px">${storeGlyph(14)}</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
@@ -621,43 +625,13 @@ export default function LguDashboard() {
   // Shared toast (see lib/toast.js); previously a blocking window.alert.
   const showNotification = notify;
 
-  const handleLguMapSearchSubmit = async () => {
-    const query = lguMapSearch.trim();
-    if (!query) return;
-
-    // 1. Try to find a local project that matches the query
-    const matchedProject = projects.find(p => 
-      (p.project_name || '').toLowerCase().includes(query.toLowerCase()) &&
-      p.start_latitude && p.start_longitude
-    );
-
-    if (matchedProject) {
-      setLguMapCenter([Number(matchedProject.start_latitude), Number(matchedProject.start_longitude)]);
-      setLguMapZoom(15);
-      setLguMapSearchMarker(null); // Clear search marker since project has its own start icon
-      showNotification(`Map focused on project: ${matchedProject.project_name}`, 'info');
-      return;
-    }
-
-    // 2. Try Nominatim Geocoding search within municipality
-    try {
-      const fullQuery = `${query}, Iloilo, Philippines`;
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}`);
-      const results = await res.json();
-      if (results && results.length > 0) {
-        const { lat, lon } = results[0];
-        const coords = [Number(lat), Number(lon)];
-        setLguMapCenter(coords);
-        setLguMapZoom(14);
-        setLguMapSearchMarker(coords); // Set custom search marker!
-        showNotification(`Map focused on location: ${results[0].display_name.split(',')[0]}`, 'info');
-      } else {
-        showNotification('No matching project or location found.', 'warning');
-      }
-    } catch (err) {
-      console.error(err);
-      showNotification('Error performing map search.', 'error');
-    }
+  // The search box suggests barangays, roads and places; picking one flies the map there.
+  const handleLguMapPlaceSelect = (place) => {
+    setLguMapCenter([place.lat, place.lng]);
+    setLguMapZoom(place.zoom);
+    // Projects already draw their own start marker; other places get a pin.
+    setLguMapSearchMarker(place.type === 'project' ? null : [place.lat, place.lng]);
+    showNotification(`Map focused on ${place.label}${place.approx ? ' (approximate position)' : ''}`, 'info');
   };
 
   const handleSignOut = async () => {
@@ -1137,6 +1111,39 @@ export default function LguDashboard() {
 
   const activeSection = navItems.find((item) => item.id === activeTab) || navItems[0];
 
+  const NAV_GROUPS = [
+    { label: 'Operations', ids: ['overview', 'proposals'] },
+    { label: 'Community', ids: ['beneficiaries', 'markets'] },
+    { label: 'Insights', ids: ['analytics'] },
+  ];
+  const navGroups = NAV_GROUPS
+    .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
+    .filter((g) => g.items.length > 0);
+
+  const attentionRows = [
+    {
+      key: 'escalations',
+      label: 'Escalations to act on',
+      count: escalations.filter((e) => e.escalation_status === 'for_action').length,
+      tone: 'rose',
+      onClick: () => { setActiveTab('analytics'); setSidebarOpen(false); },
+    },
+    {
+      key: 'pending',
+      label: 'Pending citizen reports',
+      count: reports.filter((r) => r.status === 'pending').length,
+      tone: 'amber',
+      onClick: () => { setStatusFilter('pending'); setActiveTab('overview'); setSidebarOpen(false); },
+    },
+    {
+      key: 'overdue',
+      label: 'Overdue projects',
+      count: projects.filter(isOverdueProject).length,
+      tone: 'rose',
+      onClick: () => { setLguMapShowOverdueOnly(true); setActiveTab('overview'); setSidebarOpen(false); },
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 lg:flex">
       <aside className={`fixed inset-y-0 left-0 z-40 border-r border-slate-800 bg-slate-900 text-white shadow-2xl transition-all duration-300 ${
@@ -1163,12 +1170,21 @@ export default function LguDashboard() {
           </div>
 
           {/* Navigation Area */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3 overflow-x-hidden">
+          <nav className="flex-1 overflow-y-auto px-2 py-3 overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <p className={`px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 transition-all duration-300 overflow-hidden whitespace-nowrap ${sidebarCollapsed ? 'opacity-0 h-0 pb-0 overflow-hidden' : 'opacity-100 h-auto'}`}>
-              Main Menu
+              {navGroups[0]?.label}
             </p>
             <div className="space-y-1.5">
-              {navItems.map((item) => (
+              {navGroups.map((group, gi) => (
+              <div key={group.label} className="space-y-1.5">
+                {gi > 0 && (
+                  sidebarCollapsed ? (
+                    <div className="mx-2 my-2 border-t border-slate-700/60" />
+                  ) : (
+                    <p className="px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
+                  )
+                )}
+              {group.items.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => {
@@ -1202,11 +1218,17 @@ export default function LguDashboard() {
                   </div>
                 </button>
               ))}
+              </div>
+              ))}
             </div>
+
+            {!sidebarCollapsed && <AttentionSummary rows={attentionRows} />}
           </nav>
 
           {/* Bottom Area */}
           <div className="border-t border-slate-700/60 p-4 overflow-hidden shrink-0">
+            <ConnectionStatus collapsed={sidebarCollapsed} />
+
             {/* User Profile display */}
             <div className="flex items-center gap-3">
               <div 
@@ -1278,7 +1300,7 @@ export default function LguDashboard() {
         sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-80'
       }`}>
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 lg:px-6">
+          <div className="flex w-full items-center justify-between gap-3 px-4 py-4 lg:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 onClick={() => setSidebarOpen((open) => !open)}
@@ -1307,7 +1329,7 @@ export default function LguDashboard() {
           </div>
         </header>
 
-        <main className="mx-auto w-full flex-1 px-4 py-5 lg:px-6 max-w-[1800px]">
+        <main className="w-full flex-1 px-4 py-5 lg:px-6">
           {activeTab === 'overview' && (
             <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
               {/* Total FMR Projects */}
@@ -1369,28 +1391,15 @@ export default function LguDashboard() {
 
                   {/* LGU Map Projects Filter Toolbar */}
                   <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row gap-3">
-                    <div className="relative flex-1 flex gap-2">
-                      <div className="relative flex-1">
-                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-                        </svg>
-                        <input
-                          type="text"
-                          value={lguMapSearch}
-                          onChange={(e) => setLguMapSearch(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleLguMapSearchSubmit();
-                          }}
-                          placeholder="Search project name or location (e.g. Bucari)..."
-                          className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                        />
-                      </div>
-                      <button
-                        onClick={handleLguMapSearchSubmit}
-                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm shrink-0"
-                      >
-                        Search
-                      </button>
+                    <div className="relative flex-1">
+                      <MapSearchBox
+                        projects={projects}
+                        value={lguMapSearch}
+                        onChange={setLguMapSearch}
+                        onSelect={handleLguMapPlaceSelect}
+                        placeholder="Search a barangay, road or project (e.g. Bucari)..."
+                        inputClassName="py-2.5"
+                      />
                     </div>
 
                     <div className="flex flex-wrap gap-2.5 items-center">
@@ -1468,6 +1477,7 @@ export default function LguDashboard() {
                     mapZoom={lguMapZoom}
                     searchMarker={lguMapSearchMarker}
                     roadGaps={roadGaps}
+                    escalations={escalations}
                   />
                 </div>
 
@@ -2089,7 +2099,7 @@ export default function LguDashboard() {
                                             onClick={() => setSelectedFarmerForModal(row)}
                                             className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/50 hover:bg-emerald-100 transition-colors"
                                           >
-                                            📍 {Number(row.farmLatitude).toFixed(5)}, {Number(row.farmLongitude).toFixed(5)}
+                                            <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{Number(row.farmLatitude).toFixed(5)}, {Number(row.farmLongitude).toFixed(5)}
                                           </button>
                                         ) : (
                                           <p className="text-[10px] text-slate-400 italic">No coordinates set</p>
@@ -2391,7 +2401,7 @@ export default function LguDashboard() {
                       {/* Map Preview Area */}
                       <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 h-[280px] md:h-auto flex flex-col">
                         <div className="p-3 bg-slate-100 border-b border-slate-200 text-xs font-semibold text-slate-700 flex justify-between">
-                          <span>📍 Location & Infrastructure Map</span>
+                          <span><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Location & Infrastructure Map</span>
                           {selectedFarmerForModal.farmLatitude && selectedFarmerForModal.farmLongitude && (
                             <span className="font-mono text-emerald-600 font-bold">{Number(selectedFarmerForModal.farmLatitude).toFixed(4)}, {Number(selectedFarmerForModal.farmLongitude).toFixed(4)}</span>
                           )}
@@ -2471,7 +2481,7 @@ export default function LguDashboard() {
                                       position={marketCoords}
                                       icon={new L.DivIcon({
                                         className: 'custom-market-pin',
-                                        html: `<div style="background:#4338ca;color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);font-size:12px">🏪</div>`,
+                                        html: `<div style="background:#4338ca;color:#fff;width:28px;height:28px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.25);font-size:12px">${storeGlyph(14)}</div>`,
                                         iconSize: [28, 28],
                                         iconAnchor: [14, 14],
                                       })}

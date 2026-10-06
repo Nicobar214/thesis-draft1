@@ -1,3 +1,4 @@
+import { MapPinIcon, UserIcon } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -580,7 +581,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
                     <td className="px-4 py-3 text-slate-700">
                       <p className="font-semibold">{m.barangay || 'N/A'}, {m.municipality}</p>
                       <p className="text-xs font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 w-fit mt-1">
-                        📍 {m.latitude.toFixed(5)}, {m.longitude.toFixed(5)}
+                        <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{m.latitude.toFixed(5)}, {m.longitude.toFixed(5)}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-slate-600 text-xs">
@@ -588,7 +589,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
                       {m.operating_hours && <p><span className="font-medium text-slate-400">Hours:</span> {m.operating_hours}</p>}
                       {(m.contact_person || m.contact_number) && (
                         <p className="mt-1">
-                          👤 {m.contact_person || ''} {m.contact_number ? `(${m.contact_number})` : ''}
+                          <UserIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{m.contact_person || ''} {m.contact_number ? `(${m.contact_number})` : ''}
                         </p>
                       )}
                     </td>

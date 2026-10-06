@@ -2,11 +2,12 @@
  * and public reports linked to assigned projects.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import { formatPercentage } from '../lib/percentageFormat';
 import { toast } from '../lib/toast';
+import { pipelineStage } from '../lib/contractorPipeline';
 
 // ── Status badge ─────────────────────────────────────────────
 function ReportStatusBadge({ status }) {
@@ -50,6 +51,8 @@ function SummaryCard({ value, label, tone }) {
 
 export default function ContractorReports() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get('update');
   const [user, setUser] = useState(null);
   const [publicReports, setPublicReports] = useState([]);
   const [progressHistory, setProgressHistory] = useState([]);
@@ -98,7 +101,7 @@ export default function ContractorReports() {
           .order('created_at', { ascending: false }),
         supabase
           .from('progress_updates')
-          .select('id, fmr_project_id, reported_accomplishment, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment, status)')
+          .select('id, fmr_project_id, reported_accomplishment, remarks, photo_url, status, certification_status, certification_remarks, certified_accomplishment, approval_remarks, submitted_at, reviewed_at, certified_at, fmr_projects(project_name, municipality, accomplishment, status)')
           .eq('contractor_id', user.id)
           .in('fmr_project_id', rawProjectIds)
           .order('submitted_at', { ascending: false })
@@ -134,6 +137,11 @@ export default function ContractorReports() {
       };
     }
   }, [user, fetchData]);
+
+  useEffect(() => {
+    if (!highlightId || loading) return;
+    document.getElementById(`update-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, loading, progressHistory]);
 
   // ── Remark helpers ───────────────────────────────────────────
   const openRemark = (reportId, existing) => {
@@ -215,9 +223,9 @@ export default function ContractorReports() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           <SummaryCard value={progressHistory.length} label="Total Submissions" tone="text-slate-900" />
-          <SummaryCard value={progressHistory.filter((item) => item.status === 'pending').length} label="Pending Review" tone="text-amber-700" />
+          <SummaryCard value={progressHistory.filter((item) => pipelineStage(item).key === 'awaiting_engineer').length} label="With site engineer" tone="text-amber-700" />
+          <SummaryCard value={progressHistory.filter((item) => pipelineStage(item).key === 'awaiting_admin').length} label="With DA for approval" tone="text-sky-700" />
           <SummaryCard value={progressHistory.filter((item) => item.status === 'approved').length} label="Approved" tone="text-emerald-700" />
-          <SummaryCard value={progressHistory.filter((item) => item.status === 'rejected').length} label="Rejected" tone="text-red-600" />
           <SummaryCard value={publicReports.length} label="Linked Public Reports" tone="text-sky-700" />
         </div>
 
@@ -243,7 +251,7 @@ export default function ContractorReports() {
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Project %</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stage</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted At</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reviewed At</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
@@ -252,14 +260,27 @@ export default function ContractorReports() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {progressHistory.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors align-top">
+                    <tr key={item.id} id={`update-${item.id}`} className={`transition-colors align-top ${item.id === highlightId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60'}`}>
                       <td className="px-5 py-4 max-w-xs">
                         <p className="text-sm font-semibold text-slate-900 line-clamp-2">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
                         {item.fmr_projects?.municipality && <p className="text-xs text-slate-500 mt-0.5">{item.fmr_projects.municipality}</p>}
                       </td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-slate-900 font-mono">{formatPercentage(item.reported_accomplishment)}</td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 font-mono">{formatPercentage(item.fmr_projects?.accomplishment ?? 0)}</td>
-                      <td className="px-5 py-4"><ProgressStatusBadge status={item.status} /></td>
+                      <td className="px-5 py-4">
+                        {(() => {
+                          const stage = pipelineStage(item);
+                          return (
+                            <>
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${stage.badge}`}>{stage.label}</span>
+                              <p className="mt-1.5 max-w-[14rem] text-[11px] leading-snug text-slate-500">{stage.helper}</p>
+                              {stage.needsFix && (item.certification_remarks || item.approval_remarks) && (
+                                <p className="mt-1.5 max-w-[14rem] rounded-md bg-red-50 px-2 py-1 text-[11px] text-red-700">{item.certification_remarks || item.approval_remarks}</p>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{fmtDateTime(item.submitted_at)}</td>
                       <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{item.status === 'pending' ? 'Awaiting review' : fmtDateTime(item.reviewed_at)}</td>
                       <td className="px-5 py-4 max-w-xs"><p className="text-xs text-slate-600 line-clamp-3">{item.remarks || '—'}</p></td>

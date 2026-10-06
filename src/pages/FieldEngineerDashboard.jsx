@@ -2,6 +2,7 @@
  * Features: Collapsible left sidebar navigation, responsive PWA mobile bottom bar & drawer,
  * GIS Map Explorer, Progress Certification, Damage Reports Inspection, and Profile Management.
  */
+import { CheckIcon, CircleHelpIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
@@ -10,10 +11,13 @@ import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/u
 import { buttonClass } from '../components/ui/Button';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import Logo from '../components/Logo';
+import SidebarEdgeToggle from '../components/ui/SidebarEdgeToggle';
 import NotificationBell from '../components/NotificationBell';
 import RepairVerifyPanel from '../components/publicReports/RepairVerifyPanel';
+import { syncRepairVerifications } from '../lib/offlineRepairVerifications';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
-import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
+import FieldEngineerMap from '../components/publicReports/FieldEngineerMap';
+import { SidebarSyncStatus, SidebarTodaySummary } from '../components/publicReports/FieldSidebarStatus';
 import { startPublicReportInspection } from '../services/publicReportWorkflow';
 import { friendlyReportError } from '../lib/publicReportStatus';
 
@@ -74,11 +78,11 @@ function ReportStatusBadge({ status }) {
 
 function VerifyBadge({ verification }) {
   const map = {
-    'Verified On-Site':   { icon: '✓', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    'Needs Review':       { icon: '!', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-    'Location Mismatch':  { icon: '✕', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+    'Verified On-Site':   { icon: <CheckIcon className="size-3" aria-hidden="true" />, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    'Needs Review':       { icon: <TriangleAlertIcon className="size-3" aria-hidden="true" />, cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    'Location Mismatch':  { icon: <XIcon className="size-3" aria-hidden="true" />, cls: 'bg-rose-50 text-rose-700 border-rose-200' },
   };
-  const s = map[verification] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+  const s = map[verification] || { icon: <CircleHelpIcon className="size-3" aria-hidden="true" />, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${s.cls}`}>{s.icon} {verification}</span>;
 }
 
@@ -107,6 +111,7 @@ export default function FieldEngineerDashboard() {
   const [pageSize, setPageSize] = useState(10);
 
   const [selectedReport, setSelectedReport] = useState(null);
+  const [mapStatus, setMapStatus] = useState('all');
   const [engineerNotes, setEngineerNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -123,6 +128,28 @@ export default function FieldEngineerDashboard() {
     return () => {
       window.removeEventListener('online', updateStatus);
       window.removeEventListener('offline', updateStatus);
+    };
+  }, []);
+
+  // Repair-verification photos taken with no signal are queued on the device;
+  // upload them on load and whenever the connection returns.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await syncRepairVerifications(supabase);
+        if (cancelled) return;
+        if (res.synced) notify(`${res.synced} saved repair verification${res.synced === 1 ? '' : 's'} uploaded.`);
+        if (res.rejected) notify('A saved repair photo was rejected. Open the report to see why and retake it.', 'error');
+      } catch (err) {
+        console.warn('[repair] offline sync failed:', err?.message || err);
+      }
+    };
+    run();
+    window.addEventListener('online', run);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', run);
     };
   }, []);
 
@@ -420,6 +447,17 @@ export default function FieldEngineerDashboard() {
     }));
   }, [reports]);
 
+  const openFieldMap = (status = 'all') => {
+    setMapStatus(status);
+    setActiveNav('gis-map');
+  };
+
+  // The status chosen on the overview only seeds the map when it opens; clear it
+  // afterwards so a later visit through the sidebar starts unfiltered.
+  useEffect(() => {
+    if (activeNav !== 'gis-map') setMapStatus('all');
+  }, [activeNav]);
+
   if (!user || !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
@@ -433,11 +471,20 @@ export default function FieldEngineerDashboard() {
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
+    { id: 'gis-map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
     { id: 'certify', label: 'Certify Progress', count: certifyCount, icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
     { id: 'reports', label: 'Damage Reports', count: metrics.total, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
-    { id: 'gis-map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
     { id: 'profile', label: 'Engineer Profile', icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0zM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
   ];
+
+  const NAV_GROUPS = [
+    { label: 'Workspace', ids: ['overview', 'gis-map'] },
+    { label: 'Inspections', ids: ['certify', 'reports'] },
+    { label: 'Account', ids: ['profile'] },
+  ];
+  const navGroups = NAV_GROUPS
+    .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div className="field-engineer-theme min-h-screen bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
@@ -469,22 +516,18 @@ export default function FieldEngineerDashboard() {
               FE
             </div>
           )}
-
-          {/* Collapse/Expand Toggle Button */}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className={`p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all border border-slate-700 ${sidebarCollapsed ? 'mx-auto mt-1' : ''}`}
-            title={sidebarCollapsed ? "Expand Navigation" : "Collapse Navigation"}
-          >
-            <svg className={`w-4 h-4 transition-transform duration-300 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-            </svg>
-          </button>
         </div>
 
         {/* Navigation Items */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+        <nav className="flex-1 py-3 px-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {navGroups.map((group, gi) => (
+          <div key={group.label} className="space-y-1">
+            {sidebarCollapsed ? (
+              gi > 0 && <div className="mx-2 my-2 border-t border-slate-700/60" />
+            ) : (
+              <p className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${gi > 0 ? 'pt-4' : 'pt-1'}`}>{group.label}</p>
+            )}
+          {group.items.map((item) => {
             const active = activeNav === item.id;
             return (
               <button
@@ -517,10 +560,20 @@ export default function FieldEngineerDashboard() {
               </button>
             );
           })}
+          </div>
+          ))}
+
+          {!sidebarCollapsed && (
+            <SidebarTodaySummary
+              metrics={metrics}
+              onOpen={(tab) => { setActiveReportTab(tab); setActiveNav('reports'); }}
+            />
+          )}
         </nav>
 
-        {/* Sidebar Footer User Info */}
+        {/* Sidebar Footer: connection state + user */}
         <div className="p-3 border-t border-slate-700/60 bg-slate-900/60">
+          <SidebarSyncStatus isOffline={isOffline} collapsed={sidebarCollapsed} />
           {!sidebarCollapsed ? (
             <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-800/70 border border-slate-700">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -554,6 +607,7 @@ export default function FieldEngineerDashboard() {
             </button>
           )}
         </div>
+        <SidebarEdgeToggle collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       </aside>
 
       {/* ── MOBILE SLIDE-OUT DRAWER OVERLAY ── */}
@@ -569,7 +623,7 @@ export default function FieldEngineerDashboard() {
                 onClick={() => setMobileDrawerOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800"
               >
-                ✕
+                <XIcon className="size-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -624,7 +678,7 @@ export default function FieldEngineerDashboard() {
       }`}>
         {/* Top Header Bar (Matches Admin Page) */}
         <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Mobile Hamburger Drawer Button */}
               <button
@@ -652,6 +706,7 @@ export default function FieldEngineerDashboard() {
               <NotificationBell
                 client={supabase}
                 onSelect={(n) => {
+                  if (n.progress_update_id) { setActiveNav('certify'); return; }
                   const match = reports.find((r) => r.id === n.report_id);
                   if (match) {
                     setSelectedReport(match);
@@ -671,7 +726,7 @@ export default function FieldEngineerDashboard() {
         </header>
 
         {/* Main Section Body */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5">
+        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-5">
 
           {/* ── VIEW 1: OVERVIEW DASHBOARD ── */}
           {activeNav === 'overview' && (
@@ -684,8 +739,9 @@ export default function FieldEngineerDashboard() {
                       DA RAED Field Command
                     </span>
                     <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-950">
-                      Welcome back, {profile.full_name || 'Engineer'}
+                      Field Operations Overview
                     </h1>
+                    <p className="text-xs font-medium text-teal-700 mt-1">Signed in as {profile.full_name || 'Field Engineer'}</p>
                     <p className="text-sm text-slate-600 mt-1 max-w-2xl leading-6">
                       Department of Agriculture Region VI Field Operations. Measure contractor progress, inspect public damage reports, and verify infrastructure quality.
                     </p>
@@ -769,6 +825,39 @@ export default function FieldEngineerDashboard() {
                 </div>
               </div>
 
+              {/* Field map preview: compact; the full tool is the GIS Field Map tab */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">Today's Field Map</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Assigned sites on the FMR network. Click a site to start its inspection.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                    {[
+                      { status: 'assigned', label: 'Assigned', n: metrics.assigned, cls: 'border-blue-200 bg-blue-50 text-blue-700' },
+                      { status: 'in_progress', label: 'In progress', n: metrics.inProgress, cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+                      { status: 'rejected', label: 'Rework', n: metrics.needsRework, cls: 'border-rose-200 bg-rose-50 text-rose-700' },
+                    ].map((c) => (
+                      <button
+                        key={c.status}
+                        type="button"
+                        onClick={() => openFieldMap(c.status)}
+                        title={`Show ${c.label.toLowerCase()} sites on the full map`}
+                        className={`rounded-full border px-2.5 py-1 hover:shadow-sm transition ${c.cls}`}
+                      >
+                        {c.label} {c.n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <FieldEngineerMap
+                  compact
+                  reports={reports}
+                  onOpenReport={(rpt) => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
+                  onOpenFullMap={openFieldMap}
+                />
+              </div>
+
               {/* Recent Assigned Damage Reports Preview */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -806,7 +895,7 @@ export default function FieldEngineerDashboard() {
                       </svg>
                       {searchQuery && (
                         <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600">
-                          ✕
+                          <XIcon className="size-4" aria-hidden="true" />
                         </button>
                       )}
                     </div>
@@ -1063,7 +1152,7 @@ export default function FieldEngineerDashboard() {
                     </svg>
                     {searchQuery && (
                       <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600">
-                        ✕
+                        <XIcon className="size-4" aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -1292,21 +1381,19 @@ export default function FieldEngineerDashboard() {
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-950">Geospatial GIS Field Map</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Interactive map of assigned public damage reports across Region VI</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Assigned report sites, FMR routes and unpaved gaps, with your live position and a suggested visit order</p>
                 </div>
                 <div className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800">
                   <span className="w-3 h-3 rounded-full bg-teal-500 inline-block" /> {mapReportPoints.length} Geotagged Sites
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm overflow-hidden">
-                <PublicReportRouteMapPanel
-                  reportLatitude={mapReportPoints[0]?.lat}
-                  reportLongitude={mapReportPoints[0]?.lng}
-                  heightClass="h-[520px]"
-                  title="Field Engineer Inspection Map"
-                />
-              </div>
+              <FieldEngineerMap
+                key={mapStatus}
+                initialStatus={mapStatus}
+                reports={reports}
+                onOpenReport={(rpt) => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
+              />
             </div>
           )}
 
@@ -1388,7 +1475,7 @@ export default function FieldEngineerDashboard() {
                 aria-label="Close dialog"
                 className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
-                ✕
+                <XIcon className="size-4" aria-hidden="true" />
               </button>
             </div>
 

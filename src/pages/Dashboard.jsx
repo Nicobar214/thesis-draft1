@@ -1,4 +1,5 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
+import { CheckIcon, CircleHelpIcon, ClipboardListIcon, MapPinIcon, SearchIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, XIcon, ZapIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
@@ -59,10 +60,23 @@ import ProjectSchedulingTab from '../components/admin/ProjectSchedulingTab';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
 import { computeRoadGapPriorityScores } from '../lib/priorityScoring';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
+import ProjectProgressReport from '../components/admin/ProjectProgressReport';
+import { PROJECT_FILTERS } from '../lib/projectSchedule';
+import { FileTextIcon } from 'lucide-react';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
 import Logo from '../components/Logo';
+import StableHeatLayer from '../components/map/StableHeatLayer';
+import { useHeatLapse } from '../lib/useHeatLapse';
+import MapSearchBox from '../components/map/MapSearchBox';
+import AdminAnalyticsTab from '../components/admin/AdminAnalyticsTab';
+import { useBasemap } from '../lib/basemaps';
+import { HeatModeControls, HeatLapseBadge } from '../components/admin/HeatmapTimeLapse';
+import SidebarEdgeToggle from '../components/ui/SidebarEdgeToggle';
+import { AttentionSummary, ConnectionStatus } from '../components/ui/SidebarStatusCards';
+import { AdminBaseTile, AdminReportPins } from '../components/admin/AdminMapExtras';
+import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from '../components/map/MapPanels';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta, canAdminApprove, approvalBlockedReason } from '../lib/progressWorkflow';
 import {
@@ -87,6 +101,7 @@ import {
 } from '../lib/publicReportStatus';
 import { assessReport } from '../lib/publicReportTriage';
 import NotificationBell from '../components/NotificationBell';
+import { storeGlyph } from '../lib/mapMarkerIcons';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -204,18 +219,18 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
 
 function getDistanceBand(distanceMeters) {
   if (!Number.isFinite(distanceMeters)) {
-    return { tone: 'text-slate-600 bg-slate-100 border-slate-200', label: 'Distance unavailable', emoji: '⚪' };
+    return { tone: 'text-slate-600 bg-slate-100 border-slate-200', label: 'Distance unavailable', marker: <span className="inline-block size-2 rounded-full bg-slate-400 mr-1" aria-hidden="true" /> };
   }
 
   if (distanceMeters <= 50) {
-    return { tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'within 50m', emoji: '🟢' };
+    return { tone: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'within 50m', marker: <span className="inline-block size-2 rounded-full bg-emerald-500 mr-1" aria-hidden="true" /> };
   }
 
   if (distanceMeters <= 200) {
-    return { tone: 'text-amber-700 bg-amber-50 border-amber-200', label: '50-200m', emoji: '🟡' };
+    return { tone: 'text-amber-700 bg-amber-50 border-amber-200', label: '50-200m', marker: <span className="inline-block size-2 rounded-full bg-amber-500 mr-1" aria-hidden="true" /> };
   }
 
-  return { tone: 'text-red-700 bg-red-50 border-red-200', label: 'over 200m', emoji: '🔴' };
+  return { tone: 'text-red-700 bg-red-50 border-red-200', label: 'over 200m', marker: <span className="inline-block size-2 rounded-full bg-red-500 mr-1" aria-hidden="true" /> };
 }
 
 function formatDistance(distanceMeters) {
@@ -323,12 +338,14 @@ function AdminFitBounds({ points, filterKey }) {
   return null;
 }
 
-function MapSearchController({ searchCoords }) {
+function MapSearchController({ searchCoords, searchZoom = 16 }) {
   const map = useMap();
   useEffect(() => {
     if (searchCoords) {
-      map.flyTo(searchCoords, 16);
+      map.flyTo(searchCoords, searchZoom);
     }
+    // Fly when a new place is picked, not when only the zoom value changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchCoords, map]);
   return null;
 }
@@ -431,50 +448,27 @@ function CreateProposalMapController({ proposalId, points }) {
 }
 
 
-function ReportHeatmapLayer({ visible, points }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!visible || !Array.isArray(points) || points.length === 0) return undefined;
-
-    const layer = L.heatLayer(points, {
-      radius: 22,
-      blur: 18,
-      maxZoom: 15,
-      gradient: {
-        0.2: '#2563eb',
-        0.55: '#facc15',
-        1.0: '#ef4444',
-      },
-    }).addTo(map);
-
-    return () => {
-      map.removeLayer(layer);
-    };
-  }, [visible, points, map]);
-
-  return null;
+function ReportHeatmapLayer({ visible, points, fixedMax }) {
+  return (
+    <StableHeatLayer
+      visible={visible}
+      points={points}
+      fixedMax={fixedMax}
+      radiusMeters={1200}
+      gradient={{ 0.2: '#2563eb', 0.55: '#facc15', 1.0: '#ef4444' }}
+    />
+  );
 }
 
 function FarmerHeatmapLayer({ visible, points }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
-
-    const layer = window.L.heatLayer(points, {
-      radius: 30,
-      blur: 20,
-      maxZoom: 15,
-      gradient: { 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }
-    }).addTo(map);
-
-    return () => {
-      map.removeLayer(layer);
-    };
-  }, [map, visible, points]);
-
-  return null;
+  return (
+    <StableHeatLayer
+      visible={visible}
+      points={points}
+      radiusMeters={1500}
+      gradient={{ 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }}
+    />
+  );
 }
 
 function RouteEditorMapClick({ onPickPoint }) {
@@ -555,7 +549,7 @@ function FmrSortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortCha
 }
 
 /* Admin FMR projects table - the default view for the Projects tab. */
-function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onWorkPlan, onAssign, onDelete }) {
+function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onWorkPlan, onAssign, onDelete, onReport }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
       <div className="overflow-x-auto">
@@ -650,11 +644,19 @@ function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, on
                       </button>
                       <button
                         onClick={(event) => { event.stopPropagation(); onAssign(project); }}
-                        title="Assign contractor"
-                        aria-label={`Assign contractor to ${project.project_name}`}
+                        title="Assign contractor &amp; site engineer"
+                        aria-label={`Assign contractor and site engineer to ${project.project_name}`}
                         className="p-2 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-lg text-amber-700 transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" /></svg>
+                      </button>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); onReport(project); }}
+                        title="Generate progress report"
+                        aria-label={`Generate progress report for ${project.project_name}`}
+                        className="p-2 bg-sky-50 hover:bg-sky-100 border border-sky-200/60 rounded-lg text-sky-700 transition-colors"
+                      >
+                        <FileTextIcon className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={(event) => { event.stopPropagation(); onDelete(project); }}
@@ -768,6 +770,8 @@ export default function Dashboard() {
   const [adminMapMunicipalityFilter, setAdminMapMunicipalityFilter] = useState('All');
   const [adminMapShowOverdueOnly, setAdminMapShowOverdueOnly] = useState(false);
   const [adminMapShowHeatmap, setAdminMapShowHeatmap] = useState(false);
+  const [adminShowReportPins, setAdminShowReportPins] = useState(true);
+  const [adminBasemap, setAdminBasemap] = useBasemap();
   const [adminMapSelectedProject, setAdminMapSelectedProject] = useState(null);
   const [adminMapHoveredProjectId, setAdminMapHoveredProjectId] = useState(null);
   const [routeByProjectId, setRouteByProjectId] = useState({});
@@ -828,7 +832,7 @@ export default function Dashboard() {
   const emptyFmrForm = {
     project_name: '', status: 'Proposed', year_funded: '', municipality: '', province: 'Iloilo',
     accomplishment: '', project_length_km: '', start_latitude: '', start_longitude: '',
-    end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', location: '', remarks: '',
+    end_latitude: '', end_longitude: '', date_completed: '', target_completion_date: '', date_started: '', contract_amount: '', location: '', remarks: '',
     total_budget: '', funds_released: '', funding_source: ''
   };
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
@@ -839,112 +843,20 @@ export default function Dashboard() {
   // Map Search States inside modals
   const [createMapSearchQuery, setCreateMapSearchQuery] = useState('');
   const [createMapSearchCoords, setCreateMapSearchCoords] = useState(null);
+  const [createMapSearchZoom, setCreateMapSearchZoom] = useState(15);
   const [editMapSearchQuery, setEditMapSearchQuery] = useState('');
   const [editMapSearchCoords, setEditMapSearchCoords] = useState(null);
-
-  const handleCreateMapSearch = async () => {
-    const q = createMapSearchQuery.trim();
-    if (!q) return;
-    try {
-      const query = `${q}, Iloilo, Philippines`;
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-      const res = await fetch(url, {
-        headers: {
-          'Accept-Language': 'en',
-          'User-Agent': 'KalsaTrack-Route-Builder-Search'
-        }
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setCreateMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
-      } else {
-        showNotification('Location not found. Try adding the municipality name.', 'error');
-      }
-    } catch {
-      showNotification('Error searching location.', 'error');
-    }
-  };
-
-  const handleEditMapSearch = async () => {
-    const q = editMapSearchQuery.trim();
-    if (!q) return;
-    try {
-      const query = `${q}, Iloilo, Philippines`;
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-      const res = await fetch(url, {
-        headers: {
-          'Accept-Language': 'en',
-          'User-Agent': 'KalsaTrack-Route-Builder-Search'
-        }
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setEditMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
-      } else {
-        showNotification('Location not found. Try adding the municipality name.', 'error');
-      }
-    } catch {
-      showNotification('Error searching location.', 'error');
-    }
-  };
+  const [editMapSearchZoom, setEditMapSearchZoom] = useState(15);
 
   // Projects Tab Mini-Map Search States
   const [projectsMapSearchQuery, setProjectsMapSearchQuery] = useState('');
   const [projectsMapSearchCoords, setProjectsMapSearchCoords] = useState(null);
-
-  const handleProjectsMapSearch = async () => {
-    const q = projectsMapSearchQuery.trim();
-    if (!q) return;
-    try {
-      const query = `${q}, Iloilo, Philippines`;
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-      const res = await fetch(url, {
-        headers: {
-          'Accept-Language': 'en',
-          'User-Agent': 'KalsaTrack-Projects-Map-Search'
-        }
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setProjectsMapSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
-      } else {
-        showNotification('Location not found. Try adding the municipality name.', 'error');
-      }
-    } catch {
-      showNotification('Error searching location.', 'error');
-    }
-  };
+  const [projectsMapSearchZoom, setProjectsMapSearchZoom] = useState(14);
 
   // Main Map Tab Search States
   const [mainMapGeopSearchQuery, setMainMapGeopSearchQuery] = useState('');
   const [mainMapGeopSearchCoords, setMainMapGeopSearchCoords] = useState(null);
-
-  const handleMainMapGeopSearch = async () => {
-    const q = mainMapGeopSearchQuery.trim();
-    if (!q) return;
-    try {
-      const query = `${q}, Iloilo, Philippines`;
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-      const res = await fetch(url, {
-        headers: {
-          'Accept-Language': 'en',
-          'User-Agent': 'KalsaTrack-Main-Map-Search'
-        }
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      if (data && data.length > 0) {
-        setMainMapGeopSearchCoords([Number(data[0].lat), Number(data[0].lon)]);
-      } else {
-        showNotification('Location not found. Try adding the municipality name.', 'error');
-      }
-    } catch {
-      showNotification('Error searching location.', 'error');
-    }
-  };
+  const [mainMapSearchZoom, setMainMapSearchZoom] = useState(14);
 
   const [newProjectRouteMode, setNewProjectRouteMode] = useState('waypoint');
   const [newProjectRouteWaypoints, setNewProjectRouteWaypoints] = useState([]);
@@ -983,6 +895,8 @@ export default function Dashboard() {
   const [assignContractorModal, setAssignContractorModal] = useState(null); // holds fmr project
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState('');
+  const [reportProject, setReportProject] = useState(null);
+  const [selectedSiteEngineerId, setSelectedSiteEngineerId] = useState('');
   const [newProjectContractorId, setNewProjectContractorId] = useState('');
 
   // Markets & supply chain map layers states
@@ -1603,14 +1517,13 @@ export default function Dashboard() {
           counts[projectId] = (counts[projectId] || 0) + 1;
         }
 
-        if (report.status === 'resolved') return;
         const lat = Number(report.latitude);
         const lng = Number(report.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
         // Keep each report individually so the interval filter can bucket by
         // date; the density aggregation happens downstream in reportHeatPoints.
-        rawPoints.push({ lat, lng, createdAt: report.created_at || null });
+        rawPoints.push({ lat, lng, createdAt: report.created_at || null, status: report.status });
       });
 
       setReportCountByProjectId(counts);
@@ -1639,6 +1552,7 @@ export default function Dashboard() {
 
     const byLocation = {};
     reportHeatRaw.forEach((point) => {
+      if (point.status === 'resolved') return; // the live view shows open problems only
       if (cutoff) {
         if (!point.createdAt) return; // undated rows can't be placed in a window
         const created = new Date(point.createdAt);
@@ -1654,6 +1568,10 @@ export default function Dashboard() {
     const maxCount = Math.max(1, ...items.map((item) => item.count));
     return items.map((item) => [item.lat, item.lng, Math.min(1, item.count / maxCount)]);
   }, [reportHeatRaw, heatmapInterval]);
+
+  /* Time-lapse over the same reports, resolved ones included, so growth and fade
+   * across the whole history can be replayed. */
+  const heatLapse = useHeatLapse(reportHeatRaw);
 
   const upsertProjectRoute = useCallback(async (projectId, startLat, startLng, endLat, endLng, waypoints) => {
     if (!projectId) return;
@@ -1753,7 +1671,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('progress_updates')
-        .select('id, fmr_project_id, contractor_id, reported_accomplishment, certified_accomplishment, certification_status, certification_remarks, certified_at, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
+        .select('id, fmr_project_id, contractor_id, reported_accomplishment, certified_accomplishment, certification_status, certification_remarks, certified_at, certified_by, amount_this_billing, period_start, period_end, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
         .order('submitted_at', { ascending: false });
       if (error) throw error;
       setProgressUpdates(data || []);
@@ -1766,7 +1684,7 @@ export default function Dashboard() {
   }, []);
 
   // Assign contractor to FMR project
-  const assignContractorToProject = async (projectId, contractorId) => {
+  const assignContractorToProject = async (projectId, contractorId, siteEngineerId) => {
     setAssigningContractor(true);
     try {
       const { error } = await supabase
@@ -1774,6 +1692,14 @@ export default function Dashboard() {
         .update({ contractor_id: contractorId || null })
         .eq('id', projectId);
       if (error) throw error;
+      // Every contractor submission is routed to this engineer, who alone can certify it.
+      if (siteEngineerId !== undefined) {
+        const { error: engineerError } = await supabase.rpc('assign_project_site_engineer', {
+          p_project_id: projectId,
+          p_engineer_id: siteEngineerId || null,
+        });
+        if (engineerError) throw engineerError;
+      }
       await fetchFmrProjects();
       const contractor = contractors.find(c => c.id === contractorId);
       showNotification(contractorId
@@ -1781,6 +1707,7 @@ export default function Dashboard() {
         : 'Contractor unassigned');
       setAssignContractorModal(null);
       setSelectedContractorId('');
+      setSelectedSiteEngineerId('');
     } catch (err) {
       console.error('Assign contractor error:', err.message);
       showNotification(`Failed: ${err.message}`, 'error');
@@ -2888,68 +2815,6 @@ export default function Dashboard() {
     return map;
   }, [topPriorityProjects]);
 
-  const analyticsProjectsByMunicipality = useMemo(() => {
-    const counts = fmrProjects.reduce((acc, p) => {
-      const municipality = p.municipality || 'Unspecified';
-      acc[municipality] = (acc[municipality] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([municipality, count]) => ({ municipality, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [fmrProjects]);
-
-  const analyticsStatusDistribution = useMemo(() => {
-    const statuses = ['Completed', 'On-Going', 'Proposed'];
-    return statuses
-      .map((status) => ({ name: status, value: fmrProjects.filter((p) => normalizeFmrStatus(p.status) === status).length }))
-      .filter((entry) => entry.value > 0);
-  }, [fmrProjects]);
-
-  const analyticsProjectsPerMonth = useMemo(() => {
-    const monthly = fmrProjects.reduce((acc, project) => {
-      const year = Number(project.year_funded);
-      if (!year || Number.isNaN(year)) return acc;
-      const key = `${year}-01`;
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.keys(monthly)
-      .sort((a, b) => a.localeCompare(b))
-      .map((key) => ({
-        month: key,
-        projects: monthly[key],
-      }));
-  }, [fmrProjects]);
-
-  const analyticsBudgetDisbursedOverTime = useMemo(() => {
-    const monthly = fmrProjects.reduce((acc, project) => {
-      const year = Number(project.year_funded);
-      if (!year || Number.isNaN(year)) return acc;
-      const key = `${year}-01`;
-      if (!acc[key]) acc[key] = { month: key, budget: 0, disbursed: 0 };
-
-      const budgetValue = Number(
-        project.total_budget ?? project.totalBudget ?? project.budget ?? project.project_cost ?? project.cost ?? project.allocated_budget ?? 0
-      );
-      const disbursedValue = Number(
-        project.disbursed_amount ?? project.disbursedAmount ?? project.spent_amount ?? project.released_amount ?? 0
-      );
-
-      acc[key].budget += Number.isNaN(budgetValue) ? 0 : budgetValue;
-      acc[key].disbursed += Number.isNaN(disbursedValue) ? 0 : disbursedValue;
-      return acc;
-    }, {});
-    return Object.values(monthly).sort((a, b) => a.month.localeCompare(b.month));
-  }, [fmrProjects]);
-
-  const formatMonthKey = (monthKey) => {
-    const [year, month] = monthKey.split('-').map(Number);
-    if (!year || !month) return monthKey;
-    return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-  };
-
   const getPillTone = (status) => {
     const map = {
       Planning: { dot: 'bg-slate-500', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
@@ -3547,6 +3412,8 @@ export default function Dashboard() {
       end_longitude: project.end_longitude?.toString() || '',
       date_completed: project.date_completed || '',
       target_completion_date: project.target_completion_date || '',
+      date_started: project.date_started || '',
+      contract_amount: project.contract_amount?.toString() || '',
       location: project.location || '',
       remarks: project.remarks || '',
       total_budget: project.total_budget?.toString() || '',
@@ -3580,6 +3447,8 @@ export default function Dashboard() {
       end_longitude: fmrFormData.end_longitude ? parseFloat(fmrFormData.end_longitude) : null,
       date_completed: fmrFormData.date_completed || null,
       target_completion_date: fmrFormData.target_completion_date || null,
+      date_started: fmrFormData.date_started || null,
+      contract_amount: fmrFormData.contract_amount ? parseFloat(fmrFormData.contract_amount) : null,
       location: fmrFormData.location,
       remarks: fmrFormData.remarks,
       total_budget: fmrFormData.total_budget ? parseFloat(fmrFormData.total_budget) : null,
@@ -3681,6 +3550,46 @@ export default function Dashboard() {
     { id: 'lgu-proposals', label: 'LGU Proposals', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', badgeCount: lguProposals.filter(p => p.status === 'Submitted' || p.status === 'Under Validation').length },
   ];
 
+  const NAV_GROUPS = [
+    { label: 'Monitoring', ids: ['projects', 'map', 'analytics', 'priorities'] },
+    { label: 'Review queue', ids: ['public-reports', 'progress-updates', 'lgu-proposals'] },
+    { label: 'Programs', ids: ['project-mgmt', 'farmers', 'reports'] },
+  ];
+  const navGroups = NAV_GROUPS
+    .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
+    .filter((g) => g.items.length > 0);
+
+  const attentionRows = [
+    {
+      key: 'public-reports',
+      label: 'Pending public reports',
+      count: publicReports.filter((r) => r.status === 'pending').length,
+      tone: 'amber',
+      onClick: () => { setActiveTab('public-reports'); setShowSidebar(false); },
+    },
+    {
+      key: 'progress-updates',
+      label: 'Progress updates to review',
+      count: progressUpdates.filter((u) => u.status === 'pending').length,
+      tone: 'amber',
+      onClick: () => { setActiveTab('progress-updates'); setShowSidebar(false); },
+    },
+    {
+      key: 'lgu-proposals',
+      label: 'LGU proposals to validate',
+      count: lguProposals.filter((p) => p.status === 'Submitted' || p.status === 'Under Validation').length,
+      tone: 'sky',
+      onClick: () => { setActiveTab('lgu-proposals'); setShowSidebar(false); },
+    },
+    {
+      key: 'overdue',
+      label: 'Overdue projects',
+      count: fmrProjects.filter(isOverdueProject).length,
+      tone: 'rose',
+      onClick: () => { setAdminMapShowOverdueOnly(true); setAdminMapStatusFilter('All'); setActiveTab('map'); setShowSidebar(false); },
+    },
+  ];
+
   // Handle sign out
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -3730,16 +3639,6 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            {/* Collapse Toggle Button */}
-            <button
-              onClick={() => setSidebarCollapsed(c => !c)}
-              className="hidden lg:flex w-7.5 h-7.5 bg-slate-850 hover:bg-teal-600 border border-slate-700/50 rounded-lg items-center justify-center text-slate-400 hover:text-white transition-all duration-200"
-              style={{ width: '30px', height: '30px' }}
-            >
-              <svg className={`w-3.5 h-3.5 transition-transform duration-355 ${sidebarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
           </div>
         </div>
 
@@ -3747,10 +3646,19 @@ export default function Dashboard() {
         <nav className="flex-1 px-3 py-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
             }`}>
-            Main Menu
+            {navGroups[0]?.label}
           </p>
           <div className="space-y-1.5">
-            {navItems.map(item => {
+            {navGroups.map((group, gi) => (
+            <div key={group.label} className="space-y-1.5">
+              {gi > 0 && (
+                sidebarCollapsed ? (
+                  <div className="my-3 border-t border-slate-800/60 mx-2" />
+                ) : (
+                  <p className="px-4 pt-4 pb-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none">{group.label}</p>
+                )
+              )}
+            {group.items.map(item => {
               const isActive = activeTab === item.id;
               return (
                 <button
@@ -3789,6 +3697,8 @@ export default function Dashboard() {
                 </button>
               );
             })}
+            </div>
+            ))}
 
             <div className="my-5 border-t border-slate-800/60 mx-2"></div>
             <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
@@ -3817,10 +3727,13 @@ export default function Dashboard() {
               </span>
             </button>
           </div>
+
+          {!sidebarCollapsed && <AttentionSummary rows={attentionRows} />}
         </nav>
 
         {/* User Profile */}
         <div className={`${sidebarCollapsed ? 'p-2.5' : 'p-5'} border-t border-slate-800/60 bg-slate-900/60`}>
+          <ConnectionStatus collapsed={sidebarCollapsed} />
           <div className="flex items-center gap-3 px-1.5 py-2 overflow-hidden">
             <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-extrabold text-sm shadow-md shadow-teal-500/20 flex-shrink-0 text-white select-none">
               {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
@@ -3846,13 +3759,15 @@ export default function Dashboard() {
             </span>
           </button>
         </div>
+
+        <SidebarEdgeToggle collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((c) => !c)} />
       </aside>
 
       {/* Main Content */}
       <div className={`flex-1 min-h-screen transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
         {/* Header */}
         <header className="bg-gradient-to-br from-slate-50 to-slate-100 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
-          <div className="px-6 sm:px-10 py-4 sm:py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="pl-12 lg:pl-0">
               <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                 {activeTab === 'projects' && 'FMR Projects'}
@@ -3883,6 +3798,7 @@ export default function Dashboard() {
               <NotificationBell
                 client={supabase}
                 onSelect={(n) => {
+                  if (n.progress_update_id) { setActiveTab('progress-updates'); return; }
                   const match = publicReports.find((r) => r.id === n.report_id);
                   if (match) {
                     setActiveTab('public-reports');
@@ -3918,7 +3834,7 @@ export default function Dashboard() {
         </header>
 
         {/* Content Area */}
-        <div className="p-6 sm:p-10">
+        <div className="p-4 sm:p-6 lg:p-8">
           {/* Error Banner */}
           {error && (
             <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
@@ -4334,7 +4250,7 @@ export default function Dashboard() {
               const muni = (p.municipality || '').toLowerCase();
               const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
               const normalizedStatus = normalizeFmrStatus(p.status);
-              const matchesStatus = fmrProjectStatusFilter === 'All' || normalizedStatus === fmrProjectStatusFilter;
+              const matchesStatus = (PROJECT_FILTERS.find((f) => f.value === fmrProjectStatusFilter)?.match(p, normalizeFmrStatus)) ?? normalizedStatus === fmrProjectStatusFilter;
               const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
               const candidateDate = p.updated_at || p.created_at || p.date_completed || p.target_completion_date;
               const matchesDate = inDateRange(candidateDate, fmrProjectDateFrom, fmrProjectDateTo);
@@ -4355,7 +4271,10 @@ export default function Dashboard() {
               completed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Completed').length,
               ongoing: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'On-Going').length,
               proposed: fmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed').length,
+              delayed: fmrProjects.filter((p) => PROJECT_FILTERS.find((f) => f.value === 'Delayed').match(p)).length,
+              nearly: fmrProjects.filter((p) => PROJECT_FILTERS.find((f) => f.value === 'Nearly Completed').match(p)).length,
             };
+            const filterCounts = { All: fmrCounts.all, 'On-Going': fmrCounts.ongoing, Delayed: fmrCounts.delayed, 'Nearly Completed': fmrCounts.nearly, Completed: fmrCounts.completed, Proposed: fmrCounts.proposed };
             const fmrTotalPages = Math.max(1, Math.ceil(filteredFmr.length / fmrProjectsPerPage));
             const safeFmrPage = Math.min(fmrProjectCurrentPage, fmrTotalPages);
             const paginatedFilteredFmr = filteredFmr.slice(
@@ -4511,37 +4430,20 @@ export default function Dashboard() {
                   </div>
 
                   {/* Mini Map Container */}
-                  <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '350px' }}>
-                    {/* Map Search Overlay */}
-                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
-                      <input
-                        type="text"
-                        placeholder="Search location (e.g. Bucari, Leon)..."
-                        value={projectsMapSearchQuery}
-                        onChange={(e) => setProjectsMapSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleProjectsMapSearch();
-                          }
-                        }}
-                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                  <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: 'clamp(420px, 55vh, 640px)' }}>
+                    {/* Map Search: instant suggestions for barangays, roads and places */}
+                    <div className="absolute top-3 left-3 z-[1000] w-[min(20rem,calc(100%-1.5rem))]">
+                      <MapSearchBox
+                        projects={fmrProjects}
+                        placeholder="Search barangay, road or place..."
+                        inputClassName="shadow-md"
+                        onSelect={(r) => { setProjectsMapSearchQuery(r.label); setProjectsMapSearchCoords([r.lat, r.lng]); setProjectsMapSearchZoom(r.zoom); }}
                       />
-                      <button
-                        type="button"
-                        onClick={handleProjectsMapSearch}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
-                      >
-                        Go
-                      </button>
                     </div>
 
-                    <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      <MapSearchController searchCoords={projectsMapSearchCoords} />
+                    <MapContainer center={[10.89, 122.45]} zoom={9} zoomControl={false} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
+                      <AdminBaseTile basemap={adminBasemap} />
+                      <MapSearchController searchCoords={projectsMapSearchCoords} searchZoom={projectsMapSearchZoom} />
                       {projectsMapSearchCoords && (
                         <Marker position={projectsMapSearchCoords}>
                           <Popup>
@@ -4550,7 +4452,16 @@ export default function Dashboard() {
                         </Marker>
                       )}
                       <AdminFitBounds points={mapBoundsPoints} filterKey="projects-tab-minimap" />
-                      <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
+                      <ReportHeatmapLayer
+                        visible={adminMapShowHeatmap}
+                        points={heatLapse.mode === 'timelapse' ? heatLapse.points : reportHeatPoints}
+                        fixedMax={heatLapse.mode === 'timelapse' ? heatLapse.peak : undefined}
+                      />
+                      <AdminReportPins
+                        reports={publicReports}
+                        visible={adminShowReportPins}
+                        onOpen={(r) => { setActiveTab('public-reports'); setSelectedPublicReport(r); }}
+                      />
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
@@ -4640,7 +4551,7 @@ export default function Dashboard() {
                                   <div className="p-1">
                                     <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
                                     <span className="text-[10px] text-slate-500 block mt-0.5">
-                                      {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                      {isCentroidFallback ? <><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Centroid Fallback</> : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Barangay Center</>}
                                     </span>
                                   </div>
                                 </Tooltip>
@@ -4659,7 +4570,7 @@ export default function Dashboard() {
                           position={[Number(m.latitude), Number(m.longitude)]}
                           icon={new L.DivIcon({
                             className: 'custom-market-pin',
-                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">${storeGlyph(14)}</div>`,
                             iconSize: [30, 30],
                             iconAnchor: [15, 15],
                           })}
@@ -4776,58 +4687,76 @@ export default function Dashboard() {
                       })()}
                     </MapContainer>
 
-                    <div className="absolute bottom-4 left-4 z-[500]">
-                      <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
-                        <p className="font-semibold text-slate-900">Map Legend</p>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
-                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
-                          <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
-                        </div>
-                        <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
-                            <span>Barangay Geocoded</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
-                            <span>Centroid Fallback (No GPS)</span>
-                          </div>
-                        </div>
-                        <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={adminMapShowHeatmap}
-                            onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
-                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                          />
-                          Show Report Heatmap
-                        </label>
+                    <HeatLapseBadge lapse={heatLapse} visible={adminMapShowHeatmap} />
+                    <MapLegend>
+                      <LegendGroup label="Roads">
+                        {mapStats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={mapStats.completed} />}
+                        {mapStats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={mapStats.ongoing} />}
+                        {mapStats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={mapStats.proposed} />}
+                      </LegendGroup>
+                      <LegendGroup label="Markers">
+                        {mapStats.mapped > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
+                        {mapStats.mapped > 0 && <LegendDot color="bg-orange-500" text="E" label="Route end" />}
+                        {mapStats.geocoded > 0 && <LegendDot color="bg-emerald-50" ring="border-2 border-emerald-700" label="Barangay geocoded" />}
+                        {mapStats.centroids > 0 && <LegendDot color="bg-amber-50" ring="border-2 border-dashed border-amber-600" label="Centroid fallback (no GPS)" />}
+                      </LegendGroup>
+                      {(adminMapShowHeatmap || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
+                        <LegendGroup label="Layers">
+                          {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
+                          {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer (anonymous)" />}
+                          {adminMapShowHeatmap && (
+                            <div className="flex items-center gap-2">
+                              <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#2563eb,#facc15,#ef4444)' }} />
+                              <span>Report heatmap</span>
+                            </div>
+                          )}
+                          {showFarmerHeatmap && (
+                            <div className="flex items-center gap-2">
+                              <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
+                              <span>Farmer density</span>
+                            </div>
+                          )}
+                        </LegendGroup>
+                      )}
+                      {adminShowReportPins && (
+                        <LegendGroup label="Public reports">
+                          <LegendDot color="" style={{ background: '#f59e0b' }} label="Pending" />
+                          <LegendDot color="" style={{ background: '#0ea5e9' }} label="Reviewed" />
+                          <LegendDot color="" style={{ background: '#059669' }} label="Resolved" />
+                        </LegendGroup>
+                      )}
+                    </MapLegend>
+                    <MapControlPanel>
+                      <ControlGroup label="Layers">
+                        <LayerToggle
+                          checked={adminShowReportPins}
+                          onChange={setAdminShowReportPins}
+                          label={`Public reports (${publicReports.filter((r) => Number.isFinite(Number(r.latitude)) && Number.isFinite(Number(r.longitude))).length})`}
+                        />
+                        <LayerToggle checked={adminMapShowHeatmap} onChange={setAdminMapShowHeatmap} label="Report heatmap" />
                         {adminMapShowHeatmap && (
-                          <div className="pl-6 pt-1.5 flex items-center gap-2">
-                            <span className="text-[10px] text-slate-400 font-medium">Window</span>
-                            <HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
-                          </div>
-                        )}
-                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={showFarmerDots}
-                            onChange={(e) => {
-                              setShowFarmerDots(e.target.checked);
-                              if (!e.target.checked) setSelectedFarmerForPath(null);
-                            }}
-                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                          />
-                          Show Farmers (Dots)
-                        </label>
+<HeatModeControls lapse={heatLapse}>
+<HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
+</HeatModeControls>
+)}
+                        <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
+                      </ControlGroup>
+                      <ControlGroup label="Supply chain">
+                        <LayerToggle
+                          checked={showFarmerDots}
+                          onChange={(on) => {
+                            setShowFarmerDots(on);
+                            if (!on) setSelectedFarmerForPath(null);
+                          }}
+                          label="Farmers (dots)"
+                        />
                         {showFarmerDots && (
-                          <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                            <span className="shrink-0">Crop:</span>
+                          <div className="flex items-center gap-2 pl-6 font-medium text-slate-600">
+                            <span className="shrink-0">Crop</span>
                             <select
                               value={farmerCropFilter}
                               onChange={(e) => setFarmerCropFilter(e.target.value)}
-                              className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+                              className="w-full rounded border-slate-300 py-0.5 text-[11px] focus:border-teal-500 focus:ring-teal-500"
                             >
                               {farmerCropOptions.map((crop) => (
                                 <option key={crop} value={crop}>{crop}</option>
@@ -4835,26 +4764,12 @@ export default function Dashboard() {
                             </select>
                           </div>
                         )}
-                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={showFarmerHeatmap}
-                            onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
-                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                          />
-                          Show Farmer Density
-                        </label>
-                        <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={showMarketsMap}
-                            onChange={(e) => setShowMarketsMap(e.target.checked)}
-                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                          />
-                          Show Markets (Icons)
-                        </label>
-                      </div>
-                    </div>
+                        <LayerToggle checked={showFarmerHeatmap} onChange={setShowFarmerHeatmap} label="Farmer density" />
+                      </ControlGroup>
+                      <ControlGroup label="Basemap">
+                        <BasemapSwitch value={adminBasemap} onChange={setAdminBasemap} />
+                      </ControlGroup>
+                    </MapControlPanel>
                   </div>
                 </div>
 
@@ -5002,13 +4917,15 @@ export default function Dashboard() {
                   </div>
                   <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
                     <div className="inline-flex w-fit max-w-full lg:col-span-8 items-center rounded-2xl border border-slate-200 bg-slate-100/80 p-1 shadow-sm">
-                      {['On-Going', 'Proposed', 'Completed'].map(s => (
-                        <button key={s} onClick={() => { setFmrProjectStatusFilter(s); setFmrProjectCurrentPage(1); }}
-                          className={`flex-1 lg:flex-none min-w-[112px] px-4 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${fmrProjectStatusFilter === s
+                      {PROJECT_FILTERS.map((f) => (
+                        <button key={f.value} onClick={() => { setFmrProjectStatusFilter(f.value); setFmrProjectCurrentPage(1); }}
+                          aria-pressed={fmrProjectStatusFilter === f.value}
+                          className={`flex-1 lg:flex-none px-3.5 h-10 rounded-xl text-sm font-semibold whitespace-nowrap transition-all ${fmrProjectStatusFilter === f.value
                               ? 'bg-white text-emerald-700 shadow-sm border border-emerald-100'
                               : 'text-slate-600 hover:text-slate-800'
                             }`}>
-                          {s}
+                          {f.label}
+                          <span className={`ml-1.5 text-xs tabular-nums ${f.value === 'Delayed' && filterCounts.Delayed > 0 ? 'text-red-600' : 'text-slate-400'}`}>{filterCounts[f.value]}</span>
                         </button>
                       ))}
                     </div>
@@ -5084,8 +5001,10 @@ export default function Dashboard() {
                         onAssign={(project) => {
                           setAssignContractorModal(project);
                           setSelectedContractorId(project.contractor_id || '');
+                          setSelectedSiteEngineerId(project.site_engineer_id || '');
                         }}
                         onDelete={openFmrDeleteModal}
+                        onReport={setReportProject}
                       />
                     ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -5191,6 +5110,7 @@ export default function Dashboard() {
                                     event.stopPropagation();
                                     setAssignContractorModal(project);
                                     setSelectedContractorId(project.contractor_id || '');
+                          setSelectedSiteEngineerId(project.site_engineer_id || '');
                                   }}
                                   className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200/60 rounded-xl text-sm font-semibold text-amber-700 transition-all duration-200"
                                 >
@@ -5413,29 +5333,15 @@ export default function Dashboard() {
                 </div>
 
                 {/* Map */}
-                <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: '500px' }}>
-                  {/* Map Search Overlay */}
-                  <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
-                    <input
-                      type="text"
-                      placeholder="Search location (e.g. Bucari, Leon)..."
-                      value={mainMapGeopSearchQuery}
-                      onChange={(e) => setMainMapGeopSearchQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleMainMapGeopSearch();
-                        }
-                      }}
-                      className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
+                <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: 'clamp(520px, calc(100vh - 260px), 760px)' }}>
+                  {/* Map Search: instant suggestions for barangays, roads and places */}
+                  <div className="absolute top-3 left-3 z-[1000] w-[min(20rem,calc(100%-1.5rem))]">
+                    <MapSearchBox
+                      projects={fmrProjects}
+                      placeholder="Search barangay, road or place..."
+                      inputClassName="shadow-md"
+                      onSelect={(r) => { setMainMapGeopSearchQuery(r.label); setMainMapGeopSearchCoords([r.lat, r.lng]); setMainMapSearchZoom(r.zoom); }}
                     />
-                    <button
-                      type="button"
-                      onClick={handleMainMapGeopSearch}
-                      className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
-                    >
-                      Go
-                    </button>
                   </div>
 
                   {fmrLoading ? (
@@ -5446,12 +5352,9 @@ export default function Dashboard() {
                       </div>
                     </div>
                   ) : (
-                    <MapContainer center={[10.89, 122.45]} zoom={9} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      <MapSearchController searchCoords={mainMapGeopSearchCoords} />
+                    <MapContainer center={[10.89, 122.45]} zoom={9} zoomControl={false} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true} className="z-0">
+                      <AdminBaseTile basemap={adminBasemap} />
+                      <MapSearchController searchCoords={mainMapGeopSearchCoords} searchZoom={mainMapSearchZoom} />
 
                       {/* Unpaved gaps beyond each funded route, from public.road_network_gaps */}
                       <GapSegmentLayer gaps={roadGaps} visible={adminMapShowGaps} />
@@ -5464,7 +5367,16 @@ export default function Dashboard() {
                       )}
                       <AdminFitBounds points={mapBoundsPoints} filterKey={filterKey} />
                       <SelectedProjectMapController selectedProject={adminMapSelectedProject} />
-                      <ReportHeatmapLayer visible={adminMapShowHeatmap} points={reportHeatPoints} />
+                      <ReportHeatmapLayer
+                        visible={adminMapShowHeatmap}
+                        points={heatLapse.mode === 'timelapse' ? heatLapse.points : reportHeatPoints}
+                        fixedMax={heatLapse.mode === 'timelapse' ? heatLapse.peak : undefined}
+                      />
+                      <AdminReportPins
+                        reports={publicReports}
+                        visible={adminShowReportPins}
+                        onOpen={(r) => { setActiveTab('public-reports'); setSelectedPublicReport(r); }}
+                      />
                       {mapMappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
                         const theme = getRouteStatusTheme(project.status);
                         const isSelected = adminMapSelectedProject?.id === project.id;
@@ -5586,7 +5498,7 @@ export default function Dashboard() {
                                   <div className="p-1">
                                     <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
                                     <span className="text-[10px] text-slate-500 block mt-0.5">
-                                      {isCentroidFallback ? '⚠️ Centroid Fallback' : '📍 Barangay Center'}
+                                      {isCentroidFallback ? <><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Centroid Fallback</> : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Barangay Center</>}
                                     </span>
                                   </div>
                                 </Tooltip>
@@ -5619,10 +5531,10 @@ export default function Dashboard() {
                                       <p><strong>Location:</strong> {project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
                                       <p><strong>Funding:</strong> FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
                                       {isCentroidFallback && (
-                                        <p className="text-[10px] text-amber-700 font-medium">⚠️ No exact coordinates from DA. Placed at municipal centroid.</p>
+                                        <p className="text-[10px] text-amber-700 font-medium"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No exact coordinates from DA. Placed at municipal centroid.</p>
                                       )}
                                       {isApproximate && (
-                                        <p className="text-[10px] text-orange-700 font-medium">📍 Auto-geocoded coordinates to Barangay center.</p>
+                                        <p className="text-[10px] text-orange-700 font-medium"><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Auto-geocoded coordinates to Barangay center.</p>
                                       )}
                                     </div>
 
@@ -5660,7 +5572,7 @@ export default function Dashboard() {
                           position={[Number(m.latitude), Number(m.longitude)]}
                           icon={new L.DivIcon({
                             className: 'custom-market-pin',
-                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+                            html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">${storeGlyph(14)}</div>`,
                             iconSize: [30, 30],
                             iconAnchor: [15, 15],
                           })}
@@ -5778,81 +5690,78 @@ export default function Dashboard() {
                     </MapContainer>
                   )}
 
-                  <div className="absolute bottom-4 left-4 z-[500]">
-                    <div className="bg-white/95 border border-slate-200 rounded-xl shadow-sm p-3 text-xs text-slate-700 space-y-2 min-w-[245px]">
-                      <p className="font-semibold text-slate-900">Map Legend</p>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-emerald-500 inline-block" /> Completed</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-amber-500 inline-block" /> On-Going</div>
-                        <div className="flex items-center gap-2"><span className="w-6 h-1.5 rounded bg-blue-500 inline-block" /> Proposed</div>
-                      </div>
-                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="w-3.5 h-3.5 rounded-full bg-emerald-50 border-2 border-emerald-700 inline-block shrink-0" />
-                          <span>Barangay Geocoded</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-3.5 h-3.5 rounded-full bg-amber-50 border-2 border-dashed border-amber-600 inline-block shrink-0" />
-                          <span>Centroid Fallback (No GPS)</span>
-                        </div>
-                      </div>
-                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-bold grid place-items-center shrink-0">S</span>
-                          <span>Route start</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold grid place-items-center shrink-0">E</span>
-                          <span>Route end</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 border-t-[3px] border-dashed border-red-500 inline-block shrink-0" />
-                          <span>Unpaved road gap</span>
-                        </div>
-                      </div>
-                      <label className="pt-2 border-t border-slate-200 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={adminMapShowGaps}
-                          onChange={(e) => setAdminMapShowGaps(e.target.checked)}
-                          className="rounded border-slate-300 text-red-600 focus:ring-red-500"
-                        />
-                        Show Road Gaps ({roadGaps.length})
-                      </label>
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={adminMapShowHeatmap}
-                          onChange={(e) => setAdminMapShowHeatmap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Report Heatmap
-                      </label>
+                  <HeatLapseBadge lapse={heatLapse} visible={adminMapShowHeatmap} />
+                  <MapLegend>
+                    <LegendGroup label="Roads">
+                      {mapStats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={mapStats.completed} />}
+                      {mapStats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={mapStats.ongoing} />}
+                      {mapStats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={mapStats.proposed} />}
+                    </LegendGroup>
+                    <LegendGroup label="Markers">
+                      {mapStats.mapped > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
+                      {mapStats.mapped > 0 && <LegendDot color="bg-orange-500" text="E" label="Route end" />}
+                      {mapStats.geocoded > 0 && <LegendDot color="bg-emerald-50" ring="border-2 border-emerald-700" label="Barangay geocoded" />}
+                      {mapStats.centroids > 0 && <LegendDot color="bg-amber-50" ring="border-2 border-dashed border-amber-600" label="Centroid fallback (no GPS)" />}
+                    </LegendGroup>
+                    {(adminMapShowGaps || adminMapShowHeatmap || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
+                      <LegendGroup label="Layers">
+                        {adminMapShowGaps && <LegendLine color="border-red-500" dashed label="Unpaved road gap" />}
+                        {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
+                        {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer (anonymous)" />}
+                        {adminMapShowHeatmap && (
+                          <div className="flex items-center gap-2">
+                            <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#2563eb,#facc15,#ef4444)' }} />
+                            <span>Report heatmap</span>
+                          </div>
+                        )}
+                        {showFarmerHeatmap && (
+                          <div className="flex items-center gap-2">
+                            <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
+                            <span>Farmer density</span>
+                          </div>
+                        )}
+                      </LegendGroup>
+                    )}
+                    {adminShowReportPins && (
+                      <LegendGroup label="Public reports">
+                        <LegendDot color="" style={{ background: '#f59e0b' }} label="Pending" />
+                        <LegendDot color="" style={{ background: '#0ea5e9' }} label="Reviewed" />
+                        <LegendDot color="" style={{ background: '#059669' }} label="Resolved" />
+                      </LegendGroup>
+                    )}
+                  </MapLegend>
+                  <MapControlPanel>
+                    <ControlGroup label="Layers">
+                      <LayerToggle checked={adminMapShowGaps} onChange={setAdminMapShowGaps} label={`Road gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+                      <LayerToggle
+                        checked={adminShowReportPins}
+                        onChange={setAdminShowReportPins}
+                        label={`Public reports (${publicReports.filter((r) => Number.isFinite(Number(r.latitude)) && Number.isFinite(Number(r.longitude))).length})`}
+                      />
+                      <LayerToggle checked={adminMapShowHeatmap} onChange={setAdminMapShowHeatmap} label="Report heatmap" />
                       {adminMapShowHeatmap && (
-                        <div className="pl-6 pt-1.5 flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400 font-medium">Window</span>
-                          <HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
-                        </div>
-                      )}
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showFarmerDots}
-                          onChange={(e) => {
-                            setShowFarmerDots(e.target.checked);
-                            if (!e.target.checked) setSelectedFarmerForPath(null);
-                          }}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Farmers (Dots)
-                      </label>
+<HeatModeControls lapse={heatLapse}>
+<HeatmapIntervalControl value={heatmapInterval} onChange={setHeatmapInterval} />
+</HeatModeControls>
+)}
+                      <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
+                    </ControlGroup>
+                    <ControlGroup label="Supply chain">
+                      <LayerToggle
+                        checked={showFarmerDots}
+                        onChange={(on) => {
+                          setShowFarmerDots(on);
+                          if (!on) setSelectedFarmerForPath(null);
+                        }}
+                        label="Farmers (dots)"
+                      />
                       {showFarmerDots && (
-                        <div className="pl-6 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                          <span className="shrink-0">Crop:</span>
+                        <div className="flex items-center gap-2 pl-6 font-medium text-slate-600">
+                          <span className="shrink-0">Crop</span>
                           <select
                             value={farmerCropFilter}
                             onChange={(e) => setFarmerCropFilter(e.target.value)}
-                            className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
+                            className="w-full rounded border-slate-300 py-0.5 text-[11px] focus:border-teal-500 focus:ring-teal-500"
                           >
                             {farmerCropOptions.map((crop) => (
                               <option key={crop} value={crop}>{crop}</option>
@@ -5860,26 +5769,12 @@ export default function Dashboard() {
                           </select>
                         </div>
                       )}
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showFarmerHeatmap}
-                          onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Farmer Density
-                      </label>
-                      <label className="pt-1.5 flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                        <input
-                          type="checkbox"
-                          checked={showMarketsMap}
-                          onChange={(e) => setShowMarketsMap(e.target.checked)}
-                          className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        Show Markets (Icons)
-                      </label>
-                    </div>
-                  </div>
+                      <LayerToggle checked={showFarmerHeatmap} onChange={setShowFarmerHeatmap} label="Farmer density" />
+                    </ControlGroup>
+                    <ControlGroup label="Basemap">
+                      <BasemapSwitch value={adminBasemap} onChange={setAdminBasemap} />
+                    </ControlGroup>
+                  </MapControlPanel>
                 </div>
 
                 {/* Selected project detail */}
@@ -5910,7 +5805,7 @@ export default function Dashboard() {
                       {/* Accuracy Alert Banner */}
                       {isCentroidFallback && (
                         <div className="mb-4 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-850 text-xs flex items-start gap-2">
-                          <span className="text-sm">⚠️</span>
+                          <TriangleAlertIcon className="size-4 mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
                           <div>
                             <p className="font-semibold text-amber-900">Missing Road Coordinates</p>
                             <p className="text-amber-700 mt-0.5">This project is placed at the municipal center because exact GPS coordinates are missing from the DA. You can define them below.</p>
@@ -5919,7 +5814,7 @@ export default function Dashboard() {
                       )}
                       {isApproximate && (
                         <div className="mb-4 p-3 rounded-xl border border-orange-200 bg-orange-50 text-orange-850 text-xs flex items-start gap-2">
-                          <span className="text-sm">📍</span>
+                          <MapPinIcon className="size-4 mt-0.5 shrink-0 text-orange-600" aria-hidden="true" />
                           <div>
                             <p className="font-semibold text-orange-950">Auto-Geocoded Barangay Center</p>
                             <p className="text-orange-700 mt-0.5">The coordinates are automatically geocoded to the center of Barangay <strong>{getProjectBarangay(adminMapSelectedProject)}</strong>. You can refine this by drawing the official route.</p>
@@ -6127,7 +6022,6 @@ export default function Dashboard() {
               ...(progressUpdates || []).slice(0, 15).map(u => ({
                 id: `pu-${u.id}`,
                 type: 'progress',
-                icon: '📈',
                 text: `Progress update submitted for`,
                 project: u.project_name || u.fmr_projects?.project_name || 'a project',
                 detail: u.status === 'pending' ? 'Pending review' : `Status: ${u.status}`,
@@ -6137,7 +6031,6 @@ export default function Dashboard() {
               ...(publicReports || []).slice(0, 10).map(r => ({
                 id: `pr-${r.id}`,
                 type: 'report',
-                icon: '📋',
                 text: `Public report filed for`,
                 project: r.project_name || 'a project',
                 detail: r.category || r.report_type || 'General report',
@@ -6227,13 +6120,13 @@ export default function Dashboard() {
                         placeholder="Search project, barangay..."
                         className="h-10 w-full pl-9 pr-8 border border-slate-200 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 bg-slate-50/60 focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all shadow-sm"
                       />
-                      <span className="absolute left-3 top-3 text-slate-400 text-xs">🔍</span>
+                      <SearchIcon className="absolute left-3 top-3 size-4 text-slate-400" aria-hidden="true" />
                       {pmSearchInput && (
                         <button
                           onClick={() => { setPmSearchInput(''); setPmBudgetPage(1); }}
                           className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-semibold"
                         >
-                          ✕
+                          <XIcon className="size-4" aria-hidden="true" />
                         </button>
                       )}
                     </div>
@@ -6539,7 +6432,7 @@ export default function Dashboard() {
                                       onClick={() => setSelectedFmrPmProject(null)}
                                       className="text-slate-400 hover:text-slate-650 font-bold text-xs p-1 hover:bg-slate-100 rounded transition-all flex-shrink-0"
                                     >
-                                      ✕
+                                      <XIcon className="size-4" aria-hidden="true" />
                                     </button>
                                   </div>
 
@@ -6667,9 +6560,9 @@ export default function Dashboard() {
                         <h4 className="text-sm font-bold text-slate-900 mb-4">Activity Summary</h4>
                         <div className="space-y-3">
                           {[
-                            { icon: '📈', label: 'Progress Updates', val: (progressUpdates || []).length, color: 'text-teal-600' },
-                            { icon: '📋', label: 'Public Reports', val: (publicReports || []).length, color: 'text-blue-600' },
-                            { icon: '⚠️', label: 'Pending Reviews', val: (progressUpdates || []).filter(u => u.status === 'pending').length, color: 'text-amber-600' },
+                            { icon: <TrendingUpIcon className="size-4 text-teal-600" aria-hidden="true" />, label: 'Progress Updates', val: (progressUpdates || []).length, color: 'text-teal-600' },
+                            { icon: <ClipboardListIcon className="size-4 text-blue-600" aria-hidden="true" />, label: 'Public Reports', val: (publicReports || []).length, color: 'text-blue-600' },
+                            { icon: <TriangleAlertIcon className="size-4 text-amber-600" aria-hidden="true" />, label: 'Pending Reviews', val: (progressUpdates || []).filter(u => u.status === 'pending').length, color: 'text-amber-600' },
                           ].map(s => (
                             <div key={s.label} className="flex items-center justify-between">
                               <div className="flex items-center gap-2.5">
@@ -6699,85 +6592,12 @@ export default function Dashboard() {
 
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className={enterpriseCardClass}>
-                <h3 className="text-lg font-bold text-slate-900">Projects by Municipality</h3>
-                <p className="text-sm text-slate-500 mb-4">Top municipalities by number of projects</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analyticsProjectsByMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 24 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={50} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                      <RechartsTooltip />
-                      <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className={enterpriseCardClass}>
-                <h3 className="text-lg font-bold text-slate-900">Project Status Distribution</h3>
-                <p className="text-sm text-slate-500 mb-4">Overall breakdown by current status</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={analyticsStatusDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                        {analyticsStatusDistribution.map((entry, index) => {
-                          const palette = ['#0f766e', '#0ea5e9', '#f59e0b', '#22c55e', '#a855f7', '#ef4444'];
-                          return <Cell key={`status-cell-${entry.name}`} fill={palette[index % palette.length]} />;
-                        })}
-                      </Pie>
-                      <Legend verticalAlign="bottom" height={36} />
-                      <RechartsTooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className={enterpriseCardClass}>
-                <h3 className="text-lg font-bold text-slate-900">Projects Created Per Month</h3>
-                <p className="text-sm text-slate-500 mb-4">Monthly trend of project records</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={analyticsProjectsPerMonth} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="month" tickFormatter={formatMonthKey} tick={{ fill: '#64748b', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                      <RechartsTooltip labelFormatter={formatMonthKey} />
-                      <Line dataKey="projects" stroke="#0d9488" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className={enterpriseCardClass}>
-                <h3 className="text-lg font-bold text-slate-900">Budget vs Disbursed Over Time</h3>
-                <p className="text-sm text-slate-500 mb-4">Monthly totals for allocation and disbursement</p>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={analyticsBudgetDisbursedOverTime} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                      <defs>
-                        <linearGradient id="budgetGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0f172a" stopOpacity={0.35} />
-                          <stop offset="95%" stopColor="#0f172a" stopOpacity={0.04} />
-                        </linearGradient>
-                        <linearGradient id="disbursedGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
-                          <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="month" tickFormatter={formatMonthKey} tick={{ fill: '#64748b', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={(v) => `₱${Math.round(v / 1000000)}M`} />
-                      <RechartsTooltip labelFormatter={formatMonthKey} formatter={(v) => formatCurrency(Number(v || 0))} />
-                      <Area type="monotone" dataKey="budget" stroke="#0f172a" fill="url(#budgetGradient)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="disbursed" stroke="#0d9488" fill="url(#disbursedGradient)" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
+            <AdminAnalyticsTab
+              projects={fmrProjects}
+              reports={publicReports}
+              progressUpdates={progressUpdates}
+              proposals={lguProposals}
+            />
           )}
 
           {/* Priorities Tab */}
@@ -7332,11 +7152,11 @@ export default function Dashboard() {
 
             const verifyBadge = (v) => {
               const map = {
-                'Verified On-Site': { icon: '✔', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                'Needs Review': { icon: '⚠', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-                'Location Mismatch': { icon: '✖', cls: 'bg-red-50 text-red-700 border-red-200' },
+                'Verified On-Site': { icon: <CheckIcon className="size-3" aria-hidden="true" />, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                'Needs Review': { icon: <TriangleAlertIcon className="size-3" aria-hidden="true" />, cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+                'Location Mismatch': { icon: <XIcon className="size-3" aria-hidden="true" />, cls: 'bg-red-50 text-red-700 border-red-200' },
               };
-              const s = map[v] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+              const s = map[v] || { icon: <CircleHelpIcon className="size-3" aria-hidden="true" />, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
               return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${s.cls}`}>{s.icon} {v}</span>;
             };
 
@@ -7952,7 +7772,7 @@ export default function Dashboard() {
                               </div>
                               <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 flex-wrap gap-2">
                                 <span className={`px-2 py-0.5 rounded font-bold border ${distanceBand.tone}`}>
-                                  {distanceBand.emoji} Offset: {distanceBand.label}
+                                  {distanceBand.marker} Offset: {distanceBand.label}
                                 </span>
                                 {selectedPublicReport.geo_accuracy && (
                                   <span>GPS Accuracy: ±{Math.round(selectedPublicReport.geo_accuracy)}m</span>
@@ -7974,7 +7794,7 @@ export default function Dashboard() {
                                     <Icons.Camera /> On-Site Damage Photo Evidence
                                   </span>
                                   <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${photoPoint ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                    {photoPoint ? '✓ Geotag Verified' : 'No Photo Geotag'}
+                                    {photoPoint ? <><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Geotag Verified</> : 'No Photo Geotag'}
                                   </span>
                                 </div>
                                 <div className="relative rounded-lg overflow-hidden border border-slate-200">
@@ -8025,7 +7845,7 @@ export default function Dashboard() {
                                   ))}
                                 </div>
                               ) : (
-                                <p className="text-xs font-bold text-emerald-700">✓ No duplicate reports detected in this vicinity.</p>
+                                <p className="text-xs font-bold text-emerald-700"><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No duplicate reports detected in this vicinity.</p>
                               )}
                             </div>
 
@@ -8424,7 +8244,7 @@ export default function Dashboard() {
                               }}
                               className="w-full text-left rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors"
                             >
-                              ⚠️ <span className="font-semibold">{pending14} pending report(s)</span> are 14+ days old and require review action.
+                              <TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" /><span className="font-semibold">{pending14} pending report(s)</span> are 14+ days old and require review action.
                             </button>
                           )}
                           {unresolved30 > 0 && (
@@ -8437,7 +8257,7 @@ export default function Dashboard() {
                               }}
                               className="w-full text-left rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 hover:bg-red-100 transition-colors"
                             >
-                              🚨 <span className="font-semibold">{unresolved30} report(s)</span> remain unresolved for 30+ days.
+                              <SirenIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" /><span className="font-semibold">{unresolved30} report(s)</span> remain unresolved for 30+ days.
                             </button>
                           )}
                         </div>
@@ -8617,11 +8437,12 @@ export default function Dashboard() {
                     <EmptyState title="No progress updates yet" description="Contractors will submit updates once they are assigned to projects." />
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[900px]">
+                      <table className="w-full min-w-[1100px]">
                         <thead>
                           <tr className="bg-slate-50/60 border-b border-slate-200">
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor</th>
+                            <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Billing</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Contractor Reported</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Engineer Certified</th>
                             <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Official</th>
@@ -8648,6 +8469,14 @@ export default function Dashboard() {
                                 <td className="px-5 py-4">
                                   <p className="text-sm text-slate-700">{contractorName}</p>
                                 </td>
+                                <td className="px-5 py-4 whitespace-nowrap">
+                                  <p className="text-sm font-semibold text-slate-900 font-mono">
+                                    {upd.amount_this_billing != null ? `₱${Number(upd.amount_this_billing).toLocaleString('en-PH', { maximumFractionDigits: 2 })}` : '—'}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5">
+                                    {upd.period_start ? `${fmtDate(upd.period_start)} – ${fmtDate(upd.period_end)}` : 'No period given'}
+                                  </p>
+                                </td>
                                 <td className="px-5 py-4">
                                   <span className="text-sm font-bold text-slate-900 font-mono">{formatPercentage(upd.reported_accomplishment)}</span>
                                   <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">claim</p>
@@ -8659,6 +8488,12 @@ export default function Dashboard() {
                                         {formatPercentage(upd.certified_accomplishment)}
                                       </span>
                                       <p className="text-[10px] text-teal-600 font-semibold uppercase tracking-wide">certified</p>
+                                      {upd.certified_at && (
+                                        <p className="mt-0.5 text-[10px] text-slate-500">
+                                          {(() => { const eng = fieldEngineers.find((e) => e.id === upd.certified_by); return eng ? `${eng.full_name || eng.email} · ` : ''; })()}
+                                          {fmtDate(upd.certified_at)}
+                                        </p>
+                                      )}
                                     </>
                                   ) : upd.certification_status === 'disputed' ? (
                                     <span className="text-xs font-semibold text-rose-600">Disputed</span>
@@ -8727,6 +8562,12 @@ export default function Dashboard() {
                                       </button>
                                     </div>
                                   )}
+                                  <button
+                                    onClick={() => { const proj = fmrProjects.find((fp) => fp.id === upd.fmr_project_id); if (proj) setReportProject(proj); }}
+                                    className={`inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-800 hover:underline ${upd.status === 'pending' ? 'mt-2' : ''}`}
+                                  >
+                                    <FileTextIcon className="size-3.5" aria-hidden="true" /> Report
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -9444,7 +9285,7 @@ export default function Dashboard() {
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
                       >
-                        ⚡ Snap to Road
+                        <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road
                       </button>
                       <button
                         type="button"
@@ -9466,37 +9307,23 @@ export default function Dashboard() {
                     </div>
                   </div>
 
+                  <div className="mb-2">
+                    <MapSearchBox
+                      projects={fmrProjects}
+                      value={createMapSearchQuery}
+                      onChange={setCreateMapSearchQuery}
+                      placeholder="Find a barangay, road or place to start drawing from..."
+                      onSelect={(r) => { setCreateMapSearchQuery(r.label); setCreateMapSearchCoords([r.lat, r.lng]); setCreateMapSearchZoom(r.zoom); }}
+                    />
+                  </div>
                   <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
-                    {/* Map Search Overlay */}
-                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
-                      <input
-                        type="text"
-                        placeholder="Search location (e.g. Sto. Tomas, Leon)..."
-                        value={createMapSearchQuery}
-                        onChange={(e) => setCreateMapSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleCreateMapSearch();
-                          }
-                        }}
-                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleCreateMapSearch}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
-                      >
-                        Go
-                      </button>
-                    </div>
 
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <MapSearchController searchCoords={createMapSearchCoords} />
+                      <MapSearchController searchCoords={createMapSearchCoords} searchZoom={createMapSearchZoom} />
                       <CreateProposalMapController proposalId={pendingProposalLink?.id} points={newProjectRoutePreview} />
                       <RouteEditorMapClick onPickPoint={handleNewProjectRoutePick} />
                       {createMapSearchCoords && (
@@ -9834,10 +9661,10 @@ export default function Dashboard() {
       {assignContractorModal && (
         <div className={MODAL_OVERLAY} onClick={() => setAssignContractorModal(null)}>
           <ModalEffects onClose={() => setAssignContractorModal(null)} />
-          <div className={`${MODAL_PANEL} max-w-md`} role="dialog" aria-modal="true" aria-label="Assign contractor" onClick={(e) => e.stopPropagation()}>
+          <div className={`${MODAL_PANEL} max-w-md`} role="dialog" aria-modal="true" aria-label="Assign contractor and site engineer" onClick={(e) => e.stopPropagation()}>
             <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Assign Contractor</h2>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Assign Contractor &amp; Site Engineer</h2>
                 <p className="text-sm text-slate-500 mt-1 line-clamp-1">{assignContractorModal.project_name}</p>
               </div>
               <button onClick={() => setAssignContractorModal(null)} aria-label="Close dialog" className="rounded-xl p-2.5 transition-colors duration-200 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
@@ -9864,6 +9691,22 @@ export default function Dashboard() {
                       <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
                     ))}
                   </select>
+
+                  <label className="block text-sm font-semibold text-slate-700 mb-1 mt-5">Site Engineer</label>
+                  <p className="text-xs text-slate-500 mb-2">
+                    The contractor&apos;s progress submissions go to this engineer, who validates and certifies them against the actual site.
+                    A contractor cannot submit progress until one is assigned.
+                  </p>
+                  <select
+                    value={selectedSiteEngineerId}
+                    onChange={(e) => setSelectedSiteEngineerId(e.target.value)}
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 mb-6"
+                  >
+                    <option value="">— None (unassigned) —</option>
+                    {fieldEngineers.map(e => (
+                      <option key={e.id} value={e.id}>{e.full_name || e.email}</option>
+                    ))}
+                  </select>
                   <div className="flex gap-3">
                     <button
                       onClick={() => setAssignContractorModal(null)}
@@ -9874,8 +9717,7 @@ export default function Dashboard() {
                     <button
                       disabled={assigningContractor}
                       onClick={async () => {
-                        await assignContractorToProject(assignContractorModal.id, selectedContractorId || null);
-                        setAssignContractorModal(null);
+                        await assignContractorToProject(assignContractorModal.id, selectedContractorId || null, selectedSiteEngineerId || null);
                       }}
                       className={buttonClass('primary', 'md', 'flex-1')}
                     >
@@ -9888,6 +9730,8 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {reportProject && <ProjectProgressReport project={reportProject} onClose={() => setReportProject(null)} />}
 
       {/* FMR Edit Modal */}
       {showFmrEditModal && (
@@ -10050,7 +9894,7 @@ export default function Dashboard() {
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
                       >
-                        ⚡ Snap to Road
+                        <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road
                       </button>
                       <button
                         type="button"
@@ -10072,37 +9916,23 @@ export default function Dashboard() {
                     </div>
                   </div>
 
+                  <div className="mb-2">
+                    <MapSearchBox
+                      projects={fmrProjects}
+                      value={editMapSearchQuery}
+                      onChange={setEditMapSearchQuery}
+                      placeholder="Find a barangay, road or place to start drawing from..."
+                      onSelect={(r) => { setEditMapSearchQuery(r.label); setEditMapSearchCoords([r.lat, r.lng]); setEditMapSearchZoom(r.zoom); }}
+                    />
+                  </div>
                   <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
-                    {/* Map Search Overlay */}
-                    <div className="absolute top-2 left-12 z-[1000] flex gap-1 bg-white p-1 rounded-lg shadow-md border border-slate-200/80 max-w-[280px] w-full">
-                      <input
-                        type="text"
-                        placeholder="Search location (e.g. Sto. Tomas, Leon)..."
-                        value={editMapSearchQuery}
-                        onChange={(e) => setEditMapSearchQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleEditMapSearch();
-                          }
-                        }}
-                        className="flex-1 px-2.5 py-1 text-[11px] bg-slate-50 border border-slate-200 rounded outline-none focus:ring-1 focus:ring-teal-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleEditMapSearch}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-white bg-teal-600 rounded hover:bg-teal-700 active:scale-95 transition-all shadow-sm"
-                      >
-                        Go
-                      </button>
-                    </div>
 
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       />
-                      <MapSearchController searchCoords={editMapSearchCoords} />
+                      <MapSearchController searchCoords={editMapSearchCoords} searchZoom={editMapSearchZoom} />
                       <EditModalMapController
                         projectId={selectedFmrProject?.id}
                         startLat={fmrFormData.start_latitude}
@@ -10248,6 +10078,14 @@ export default function Dashboard() {
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Target Completion Date</label>
                   <input type="date" name="target_completion_date" value={fmrFormData.target_completion_date} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date</label>
+                  <input type="date" name="date_started" value={fmrFormData.date_started} onChange={handleFmrInputChange} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Contract Amount (₱)</label>
+                  <input type="number" min="0" step="0.01" name="contract_amount" value={fmrFormData.contract_amount} onChange={handleFmrInputChange} placeholder="e.g. 4500000" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Remarks</label>
@@ -10516,8 +10354,8 @@ export default function Dashboard() {
                       </h4>
                       <div className="space-y-3">
                         {projectLinkedReports.map(rpt => {
-                          const verifyMap = { 'Verified On-Site': { icon: '✔', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }, 'Needs Review': { icon: '⚠', cls: 'bg-amber-50 text-amber-700 border-amber-200' }, 'Location Mismatch': { icon: '✖', cls: 'bg-red-50 text-red-700 border-red-200' } };
-                          const vInfo = verifyMap[rpt.verification] || { icon: '?', cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+                          const verifyMap = { 'Verified On-Site': { icon: <CheckIcon className="size-3" aria-hidden="true" />, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' }, 'Needs Review': { icon: <TriangleAlertIcon className="size-3" aria-hidden="true" />, cls: 'bg-amber-50 text-amber-700 border-amber-200' }, 'Location Mismatch': { icon: <XIcon className="size-3" aria-hidden="true" />, cls: 'bg-red-50 text-red-700 border-red-200' } };
+                          const vInfo = verifyMap[rpt.verification] || { icon: <CircleHelpIcon className="size-3" aria-hidden="true" />, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
                           const statusStyles = { pending: 'bg-amber-100 text-amber-700', reviewed: 'bg-blue-100 text-blue-700', resolved: 'bg-emerald-100 text-emerald-700' };
                           return (
                             <div key={rpt.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -10537,7 +10375,7 @@ export default function Dashboard() {
                                 </a>
                               )}
                               {(rpt.latitude || rpt.longitude) && (
-                                <p className="text-xs text-slate-400 mt-1.5">📍 {Number(rpt.latitude).toFixed(5)}, {Number(rpt.longitude).toFixed(5)}</p>
+                                <p className="text-xs text-slate-400 mt-1.5"><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{Number(rpt.latitude).toFixed(5)}, {Number(rpt.longitude).toFixed(5)}</p>
                               )}
                               <p className="text-xs text-slate-400 mt-1">— {rpt.full_name || 'Anonymous'}{rpt.contact_info ? ` · ${rpt.contact_info}` : ''}</p>
                             </div>

@@ -1,3 +1,4 @@
+import { BanIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseAdminPortal as supabase } from '../../lib/supabase';
 import { formatPercentage } from '../../lib/percentageFormat';
@@ -514,7 +515,7 @@ function CalendarView({ months, categorizedTasks, generalReqTasks, milestones, s
               style={{ gridColumn: `${startIdx + 1} / span ${span}` }}
               className={`text-left rounded-lg border px-3 py-2 text-xs font-semibold ${SUSPENDED_STYLE.chip}`}
             >
-              🚫 Suspended{s.time_extension_ref ? ` (${s.time_extension_ref})` : ''} — {s.reason}
+              <BanIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Suspended{s.time_extension_ref ? ` (${s.time_extension_ref})` : ''} — {s.reason}
             </button>
           </div>
         );

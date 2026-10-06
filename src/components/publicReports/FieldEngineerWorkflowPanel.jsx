@@ -1,3 +1,4 @@
+import { CheckIcon, StarIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
@@ -512,7 +513,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                           ? 'bg-amber-400 text-slate-950'
                           : 'bg-slate-800 text-slate-500 border border-slate-700'
                     }`}>
-                      {done ? '✓' : idx + 1}
+                      {done ? <CheckIcon className="size-4" aria-hidden="true" /> : idx + 1}
                     </div>
                     <p className={`text-[11px] font-semibold mt-1.5 leading-tight ${done || active ? 'text-slate-200' : 'text-slate-500'}`}>
                       {s2.title}
@@ -657,7 +658,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 }`}
                 title={`${star} Star${star > 1 ? 's' : ''}`}
               >
-                ★
+                <StarIcon className="size-4 fill-current" aria-hidden="true" />
               </button>
             ))}
             <span className="text-xs font-semibold text-slate-700 ml-2 whitespace-nowrap">

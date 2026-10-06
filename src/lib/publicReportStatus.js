@@ -18,7 +18,6 @@ export const SEVERITY_TAXONOMY = {
   safety: {
     label: 'Safety Hazard',
     color: 'bg-red-100 text-red-700 border-red-200',
-    icon: '🔴',
     description: 'Risk to life or physical harm',
     problems: [
       { value: 'fallen_tree', label: 'Fallen tree blocking road' },
@@ -32,7 +31,6 @@ export const SEVERITY_TAXONOMY = {
   flood: {
     label: 'Flood / Drainage',
     color: 'bg-sky-100 text-sky-700 border-sky-200',
-    icon: '🌊',
     description: 'Water-related road obstruction',
     problems: [
       { value: 'road_flooded', label: 'Road completely flooded' },
@@ -45,7 +43,6 @@ export const SEVERITY_TAXONOMY = {
   issue: {
     label: 'Road Condition Issue',
     color: 'bg-amber-100 text-amber-700 border-amber-200',
-    icon: '🔧',
     description: 'Physical damage to road surface',
     problems: [
       { value: 'pothole', label: 'Potholes / lubak' },
@@ -59,7 +56,6 @@ export const SEVERITY_TAXONOMY = {
   general: {
     label: 'General Concern',
     color: 'bg-slate-100 text-slate-600 border-slate-200',
-    icon: '💬',
     description: 'Other observations or suggestions',
     problems: [
       { value: 'no_signage', label: 'Missing road signs' },

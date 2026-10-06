@@ -1,11 +1,15 @@
 import { Link } from 'react-router-dom';
+import { CameraIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
+import CitizenOverviewMap from '../components/map/CitizenOverviewMap';
 import { formatPercentage } from '../lib/percentageFormat';
+import { useMyReports, CITIZEN_STATUS_HEX } from '../lib/useMyReports';
+import { getCitizenStatus, CITIZEN_STATUS } from '../lib/publicReportStatus';
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Icon Components - Clean, consistent 24x24 icons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -24,21 +28,19 @@ function StatCard({ icon, value, label, variant = 'default', badgeText }) {
   const v = variants[variant] || variants.default;
 
   return (
-    <article className={`bg-white rounded-2xl p-5 border ${v.border} shadow-xs hover:border-slate-300 transition-colors flex flex-col justify-between`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className={`inline-flex items-center justify-center size-10 rounded-xl ${v.bg}`}>
-          {icon}
-        </div>
-        {badgeText && (
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ${v.badge}`}>
-            {badgeText}
-          </span>
-        )}
+    <article className={`bg-white rounded-2xl px-4 py-3.5 border ${v.border} shadow-xs hover:border-slate-300 transition-colors flex items-center gap-3`}>
+      <div className={`inline-flex shrink-0 items-center justify-center size-11 rounded-xl ${v.bg}`}>
+        {icon}
       </div>
-      <div>
-        <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
-        <p className="mt-1 text-xs font-semibold text-slate-500">{label}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-2xl font-bold leading-none tracking-tight text-slate-900">{value}</p>
+        <p className="mt-1 truncate text-xs font-semibold text-slate-500">{label}</p>
       </div>
+      {badgeText && (
+        <span className={`hidden xl:inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ${v.badge}`}>
+          {badgeText}
+        </span>
+      )}
     </article>
   );
 }
@@ -46,7 +48,7 @@ function StatCard({ icon, value, label, variant = 'default', badgeText }) {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Project Card - Displays project info with progress
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function ProjectCard({ project }) {
+function ProjectCard({ project, updatedLabel }) {
   const status = project.status || 'Proposed';
   const name = project.projectName || project.project_name || 'Untitled FMR Road';
   
@@ -60,21 +62,22 @@ function ProjectCard({ project }) {
   const style = statusStyles[status] || statusStyles['Proposed'];
 
   return (
-    <article className="p-4 hover:bg-slate-50/80 transition-colors">
+    <article className="px-5 py-3.5 hover:bg-slate-50/80 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-slate-900 text-sm sm:text-base truncate">{name}</h3>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <Icons.MapPin />
             <span className="truncate">{project.barangay ? `${project.barangay}, ` : ''}{project.municipality}, {project.province}</span>
+            {updatedLabel && <span className="shrink-0 text-slate-400">· Updated {updatedLabel}</span>}
           </p>
         </div>
-        <span className={`shrink-0 px-3 py-1 rounded-full text-xs font-extrabold border uppercase tracking-wider ${style.badge}`}>
+        <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wide ${style.badge}`}>
           {status}
         </span>
       </div>
       
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-2.5 flex items-center gap-3">
         <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/50">
           <div className={`h-full rounded-full ${style.bar} transition-all duration-500`} style={{ width: `${project.progress || 0}%` }} />
         </div>
@@ -101,7 +104,7 @@ function StatSkeleton() {
 
 function NearbyProjectSkeleton() {
   return (
-    <div className="w-72 rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 animate-pulse">
+    <div className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 animate-pulse">
       <div className="flex items-start justify-between gap-2">
         <div className="h-4 w-2/3 bg-zinc-200 rounded" />
         <div className="h-4 w-14 bg-zinc-200 rounded-full" />
@@ -167,8 +170,123 @@ function ProjectSkeleton() {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Main Dashboard Component
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function SectionLabel({ title, subtitle }) {
+  return (
+    <div className="border-b border-slate-200 pb-2">
+      <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
+      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+    </div>
+  );
+}
+
+const TRACK_ORDER = ['submitted', 'under_review', 'inspection_scheduled', 'under_verification', 'resolved', 'closed'];
+const DAY_MS = 86_400_000;
+
+/**
+ * The citizen's own reports as one tracker: the total, how they split across the stages
+ * they already see in My Reports (each segment links to that filter), and one line that
+ * says whether anything is still open. Feedback is a quiet secondary link.
+ */
+function MyReportsTracker({ reports, loading, feedbackCount, now }) {
+  if (loading) {
+    return <div className="h-40 animate-pulse rounded-2xl border border-slate-200 bg-white" />;
+  }
+  if (reports.length === 0) {
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-300 bg-white p-5">
+        <div>
+          <p className="text-sm font-bold text-slate-900">You have not filed a report yet</p>
+          <p className="text-xs text-slate-500 mt-0.5">See a damaged farm-to-market road? Report it with a photo and your location. It takes about a minute.</p>
+        </div>
+        <Link to="/user/reports?action=new" className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-950 transition-colors">
+          <Icons.Warning />
+          <span>Report a road issue</span>
+        </Link>
+      </div>
+    );
+  }
+
+  const counts = {};
+  reports.forEach((r) => {
+    const key = getCitizenStatus(r).key;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const segments = TRACK_ORDER.filter((k) => counts[k] > 0);
+  const total = reports.length;
+  const open = reports.filter((r) => {
+    const k = getCitizenStatus(r).key;
+    return k !== 'resolved' && k !== 'closed';
+  });
+  const oldestMs = open.reduce((min, r) => {
+    const t = new Date(r.created_at).getTime();
+    return Number.isFinite(t) && t < min ? t : min;
+  }, Infinity);
+  const oldestDays = Number.isFinite(oldestMs) ? Math.max(0, Math.floor((now - oldestMs) / DAY_MS)) : null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center">
+        <div className="shrink-0">
+          <p className="text-5xl font-bold leading-none tracking-tight text-slate-900">{total}</p>
+          <p className="mt-1.5 text-xs font-semibold text-slate-500">{total === 1 ? 'report filed' : 'reports filed'}</p>
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-slate-100" role="group" aria-label="Your reports by stage">
+            {segments.map((k) => (
+              <Link
+                key={k}
+                to={`/user/reports?status=${k}`}
+                title={`${CITIZEN_STATUS[k].label}: ${counts[k]}`}
+                aria-label={`${CITIZEN_STATUS[k].label}: ${counts[k]}. Open these reports.`}
+                className="h-full transition-opacity hover:opacity-80 first:rounded-l-full last:rounded-r-full"
+                style={{ width: `${(counts[k] / total) * 100}%`, background: CITIZEN_STATUS_HEX[k] || '#64748b' }}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+            {segments.map((k) => (
+              <Link key={k} to={`/user/reports?status=${k}`} className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900">
+                <span className="size-2.5 rounded-full" style={{ background: CITIZEN_STATUS_HEX[k] || '#64748b' }} />
+                <span className="font-medium">{CITIZEN_STATUS[k].label}</span>
+                <span className="font-bold tabular-nums text-slate-900">{counts[k]}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        {open.length > 0 ? (
+          <Link
+            to="/user/reports?status=in_progress"
+            className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+          >
+            <Icons.Clock />
+            <span>
+              {open.length} {open.length === 1 ? 'report is' : 'reports are'} still being handled by DA
+              {oldestDays !== null && ` · oldest filed ${oldestDays === 0 ? 'today' : `${oldestDays} day${oldestDays === 1 ? '' : 's'} ago`}`}
+            </span>
+            <Icons.ArrowRight />
+          </Link>
+        ) : (
+          <p className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+            <Icons.CheckCircle />
+            <span>All caught up. None of your reports are waiting.</span>
+          </p>
+        )}
+        <Link to="/user/feedback?mine=1" className="text-xs font-semibold text-slate-500 hover:text-emerald-700">
+          Feedback sent: <span className="text-slate-800">{feedbackCount}</span> · {feedbackCount > 0 ? 'View' : 'Share feedback'} →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
+  const [now] = useState(() => Date.now()); // fixed at mount; keeps render pure
+  const { reports: myReports, loading: myReportsLoading } = useMyReports();
   const [stats, setStats] = useState({ total: 0, completed: 0, ongoing: 0, pending: 0 });
   const [projects, setProjects] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
@@ -176,7 +294,7 @@ export default function UserDashboard() {
   const [userMunicipality, setUserMunicipality] = useState('');
   const [activityFeed, setActivityFeed] = useState([]);
   const [submissions, setSubmissions] = useState({ reportsSubmitted: 0, reportsResolved: 0, reportsPending: 0, feedbackSubmitted: 0 });
-  const [municipalityTableCollapsed, setMunicipalityTableCollapsed] = useState(false);
+  const [municipalityTableCollapsed, setMunicipalityTableCollapsed] = useState(true);
   const [dismissedStatusAlert, setDismissedStatusAlert] = useState(false);
   const [showAllRecentProjects, setShowAllRecentProjects] = useState(false);
   const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
@@ -433,9 +551,8 @@ export default function UserDashboard() {
     return { project: recent, tone };
   }, [nearbyProjects, userMunicipality, dismissedStatusAlert]);
 
-  const hasSubmissions = submissions.reportsSubmitted > 0 || submissions.feedbackSubmitted > 0;
-  const recentProjectsLimit = 3;
-  const recentActivityLimit = 4;
+  const recentProjectsLimit = 4;
+  const recentActivityLimit = 6;
   const visibleRecentProjects = showAllRecentProjects ? projects : projects.slice(0, recentProjectsLimit);
   const visibleRecentActivity = showAllRecentActivity ? activityFeed : activityFeed.slice(0, recentActivityLimit);
 
@@ -462,8 +579,9 @@ export default function UserDashboard() {
                 <span>DA Region VI Agricultural Oversight</span>
               </span>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-                Welcome back, <span className="text-emerald-400">{userLabel}</span>
+                Citizen Dashboard
               </h1>
+              <p className="text-xs font-medium text-emerald-400">Signed in as {userLabel}</p>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
                 Track Farm-to-Market Road progress, inspect municipal connectivity stats, and report road issues directly to engineers.
               </p>
@@ -472,34 +590,13 @@ export default function UserDashboard() {
             <div className="flex flex-wrap sm:flex-nowrap gap-3 w-full lg:w-auto">
               <Link
                 to="/user/reports?action=new"
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm transition-colors shadow-xs"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
               >
-                <Icons.Warning />
+                <CameraIcon className="size-5" aria-hidden="true" />
                 <span>Report Road Issue</span>
-              </Link>
-              <Link
-                to="/user/feedback"
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs sm:text-sm transition-colors shadow-xs"
-              >
-                <Icons.Plus />
-                <span>Give Feedback</span>
               </Link>
             </div>
           </div>
-        </section>
-
-        {/* Stats Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
-          ) : (
-            <>
-              <StatCard icon={<Icons.Folder />} value={stats.total} label="Total FMR Projects" variant="sky" badgeText="Catalog" />
-              <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed Roads" variant="emerald" badgeText="Passed" />
-              <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="Active Construction" variant="amber" badgeText="In Progress" />
-              <StatCard icon={<Icons.Document />} value={stats.proposed} label="Proposed / Planning" variant="violet" badgeText="Approved" />
-            </>
-          )}
         </section>
 
         {areaStatusAlert && (
@@ -523,9 +620,74 @@ export default function UserDashboard() {
           </section>
         )}
 
+        {/* Level 1: what the citizen has done and where it stands */}
+        <section className="space-y-3">
+          <SectionLabel title="Your activity" subtitle="Your road reports and where each one stands" />
+          <MyReportsTracker reports={myReports} loading={myReportsLoading} feedbackCount={submissions.feedbackSubmitted} now={now} />
+        </section>
+
+        {/* Level 1: the roads around the citizen */}
+        <div className="space-y-4 pt-2">
+          <SectionLabel title="Roads around you" subtitle="The map, then the projects in your municipality" />
+        {/* Map: FMR roads and the citizen's own report pins */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">FMR Roads Near You</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Road projects across the region, with the reports you filed pinned by status.</p>
+            </div>
+            <Link to="/user/map" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">Open the full map</Link>
+          </div>
+          <CitizenOverviewMap />
+        </section>
+
         <section className="grid lg:grid-cols-3 gap-6">
+          {/* Donut Progress Chart */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">Project Status Breakdown</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Ratio of completed vs ongoing infrastructure</p>
+            </div>
+
+            <div className="mt-4 flex items-center gap-5">
+              <div className="relative size-36 shrink-0">
+                {loading ? <DonutSkeleton /> : (<>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" innerRadius={42} outerRadius={64} paddingAngle={2} stroke="none">
+                      {donutData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip formatter={(value, name) => [`${value} Projects`, name]} contentStyle={{ borderRadius: '8px', fontSize: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">Total</p>
+                  <p className="text-xl font-bold leading-tight text-slate-900">{stats.total}</p>
+                </div>
+                </>)}
+              </div>
+
+              <ul className="min-w-0 flex-1 space-y-2.5 text-xs">
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <li key={i} className="h-5 bg-zinc-200 rounded animate-pulse" />
+                  ))
+                ) : donutData.map((item) => (
+                  <li key={item.name} className="flex items-center gap-2">
+                    <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                    <span className="flex-1 truncate font-medium text-slate-600">{item.name}</span>
+                    <span className="font-bold tabular-nums text-slate-900">{item.value}</span>
+                    <span className="w-9 text-right tabular-nums text-slate-400">{stats.total ? Math.round((item.value / stats.total) * 100) : 0}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
           {/* Nearby Projects Card */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between">
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
             <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-bold text-slate-900 text-base">In Your Municipality</h2>
@@ -541,16 +703,16 @@ export default function UserDashboard() {
             </header>
 
             {loading ? (
-              <div className="p-4 overflow-x-auto">
-                <div className="flex gap-4 min-w-max">
+              <div className="p-4 ">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {Array.from({ length: 3 }).map((_, i) => <NearbyProjectSkeleton key={i} />)}
                 </div>
               </div>
             ) : nearbyProjects.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-xs sm:text-sm">No nearby FMR projects found for {userMunicipality} yet.</div>
             ) : (
-              <div className="p-4 overflow-x-auto">
-                <div className="flex gap-4 min-w-max">
+              <div className="p-4 ">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {nearbyProjects.map((project) => {
                     const status = project.status || 'Proposed';
                     const statusStyles = {
@@ -559,7 +721,7 @@ export default function UserDashboard() {
                       Proposed: 'bg-sky-100 text-sky-800 border-sky-200',
                     };
                     return (
-                      <article key={project.id} className="w-72 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white p-4 transition-all space-y-3">
+                      <article key={project.id} className="w-full rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white p-4 transition-all space-y-3">
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="font-bold text-slate-900 text-sm line-clamp-2">{project.projectName}</h3>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[status] || statusStyles.Proposed}`}>
@@ -590,52 +752,29 @@ export default function UserDashboard() {
               </div>
             )}
           </div>
-
-          {/* Donut Progress Chart */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Project Status Breakdown</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Ratio of completed vs ongoing infrastructure</p>
-            </div>
-
-            <div className="mt-4 h-48 relative">
-              {loading ? <DonutSkeleton /> : (<>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={donutData} dataKey="value" innerRadius={50} outerRadius={72} paddingAngle={2}>
-                    {donutData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} stroke="#ffffff" strokeWidth={2} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip formatter={(value, name) => [`${value} Projects`, name]} contentStyle={{ borderRadius: '8px', fontSize: '12px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Total FMRs</p>
-                <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-              </div>
-              </>)}
-            </div>
-
-            <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-semibold">
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-8 bg-zinc-200 rounded-lg animate-pulse" />
-                ))
-              ) : donutData.map((item) => (
-                <div key={item.name} className="flex items-center gap-1.5 text-slate-700 bg-slate-50 p-1.5 rounded-lg border border-slate-100 justify-center">
-                  <span className="inline-block size-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span>{item.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </section>
 
-        {/* Content Grid */}
-        <section className="grid grid-cols-1 gap-6">
-          {/* Projects List */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        </div>
+
+        {/* Level 1: program-wide figures and activity */}
+        <div className="space-y-4 pt-2">
+          <SectionLabel title="Program overview" subtitle="Farm-to-market road progress across Region VI" />
+        {/* Stats Grid */}
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
+          ) : (
+            <>
+              <StatCard icon={<Icons.Folder />} value={stats.total} label="Total FMR Projects" variant="sky" badgeText="Catalog" />
+              <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed Roads" variant="emerald" badgeText="Passed" />
+              <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="Active Construction" variant="amber" badgeText="In Progress" />
+              <StatCard icon={<Icons.Document />} value={stats.proposed} label="Proposed / Planning" variant="violet" badgeText="Approved" />
+            </>
+          )}
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-6 items-stretch">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
             <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-bold text-slate-900 text-base">Recent Projects Activity</h2>
@@ -656,7 +795,7 @@ export default function UserDashboard() {
               </div>
             </header>
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 flex-1">
               {loading ? (
                 Array.from({ length: 3 }).map((_, i) => <ProjectSkeleton key={i} />)
               ) : projects.length === 0 ? (
@@ -670,18 +809,14 @@ export default function UserDashboard() {
               ) : (
                 visibleRecentProjects.map((p) => (
                   <div key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                    <ProjectCard project={p} />
-                    <p className="px-4 pb-3 text-[11px] text-slate-500 font-medium">Updated: {formatProjectDate(p)}</p>
+                    <ProjectCard project={p} updatedLabel={formatProjectDate(p)} />
                   </div>
                 ))
               )}
             </div>
           </div>
-        </section>
 
-        {/* Activity & Submissions Grid */}
-        <section className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
             <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-bold text-slate-900 text-base">System Activity Stream</h2>
@@ -700,7 +835,7 @@ export default function UserDashboard() {
               </div>
             </header>
 
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 flex-1">
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => <ActivitySkeleton key={i} />)
               ) : activityFeed.length === 0 ? (
@@ -720,32 +855,8 @@ export default function UserDashboard() {
               )}
             </div>
           </div>
-
-          {hasSubmissions && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">My Account Submissions</h2>
-
-              <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/50 space-y-2">
-                <div className="flex justify-between items-center">
-                  <p className="text-xs font-bold text-slate-900">Road Reports</p>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full">{submissions.reportsPending} Pending</span>
-                </div>
-                <p className="text-xs text-slate-500">{submissions.reportsSubmitted} submitted · {submissions.reportsResolved} resolved</p>
-                <Link to="/user/reports?mine=1" className="inline-flex text-xs font-semibold text-emerald-700 hover:text-emerald-800 pt-1">
-                  View My Reports →
-                </Link>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 p-4 bg-slate-50/50 space-y-2">
-                <p className="text-xs font-bold text-slate-900">Community Feedback</p>
-                <p className="text-xs text-slate-500">{submissions.feedbackSubmitted} submitted entries</p>
-                <Link to="/user/feedback?mine=1" className="inline-flex text-xs font-semibold text-emerald-700 hover:text-emerald-800 pt-1">
-                  View My Feedback →
-                </Link>
-              </div>
-            </div>
-          )}
         </section>
+        </div>
 
         {/* Municipality Ranking Table */}
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">

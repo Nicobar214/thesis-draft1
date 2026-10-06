@@ -1,13 +1,36 @@
 import { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
-import { buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints, isAlreadyRoadAligned } from '../../lib/mapRouteUtils';
+import { normalizeRouteStatus, buildRoutePoints, boundsFromPoints, getJitteredCentroid, fetchRoadAlignedPolyline, createDisplayRoutePoints, isAlreadyRoadAligned } from '../../lib/mapRouteUtils';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import GapSegmentLayer from '../map/GapSegmentLayer';
+import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from '../map/MapPanels';
+import StableHeatLayer from '../map/StableHeatLayer';
+import BaseTiles from '../map/BaseTiles';
+import { useBasemap } from '../../lib/basemaps';
 import { centroidFallbackIcon } from '../map/routeMarkerIcons';
+import { storeGlyph } from '../../lib/mapMarkerIcons';
+
+const REPORT_STATUS_COLOR = {
+  pending: '#f59e0b',
+  reviewed: '#0ea5e9',
+  resolved: '#059669',
+  dismissed: '#64748b',
+};
+
+function reportPinIcon(color, needsAction) {
+  const ring = needsAction ? 'box-shadow:0 0 0 3px #dc2626,0 2px 5px rgba(0,0,0,.35)' : 'box-shadow:0 2px 5px rgba(0,0,0,.35)';
+  return new L.DivIcon({
+    className: 'lgu-report-pin',
+    html: `<div style="background:${color};width:22px;height:22px;border-radius:9999px;border:2px solid #fff;${ring};display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:9999px;background:#fff"></div></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -11],
+  });
+}
 
 function FitToData({ points }) {
   const map = useMap();
@@ -33,44 +56,24 @@ function MapCenterFlyer({ center, zoom }) {
 }
 
 function HeatLayer({ points }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!map || !window.L || !window.L.heatLayer) return undefined;
-    const layer = window.L.heatLayer(points || [], {
-      radius: 24,
-      blur: 18,
-      maxZoom: 17,
-      gradient: { 0.2: '#38bdf8', 0.5: '#f59e0b', 0.8: '#ef4444' },
-    }).addTo(map);
-
-    return () => {
-      map.removeLayer(layer);
-    };
-  }, [map, points]);
-
-  return null;
+  return (
+    <StableHeatLayer
+      points={points}
+      radiusMeters={1200}
+      gradient={{ 0.2: '#38bdf8', 0.5: '#f59e0b', 0.8: '#ef4444' }}
+    />
+  );
 }
 
 function FarmerHeatmapLayer({ visible, points }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!visible || !map || !window.L || !window.L.heatLayer || !points || points.length === 0) return undefined;
-    
-    const layer = window.L.heatLayer(points, {
-      radius: 30,
-      blur: 20,
-      maxZoom: 15,
-      gradient: { 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }
-    }).addTo(map);
-
-    return () => {
-      map.removeLayer(layer);
-    };
-  }, [map, visible, points]);
-
-  return null;
+  return (
+    <StableHeatLayer
+      visible={visible}
+      points={points}
+      radiusMeters={1500}
+      gradient={{ 0.2: '#86efac', 0.5: '#fcd34d', 0.8: '#fca5a5', 1.0: '#ef4444' }}
+    />
+  );
 }
 
 const startIcon = new L.DivIcon({
@@ -99,6 +102,7 @@ export default function LguRouteMap({
   mapZoom = 11,
   searchMarker = null,
   roadGaps = [],
+  escalations = [],
 }) {
   const [showFarmerDots, setShowFarmerDots] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
@@ -106,6 +110,8 @@ export default function LguRouteMap({
   const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
   const [farmerCropFilter, setFarmerCropFilter] = useState('All');
   const [showRoadGaps, setShowRoadGaps] = useState(true);
+  const [showReportPins, setShowReportPins] = useState(true);
+  const [basemap, setBasemap] = useBasemap();
   const [snappedConnectionPoints, setSnappedConnectionPoints] = useState({ key: null, points: null });
   const [snappedProjectRoutes, setSnappedProjectRoutes] = useState({});
   const [focusedProjectId, setFocusedProjectId] = useState(null);
@@ -234,6 +240,12 @@ export default function LguRouteMap({
   });
   reportPoints.forEach((row) => fitPoints.push([row.lat, row.lng]));
 
+  // Reports the LGU is being asked to act on get a red ring so they stand out.
+  const actionReportIds = useMemo(
+    () => new Set((escalations || []).filter((e) => e.escalation_status === 'for_action').map((e) => e.report_id)),
+    [escalations],
+  );
+
   const heatPoints = reportPoints.map((row) => [row.lat, row.lng, row.status === 'resolved' ? 0.3 : 0.9]);
 
   const farmerHeatPoints = useMemo(() => {
@@ -246,14 +258,17 @@ export default function LguRouteMap({
       .filter(Boolean);
   }, [cropFilteredFarmerBeneficiaries]);
 
+  const statusCount = (projects || []).reduce((acc, p) => {
+    const key = normalizeRouteStatus(p.status);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="relative h-[560px] w-full border border-slate-200 rounded-xl overflow-hidden shadow-inner">
       <MapContainer center={[10.7, 122.56]} zoom={11} style={{ width: '100%', height: '100%' }} scrollWheelZoom className="z-0">
         <MapCenterFlyer center={mapCenter} zoom={mapZoom} />
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BaseTiles basemap={basemap} />
 
         {routeLayers.map(({ project, routeData, coordinates, hasRealCoordinates }) => {
           const effectivePoints = snappedProjectRoutes[project.id] || routeData.points;
@@ -368,7 +383,7 @@ export default function LguRouteMap({
             position={[Number(m.latitude), Number(m.longitude)]}
             icon={new L.DivIcon({
               className: 'custom-market-pin',
-              html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">🏪</div>`,
+              html: `<div style="background:#4338ca;color:#fff;width:30px;height:30px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);font-size:14px">${storeGlyph(14)}</div>`,
               iconSize: [30, 30],
               iconAnchor: [15, 15],
             })}
@@ -485,85 +500,108 @@ export default function LguRouteMap({
             </Popup>
           </Marker>
         )}
+        {showReportPins && reportPoints.map((row) => {
+          const color = REPORT_STATUS_COLOR[row.status] || '#64748b';
+          const needsAction = actionReportIds.has(row.id);
+          return (
+            <Marker
+              key={`report-pin-${row.id}`}
+              position={[row.lat, row.lng]}
+              icon={reportPinIcon(color, needsAction)}
+              zIndexOffset={needsAction ? 500 : 0}
+            >
+              <Popup>
+                <div className="space-y-1 p-1 text-xs">
+                  <p className="font-bold text-slate-900 capitalize">{row.status || 'pending'}{needsAction ? ' · needs LGU action' : ''}</p>
+                  <p className="text-slate-600">{row.description}</p>
+                  <p className="text-slate-500">{[row.barangay, row.municipality].filter(Boolean).join(', ')}</p>
+                  {row.project_name && <p className="text-slate-500">Project: {row.project_name}</p>}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
         <FitToData points={fitPoints} />
       </MapContainer>
 
-      {/* Floating Map Layers Control Panel */}
-      <div className="absolute bottom-4 right-4 z-[500] bg-white/95 border border-slate-200 rounded-xl shadow-md p-3 text-xs text-slate-700 space-y-1.5 min-w-[200px]">
-        <p className="font-semibold text-slate-900 border-b border-slate-100 pb-1 mb-1">Supply Chain Layers</p>
-        
-        <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-          <input
-            type="checkbox"
+      <MapLegend>
+        <LegendGroup label="Projects">
+          {statusCount['Completed'] > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={statusCount['Completed']} />}
+          {statusCount['On-Going'] > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={statusCount['On-Going']} />}
+          {statusCount['Proposed'] > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={statusCount['Proposed']} />}
+        </LegendGroup>
+        {(showRoadGaps || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
+          <LegendGroup label="Layers">
+            {showRoadGaps && <LegendLine color="border-red-500" dashed label="Road network gap" />}
+            {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
+            {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer" />}
+            {showFarmerHeatmap && (
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
+                <span>Farmer density</span>
+              </div>
+            )}
+          </LegendGroup>
+        )}
+        {showReportPins && reportPoints.length > 0 && (
+          <LegendGroup label="Citizen reports">
+            {[['pending', 'Pending'], ['reviewed', 'Reviewed'], ['resolved', 'Resolved']].map(([k, label]) => (
+              <LegendDot key={k} color="" style={{ background: REPORT_STATUS_COLOR[k] }} label={label} />
+            ))}
+            <LegendDot color="bg-white" ring="ring-2 ring-red-600" label="Needs LGU action" />
+          </LegendGroup>
+        )}
+      </MapLegend>
+
+      <MapControlPanel>
+        <ControlGroup label="Layers">
+          <LayerToggle
+            checked={showReportPins}
+            onChange={setShowReportPins}
+            label={`Citizen reports (${reportPoints.length})${actionReportIds.size > 0 ? ` · ${actionReportIds.size} need action` : ''}`}
+          />
+          <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Road network gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+          <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
+        </ControlGroup>
+
+        <ControlGroup label="Supply chain">
+          <LayerToggle
             checked={showFarmerDots}
-            onChange={(e) => {
-              setShowFarmerDots(e.target.checked);
-              if (!e.target.checked) setSelectedFarmerForPath(null);
+            onChange={(on) => {
+              setShowFarmerDots(on);
+              if (!on) setSelectedFarmerForPath(null);
             }}
-            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            label="Farmers (dots)"
           />
-          Show Farmers (Dots)
-        </label>
+          {showFarmerDots && (
+            <div className="flex items-center gap-2 pl-6 font-medium text-slate-600">
+              <span className="shrink-0">Crop</span>
+              <select
+                value={farmerCropFilter}
+                onChange={(e) => setFarmerCropFilter(e.target.value)}
+                className="w-full rounded border-slate-300 py-0.5 text-[11px] focus:border-teal-500 focus:ring-teal-500"
+              >
+                {farmerCropOptions.map((crop) => (
+                  <option key={crop} value={crop}>{crop}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <LayerToggle checked={showFarmerHeatmap} onChange={setShowFarmerHeatmap} label="Farmer density" />
+          {selectedFarmerForPath && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-1.5 text-[10px]">
+              <span className="max-w-[130px] truncate text-slate-500">Path: {selectedFarmerForPath.fullName}</span>
+              <button type="button" onClick={() => setSelectedFarmerForPath(null)} className="font-semibold text-red-500 hover:text-red-700">
+                Clear
+              </button>
+            </div>
+          )}
+        </ControlGroup>
 
-        {showFarmerDots && (
-          <div className="flex items-center gap-2 pl-6 font-medium text-slate-600">
-            <span className="shrink-0">Crop:</span>
-            <select
-              value={farmerCropFilter}
-              onChange={(e) => setFarmerCropFilter(e.target.value)}
-              className="w-full rounded border-slate-300 text-[11px] py-0.5 focus:ring-teal-500 focus:border-teal-500"
-            >
-              {farmerCropOptions.map((crop) => (
-                <option key={crop} value={crop}>{crop}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-          <input
-            type="checkbox"
-            checked={showFarmerHeatmap}
-            onChange={(e) => setShowFarmerHeatmap(e.target.checked)}
-            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-          />
-          Show Farmer Density
-        </label>
-        
-        <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-          <input
-            type="checkbox"
-            checked={showRoadGaps}
-            onChange={(e) => setShowRoadGaps(e.target.checked)}
-            className="rounded border-slate-300 text-red-600 focus:ring-red-500"
-          />
-          <span className="text-red-700 font-semibold">
-            Road Network Gaps ({roadGaps.length})
-          </span>
-        </label>
-
-        <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-600 hover:text-slate-950">
-          <input
-            type="checkbox"
-            checked={showMarketsMap}
-            onChange={(e) => setShowMarketsMap(e.target.checked)}
-            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-          />
-          Show Markets (Icons)
-        </label>
-
-        {selectedFarmerForPath && (
-          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-            <span className="text-slate-500 truncate max-w-[120px]">Dashed path: {selectedFarmerForPath.fullName}</span>
-            <button 
-              onClick={() => setSelectedFarmerForPath(null)} 
-              className="text-red-500 hover:text-red-700 font-semibold"
-            >
-              Clear
-            </button>
-          </div>
-        )}
-      </div>
+        <ControlGroup label="Basemap">
+          <BasemapSwitch value={basemap} onChange={setBasemap} />
+        </ControlGroup>
+      </MapControlPanel>
     </div>
   );
 }

@@ -13,6 +13,7 @@
  * submissions use certify_progress_with_quantities. Both are role-checked
  * SECURITY DEFINER RPCs, and the UI never writes progress tables directly.
  */
+import { XIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { getWorkflowMeta } from '../../lib/progressWorkflow';
@@ -204,8 +205,8 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     const ratingLabels = { 5: '5/5 Excellent', 4: '4/5 Good', 3: '3/5 Satisfactory', 2: '2/5 Substandard', 1: '1/5 Defective' };
     const ratingText = ratingLabels[rating] || `${rating}/5`;
     const formattedRemarks = remarks.trim()
-      ? `[Site Rating: ⭐ ${ratingText}] ${remarks.trim()}`
-      : `[Site Rating: ⭐ ${ratingText}] Verified on site.`;
+      ? `[Site Rating: ${ratingText}] ${remarks.trim()}`
+      : `[Site Rating: ${ratingText}] Verified on site.`;
 
     setSaving(true);
     try {
@@ -292,7 +293,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
             </svg>
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600">
-                ✕
+                <XIcon className="size-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -484,7 +485,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                       Period: {fmtDate(row.period_start)} – {fmtDate(row.period_end)} &middot; Contractor Claim: <strong className="text-slate-800">{formatPercentage(reported)}</strong>
                     </p>
                   </div>
-                  <button onClick={() => setOpenId(null)} className="p-1 text-slate-400 hover:text-slate-600">✕</button>
+                  <button onClick={() => setOpenId(null)} aria-label="Close" className="p-1 text-slate-400 hover:text-slate-600"><XIcon className="size-4" aria-hidden="true" /></button>
                 </div>
 
                 {row.remarks && (

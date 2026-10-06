@@ -1,3 +1,4 @@
+import { LockIcon, ZapIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -7,6 +8,7 @@ import { supabaseLgu as supabase } from '../../lib/supabase';
 import { notify } from '../../lib/toast';
 import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
+import MapSearchBox from '../map/MapSearchBox';
 import { getBarangays } from '../../data/iloiloLocations';
 import { boundsFromPoints, getMunicipalityCentroid, fetchRoadAlignedPolyline, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
@@ -46,12 +48,14 @@ function MapClickPicker({ onPick }) {
   return null;
 }
 
-function MapCenterController({ center }) {
+function MapCenterController({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
     if (center && center[0] && center[1]) {
-      map.setView(center, map.getZoom());
+      map.setView(center, zoom ?? map.getZoom());
     }
+    // Recenter when the center changes; zoom only rides along with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center, map]);
   return null;
 }
@@ -147,6 +151,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [routeWaypoints, setRouteWaypoints] = useState([]);
   const [snapping, setSnapping] = useState(false);
   const [searchCenter, setSearchCenter] = useState(null);
+  const [searchZoom, setSearchZoom] = useState(15);
   const [photoFile, setPhotoFile] = useState(null);
   const [documentFile, setDocumentFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -561,7 +566,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 />
                 {editingId && (
                   <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
-                    🔒 Name is locked to ensure proposal traceability and duplicate check integrity.
+                    <LockIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Name is locked to ensure proposal traceability and duplicate check integrity.
                   </p>
                 )}
               </div>
@@ -777,7 +782,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                         onClick={handleSnapToRoad}
                         className="px-2 py-1 rounded text-[11px] font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
                       >
-                        {snapping ? 'Snapping…' : '⚡ Snap to Road'}
+                        {snapping ? 'Snapping…' : <><ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road</>}
                       </button>
                       <button
                         type="button"
@@ -789,51 +794,15 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     </div>
                   </div>
                   
-                  {/* Search Bar inside Map */}
-                  <div className="p-3 bg-white border-b border-slate-100 flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Search barangay or location (e.g. Bucari)..."
-                      id="proposalMapSearchInput"
-                      className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm"
-                      onKeyDown={async (e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          document.getElementById('proposalMapSearchBtn')?.click();
-                        }
+                  {/* Place search: suggests barangays and roads, then moves the map there */}
+                  <div className="border-b border-slate-100 bg-white p-3">
+                    <MapSearchBox
+                      placeholder="Find a barangay, road or place to start drawing from..."
+                      onSelect={(r) => {
+                        setSearchCenter([r.lat, r.lng]);
+                        setSearchZoom(r.zoom);
                       }}
                     />
-                    <button
-                      type="button"
-                      id="proposalMapSearchBtn"
-                      onClick={async () => {
-                        const queryVal = document.getElementById('proposalMapSearchInput')?.value?.trim();
-                        if (!queryVal) return;
-                        try {
-                          const query = `${queryVal}, Iloilo, Philippines`;
-                          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
-                          const res = await fetch(url, {
-                            headers: {
-                              'Accept-Language': 'en',
-                              'User-Agent': 'KalsaTrack-Route-Builder-Search'
-                            }
-                          });
-                          if (!res.ok) throw new Error();
-                          const data = await res.json();
-                          if (data && data.length > 0) {
-                            setSearchCenter([Number(data[0].lat), Number(data[0].lon)]);
-                          } else {
-                            notify('Location not found. Try adding the municipality name.');
-                          }
-                        } catch (err) {
-                          console.error(err);
-                          notify('Error searching location.');
-                        }
-                      }}
-                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors"
-                    >
-                      Search
-                    </button>
                   </div>
 
                   <div style={{ height: '420px', width: '100%' }}>
@@ -850,7 +819,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                           }
                         }}
                       />
-                      <MapCenterController center={mapCenter} />
+                      <MapCenterController center={mapCenter} zoom={searchCenter ? searchZoom : undefined} />
                       {form.start_latitude && form.start_longitude && (
                         <Marker
                           position={[Number(form.start_latitude), Number(form.start_longitude)]}

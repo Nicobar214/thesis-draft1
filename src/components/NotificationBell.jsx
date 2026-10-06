@@ -25,6 +25,16 @@ const TYPE_META = {
   lgu_proposal_approved:           { label: 'Approved',     accent: 'bg-emerald-500' },
   lgu_proposal_rejected:           { label: 'Rejected',     accent: 'bg-red-500' },
   lgu_proposal_published:          { label: 'Published',    accent: 'bg-emerald-500' },
+  // Contractor progress workflow
+  progress_update_submitted:          { label: 'Submission',  accent: 'bg-blue-500' },
+  progress_update_certified:          { label: 'Certified',   accent: 'bg-emerald-500' },
+  progress_update_awaiting_approval:  { label: 'Approval',    accent: 'bg-amber-500' },
+  progress_update_disputed:           { label: 'Disputed',    accent: 'bg-red-500' },
+  progress_update_approved:           { label: 'Approved',    accent: 'bg-emerald-500' },
+  progress_update_rejected:           { label: 'Returned',    accent: 'bg-red-500' },
+  project_assigned:                   { label: 'Assigned',    accent: 'bg-blue-500' },
+  site_engineer_assigned:             { label: 'Assigned',    accent: 'bg-blue-500' },
+  project_site_engineer_set:          { label: 'Engineer set', accent: 'bg-indigo-500' },
 };
 
 function metaFor(type) {
@@ -73,12 +83,17 @@ export default function NotificationBell({
     if (!uid) return;
     setLoading(true);
     try {
-      const { data, error } = await client
+      const query = (columns) => client
         .from('notifications')
-        .select('id, type, title, message, report_id, is_read, created_at')
+        .select(columns)
         .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(30);
+      let { data, error } = await query('id, type, title, message, report_id, progress_update_id, project_id, is_read, created_at');
+      // A database that has not run the progress-notification migration lacks the two link columns.
+      if (error && /progress_update_id|project_id/.test(error.message || '')) {
+        ({ data, error } = await query('id, type, title, message, report_id, is_read, created_at'));
+      }
       if (error) throw error;
       setItems(data || []);
     } catch (err) {
@@ -158,7 +173,7 @@ export default function NotificationBell({
 
   const handleSelect = (n) => {
     if (!n.is_read) markRead([n.id]);
-    if (typeof onSelect === 'function' && n.report_id) onSelect(n);
+    if (typeof onSelect === 'function' && (n.report_id || n.progress_update_id || n.project_id)) onSelect(n);
     setOpen(false);
   };
 
@@ -210,7 +225,7 @@ export default function NotificationBell({
             ) : items.length === 0 ? (
               <div className="px-4 py-8 text-center">
                 <p className="text-sm text-slate-600">You&rsquo;re all caught up</p>
-                <p className="mt-1 text-xs text-slate-400">Updates about your reports appear here.</p>
+                <p className="mt-1 text-xs text-slate-400">New updates appear here as they happen.</p>
               </div>
             ) : (
               <ul className="divide-y divide-slate-100">

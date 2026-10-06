@@ -1,24 +1,29 @@
-/* ContractorLayout.jsx – Shared layout for contractor portal
- * Top-nav with: Dashboard | My Projects | Reports
- * Shows contractor's name + amber "Contractor" role badge.
+/* ContractorLayout.jsx – Shared layout for the contractor portal.
+ * Sidebar (same pattern as the citizen portal) + a header with the page title and the
+ * notification bell. It fetches the contractor's summary once and shares it through context,
+ * so the sidebar counters and the dashboard always agree.
  */
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
-import Logo from './Logo';
+import { useContractorSummary } from '../lib/contractorPipeline';
+import { ContractorSummaryContext } from '../lib/contractorSummaryContext';
+import ContractorSidebar from './ContractorSidebar';
+import NotificationBell from './NotificationBell';
+import Icons from './Icons';
 
-const NAV_ITEMS = [
-  { to: '/contractor',          label: 'Dashboard',   exact: true },
-  { to: '/contractor/projects', label: 'My Projects', exact: false },
-  { to: '/contractor/reports',  label: 'Reports',     exact: false },
-];
+const PAGE_TITLES = {
+  '/contractor': 'Dashboard',
+  '/contractor/projects': 'My Projects',
+  '/contractor/reports': 'Reports',
+};
 
 export default function ContractorLayout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [user, setUser]       = useState(null);
+  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => {
@@ -29,105 +34,59 @@ export default function ContractorLayout({ children }) {
     });
   }, [navigate]);
 
-  const isActive = (item) =>
-    item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate('/signin');
-  };
+  const summary = useContractorSummary(supabase, user?.id || null);
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Contractor';
+  const pageTitle = PAGE_TITLES[location.pathname] || 'Contractor Portal';
+
+  // A notification opens the thing it is about.
+  const openNotification = (n) => {
+    if (n.progress_update_id) navigate(`/contractor/reports?update=${n.progress_update_id}`);
+    else if (n.project_id) navigate('/contractor/projects');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Sticky header */}
-      <header className="bg-white/80 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <div className="flex items-center shrink-0">
-              <Logo variant="glyph" className="size-9 sm:hidden" alt="KalsaTrack" />
-              <Logo className="hidden sm:block h-8" />
-            </div>
+    <ContractorSummaryContext.Provider value={summary}>
+      <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+        <ContractorSidebar collapsed={collapsed} setCollapsed={setCollapsed} user={user} displayName={displayName} />
 
-            {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    isActive(item)
-                      ? 'bg-teal-50 text-teal-700 shadow-sm shadow-teal-100'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-
-            {/* Right side: badge + name + sign out */}
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200">
-                  Contractor
+        <main className={`transition-all duration-300 min-h-screen ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'}`}>
+          <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
+            <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 pl-12 lg:pl-0">
+                <h1 className="text-base sm:text-lg font-bold text-slate-900">{pageTitle}</h1>
+                <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                  <Icons.ShieldCheck />
+                  DA Region VI Contractor Portal
                 </span>
-                <span className="text-sm text-slate-700 font-medium">{displayName}</span>
               </div>
-              <button
-                onClick={handleSignOut}
-                className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-              >
-                Sign Out
-              </button>
-              {/* Mobile hamburger */}
-              <button
-                className="md:hidden p-2 rounded-xl hover:bg-slate-100 transition-colors"
-                onClick={() => setMobileOpen((v) => !v)}
-              >
-                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  {mobileOpen
-                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />}
-                </svg>
-              </button>
+
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/contractor/projects"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-colors"
+                >
+                  <Icons.Plus />
+                  <span>Submit Progress</span>
+                </Link>
+
+                <NotificationBell client={supabase} onSelect={openNotification} />
+
+                <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+                  <div className="w-8 h-8 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="hidden sm:block text-xs font-semibold text-slate-700">{displayName}</span>
+                </div>
+              </div>
             </div>
+          </header>
+
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+            {children}
           </div>
-
-          {/* Mobile nav dropdown */}
-          {mobileOpen && (
-            <nav className="md:hidden pb-4 space-y-1 border-t border-slate-100 pt-3">
-              <div className="flex items-center gap-2 px-2 pb-3 mb-2 border-b border-slate-100">
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200">
-                  Contractor
-                </span>
-                <span className="text-sm text-slate-700 font-medium">{displayName}</span>
-              </div>
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  className={`block px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                    isActive(item)
-                      ? 'bg-teal-50 text-teal-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          )}
-        </div>
-      </header>
-
-      {/* Page content */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
-    </div>
+        </main>
+      </div>
+    </ContractorSummaryContext.Provider>
   );
 }

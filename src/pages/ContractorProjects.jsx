@@ -85,7 +85,7 @@ export default function ContractorProjects() {
     try {
       const { data: projs, error } = await supabase
         .from('fmr_projects')
-        .select('id, project_name, municipality, province, location, status, accomplishment, project_length_km, total_budget, funds_released, funding_source, contract_amount, remarks, year_funded, date_started, target_completion_date, date_completed, work_plan_status, work_plan_adoption_baseline')
+        .select('id, project_name, municipality, province, location, status, accomplishment, project_length_km, total_budget, funds_released, funding_source, contract_amount, remarks, year_funded, date_started, target_completion_date, date_completed, work_plan_status, work_plan_adoption_baseline, site_engineer_id')
         .eq('contractor_id', user.id)
         .order('project_name', { ascending: true });
       if (error) throw error;
@@ -159,7 +159,7 @@ export default function ContractorProjects() {
   /* Opening the submit form from inside the detail modal: close the detail
      first so the two dialogs never stack. */
   const handleSubmitFromDetail = (project) => {
-    if (project.work_plan_status !== 'finalized') return;
+    if (project.work_plan_status !== 'finalized' || !project.site_engineer_id) return;
     setDetailProject(null);
     setSelectedProject(project);
   };
@@ -332,6 +332,13 @@ export default function ContractorProjects() {
                               className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 text-slate-500 border border-slate-200 whitespace-nowrap"
                             >
                               Work Plan required
+                            </span>
+                          ) : !project.site_engineer_id ? (
+                            <span
+                              title="The DA office has not assigned a site engineer to this project yet. Your progress is validated by that engineer, so it cannot be submitted until one is assigned."
+                              className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap"
+                            >
+                              Awaiting site engineer
                             </span>
                           ) : (
                             <button

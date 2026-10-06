@@ -1,3 +1,7 @@
+import { XIcon } from 'lucide-react';
+import SeverityIcon from '../components/SeverityIcon';
+import ViewToggle, { useViewMode } from '../components/ui/ViewToggle';
+import Pagination, { usePagination } from '../components/ui/Pagination';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -25,6 +29,8 @@ import {
 
 /* Status badge — derived from the citizen view's citizen_status so a closed or
  * mid-inspection report is never mislabelled as still pending. */
+const IN_PROGRESS_KEYS = ['under_review', 'inspection_scheduled', 'under_verification'];
+
 function StatusBadge({ report }) {
   const status = getCitizenStatus(report);
   return (
@@ -44,7 +50,7 @@ function SeverityBadge({ category }) {
   if (!meta) return null;
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border ${meta.color}`}>
-      {meta.icon} {meta.label}
+      <SeverityIcon category={category} /> {meta.label}
     </span>
   );
 }
@@ -55,6 +61,7 @@ function UserReports() {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useViewMode('userReports.viewMode');
   const [selected, setSelected] = useState(null);
   const [selectedResolutionSummary, setSelectedResolutionSummary] = useState('');
   const [selectedResolution, setSelectedResolution] = useState(null);
@@ -82,6 +89,28 @@ function UserReports() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sidebar links arrive as /user/reports?status=<key>; apply it as the filter.
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (!status) return;
+    const valid = status === 'in_progress' || CITIZEN_STATUS_FILTERS.some((o) => o.value === status);
+    if (valid) setStatusFilter(status);
+    const next = new URLSearchParams(searchParams);
+    next.delete('status');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  // /user/reports?report=<id> (from Community Feedback) opens that report once the list has loaded.
+  useEffect(() => {
+    const id = searchParams.get('report');
+    if (!id || reports.length === 0) return;
+    const row = reports.find((r) => String(r.id) === id);
+    if (row) setSelected(row);
+    const next = new URLSearchParams(searchParams);
+    next.delete('report');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, reports, setSearchParams]);
 
   /* Citizens read their reports through public_reports_citizen_view, which
    * strips staff-only columns and exposes a ready-made citizen_status. */
@@ -279,7 +308,9 @@ function UserReports() {
         const hay = `${r.description} ${r.municipality} ${r.barangay} ${r.street} ${r.project_name}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (statusFilter !== 'all' && getCitizenStatus(r).key !== statusFilter) return false;
+      if (statusFilter === 'in_progress') {
+        if (!IN_PROGRESS_KEYS.includes(getCitizenStatus(r).key)) return false;
+      } else if (statusFilter !== 'all' && getCitizenStatus(r).key !== statusFilter) return false;
       if (categoryFilter !== 'all') {
         if (resolveCategory(r) !== categoryFilter) return false;
       }
@@ -299,6 +330,8 @@ function UserReports() {
     }
     return sorted;
   }, [reports, search, statusFilter, categoryFilter, problemFilter, sortBy]);
+
+  const pager = usePagination(filtered, [search, statusFilter, categoryFilter, problemFilter, sortBy].join('|'));
 
   /* Summary tiles answer "where do my reports stand?" — in progress means the
    * report is live somewhere in the workflow, not that nothing has happened. */
@@ -355,15 +388,29 @@ function UserReports() {
             { key: 'submitted', label: 'Awaiting Review', value: counts.submitted, color: 'bg-amber-100 text-amber-600' },
             { key: 'in_progress', label: 'In Progress', value: counts.inProgress, color: 'bg-sky-100 text-sky-600' },
             { key: 'resolved', label: 'Resolved', value: counts.resolved, color: 'bg-emerald-100 text-teal-600' },
-          ].map((s) => (
-            <div key={s.label} className="bg-white rounded-2xl border border-slate-200/60 p-5 hover:border-zinc-300 transition-colors">
-              <div className={`inline-flex items-center justify-center size-9 rounded-xl mb-3 ${s.color}`}>
-                <Icons.Document />
-              </div>
-              <p className="text-2xl font-semibold tracking-tight text-slate-900">{s.value}</p>
-              <p className="text-sm text-slate-500">{s.label}</p>
-            </div>
-          ))}
+          ].map((s) => {
+            const active = statusFilter === s.key;
+            return (
+              <button
+                key={s.label}
+                type="button"
+                onClick={() => setStatusFilter(active && s.key !== 'all' ? 'all' : s.key)}
+                aria-pressed={active}
+                title={active && s.key !== 'all' ? 'Click again to show all reports' : `Show: ${s.label}`}
+                className={`text-left rounded-2xl border p-5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                  active
+                    ? 'bg-teal-50/60 border-teal-500 ring-2 ring-teal-500/30 shadow-sm'
+                    : 'bg-white border-slate-200/60 hover:border-zinc-300 hover:shadow-sm'
+                }`}
+              >
+                <div className={`inline-flex items-center justify-center size-9 rounded-xl mb-3 ${s.color}`}>
+                  <Icons.Document />
+                </div>
+                <p className="text-2xl font-semibold tracking-tight text-slate-900">{s.value}</p>
+                <p className="text-sm text-slate-500">{s.label}</p>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filters */}
@@ -386,7 +433,7 @@ function UserReports() {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="appearance-none pl-11 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
               >
-                {CITIZEN_STATUS_FILTERS.map((opt) => (
+                {[...CITIZEN_STATUS_FILTERS.slice(0, 2), { value: 'in_progress', label: 'In Progress (all stages)' }, ...CITIZEN_STATUS_FILTERS.slice(2)].map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
@@ -417,7 +464,7 @@ function UserReports() {
               >
                 <option value="all">All Severity Types</option>
                 {Object.entries(SEVERITY_TAXONOMY).map(([key, meta]) => (
-                  <option key={key} value={key}>{meta.icon} {meta.label}</option>
+                  <option key={key} value={key}>{meta.label}</option>
                 ))}
               </select>
             </div>
@@ -450,7 +497,7 @@ function UserReports() {
           <div className="flex flex-wrap gap-2">
             {categoryFilter !== 'all' && (
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${SEVERITY_TAXONOMY[categoryFilter]?.color}`}>
-                {SEVERITY_TAXONOMY[categoryFilter]?.icon} {SEVERITY_TAXONOMY[categoryFilter]?.label}
+                <SeverityIcon category={categoryFilter} /> {SEVERITY_TAXONOMY[categoryFilter]?.label}
                 <button onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); }} className="ml-1 hover:opacity-70">×</button>
               </span>
             )}
@@ -501,8 +548,58 @@ function UserReports() {
         )}
 
         {!loading && filtered.length > 0 && (
+          <div className="flex justify-end">
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
+          </div>
+        )}
+
+        {!loading && filtered.length > 0 && viewMode === 'table' && (
+          <div className="bg-white rounded-2xl border border-slate-200/60 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 font-semibold">Type</th>
+                  <th className="px-4 py-3 font-semibold">Description</th>
+                  <th className="px-4 py-3 font-semibold">Location</th>
+                  <th className="px-4 py-3 font-semibold">Project</th>
+                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pager.pageItems.map((r) => {
+                  const cat = resolveCategory(r);
+                  const problem = resolveSpecificProblem(r);
+                  return (
+                    <tr
+                      key={r.id}
+                      tabIndex={0}
+                      onClick={() => setSelected(r)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(r); } }}
+                      className="cursor-pointer hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 align-top whitespace-nowrap"><StatusBadge report={r} /></td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col items-start gap-1">
+                          <SeverityBadge category={cat} />
+                          {problem && <span className="text-[11px] text-slate-500">{problem.label}</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top max-w-xs"><p className="line-clamp-2 text-slate-900">{r.description}</p></td>
+                      <td className="px-4 py-3 align-top text-slate-600">{[r.barangay, r.municipality].filter(Boolean).join(', ')}</td>
+                      <td className="px-4 py-3 align-top text-slate-600">{r.project_name || '—'}</td>
+                      <td className="px-4 py-3 align-top text-slate-500 whitespace-nowrap">{fmtDate(r.created_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && filtered.length > 0 && viewMode === 'cards' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((r) => {
+            {pager.pageItems.map((r) => {
               const cat = resolveCategory(r);
               const problem = resolveSpecificProblem(r);
               return (
@@ -555,11 +652,7 @@ function UserReports() {
           </div>
         )}
 
-        {!loading && !error && (
-          <p className="text-xs text-slate-400 text-right">
-            Showing {filtered.length} of {reports.length} report{reports.length !== 1 ? 's' : ''}
-          </p>
-        )}
+        {!loading && !error && reports.length > 0 && <Pagination pager={pager} noun="report" />}
       </div>
 
       {/* Detail modal */}
@@ -611,7 +704,7 @@ function UserReports() {
                     { label: 'Date Reported', value: fmtDate(selected.created_at) },
                     selected.severity_category && {
                       label: 'Issue Type',
-                      value: `${SEVERITY_TAXONOMY[selected.severity_category]?.icon} ${SEVERITY_TAXONOMY[selected.severity_category]?.label}`,
+                      value: SEVERITY_TAXONOMY[selected.severity_category]?.label,
                     },
                     selected.specific_problem && {
                       label: 'Problem',
@@ -847,7 +940,7 @@ function UserReports() {
                 <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Location-Verified Report</h3>
               </div>
               <button onClick={() => setReportStep('idle')} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
-                ✕
+                <XIcon className="size-4" aria-hidden="true" />
               </button>
             </div>
 
