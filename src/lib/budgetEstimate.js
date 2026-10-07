@@ -85,7 +85,11 @@ export function summarizeTranches(tranches, totalBudget) {
 }
 
 export function estimateFundsUtilized(project, totalBudget) {
-  const realReleased = Number(project?.funds_released);
+  // A missing figure (null/undefined/blank) is "not recorded", not zero: Number(null) is 0,
+  // which would show every project without a figure as an official "P0 utilized".
+  const rawReleased = project?.funds_released;
+  const hasRecordedFigure = rawReleased !== null && rawReleased !== undefined && String(rawReleased).trim() !== '';
+  const realReleased = hasRecordedFigure ? Number(rawReleased) : NaN;
   if (Number.isFinite(realReleased) && realReleased >= 0) {
     return {
       released: realReleased,

@@ -14,7 +14,9 @@
     "inventory:repair": "node scripts/regenerate_leon_road_inventory.mjs",
     "osm:fetch": "node scripts/fetch_leon_osm_roads.mjs",
     "gen:routes": "node scripts/generate_leon_route_corridors.mjs",
-    "verify:routes": "node scripts/verify_route_geometry.mjs"
+    "verify:routes": "node scripts/verify_route_geometry.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.95.3",
@@ -42,6 +44,7 @@
     "tailwindcss": "^4.1.18",
     "vite": "^7.3.1",
     "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^5.0.3",
     "workbox-window": "^7.4.0",
     "xlsx": "^0.18.5"
   }
