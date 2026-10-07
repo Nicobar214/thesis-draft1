@@ -11,6 +11,7 @@ import {
 import { RESOLUTION_TYPE_LABELS, resolutionTypeMeaning } from '../../lib/publicReportStatus';
 import { buttonClass } from '../ui/Button';
 import RepairActionPanel from './RepairActionPanel';
+import CitizenConfirmationNote from './CitizenConfirmationNote';
 
 /* resolve_public_report validates this list server-side. The labels and the
  * citizen-facing meaning live in publicReportStatus.js so the form and the
@@ -301,6 +302,7 @@ export default function AdminWorkflowControls({
           {/* Resolving records a decision. This tracks whether the road was
               actually fixed, and who confirmed it. */}
           <RepairActionPanel report={report} resolution={resolution} onNotify={onNotify} onChanged={onRepairChanged} />
+          <CitizenConfirmationNote key={report?.id} reportId={report?.id} />
         </SectionShell>
       );
     }

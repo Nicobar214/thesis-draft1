@@ -15,6 +15,7 @@ import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
+import FixConfirmationCard from '../components/publicReports/FixConfirmationCard';
 import {
   CITIZEN_STATUS_FILTERS,
   SEVERITY_TAXONOMY,
@@ -850,6 +851,8 @@ function UserReports() {
                     <Icons.Document />
                     <span>View Resolution Certificate</span>
                   </button>
+
+                  <FixConfirmationCard key={selected.id} reportId={selected.id} />
                 </section>
               )}
 
