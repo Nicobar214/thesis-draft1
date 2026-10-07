@@ -701,13 +701,15 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const [currentPage, setCurrentPage] = useState(1);
   const [reportCountByProject, setReportCountByProject] = useState({});
   const [tranchesByProjectId, setTranchesByProjectId] = useState({});
-  // Tabular is the default presentation for FMR records; cards remain opt-in.
+  // Table on wide screens, cards on phones (a wide table forces sideways scrolling). A saved choice wins.
   const [viewMode, setViewMode] = useState(() => {
     try {
-      return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'cards' ? 'cards' : 'table';
+      const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      if (saved === 'cards' || saved === 'table') return saved;
     } catch {
-      return 'table';
+      /* storage unavailable: use the screen-size default */
     }
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
   });
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const projectsPerPage = viewMode === 'table' ? rowsPerPage : (embedded ? 6 : 9);
@@ -768,14 +770,6 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         contentClassName: 'px-0 py-0 pt-0',
       }
     : {};
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
-    } catch {
-      // Storage unavailable (private mode) - the preference just won't persist.
-    }
-  }, [viewMode]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1201,7 +1195,11 @@ export default function UserFMRProjects({ embedded = false } = {}) {
               <button
                 key={v.id}
                 type="button"
-                onClick={() => setViewMode(v.id)}
+                onClick={() => {
+                  setViewMode(v.id);
+                  // Saved only when the user chooses, so a phone's default never overrides the desktop one.
+                  try { localStorage.setItem(VIEW_MODE_STORAGE_KEY, v.id); } catch { /* storage unavailable */ }
+                }}
                 aria-pressed={viewMode === v.id}
                 title={`${v.label} view`}
                 className={`px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-all duration-200 ${

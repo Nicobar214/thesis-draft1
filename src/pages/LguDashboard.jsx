@@ -1145,7 +1145,7 @@ export default function LguDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:flex">
+    <div className="min-h-dvh bg-slate-50 lg:flex">
       <aside className={`fixed inset-y-0 left-0 z-40 border-r border-slate-800 bg-slate-900 text-white shadow-2xl transition-all duration-300 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       } lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-80'}`}>
@@ -1296,7 +1296,7 @@ export default function LguDashboard() {
         </button>
       </aside>
 
-      <div className={`flex min-h-screen min-w-0 flex-1 flex-col transition-all duration-300 ${
+      <div className={`flex min-h-dvh min-w-0 flex-1 flex-col transition-all duration-300 ${
         sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-80'
       }`}>
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">

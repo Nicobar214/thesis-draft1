@@ -23,11 +23,11 @@ export const MODAL_OVERLAY =
   'modal-overlay-in fixed inset-0 z-[9000] flex items-center justify-center bg-slate-900/60 p-3 backdrop-blur-sm sm:p-4';
 
 export const MODAL_PANEL =
-  'modal-panel-in flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none';
+  'modal-panel-in flex max-h-[90vh] max-h-[90dvh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none';
 
 /** For legacy modals whose whole panel scrolls (sticky header/footer inside). */
 export const MODAL_PANEL_SCROLL =
-  'modal-panel-in max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none';
+  'modal-panel-in max-h-[90vh] max-h-[90dvh] w-full overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 outline-none';
 
 export const MODAL_WIDTH = {
   sm: 'max-w-md',

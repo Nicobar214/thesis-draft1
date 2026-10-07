@@ -27,7 +27,7 @@ export default function PublicReportPortalPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50" style={{ overflowX: 'hidden' }}>
+    <div className="min-h-dvh bg-slate-50" style={{ overflowX: 'hidden' }}>
       {/* Animation Styles */}
       <style>{`
         .fade-up {

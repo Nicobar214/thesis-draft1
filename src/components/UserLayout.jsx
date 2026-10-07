@@ -15,7 +15,7 @@ export default function UserLayout({
   showSidebar = true,
   showHeader = true,
   rootClassName,
-  mainClassName = 'min-h-screen',
+  mainClassName = 'min-h-dvh',
   contentClassName = '',
 }) {
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ export default function UserLayout({
     return () => subscription.unsubscribe();
   }, [navigate, requireAuth]);
 
-  const rootClass = rootClassName ?? 'min-h-screen bg-slate-50 font-sans text-slate-800';
+  const rootClass = rootClassName ?? 'min-h-dvh bg-slate-50 font-sans text-slate-800';
 
   return (
     <div className={rootClass}>
@@ -78,8 +78,8 @@ export default function UserLayout({
         {showHeader && (
           <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
             <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4`}>
-              <div className="flex items-center gap-3">
-                <h1 className="text-base sm:text-lg font-bold text-slate-900">{pageTitle}</h1>
+              <div className="flex min-w-0 items-center gap-3 pl-12 lg:pl-0">
+                <h1 className="truncate text-base sm:text-lg font-bold text-slate-900">{pageTitle}</h1>
                 <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   <Icons.ShieldCheck />
                   DA Region VI Citizen Portal
@@ -113,7 +113,7 @@ export default function UserLayout({
           </header>
         )}
 
-        <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 py-6 pt-16 lg:pt-6 ${contentClassName}`}>
+        <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 pb-6 ${showHeader ? 'pt-5' : 'pt-16'} lg:pt-6 ${contentClassName}`}>
           {children}
         </div>
       </main>

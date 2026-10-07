@@ -29,7 +29,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans" style={{ overflowX: 'hidden' }}>
+    <div className="min-h-dvh bg-slate-50 font-sans" style={{ overflowX: 'hidden' }}>
       {/* Animation Styles */}
       <style>{`
         .fade-up {

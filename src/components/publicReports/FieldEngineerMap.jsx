@@ -398,7 +398,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-4">
         <div className="relative overflow-hidden rounded-xl border border-slate-200">
-          <MapContainer center={DEFAULT_CENTER} zoom={11} className="h-[420px] w-full z-0" scrollWheelZoom zoomControl={false}>
+          <MapContainer center={DEFAULT_CENTER} zoom={11} className="h-[340px] sm:h-[420px] w-full z-0" scrollWheelZoom zoomControl={false}>
             <BaseTiles basemap={basemap} />
             <FitBounds points={fitPoints} fitKey={`compact-${sites.length ? 'data' : 'none'}`} />
             {mapOverlays}

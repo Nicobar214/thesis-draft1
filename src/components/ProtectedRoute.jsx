@@ -90,7 +90,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
     }[normalizeRole(requiredRole)];
     if (Skeleton) return <Skeleton />;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-dvh flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <Logo className="h-10 mx-auto mb-6" />
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>

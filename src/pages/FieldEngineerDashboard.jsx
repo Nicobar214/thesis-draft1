@@ -460,7 +460,7 @@ export default function FieldEngineerDashboard() {
 
   if (!user || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="min-h-dvh flex items-center justify-center bg-slate-100">
         <div className="text-center">
           <div className="animate-spin w-10 h-10 border-3 border-teal-600 border-t-transparent rounded-full mx-auto mb-3" />
           <p className="text-slate-500 text-sm font-semibold">Loading Field Engineer Portal…</p>
@@ -487,7 +487,7 @@ export default function FieldEngineerDashboard() {
     .filter((g) => g.items.length > 0);
 
   return (
-    <div className="field-engineer-theme min-h-screen bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
+    <div className="field-engineer-theme min-h-dvh bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
       {/* Offline Status Banner */}
       {isOffline && (
         <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-400 text-slate-950 px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-2 shadow-sm">

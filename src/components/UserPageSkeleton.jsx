@@ -29,7 +29,7 @@ const bar = 'sk rounded';
 export default function UserPageSkeleton() {
   return (
     <div
-      className="min-h-screen bg-slate-50 font-sans"
+      className="min-h-dvh bg-slate-50 font-sans"
       role="status"
       aria-busy="true"
       aria-label="Loading"
@@ -64,7 +64,7 @@ export default function UserPageSkeleton() {
         ))}
       </aside>
 
-      <main className="lg:ml-64 min-h-screen">
+      <main className="lg:ml-64 min-h-dvh">
         {/* Header */}
         <header className="bg-white border-b border-slate-200">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">

@@ -47,10 +47,10 @@ export default function ContractorLayout({ children }) {
 
   return (
     <ContractorSummaryContext.Provider value={summary}>
-      <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      <div className="min-h-dvh bg-slate-50 font-sans text-slate-800">
         <ContractorSidebar collapsed={collapsed} setCollapsed={setCollapsed} user={user} displayName={displayName} />
 
-        <main className={`transition-all duration-300 min-h-screen ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'}`}>
+        <main className={`transition-all duration-300 min-h-dvh ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'}`}>
           <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
             <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 pl-12 lg:pl-0">

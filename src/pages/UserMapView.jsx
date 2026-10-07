@@ -156,7 +156,7 @@ function FarmerHeatmapLayer({ visible, points }) {
 }
 
 /* ─── Status Filter Tabs ─── */
-const statusFilters = ['On-Going', 'Proposed', 'Completed', 'All'];
+const statusFilters = ['All', 'On-Going', 'Proposed', 'Completed'];
 
 /* â”€â”€â”€ Year options from data â”€â”€â”€ */
 function getYearOptions(projects) {
@@ -174,7 +174,7 @@ export default function UserMapView({ embedded = false } = {}) {
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
   const [searchTarget, setSearchTarget] = useState(null); // { coords, zoom }
-  const [statusFilter, setStatusFilter] = useState('On-Going');
+  const [statusFilter, setStatusFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
@@ -483,6 +483,15 @@ export default function UserMapView({ embedded = false } = {}) {
     fetchProjectReportCounts();
   }, [projects]);
 
+  // Program-wide counts (every project, whatever the filters), shown on the chips and the stats row.
+  const programCounts = useMemo(() => ({
+    All: projects.length,
+    Completed: projects.filter((p) => normalizeStatus(p.status) === 'Completed').length,
+    'On-Going': projects.filter((p) => normalizeStatus(p.status) === 'On-Going').length,
+    Proposed: projects.filter((p) => normalizeStatus(p.status) === 'Proposed').length,
+    totalKm: projects.reduce((sum, p) => sum + (Number(p.project_length_km) || 0), 0).toFixed(2),
+  }), [projects]);
+
   // Stats
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -625,6 +634,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 }`}
               >
                 {s}
+                <span className={`ml-1.5 text-xs tabular-nums ${statusFilter === s ? 'text-teal-100' : 'text-slate-400'}`}>{programCounts[s]}</span>
               </button>
             ))}
           </div>
@@ -645,19 +655,25 @@ export default function UserMapView({ embedded = false } = {}) {
 
         {/* Stats row */}
         <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
-          <span>{stats.mapped} projects on map</span>
+          <span className="font-semibold text-slate-700">{programCounts.All} FMR projects</span>
           <span className="text-slate-300">|</span>
-          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-500 inline-block" /> {stats.completed} Completed</span>
-          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-500 inline-block" /> {stats.ongoing} On-Going</span>
-          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-blue-500 inline-block" /> {stats.proposed} Proposed</span>
+          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-500 inline-block" /> {programCounts.Completed} Completed</span>
+          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-amber-500 inline-block" /> {programCounts['On-Going']} On-Going</span>
+          <span className="flex items-center gap-1"><span className="size-2.5 rounded-full bg-blue-500 inline-block" /> {programCounts.Proposed} Proposed</span>
           <span className="text-slate-300">|</span>
-          <span>{stats.totalKm} km total</span>
+          <span>{programCounts.totalKm} km total</span>
+          {filtered.length !== programCounts.All && (
+            <>
+              <span className="text-slate-300">|</span>
+              <span className="font-medium text-teal-700">Showing {filtered.length} ({stats.mapped} on map)</span>
+            </>
+          )}
         </div>
 
         {/* Main content: Map + sidebar */}
-        <div className="flex gap-4 relative z-10">
+        <div className={`flex gap-4 relative ${showSidebar ? 'z-[60]' : 'z-10'}`}>
           {/* Map */}
-          <div className="flex-1 relative bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: '450px' }}>
+          <div className="flex-1 relative bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100dvh - 320px)', minHeight: '420px' }}>
             {loading ? (
               <div className="h-full flex items-center justify-center bg-slate-50">
                 <div className="text-center">
@@ -1073,11 +1089,11 @@ export default function UserMapView({ embedded = false } = {}) {
           <aside
             className={`
               ${showSidebar ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-              fixed lg:static inset-y-0 right-0 z-50 w-80 lg:w-80
+              fixed lg:static inset-y-0 right-0 z-50 w-[min(20rem,88vw)] lg:w-80
               bg-white lg:rounded-2xl border border-slate-200/60 
               transition-transform duration-300 lg:transition-none
               flex flex-col overflow-hidden
-              h-screen lg:h-[calc(100vh-320px)] lg:min-h-[450px]
+              h-dvh lg:h-[calc(100dvh-320px)] lg:min-h-[450px]
             `}
           >
             {/* Sidebar header */}

@@ -86,7 +86,7 @@ export default function ContractorAuth() {
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col justify-between bg-slate-950 px-4 py-8 sm:py-12 overflow-hidden">
+    <div className="relative min-h-dvh flex flex-col justify-between bg-slate-950 px-4 py-8 sm:py-12 overflow-hidden">
       <AuthBackground accent="amber" />
 
       <div className="relative flex-1 flex items-center justify-center">

@@ -170,7 +170,7 @@ export default function CitizenOverviewMap() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4">
       <div className="relative overflow-hidden rounded-xl border border-slate-200">
-        <MapContainer center={DEFAULT_CENTER} zoom={10} className="h-[420px] w-full z-0" scrollWheelZoom zoomControl={false}>
+        <MapContainer center={DEFAULT_CENTER} zoom={10} className="h-[340px] sm:h-[420px] w-full z-0" scrollWheelZoom zoomControl={false}>
           <BaseTiles basemap={basemap} />
           <FitTo points={fitPoints.length ? fitPoints : [DEFAULT_CENTER]} fitKey={`${pins.length}-${allRouteLines.length ? 'r' : 'n'}`} />
           <FlyTo target={flyTarget} />

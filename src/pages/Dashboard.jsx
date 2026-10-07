@@ -3597,7 +3597,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-dvh flex bg-gradient-to-br from-slate-50 to-slate-100">
 
       {/* Sidebar Toggle Button (Mobile) */}
       <button
@@ -3764,7 +3764,7 @@ export default function Dashboard() {
       </aside>
 
       {/* Main Content */}
-      <div className={`flex-1 min-h-screen transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
+      <div className={`flex-1 min-h-dvh transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
         {/* Header */}
         <header className="bg-gradient-to-br from-slate-50 to-slate-100 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
           <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

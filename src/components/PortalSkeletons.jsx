@@ -34,7 +34,7 @@ const bar = 'sk rounded';
 function Shell({ children }) {
   return (
     <div
-      className="min-h-screen bg-slate-50 font-sans"
+      className="min-h-dvh bg-slate-50 font-sans"
       role="status"
       aria-busy="true"
       aria-label="Loading"
@@ -110,7 +110,7 @@ export function LguPageSkeleton() {
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-col lg:ml-80">
+      <div className="flex min-h-dvh flex-col lg:ml-80">
         {/* Header: eyebrow, title, description + bell */}
         <header className="border-b border-slate-200 bg-white">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 lg:px-6">
@@ -207,7 +207,7 @@ export function FieldEngineerPageSkeleton() {
         </div>
       </aside>
 
-      <div className="flex flex-col min-h-screen lg:pl-64">
+      <div className="flex flex-col min-h-dvh lg:pl-64">
         {/* Header: section title left, bell + name + avatar right */}
         <header className="bg-white border-b border-slate-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
@@ -513,7 +513,7 @@ export function AdminPageSkeleton() {
         </div>
       </aside>
 
-      <div className="min-h-screen lg:ml-72">
+      <div className="min-h-dvh lg:ml-72">
         {/* Header: "FMR Projects" title + description, bell, New Project button */}
         <header className="bg-gradient-to-br from-slate-50 to-slate-100 border-b border-slate-200/50">
           <div className="px-6 sm:px-10 py-4 sm:py-5 flex justify-between items-center gap-4">

@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { LayoutGridIcon, ListIcon } from 'lucide-react';
 
-// Table is the default; the choice is remembered per page where storage allows.
+// Table is the default on wide screens and cards on phones, where a wide table forces sideways
+// scrolling. A saved choice always wins; it is remembered per page where storage allows.
 export function useViewMode(storageKey) {
   const [mode, setMode] = useState(() => {
     try {
-      return localStorage.getItem(storageKey) === 'cards' ? 'cards' : 'table';
+      const saved = localStorage.getItem(storageKey);
+      if (saved === 'cards' || saved === 'table') return saved;
     } catch {
-      return 'table';
+      /* storage unavailable: fall through to the screen-size default */
     }
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table';
   });
   const update = (next) => {
     setMode(next);

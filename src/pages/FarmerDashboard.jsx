@@ -371,7 +371,7 @@ export default function FarmerDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-emerald-50">
+      <div className="min-h-dvh flex items-center justify-center bg-emerald-50">
         <div className="text-center p-6">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>
           <p className="text-emerald-700 font-bold text-base">Loading Farmer Portal...</p>
@@ -383,7 +383,7 @@ export default function FarmerDashboard() {
 
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans pb-20 md:pb-6">
+    <div className="min-h-dvh bg-slate-50 flex flex-col font-sans pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-6">
 
       {/* Header Panel */}
       <header className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white shadow-md sticky top-0 z-40">
@@ -899,7 +899,7 @@ export default function FarmerDashboard() {
       </main>
 
       {/* Mobile Sticky Bottom Navigation Bar (PWA Mode) */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-[500] bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 py-1.5 flex justify-around items-center">
+      <nav className="pb-safe sm:hidden fixed bottom-0 left-0 right-0 z-[500] bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg px-2 pt-1.5 flex justify-around items-center">
         <button
           onClick={() => setActiveTab("overview")}
           className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-xl transition-all ${

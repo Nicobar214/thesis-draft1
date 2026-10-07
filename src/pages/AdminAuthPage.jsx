@@ -53,7 +53,7 @@ export default function AdminAuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-slate-950 px-4 overflow-hidden">
+    <div className="relative min-h-dvh flex items-center justify-center bg-slate-950 px-4 overflow-hidden">
       <AuthBackground accent="rose" />
 
       <div className="relative max-w-md w-full mx-4">
