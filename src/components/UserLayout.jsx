@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import UserSidebar from './UserSidebar';
 import Icons from './Icons';
@@ -63,6 +63,14 @@ export default function UserLayout({
     return () => subscription.unsubscribe();
   }, [navigate, requireAuth]);
 
+  // A citizen's notifications are all about their own reports: open that report.
+  const resolveNotificationTarget = (n) => ({
+    actionLabel: n.report_id ? 'Open my report' : 'Go to my reports',
+  });
+  const openNotification = (n) => {
+    navigate(n.report_id ? `/user/reports?report=${n.report_id}` : '/user/reports');
+  };
+
   const rootClass = rootClassName ?? 'min-h-dvh bg-slate-50 font-sans text-slate-800';
 
   return (
@@ -87,19 +95,12 @@ export default function UserLayout({
               </div>
 
               <div className="flex items-center gap-3">
-                <Link
-                  to="/user/reports?action=new"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 text-xs font-semibold transition-colors"
-                >
-                  <Icons.Warning />
-                  <span>Report Road Issue</span>
-                </Link>
-
                 {/* Closes the citizen feedback loop: status changes were already
                     being written to notifications, but never displayed. */}
                 <NotificationBell
                   client={supabase}
-                  onSelect={() => navigate('/user/reports')}
+                  resolveTarget={resolveNotificationTarget}
+                  onSelect={openNotification}
                 />
 
                 <div className="flex items-center gap-2 pl-3 border-l border-slate-200">

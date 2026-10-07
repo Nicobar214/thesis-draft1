@@ -36,7 +36,12 @@ const statusBadge = (update) => getWorkflowMeta(update);
 const isQuantitySubmission = (update) => Array.isArray(update.progress_update_items)
   && update.progress_update_items.length > 0;
 
-export default function ProgressCertificationPanel({ onCountChange, showNotification }) {
+/**
+ * focusUpdateId: optional. When set (e.g. from a notification), the panel finds
+ * that update, clears any filters hiding it, opens its review row and scrolls to
+ * it, then calls onFocusHandled so the parent can reset it.
+ */
+export default function ProgressCertificationPanel({ onCountChange, showNotification, focusUpdateId, onFocusHandled }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState(null);
@@ -179,6 +184,35 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     setMeasured(String(row.certified_accomplishment ?? row.reported_accomplishment ?? ''));
     setRemarks(row.certification_remarks || '');
   };
+
+  useEffect(() => {
+    if (!focusUpdateId || loading) return;
+    const row = rows.find((r) => r.id === focusUpdateId);
+    if (!row) {
+      showNotification?.('That progress update is no longer in your queue.', 'warning');
+      onFocusHandled?.();
+      return;
+    }
+    const awaiting = row.status === 'pending' && row.certification_status !== 'certified';
+    // Make sure nothing (tab, filters, page size) hides the row we are about to open.
+    setActiveTab(awaiting ? 'pending' : 'settled');
+    setSearchQuery('');
+    setSelectedMunicipality('all');
+    setSelectedCertificationStatus('all');
+    setPageSize(100);
+    setOpenId(row.id);
+    setIsDisputing(false);
+    setRating(5);
+    setMeasured(String(row.certified_accomplishment ?? row.reported_accomplishment ?? ''));
+    setRemarks(row.certification_remarks || '');
+    // Let the filtered table render before scrolling. No cleanup on purpose:
+    // onFocusHandled() re-renders the parent, which would cancel the timer, and
+    // scrolling to a row that no longer exists is a harmless no-op.
+    setTimeout(() => {
+      document.getElementById(`progress-row-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    onFocusHandled?.();
+  }, [focusUpdateId, loading, rows, showNotification, onFocusHandled]);
 
   const handlePercentChange = (val) => {
     const cleaned = val.replace(/%/g, '').trim();
@@ -390,7 +424,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                   const quantityBased = isQuantitySubmission(row);
 
                   return (
-                    <tr key={row.id} className={`transition-colors ${isAwaiting ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/50'}`}>
+                    <tr key={row.id} id={`progress-row-${row.id}`} className={`transition-colors ${isAwaiting ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/50'}`}>
                       <td className="py-3.5 px-4 relative">
                         {isAwaiting && <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400" />}
                         <p className={`font-bold ${isAwaiting ? 'text-amber-900' : 'text-slate-900'}`}>

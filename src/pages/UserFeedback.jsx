@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 import UserLayout from '../components/UserLayout';
@@ -6,6 +6,7 @@ import ViewToggle, { useViewMode } from '../components/ui/ViewToggle';
 import Pagination, { usePagination } from '../components/ui/Pagination';
 import { ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react';
 import FeedbackDetailModal from '../components/publicReports/FeedbackDetailModal';
+import { selectCommunityFeedback } from '../lib/communityFeedback';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Feedback Type Options â”€â”€â”€ */
@@ -270,6 +271,11 @@ export default function UserFeedback() {
   const [verificationFilter, setVerificationFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [selectedItem, setSelectedItem] = useState(null);
+  // 'community' = everyone's feedback and reports; 'mine' = only what this user submitted.
+  // The dashboard's View My Feedback link arrives with ?mine=1.
+  const [scope, setScope] = useState(() => (
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mine') === '1' ? 'mine' : 'community'
+  ));
 
   // Fetch feedbacks + user's public reports + projects
   useEffect(() => {
@@ -282,7 +288,12 @@ export default function UserFeedback() {
       .channel('user-public-reports')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchData)
       .subscribe();
+    // Realtime only carries a user's own rows once feedbacks is owner-only, so also
+    // refresh when the tab regains focus to pick up what the community added.
+    const refreshOnFocus = () => { if (document.visibilityState === 'visible') fetchData(); };
+    document.addEventListener('visibilitychange', refreshOnFocus);
     return () => {
+      document.removeEventListener('visibilitychange', refreshOnFocus);
       supabase.removeChannel(fbChannel);
       supabase.removeChannel(prChannel);
     };
@@ -290,16 +301,12 @@ export default function UserFeedback() {
 
   async function fetchData() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id;
-
       const [feedbackRes, publicReportRes, projectRes] = await Promise.all([
-        userId
-          ? supabase.from('feedbacks').select('*').eq('user_id', userId).order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] }),
-        userId
-          ? supabase.from('public_reports_citizen_view').select('*').eq('is_current_user_report', true).order('created_at', { ascending: false })
-          : Promise.resolve({ data: [] }),
+        // Shared with everyone, so it comes from the community view: no author id or email,
+        // just an is_current_user_feedback flag (see lib/communityFeedback.js).
+        selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(500)),
+        // The citizen view already strips reporter identity and hides dismissed reports.
+        supabase.from('public_reports_citizen_view').select('*').order('created_at', { ascending: false }).limit(500),
         supabase.from('projects').select('id, projectName, project_name, municipality, province'),
       ]);
 
@@ -329,6 +336,7 @@ export default function UserFeedback() {
       ...fb,
       _type: fb.source === 'public_report' ? 'public_report_feedback' : 'feedback',
       _sortDate: fb.created_at,
+      _isMine: Boolean(fb.is_current_user_feedback),
     }));
 
     // Only add public reports that are NOT already linked as feedback
@@ -338,6 +346,7 @@ export default function UserFeedback() {
         id: `pr-${pr.id}`,
         _originalId: pr.id,
         _type: 'public_report',
+        _isMine: Boolean(pr.is_current_user_report),
         _sortDate: pr.created_at,
         project_name: pr.project_name,
         type: 'issue',
@@ -355,9 +364,16 @@ export default function UserFeedback() {
     return [...fbItems, ...prItems].sort((a, b) => new Date(b._sortDate) - new Date(a._sortDate));
   }, [feedbacks, publicReports]);
 
+  const mineCount = useMemo(() => combinedItems.filter((i) => i._isMine).length, [combinedItems]);
+  // Everything the current tab is about, before the search and filter controls narrow it down.
+  const scopedItems = useMemo(
+    () => (scope === 'mine' ? combinedItems.filter((i) => i._isMine) : combinedItems),
+    [combinedItems, scope]
+  );
+
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const result = combinedItems.filter((f) => {
+    const result = scopedItems.filter((f) => {
       if (q) {
         const hay = `${f.project_name || ''} ${f.message || ''} ${f.barangay || ''} ${f.municipality || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -371,7 +387,7 @@ export default function UserFeedback() {
     });
     const dir = sortBy === 'oldest' ? 1 : -1;
     return result.sort((x, y) => dir * (new Date(x._sortDate) - new Date(y._sortDate)));
-  }, [combinedItems, search, typeFilter, statusFilter, verificationFilter, sortBy]);
+  }, [scopedItems, search, typeFilter, statusFilter, verificationFilter, sortBy]);
 
   // The road report behind an entry: the report itself, or the one a feedback is linked to.
   const selectedReport = useMemo(() => {
@@ -390,7 +406,7 @@ export default function UserFeedback() {
         {/* Page Header */}
         <section>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Community Feedback</h1>
-          <p className="mt-1 text-slate-500">Track your submitted road reports and community activity</p>
+          <p className="mt-1 text-slate-500">Road reports and feedback from across the community, so you can see what others have raised and follow your own.</p>
         </section>
 
         {/* Error Alert */}
@@ -403,14 +419,34 @@ export default function UserFeedback() {
         {/* â”€â”€â”€ Combined Feedbacks & Reports List â”€â”€â”€ */}
         <section>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-slate-900">Recent Feedback</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="font-semibold text-slate-900">Recent Feedback</h2>
+              <div role="tablist" aria-label="Whose feedback to show" className="inline-flex rounded-xl border border-slate-200 bg-slate-100/80 p-1">
+                {[
+                  { id: 'community', label: 'Everyone', count: combinedItems.length },
+                  { id: 'mine', label: 'My submissions', count: mineCount },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={scope === tab.id}
+                    onClick={() => setScope(tab.id)}
+                    className={'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ' + (scope === tab.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800')}
+                  >
+                    {tab.label}
+                    <span className={'rounded-full px-1.5 text-[10px] tabular-nums ' + (scope === tab.id ? 'bg-teal-50 text-teal-700' : 'bg-slate-200/70 text-slate-500')}>{tab.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{hasFilters ? `${filteredItems.length} of ${combinedItems.length}` : combinedItems.length} total</span>
-              {!loading && combinedItems.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
+              <span className="text-sm text-slate-400">{hasFilters ? `${filteredItems.length} of ${scopedItems.length}` : scopedItems.length} total</span>
+              {!loading && scopedItems.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
             </div>
           </div>
 
-          {!loading && combinedItems.length > 0 && (
+          {!loading && scopedItems.length > 0 && (
             <div className="mb-4 flex flex-col lg:flex-row gap-3">
               <div className="relative flex-1">
                 <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" aria-hidden="true" />
@@ -441,10 +477,19 @@ export default function UserFeedback() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => <FeedbackSkeleton key={i} />)}
             </div>
-          ) : combinedItems.length === 0 ? (
+          ) : scopedItems.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
-              <p className="font-medium text-slate-900">No activity yet</p>
-              <p className="text-sm text-slate-500 mt-1">Reports you submit will show up here as they're reviewed.</p>
+              <p className="font-medium text-slate-900">{scope === 'mine' ? 'You have not submitted anything yet' : 'No community activity yet'}</p>
+              <p className="text-sm text-slate-500 mt-1">
+                {scope === 'mine'
+                  ? 'Reports and feedback you submit will show up here as they are reviewed.'
+                  : 'Reports and feedback from the community will appear here.'}
+              </p>
+              {scope === 'mine' && combinedItems.length > 0 && (
+                <button type="button" onClick={() => setScope('community')} className="mt-3 text-sm font-medium text-teal-600 hover:text-teal-700">
+                  See what the community has shared
+                </button>
+              )}
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200/60 py-14 text-center">

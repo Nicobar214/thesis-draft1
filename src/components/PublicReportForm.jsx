@@ -1,4 +1,4 @@
-﻿/* PublicReportForm.jsx — Location-First Public Report (Region VI — Iloilo)
+/* PublicReportForm.jsx — Location-First Public Report (Region VI — Iloilo)
  * Flow: locating → picking → classify → reporting → success
  * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
  */
@@ -10,6 +10,16 @@ import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/of
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 import PublicReportRouteMapPanel from './publicReports/PublicReportRouteMapPanel';
 import { SEVERITY_TAXONOMY } from '../lib/publicReportStatus';
+
+// Each step fades and rises in, so moving between steps reads as one flow
+// instead of the content being swapped out underneath the user.
+const STEP_STYLE_ID = 'report-step-styles';
+if (typeof document !== 'undefined' && !document.getElementById(STEP_STYLE_ID)) {
+  const el = document.createElement('style');
+  el.id = STEP_STYLE_ID;
+  el.textContent = '@keyframes report-step-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } } .report-step-in { animation: report-step-in 280ms ease-out both; } @media (prefers-reduced-motion: reduce) { .report-step-in { animation: none !important; } }';
+  document.head.appendChild(el);
+}
 
 // ── Constants ──────────────────────────────────────────────
 const REGION          = 'Region VI – Western Visayas';
@@ -88,7 +98,10 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── GPS ──
   const [gps,        setGps]        = useState(null);  // { lat, lng, accuracy }
   const [gpsError,   setGpsError]   = useState(null);
-  const [gpsLoading, setGpsLoading] = useState(false);
+  // Start as loading when geolocation exists: the mount effect starts the lookup
+  // immediately, so this avoids painting a 'Detect My Location' button for one frame.
+  const [gpsLoading, setGpsLoading] = useState(() => typeof navigator !== 'undefined' && Boolean(navigator.geolocation));
+  const [gpsSlow, setGpsSlow] = useState(false);
   const gpsWatchRef = useRef(null);
 
   // ── FMR projects ──
@@ -161,7 +174,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
         setGps(loc);
         setGpsLoading(false);
-        setStep('picking');
+        // The step advances (below) once the nearby projects are ready too, so the
+        // user never lands on an empty list that fills in a moment later.
         // Start watcher for live drift correction
         if (gpsWatchRef.current !== null) navigator.geolocation.clearWatch(gpsWatchRef.current);
         gpsWatchRef.current = navigator.geolocation.watchPosition(
@@ -184,6 +198,13 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     );
   }, []);
 
+  // If the fix is taking a while, say so instead of leaving a silent spinner.
+  useEffect(() => {
+    if (!gpsLoading) { setGpsSlow(false); return undefined; }
+    const timer = setTimeout(() => setGpsSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [gpsLoading]);
+
   // Auto-start on mount
   useEffect(() => {
     acquireGps();
@@ -197,7 +218,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
   // ── Load all FMR projects once GPS resolves ──────────────────
   useEffect(() => {
-    if (!gps || projReady) return;
+    if (projReady) return;
     let alive = true;
 
     const loadProjects = async () => {
@@ -231,7 +252,16 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     return () => {
       alive = false;
     };
-  }, [gps, projReady]);
+  }, [projReady]);
+
+  // Leave 'locating' only when we have both a position and the project list. A short
+  // pause on the confirmation keeps it from flashing past; if the list is slow we
+  // continue anyway after 8s rather than trap the user here.
+  useEffect(() => {
+    if (step !== 'locating' || !gps) return undefined;
+    const timer = setTimeout(() => setStep('picking'), projReady ? 450 : 8000);
+    return () => clearTimeout(timer);
+  }, [step, gps, projReady]);
 
   // ── Recompute nearby when GPS or projects change ─────────────
   useEffect(() => {
@@ -445,7 +475,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     setStep('locating');
     setGps(null);
     setGpsError(null);
-    setGpsLoading(false);
+    // acquireGps runs a moment later; show 'loading' meanwhile so the manual button never flashes.
+    setGpsLoading(Boolean(navigator.geolocation));
     setProjReady(false);
     setAllProjects([]);
     setNearby([]);
@@ -473,7 +504,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── SUCCESS ──────────────────────────────────────────────
   if (step === 'success') {
     return (
-      <div className="text-center py-12 px-6">
+      <div className="report-step-in text-center py-12 px-6">
         <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
           <svg className="w-8 h-8 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -498,7 +529,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // ── LOCATING ─────────────────────────────────────────────
   if (step === 'locating') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[320px] py-10 px-6 space-y-6">
+      <div className="report-step-in flex flex-col items-center justify-center min-h-[320px] py-10 px-6 space-y-6">
         {gpsLoading && (
           <>
             <div className="relative flex items-center justify-center">
@@ -514,11 +545,31 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
             <div className="text-center">
               <p className="text-base font-semibold text-slate-800">Getting your GPS position…</p>
               <p className="text-sm text-slate-400 mt-1">Please stay still for the best accuracy</p>
+              <p
+                className={`mx-auto mt-3 max-w-xs text-xs text-amber-700 transition-opacity duration-500 ${gpsSlow ? 'opacity-100' : 'opacity-0'}`}
+                aria-live="polite"
+              >
+                {gpsSlow ? 'Taking a little longer than usual. Moving near a window or into the open helps.' : '\u00A0'}
+              </p>
             </div>
           </>
         )}
 
-        {!gpsLoading && gpsError && (
+        {!gpsLoading && gps && (
+          <>
+            <div className="w-14 h-14 bg-teal-500 rounded-full flex items-center justify-center shadow-lg shadow-teal-500/40">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-semibold text-slate-800">Location found</p>
+              <p className="text-sm text-slate-400 mt-1">Finding road projects near you…</p>
+            </div>
+          </>
+        )}
+
+        {!gpsLoading && !gps && gpsError && (
           <>
             <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center">
               <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -548,7 +599,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
           </>
         )}
 
-        {!gpsLoading && !gpsError && (
+        {!gpsLoading && !gpsError && !gps && (
           <button type="button" onClick={acquireGps}
             className="inline-flex items-center gap-2 bg-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm hover:bg-teal-700 transition">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -569,7 +620,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     const lowAcc = gps && gps.accuracy > 100;
 
     return (
-      <div className="space-y-4">
+      <div className="report-step-in space-y-4">
         {/* GPS / found banner */}
         <div className={`px-4 py-3.5 rounded-2xl border ${lowAcc ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
           <div className="flex items-center gap-2 mb-0.5">
@@ -690,7 +741,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     const canProceed = severityCategory && specificProblem;
 
     return (
-      <div className="space-y-5">
+      <div className="report-step-in space-y-5">
         <button type="button"
           onClick={() => { setSpecificProblem(''); setSeverityCategory(''); setStep('picking'); }}
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition">
@@ -784,7 +835,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   if (step === 'reporting') {
     const lowAcc = gps && gps.accuracy > 100;
     return (
-      <div className="space-y-5">
+      <div className="report-step-in space-y-5">
         {/* Back */}
         <button type="button"
           onClick={() => { stopCamera(); setStep('classify'); }}

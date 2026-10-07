@@ -40,6 +40,12 @@ export default function ContractorLayout({ children }) {
   const pageTitle = PAGE_TITLES[location.pathname] || 'Contractor Portal';
 
   // A notification opens the thing it is about.
+  const resolveNotificationTarget = (n) => {
+    if (n.progress_update_id) return { actionLabel: 'View this update' };
+    if (n.project_id) return { actionLabel: 'Open my projects' };
+    return null;
+  };
+
   const openNotification = (n) => {
     if (n.progress_update_id) navigate(`/contractor/reports?update=${n.progress_update_id}`);
     else if (n.project_id) navigate('/contractor/projects');
@@ -70,7 +76,7 @@ export default function ContractorLayout({ children }) {
                   <span>Submit Progress</span>
                 </Link>
 
-                <NotificationBell client={supabase} onSelect={openNotification} />
+                <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
 
                 <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
                   <div className="w-8 h-8 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">

@@ -208,6 +208,9 @@ export default function LguDashboard() {
   const [profile, setProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
+  // Set by a notification click so the proposals tab can open the exact proposal.
+  const [focusProposalId, setFocusProposalId] = useState(null);
+  const clearFocusProposal = useCallback(() => setFocusProposalId(null), []);
 
   const [reports, setReports] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -1120,6 +1123,32 @@ export default function LguDashboard() {
     .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
     .filter((g) => g.items.length > 0);
 
+  /* ── Notification bell: what a click shows and where it goes ── */
+  const resolveNotificationTarget = (n) => {
+    if (n.proposal_id) return { actionLabel: 'Open proposal' };
+    if (n.type === 'lgu_escalation') return { actionLabel: 'Open escalations' };
+    if (n.type === 'lgu_threshold_alert') return { actionLabel: 'View pending reports' };
+    if (n.report_id) {
+      const match = reports.find((r) => r.id === n.report_id);
+      return {
+        actionLabel: 'View on overview',
+        details: match ? [
+          { label: 'Location', value: [match.barangay, match.municipality].filter(Boolean).join(', ') || '—' },
+          { label: 'Status', value: String(match.status || '—').replace(/_/g, ' ') },
+        ] : undefined,
+      };
+    }
+    return null;
+  };
+
+  const openNotification = (n) => {
+    setSidebarOpen(false);
+    if (n.proposal_id) { setFocusProposalId(n.proposal_id); setActiveTab('proposals'); return; }
+    if (n.type === 'lgu_escalation') { setActiveTab('analytics'); return; }
+    if (n.type === 'lgu_threshold_alert') { setStatusFilter('pending'); setActiveTab('overview'); return; }
+    setActiveTab('overview');
+  };
+
   const attentionRows = [
     {
       key: 'escalations',
@@ -1323,7 +1352,7 @@ export default function LguDashboard() {
               {/* LGU carries the largest notification backlog of any role —
                   threshold alerts and proposal decisions, none of it displayed
                   before this. */}
-              <NotificationBell client={supabase} />
+              <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
               <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 sm:inline">{activeTab.replace(/_/g, ' ')}</span>
             </div>
           </div>
@@ -2286,6 +2315,8 @@ export default function LguDashboard() {
                 profile={profile}
                 municipalityScope={municipalityScope}
                 beneficiaries={beneficiaries}
+                focusProposalId={focusProposalId}
+                onFocusHandled={clearFocusProposal}
               />
             )}
 

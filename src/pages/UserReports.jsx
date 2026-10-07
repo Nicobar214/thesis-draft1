@@ -5,6 +5,7 @@ import Pagination, { usePagination } from '../components/ui/Pagination';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { notify } from '../lib/toast';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
 
@@ -107,6 +108,7 @@ function UserReports() {
     if (!id || reports.length === 0) return;
     const row = reports.find((r) => String(r.id) === id);
     if (row) setSelected(row);
+    else notify('That report is no longer available.', 'warning');
     const next = new URLSearchParams(searchParams);
     next.delete('report');
     setSearchParams(next, { replace: true });

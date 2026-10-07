@@ -5,6 +5,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import { normalizeProjectName } from '../lib/projectHelpers';
+import { selectCommunityFeedback } from '../lib/communityFeedback';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Constants â”€â”€â”€ */
 const statusFilters = ['All', 'In Progress', 'Completed', 'Planning', 'On Hold'];
@@ -163,7 +164,7 @@ function FeedbackCard({ feedback }) {
         </div>
       )}
 
-      <p className="text-xs text-slate-400 mt-2">By {feedback.user_email || 'Anonymous'}</p>
+      <p className="text-xs text-slate-400 mt-2">By {feedback.is_current_user_feedback ? 'you' : 'a community member'}</p>
     </div>
   );
 }
@@ -216,11 +217,9 @@ function ProjectDetail({ project, onBack }) {
 
   async function fetchFeedbacks() {
     try {
-      const { data } = await supabase
-        .from('feedbacks')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: false });
+      // Community view: other people's feedback arrives without their email or id.
+      const { data } = await selectCommunityFeedback(supabase, (q) =>
+        q.eq('project_id', project.id).order('created_at', { ascending: false }));
       if (data) setFeedbacks(data);
     } catch (e) {
       console.error(e);

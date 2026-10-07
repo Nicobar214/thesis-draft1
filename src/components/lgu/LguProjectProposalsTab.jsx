@@ -142,9 +142,15 @@ const emptyForm = {
   end_longitude: '',
 };
 
-export default function LguProjectProposalsTab({ user, profile, municipalityScope, beneficiaries = [] }) {
+/**
+ * focusProposalId: optional. When set (e.g. from a notification) the list tab
+ * opens and that proposal's detail dialog is shown once proposals have loaded;
+ * onFocusHandled lets the parent reset it.
+ */
+export default function LguProjectProposalsTab({ user, profile, municipalityScope, beneficiaries = [], focusProposalId, onFocusHandled }) {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [pickMode, setPickMode] = useState('start');
@@ -177,12 +183,26 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       console.error('Error fetching proposals:', err.message);
     } finally {
       setLoading(false);
+      setLoadedOnce(true);
     }
   }, [user, municipalityScope]);
 
   useEffect(() => {
     fetchProposals();
   }, [fetchProposals]);
+
+  // Open the proposal a notification pointed at, once the first fetch has finished.
+  useEffect(() => {
+    if (!focusProposalId || !loadedOnce) return;
+    const match = proposals.find((p) => p.id === focusProposalId);
+    if (match) {
+      setActiveSubTab('list');
+      setSelectedProposalForModal(match);
+    } else {
+      notify('That proposal is no longer in your list.', 'warning');
+    }
+    onFocusHandled?.();
+  }, [focusProposalId, loadedOnce, proposals, onFocusHandled]);
 
   const resolveSignedUrl = async (path) => {
     if (!path) return null;

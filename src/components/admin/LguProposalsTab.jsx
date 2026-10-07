@@ -478,11 +478,24 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
   );
 }
 
-export default function LguProposalsTab({ proposals, fmrProjects, loading, onValidate, onReject, onRequestRevision, onCreateProject }) {
+/**
+ * focusProposalId: optional. When set (e.g. from a notification) the review
+ * modal for that proposal opens as soon as the list has loaded; onFocusHandled
+ * lets the parent reset it.
+ */
+export default function LguProposalsTab({ proposals, fmrProjects, loading, onValidate, onReject, onRequestRevision, onCreateProject, focusProposalId, onFocusHandled }) {
   const [statusFilter, setStatusFilter] = useState('All');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [sortBy, setSortBy] = useState('newest');
   const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    if (!focusProposalId || loading) return;
+    const match = (proposals || []).find((p) => p.id === focusProposalId);
+    if (match) setSelected(match);
+    else notify('That proposal is no longer in the list.', 'warning');
+    onFocusHandled?.();
+  }, [focusProposalId, loading, proposals, onFocusHandled]);
 
   const priorityByProposalId = useMemo(() => {
     const scored = computeProposalPriorityScores(proposals || []);

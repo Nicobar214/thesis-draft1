@@ -111,6 +111,10 @@ export default function FieldEngineerDashboard() {
   const [pageSize, setPageSize] = useState(10);
 
   const [selectedReport, setSelectedReport] = useState(null);
+  const [focusUpdateId, setFocusUpdateId] = useState(null);
+  // A hook, so it must live up here with the others, above the early return for
+  // the loading screen. Hooks placed after it change the hook count between renders.
+  const clearFocusUpdate = useCallback(() => setFocusUpdateId(null), []);
   const [mapStatus, setMapStatus] = useState('all');
   const [engineerNotes, setEngineerNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -469,6 +473,54 @@ export default function FieldEngineerDashboard() {
     );
   }
 
+  /* ── Notification bell: what a click shows and where it goes ── */
+  const isProgressNotification = (n) =>
+    Boolean(n.progress_update_id) || String(n.type || '').startsWith('progress_update') || n.type === 'site_engineer_assigned';
+
+  // TODO(human): choose which facts the notification detail card shows for a report.
+  // Return [{ label, value }, ...]. Keep it to the 2-4 things an engineer needs to
+  // decide whether to act now; you can vary it by n.type (e.g. a re-inspection
+  // notice might surface the admin's reason, a repair notice the target date).
+  const notificationDetailsFor = (report) => [
+    { label: 'Location', value: [report.barangay, report.municipality].filter(Boolean).join(', ') || '—' },
+    { label: 'Report status', value: String(report.status || '—').replace(/_/g, ' ') },
+  ];
+
+  const resolveNotificationTarget = (n) => {
+    if (isProgressNotification(n)) return { actionLabel: 'Open certification queue' };
+    if (!n.report_id) return null;
+
+    const match = reports.find((r) => r.id === n.report_id);
+    if (!match) {
+      return {
+        unavailable: loading
+          ? 'Still loading your reports. Try again in a moment.'
+          : 'This report is no longer assigned to you, so it cannot be opened.',
+      };
+    }
+    const actionLabel = n.type === 'public_report_repair_ready_to_verify'
+      ? 'Verify repair on site'
+      : n.type === 'public_report_finding_rejected'
+        ? 'Open for re-inspection'
+        : 'Open report';
+    return { actionLabel, details: notificationDetailsFor(match, n) };
+  };
+
+  const openNotification = (n) => {
+    if (isProgressNotification(n)) {
+      setFocusUpdateId(n.progress_update_id || null);
+      setActiveNav('certify');
+      return;
+    }
+    const match = reports.find((r) => r.id === n.report_id);
+    if (!match) {
+      showNotification('This report is no longer assigned to you.', 'warning');
+      return;
+    }
+    setSelectedReport(match);
+    setActiveNav('reports');
+  };
+
   const navItems = [
     { id: 'overview', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
     { id: 'gis-map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
@@ -705,14 +757,8 @@ export default function FieldEngineerDashboard() {
                   shown to the engineer. */}
               <NotificationBell
                 client={supabase}
-                onSelect={(n) => {
-                  if (n.progress_update_id) { setActiveNav('certify'); return; }
-                  const match = reports.find((r) => r.id === n.report_id);
-                  if (match) {
-                    setSelectedReport(match);
-                    setActiveNav('reports');
-                  }
-                }}
+                resolveTarget={resolveNotificationTarget}
+                onSelect={openNotification}
               />
               <div className="hidden sm:block text-right">
                 <p className="text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</p>
@@ -1370,6 +1416,8 @@ export default function FieldEngineerDashboard() {
                 <ProgressCertificationPanel
                   onCountChange={setCertifyCount}
                   showNotification={showNotification}
+                  focusUpdateId={focusUpdateId}
+                  onFocusHandled={clearFocusUpdate}
                 />
               </div>
             </div>

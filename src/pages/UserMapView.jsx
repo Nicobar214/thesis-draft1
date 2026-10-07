@@ -30,6 +30,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
+import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
 import 'leaflet/dist/leaflet.css';
 import { storeGlyph } from '../lib/mapMarkerIcons';
 
@@ -179,6 +180,11 @@ export default function UserMapView({ embedded = false } = {}) {
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  // Selecting a project focuses it on the map; this controls the details dialog.
+  // Closing the dialog keeps the selection so the map stays focused on the road.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const closeDetail = () => setDetailOpen(false);
+  const openProject = (project) => { setSelectedProject(project); setDetailOpen(true); };
   const [hoveredProjectId, setHoveredProjectId] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [routeByProjectId, setRouteByProjectId] = useState({});
@@ -767,10 +773,7 @@ export default function UserMapView({ embedded = false } = {}) {
                             eventHandlers={{
                               mouseover: () => setHoveredProjectId(project.id),
                               mouseout: () => setHoveredProjectId(null),
-                              click: () => {
-                                setSelectedProject(project);
-                                setShowSidebar(true);
-                              },
+                              click: () => openProject(project),
                             }}
                           >
                             <Tooltip sticky direction="top" offset={[0, -12]} opacity={0.97}>
@@ -859,10 +862,7 @@ export default function UserMapView({ embedded = false } = {}) {
                           eventHandlers={{
                             mouseover: () => setHoveredProjectId(project.id),
                             mouseout: () => setHoveredProjectId(null),
-                            click: () => {
-                              setSelectedProject(project);
-                              setShowSidebar(true);
-                            },
+                            click: () => openProject(project),
                           }}
                         >
                           <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
@@ -1128,7 +1128,7 @@ export default function UserMapView({ embedded = false } = {}) {
                   return (
                     <button
                       key={p.id}
-                      onClick={() => setSelectedProject(p)}
+                      onClick={() => { openProject(p); setShowSidebar(false); }}
                       className={`w-full text-left px-4 py-3 transition-colors text-sm ${
                         isActive
                           ? 'bg-emerald-50 border-l-2 border-emerald-500'
@@ -1180,125 +1180,12 @@ export default function UserMapView({ embedded = false } = {}) {
         </div>
 
         {/* Selected project detail card */}
-        {selectedProject && (
-          <div className="bg-white rounded-2xl border border-slate-200/60 p-5">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div className="flex-1">
-                <h2 className="font-semibold text-slate-900 leading-snug">{selectedProject.project_name}</h2>
-                <p className="text-sm text-slate-400 mt-1">
-                  DA-RAED Region VI &middot; Farm-to-Market Road Development Program
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedProject.status)}`}>
-                  {selectedProject.status}
-                </span>
-                <button
-                  onClick={() => setSelectedProject(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  <Icons.X />
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {selectedProject.municipality && (
-                <div className="p-3 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Municipality</p>
-                  <p className="text-sm font-medium text-slate-800">{selectedProject.municipality}</p>
-                </div>
-              )}
-              {selectedProject.year_funded && (
-                <div className="p-3 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Year Funded</p>
-                  <p className="text-sm font-medium text-slate-800">FY {selectedProject.year_funded}</p>
-                </div>
-              )}
-              {selectedProject.project_length_km > 0 && (
-                <div className="p-3 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-400 uppercase tracking-wider mb-0.5">Road Length</p>
-                  <p className="text-sm font-medium text-slate-800">{selectedProject.project_length_km} km</p>
-                </div>
-              )}
-              {(() => {
-                const budget = getProjectBudgetSummary(selectedProject, tranchesByProjectId[selectedProject.id] || []);
-                return (
-                  <div className="p-3 bg-slate-50 rounded-xl">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <p className="text-xs text-slate-400 uppercase tracking-wider">Budget</p>
-                      <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {budget.budgetIsEstimated ? 'Est.' : 'Official'}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium text-slate-800">{formatPeso(budget.totalBudget)}</p>
-                  </div>
-                );
-              })()}
-              {selectedProject.date_completed && (
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                  <p className="text-xs text-teal-600 uppercase tracking-wider mb-0.5">Completed</p>
-                  <p className="text-sm font-medium text-emerald-800">{selectedProject.date_completed}</p>
-                </div>
-              )}
-              {selectedProject.target_completion_date && (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                  <p className="text-xs text-amber-600 uppercase tracking-wider mb-0.5">Target</p>
-                  <p className="text-sm font-medium text-amber-800">{selectedProject.target_completion_date}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Funds utilized / remaining */}
-            {(() => {
-              const budget = getProjectBudgetSummary(selectedProject, tranchesByProjectId[selectedProject.id] || []);
-              const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
-              return (
-                <div className="mt-4 p-3.5 bg-white border border-slate-200 rounded-xl">
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-slate-500">
-                      Funds Utilized: <strong className="text-amber-700">{formatPeso(budget.released)}</strong>
-                      <span className={`ml-1 px-1 py-0.5 rounded text-[9px] font-bold ${budget.utilizationIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {budget.utilizationIsEstimated ? 'Est.' : 'Official'}
-                      </span>
-                    </span>
-                    <span className="text-slate-500">Remaining: <strong className="text-emerald-700">{formatPeso(budget.remaining)}</strong></span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
-                  </div>
-                  {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
-                    <p className="text-[10px] text-slate-400 mt-1.5">
-                      Estimated using DA-BAFE's ₱15M/km rate and physical progress — not confirmed disbursement records.
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* GPS coordinates + Google Maps link */}
-            {selectedProject.start_latitude && selectedProject.end_latitude && (
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md font-mono">
-                    START: {selectedProject.start_latitude?.toFixed(6)}, {selectedProject.start_longitude?.toFixed(6)}
-                  </span>
-                  <span>â†’</span>
-                  <span className="px-2 py-1 bg-rose-50 text-rose-700 rounded-md font-mono">
-                    END: {selectedProject.end_latitude?.toFixed(6)}, {selectedProject.end_longitude?.toFixed(6)}
-                  </span>
-                </div>
-                <a
-                  href={`https://www.google.com/maps/dir/${selectedProject.start_latitude},${selectedProject.start_longitude}/${selectedProject.end_latitude},${selectedProject.end_longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-medium rounded-lg transition-colors"
-                >
-                  <Icons.ExternalLink /> Google Maps
-                </a>
-              </div>
-            )}
-          </div>
+        {selectedProject && detailOpen && (
+          <FmrProjectDetailDialog
+            project={selectedProject}
+            tranches={tranchesByProjectId[selectedProject.id] || []}
+            onClose={closeDetail}
+          />
         )}
 
         {/* Source */}

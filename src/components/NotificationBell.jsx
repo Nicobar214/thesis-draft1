@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { supabase as defaultClient } from '../lib/supabase';
+import { buttonClass } from './ui/Button';
 
 /* Notification types written across the app. Anything unmapped falls back to
  * neutral, so a new type added later shows up plainly rather than breaking. */
@@ -37,6 +38,11 @@ const TYPE_META = {
   project_site_engineer_set:          { label: 'Engineer set', accent: 'bg-indigo-500' },
 };
 
+// Columns a notification can use to point at what it is about. Each came from a
+// separate migration, so any of them may be missing on an older database.
+const LINK_COLUMNS = ['report_id', 'progress_update_id', 'project_id', 'proposal_id', 'schedule_task_id'];
+const hasLink = (n) => LINK_COLUMNS.some((col) => n[col]);
+
 function metaFor(type) {
   return TYPE_META[type] || { label: 'Update', accent: 'bg-slate-400' };
 }
@@ -64,10 +70,21 @@ function relativeTime(iso) {
  *
  * Each portal passes its own Supabase client, since sessions are isolated per
  * portal by storageKey.
+ *
+ * Two ways to react to a click:
+ *   - onSelect only (legacy): the click immediately calls onSelect(n) when the
+ *     row links to something.
+ *   - resolveTarget + onSelect (preferred): the click opens a detail card inside
+ *     the dropdown. resolveTarget(n) tells the card what to show:
+ *       { actionLabel?, details?: [{label, value}], unavailable?: string } | null
+ *     The card's button calls onSelect(n). If the target cannot be opened
+ *     (e.g. the report was reassigned) the card says so instead of failing
+ *     silently.
  */
 export default function NotificationBell({
   client = defaultClient,
   onSelect,
+  resolveTarget,
   align = 'right',
   tone = 'light',
 }) {
@@ -75,7 +92,9 @@ export default function NotificationBell({
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [selected, setSelected] = useState(null);
   const wrapRef = useRef(null);
+  const detailRef = useRef(null);
 
   const unread = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
 
@@ -89,10 +108,17 @@ export default function NotificationBell({
         .eq('user_id', uid)
         .order('created_at', { ascending: false })
         .limit(30);
-      let { data, error } = await query('id, type, title, message, report_id, progress_update_id, project_id, is_read, created_at');
-      // A database that has not run the progress-notification migration lacks the two link columns.
-      if (error && /progress_update_id|project_id/.test(error.message || '')) {
-        ({ data, error } = await query('id, type, title, message, report_id, is_read, created_at'));
+      // Ask for every link column; if the database rejects one it has not got,
+      // drop just that column and retry rather than losing all the links.
+      let links = [...LINK_COLUMNS];
+      let data = null;
+      let error = null;
+      for (let attempt = 0; attempt <= LINK_COLUMNS.length; attempt += 1) {
+        ({ data, error } = await query(['id', 'type', 'title', 'message', ...links, 'is_read', 'created_at'].join(', ')));
+        if (!error) break;
+        const missing = links.find((col) => (error.message || '').includes(col));
+        if (!missing) break;
+        links = links.filter((col) => col !== missing);
       }
       if (error) throw error;
       setItems(data || []);
@@ -161,6 +187,16 @@ export default function NotificationBell({
     };
   }, [open]);
 
+  // Always reopen on the list, never on a stale detail card.
+  useEffect(() => {
+    if (!open) setSelected(null);
+  }, [open]);
+
+  // Move focus into the detail card so keyboard and screen-reader users land on it.
+  useEffect(() => {
+    if (selected) detailRef.current?.focus();
+  }, [selected]);
+
   const markRead = useCallback(async (ids) => {
     if (!ids.length) return;
     setItems((prev) => prev.map((n) => (ids.includes(n.id) ? { ...n, is_read: true } : n)));
@@ -173,9 +209,22 @@ export default function NotificationBell({
 
   const handleSelect = (n) => {
     if (!n.is_read) markRead([n.id]);
-    if (typeof onSelect === 'function' && (n.report_id || n.progress_update_id || n.project_id)) onSelect(n);
+    if (typeof resolveTarget === 'function') {
+      // Detail mode: show what this is about and let the user choose to go there.
+      setSelected({ ...n, is_read: true });
+      return;
+    }
+    if (typeof onSelect === 'function' && hasLink(n)) onSelect(n);
     setOpen(false);
   };
+
+  const openTarget = (n) => {
+    setOpen(false);
+    if (typeof onSelect === 'function') onSelect(n);
+  };
+
+  // Resolved on every render so it reflects data that finished loading after the bell opened.
+  const target = selected && typeof resolveTarget === 'function' ? resolveTarget(selected) : null;
 
   const buttonTone = tone === 'dark'
     ? 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -207,8 +256,21 @@ export default function NotificationBell({
           }`}
         >
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
-            <p className="text-sm font-semibold text-slate-900">Notifications</p>
-            {unread > 0 && (
+            {selected ? (
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                All notifications
+              </button>
+            ) : (
+              <p className="text-sm font-semibold text-slate-900">Notifications</p>
+            )}
+            {!selected && unread > 0 && (
               <button
                 type="button"
                 onClick={() => markRead(items.filter((n) => !n.is_read).map((n) => n.id))}
@@ -219,6 +281,51 @@ export default function NotificationBell({
             )}
           </div>
 
+          {selected ? (
+            <div ref={detailRef} tabIndex={-1} className="max-h-96 overflow-y-auto px-4 py-4 outline-none">
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${metaFor(selected.type).accent}`} />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {metaFor(selected.type).label}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  &middot; {selected.created_at ? new Date(selected.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+                </span>
+              </div>
+
+              <h3 className="mt-2 text-sm font-semibold leading-snug text-slate-900">{selected.title || metaFor(selected.type).label}</h3>
+              {selected.message && (
+                <p className="mt-1.5 whitespace-pre-line break-words text-[13px] leading-relaxed text-slate-600">{selected.message}</p>
+              )}
+
+              {target?.details?.length > 0 && (
+                <dl className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+                  {target.details.map((row) => (
+                    <div key={row.label} className="flex gap-3">
+                      <dt className="w-20 shrink-0 font-medium text-slate-500">{row.label}</dt>
+                      <dd className="min-w-0 flex-1 break-words text-slate-800">{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+
+              {target?.unavailable && (
+                <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                  {target.unavailable}
+                </p>
+              )}
+
+              {target?.actionLabel && !target.unavailable && (
+                <button
+                  type="button"
+                  onClick={() => openTarget(selected)}
+                  className={buttonClass('primary', 'md', 'mt-4 w-full')}
+                >
+                  {target.actionLabel}
+                </button>
+              )}
+            </div>
+          ) : (
           <div className="max-h-96 overflow-y-auto">
             {loading && items.length === 0 ? (
               <p className="px-4 py-8 text-center text-xs text-slate-400">Loading...</p>
@@ -264,6 +371,7 @@ export default function NotificationBell({
               </ul>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

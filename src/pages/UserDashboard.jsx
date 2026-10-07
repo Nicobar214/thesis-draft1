@@ -10,6 +10,7 @@ import CitizenOverviewMap from '../components/map/CitizenOverviewMap';
 import { formatPercentage } from '../lib/percentageFormat';
 import { useMyReports, CITIZEN_STATUS_HEX } from '../lib/useMyReports';
 import { getCitizenStatus, CITIZEN_STATUS } from '../lib/publicReportStatus';
+import { selectCommunityFeedback } from '../lib/communityFeedback';
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Icon Components - Clean, consistent 24x24 icons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -433,11 +434,8 @@ export default function UserDashboard() {
             .select('id, created_at, project_name, municipality, status, is_current_user_report')
             .order('created_at', { ascending: false })
             .limit(12),
-          supabase
-            .from('feedbacks')
-            .select('id, created_at, project_name, user_id')
-            .order('created_at', { ascending: false })
-            .limit(12),
+          // Shared activity feed: read from the community view (no author id or email).
+          selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(12)),
         ]);
 
         const projectActivity = normalizedProjects
@@ -481,14 +479,19 @@ export default function UserDashboard() {
         setActivityFeed(combinedActivity);
 
         if (user?.id) {
-          const myReports = (reportsData || []).filter((report) => report.is_current_user_report);
-          const myFeedback = (feedbackData || []).filter((feedback) => feedback.user_id === user.id);
+          // Count the user's own submissions directly. Filtering the shared 12-item feed
+          // would undercount as soon as other people have posted more recently.
+          const [{ data: ownReports }, { count: ownFeedbackCount }] = await Promise.all([
+            supabase.from('public_reports_citizen_view').select('id, status').eq('is_current_user_report', true),
+            supabase.from('feedbacks').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+          ]);
+          const myReports = ownReports || [];
 
           setSubmissions({
             reportsSubmitted: myReports.length,
             reportsResolved: myReports.filter((report) => report.status === 'resolved').length,
             reportsPending: myReports.filter((report) => report.status !== 'resolved').length,
-            feedbackSubmitted: myFeedback.length,
+            feedbackSubmitted: ownFeedbackCount || 0,
           });
         }
       }
@@ -628,19 +631,7 @@ export default function UserDashboard() {
 
         {/* Level 1: the roads around the citizen */}
         <div className="space-y-4 pt-2">
-          <SectionLabel title="Roads around you" subtitle="The map, then the projects in your municipality" />
-        {/* Map: FMR roads and the citizen's own report pins */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">FMR Roads Near You</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Road projects across the region, with the reports you filed pinned by status.</p>
-            </div>
-            <Link to="/user/map" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">Open the full map</Link>
-          </div>
-          <CitizenOverviewMap />
-        </section>
-
+          <SectionLabel title="Roads around you" subtitle="Your municipality's projects, then the map" />
         <section className="grid lg:grid-cols-3 gap-6">
           {/* Donut Progress Chart */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col">
@@ -752,6 +743,18 @@ export default function UserDashboard() {
               </div>
             )}
           </div>
+        </section>
+
+        {/* Map: FMR roads and the citizen's own report pins */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">FMR Roads Near You</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Road projects across the region, with the reports you filed pinned by status.</p>
+            </div>
+            <Link to="/user/map" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">Open the full map</Link>
+          </div>
+          <CitizenOverviewMap />
         </section>
 
         </div>

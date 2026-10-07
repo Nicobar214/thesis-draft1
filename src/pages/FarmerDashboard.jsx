@@ -14,6 +14,7 @@ import DAResolutionCertificate from "../components/publicReports/DAResolutionCer
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
 import Icons from "../components/Icons";
 import Logo from "../components/Logo";
+import NotificationBell from "../components/NotificationBell";
 import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -126,6 +127,37 @@ export default function FarmerDashboard() {
     await supabase.auth.signOut();
     navigate("/");
   };
+
+  /* ── Notification bell: a farmer is notified about their own reports ── */
+  const [focusReportId, setFocusReportId] = useState(null);
+
+  const resolveNotificationTarget = (n) => {
+    if (!n.report_id) return null;
+    const match = myReports.find((r) => r.id === n.report_id);
+    if (!match) return { unavailable: "This report is no longer in your list." };
+    return {
+      actionLabel: "Open my report",
+      details: [
+        { label: "Location", value: [match.barangay, match.municipality].filter(Boolean).join(", ") || "—" },
+        { label: "Status", value: String(match.status || "pending").replace(/_/g, " ") },
+      ],
+    };
+  };
+
+  const openNotification = (n) => {
+    setFocusReportId(n.report_id || null);
+    setActiveTab("my_reports");
+  };
+
+  // Scroll to, and briefly highlight, the report a notification pointed at.
+  useEffect(() => {
+    if (!focusReportId || activeTab !== "my_reports") return undefined;
+    const scrollTimer = setTimeout(() => {
+      document.getElementById("farmer-report-" + focusReportId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+    const clearTimer = setTimeout(() => setFocusReportId(null), 5000);
+    return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
+  }, [focusReportId, activeTab, myReports]);
 
   // 1. Fetch user authentication & farmer profile
   useEffect(() => {
@@ -396,6 +428,12 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            <NotificationBell
+              client={supabase}
+              tone="dark"
+              resolveTarget={resolveNotificationTarget}
+              onSelect={openNotification}
+            />
             <div className="text-right hidden sm:block">
               <p className="text-sm font-bold">{farmerRecord?.full_name || profile?.full_name || "Farmer User"}</p>
               <p className="text-xs text-emerald-200">RSBSA: {farmerRecord?.rsbsa_number || "N/A"}</p>
@@ -701,7 +739,7 @@ export default function FarmerDashboard() {
                       'bg-amber-100 text-amber-800 border-amber-200';
 
                     return (
-                      <div key={rpt.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white transition-all space-y-2">
+                      <div key={rpt.id} id={"farmer-report-" + rpt.id} className={"p-4 rounded-xl border bg-slate-50/50 hover:bg-white transition-all space-y-2 " + (rpt.id === focusReportId ? "border-amber-300 ring-2 ring-amber-300" : "border-slate-200")}>
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
                             <span className="font-bold text-slate-900 text-sm sm:text-base block">{rpt.project_name || 'FMR Road Issue'}</span>

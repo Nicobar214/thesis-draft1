@@ -889,6 +889,10 @@ export default function Dashboard() {
   const [progressUpdates, setProgressUpdates] = useState([]);
   const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
   const [progressUpdatesLastSyncedAt, setProgressUpdatesLastSyncedAt] = useState(null);
+  // Set by a notification click so the target tab can open/highlight the exact record.
+  const [focusProgressId, setFocusProgressId] = useState(null);
+  const [focusProposalId, setFocusProposalId] = useState(null);
+  const clearFocusProposal = useCallback(() => setFocusProposalId(null), []);
   const [lguProposals, setLguProposals] = useState([]);
   const [lguProposalsLoading, setLguProposalsLoading] = useState(false);
   const [pendingProposalLink, setPendingProposalLink] = useState(null);
@@ -3596,6 +3600,68 @@ export default function Dashboard() {
     navigate('/admin');
   };
 
+  /* ── Notification bell: what a click shows and where it goes ── */
+  const resolveNotificationTarget = (n) => {
+    if (n.progress_update_id) {
+      const upd = progressUpdates.find((u) => u.id === n.progress_update_id);
+      return {
+        actionLabel: 'Review progress update',
+        details: upd ? [
+          { label: 'Project', value: upd.fmr_projects?.project_name || `Project ${upd.fmr_project_id}` },
+          { label: 'Reported', value: upd.reported_accomplishment != null ? `${upd.reported_accomplishment}%` : '—' },
+          { label: 'Certified', value: upd.certified_accomplishment != null ? `${upd.certified_accomplishment}%` : 'Not yet certified' },
+          { label: 'Status', value: String(upd.status || '—') },
+        ] : undefined,
+      };
+    }
+    if (n.proposal_id) {
+      const proposal = lguProposals.find((p) => p.id === n.proposal_id);
+      return {
+        actionLabel: 'Review proposal',
+        details: proposal ? [
+          { label: 'Project', value: proposal.project_name || '—' },
+          { label: 'Municipality', value: proposal.municipality || '—' },
+          { label: 'Status', value: proposal.status || '—' },
+        ] : undefined,
+      };
+    }
+    if (n.schedule_task_id) return { actionLabel: 'Open project scheduling' };
+    if (n.report_id) {
+      const match = publicReports.find((r) => r.id === n.report_id);
+      if (!match) {
+        return { unavailable: publicReportsLoading ? 'Still loading reports. Try again in a moment.' : 'This report is no longer available.' };
+      }
+      return {
+        actionLabel: 'Open case file',
+        details: [
+          { label: 'Location', value: [match.barangay, match.municipality].filter(Boolean).join(', ') || '—' },
+          { label: 'Status', value: String(match.status || '—').replace(/_/g, ' ') },
+        ],
+      };
+    }
+    return null;
+  };
+
+  const openNotification = (n) => {
+    if (n.progress_update_id) { setFocusProgressId(n.progress_update_id); setActiveTab('progress-updates'); return; }
+    if (n.proposal_id) { setFocusProposalId(n.proposal_id); setActiveTab('lgu-proposals'); return; }
+    if (n.schedule_task_id) { setActiveTab('project-mgmt'); return; }
+    const match = publicReports.find((r) => r.id === n.report_id);
+    if (!match) { showNotification('That report is no longer available.', 'warning'); return; }
+    setActiveTab('public-reports');
+    setSelectedPublicReport(match);
+  };
+
+  // Scroll to, and briefly highlight, the progress update a notification pointed at.
+  useEffect(() => {
+    if (!focusProgressId || activeTab !== 'progress-updates' || progressUpdatesLoading) return undefined;
+    const scrollTimer = setTimeout(() => {
+      document.getElementById(`progress-update-${focusProgressId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+    const clearTimer = setTimeout(() => setFocusProgressId(null), 6000);
+    return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
+  }, [focusProgressId, activeTab, progressUpdatesLoading, progressUpdates]);
+
   return (
     <div className="min-h-dvh flex bg-gradient-to-br from-slate-50 to-slate-100">
 
@@ -3797,14 +3863,8 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 self-start sm:self-auto">
               <NotificationBell
                 client={supabase}
-                onSelect={(n) => {
-                  if (n.progress_update_id) { setActiveTab('progress-updates'); return; }
-                  const match = publicReports.find((r) => r.id === n.report_id);
-                  if (match) {
-                    setActiveTab('public-reports');
-                    setSelectedPublicReport(match);
-                  }
-                }}
+                resolveTarget={resolveNotificationTarget}
+                onSelect={openNotification}
               />
             </div>
             {activeTab === 'projects' && (
@@ -5920,6 +5980,8 @@ export default function Dashboard() {
               onReject={rejectLguProposal}
               onRequestRevision={requestLguProposalRevision}
               onCreateProject={openAddProjectFromProposal}
+              focusProposalId={focusProposalId}
+              onFocusHandled={clearFocusProposal}
             />
           )}
 
@@ -7820,7 +7882,13 @@ export default function Dashboard() {
                               />
                             </div>
 
-                            {/* Vicinity Duplicates */}
+
+                          </div>
+
+                          {/* RIGHT COLUMN: Administrative Action Station (Col 5) */}
+                          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(92dvh-8rem)] lg:overflow-y-auto lg:pr-1">
+
+                            {/* Triage fact: shown before the action card so it informs the decision. */}
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
                               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
                                 Vicinity Duplicates Check (100m Radius)
@@ -7848,12 +7916,6 @@ export default function Dashboard() {
                                 <p className="text-xs font-bold text-emerald-700"><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No duplicate reports detected in this vicinity.</p>
                               )}
                             </div>
-
-                          </div>
-
-                          {/* RIGHT COLUMN: Administrative Action Station (Col 5) */}
-                          <div className="lg:col-span-5 space-y-4">
-
                             {/* The single contextual action area */}
                             <AdminWorkflowControls
                               report={selectedPublicReport}
@@ -8461,7 +8523,7 @@ export default function Dashboard() {
                             const projectName = upd.fmr_projects?.project_name || `Project ${upd.fmr_project_id}`;
                             const municipality = upd.fmr_projects?.municipality || '';
                             return (
-                              <tr key={upd.id} className="hover:bg-slate-50/60 transition-colors align-top">
+                              <tr key={upd.id} id={'progress-update-' + upd.id} className={'transition-colors align-top ' + (upd.id === focusProgressId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60')}>
                                 <td className="px-5 py-4 max-w-xs">
                                   <p className="text-sm font-semibold text-slate-900 line-clamp-2">{projectName}</p>
                                   {municipality && <p className="text-xs text-slate-500 mt-0.5">{municipality}</p>}

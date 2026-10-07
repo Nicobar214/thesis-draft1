@@ -9,7 +9,6 @@ import {
   recommendInspectionDate,
 } from '../../lib/publicReportTriage';
 import { RESOLUTION_TYPE_LABELS, resolutionTypeMeaning } from '../../lib/publicReportStatus';
-import BillingHoldControl from './BillingHoldControl';
 import { buttonClass } from '../ui/Button';
 import RepairActionPanel from './RepairActionPanel';
 
@@ -607,17 +606,7 @@ export default function AdminWorkflowControls({
     );
   };
 
-  return (
-    <div className="space-y-4">
-      {renderAction()}
-
-      {/* Secondary: a credible citizen report may justify holding a billing. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2.5">
-        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-          Contractor Billings
-        </span>
-        <BillingHoldControl report={report} />
-      </div>
-    </div>
-  );
+  // The contractor-billing hold control is intentionally not rendered for now
+  // (BillingHoldControl.jsx is kept in place, unused, until the policy is settled).
+  return renderAction();
 }
