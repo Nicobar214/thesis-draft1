@@ -420,49 +420,53 @@ function UserReports() {
         <div className="bg-white rounded-2xl border border-slate-200/60 p-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"><Icons.Search /></span>
               <input
                 type="text"
+                aria-label="Search my reports"
                 placeholder="Search by description or location..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"
+                className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-500 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"
               />
             </div>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.Filter /></span>
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"><Icons.Filter /></span>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Filter by status"
                 className="appearance-none pl-11 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
               >
                 {[...CITIZEN_STATUS_FILTERS.slice(0, 2), { value: 'in_progress', label: 'In Progress (all stages)' }, ...CITIZEN_STATUS_FILTERS.slice(2)].map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
             <div className="relative">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Sort reports"
                 className="appearance-none pl-4 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
               >
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
                 <option value="status">By Status</option>
               </select>
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icons.ChevronDown /></span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"><Icons.ChevronDown /></span>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-slate-100">
-            <span className="text-xs text-slate-400 font-medium w-24 shrink-0 flex items-center">
+            <span className="text-xs text-slate-500 font-medium w-24 shrink-0 flex items-center">
               Filter by type
             </span>
             <div className="relative flex-1">
               <select
                 value={categoryFilter}
                 onChange={(e) => { setCategoryFilter(e.target.value); setProblemFilter('all'); }}
+                aria-label="Filter by issue type"
                 className="appearance-none w-full px-4 pr-9 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
               >
                 <option value="all">All Severity Types</option>
@@ -476,6 +480,7 @@ function UserReports() {
                 <select
                   value={problemFilter}
                   onChange={(e) => setProblemFilter(e.target.value)}
+                  aria-label="Filter by specific problem"
                   className="appearance-none w-full px-4 pr-9 py-2.5 border border-teal-200 bg-teal-50 rounded-xl text-sm text-teal-800 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition cursor-pointer"
                 >
                   <option value="all">All — {SEVERITY_TAXONOMY[categoryFilter]?.label}</option>
@@ -488,7 +493,7 @@ function UserReports() {
             {(categoryFilter !== 'all' || statusFilter !== 'all' || search) && (
               <button
                 onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); setStatusFilter('all'); setSearch(''); }}
-                className="shrink-0 text-xs text-slate-400 hover:text-red-500 transition font-medium px-2"
+                className="shrink-0 text-xs text-slate-500 hover:text-red-500 transition font-medium px-2"
               >
                 Clear all
               </button>
@@ -501,13 +506,13 @@ function UserReports() {
             {categoryFilter !== 'all' && (
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${SEVERITY_TAXONOMY[categoryFilter]?.color}`}>
                 <SeverityIcon category={categoryFilter} /> {SEVERITY_TAXONOMY[categoryFilter]?.label}
-                <button onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); }} className="ml-1 hover:opacity-70">×</button>
+                <button onClick={() => { setCategoryFilter('all'); setProblemFilter('all'); }} aria-label="Remove issue type filter" className="ml-1 hover:opacity-70">×</button>
               </span>
             )}
             {problemFilter !== 'all' && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border bg-teal-50 text-teal-700 border-teal-200">
                 {SEVERITY_TAXONOMY[categoryFilter]?.problems.find((p) => p.value === problemFilter)?.label}
-                <button onClick={() => setProblemFilter('all')} className="ml-1 hover:opacity-70">×</button>
+                <button onClick={() => setProblemFilter('all')} aria-label="Remove problem filter" className="ml-1 hover:opacity-70">×</button>
               </span>
             )}
           </div>
@@ -529,7 +534,7 @@ function UserReports() {
 
         {!loading && !error && filtered.length === 0 && (
           <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
-            <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-400 mb-3">
+            <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-500 mb-3">
               <Icons.Document />
             </div>
             <p className="font-medium text-slate-900">No reports found</p>
@@ -680,7 +685,7 @@ function UserReports() {
                   </span>
                 )}
               </div>
-              <button onClick={() => setSelected(null)} aria-label="Close dialog" className="-mr-1 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+              <button onClick={() => setSelected(null)} aria-label="Close dialog" className="-mr-1 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <Icons.X />
               </button>
             </div>
@@ -944,7 +949,7 @@ function UserReports() {
                 <p className="text-xs font-semibold text-teal-600 uppercase tracking-wider">New Report</p>
                 <h3 className="text-lg font-semibold text-slate-900 mt-0.5">Location-Verified Report</h3>
               </div>
-              <button onClick={() => setReportStep('idle')} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
+              <button onClick={() => setReportStep('idle')} aria-label="Close dialog" className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                 <XIcon className="size-4" aria-hidden="true" />
               </button>
             </div>

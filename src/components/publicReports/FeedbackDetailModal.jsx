@@ -45,7 +45,7 @@ function verificationTone(v) {
 function Fact({ label, children }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</dt>
+      <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</dt>
       <dd className="mt-0.5 text-sm text-slate-800 break-words">{children}</dd>
     </div>
   );
@@ -172,7 +172,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
           )}
 
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {item._isMine ? 'What you wrote' : 'What was reported'}
             </p>
             <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">{item.message || 'No description provided.'}</p>

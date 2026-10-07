@@ -80,12 +80,20 @@ export default function UserLayout({
 
   return (
     <div className={rootClass}>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[10000] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-teal-800 focus:shadow-lg focus:ring-2 focus:ring-teal-600"
+      >
+        Skip to main content
+      </a>
       {showSidebar && (
         <UserSidebar collapsed={collapsed} setCollapsed={setCollapsed} user={user} />
       )}
 
       {/* Main content area */}
       <main
+        id="main-content"
+        tabIndex={-1}
         className={`transition-all duration-300 ${showSidebar ? (collapsed ? 'lg:ml-[72px]' : 'lg:ml-64') : ''} ${mainClassName}`}
       >
         {showHeader && (

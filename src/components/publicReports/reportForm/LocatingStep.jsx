@@ -22,7 +22,7 @@ export default function LocatingStep({
             </div>
             <div className="text-center">
               <p className="text-base font-semibold text-slate-800">Getting your GPS position…</p>
-              <p className="text-sm text-slate-400 mt-1">Please stay still for the best accuracy</p>
+              <p className="text-sm text-slate-500 mt-1">Please stay still for the best accuracy</p>
               <p
                 className={`mx-auto mt-3 max-w-xs text-xs text-amber-700 transition-opacity duration-500 ${gpsSlow ? 'opacity-100' : 'opacity-0'}`}
                 aria-live="polite"
@@ -42,7 +42,7 @@ export default function LocatingStep({
             </div>
             <div className="text-center">
               <p className="text-base font-semibold text-slate-800">Location found</p>
-              <p className="text-sm text-slate-400 mt-1">Finding road projects near you…</p>
+              <p className="text-sm text-slate-500 mt-1">Finding road projects near you…</p>
             </div>
           </>
         )}

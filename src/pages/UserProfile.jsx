@@ -332,7 +332,9 @@ export default function UserProfile() {
           type="button"
           onClick={onToggle}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${value ? 'bg-teal-600' : 'bg-slate-300'}`}
-          aria-pressed={value}
+          role="switch"
+          aria-checked={value}
+          aria-label={label}
         >
           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
@@ -368,15 +370,15 @@ export default function UserProfile() {
                     </div>
                     <label className="mt-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-800">
                       Upload photo
-                      <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                      <input type="file" accept="image/*" className="hidden" aria-label="Upload profile photo" onChange={handleAvatarUpload} />
                     </label>
                     <h2 className="mt-4 text-xl font-semibold text-slate-900">{displayName}</h2>
                     <p className="text-sm text-slate-500">{user?.email || 'No email'}</p>
-                    <p className="mt-3 text-xs text-slate-400">Member since {memberSinceLabel} • Last active {lastActiveLabel}</p>
+                    <p className="mt-3 text-xs text-slate-500">Member since {memberSinceLabel} • Last active {lastActiveLabel}</p>
                   </div>
 
                   <div className="mt-6 border-t border-slate-100 pt-4">
-                    <p className="text-xs uppercase tracking-wider text-slate-400 mb-3">My Activity</p>
+                    <p className="text-xs uppercase tracking-wider text-slate-500 mb-3">My Activity</p>
                     <div className="grid grid-cols-1 gap-2.5">
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center justify-between text-sm">
                         <span className="text-slate-600">Reports Submitted</span>
@@ -411,6 +413,7 @@ export default function UserProfile() {
                       type="text"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
+                      aria-label="Full name"
                       disabled={!isEditingName}
                       className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none disabled:bg-slate-50"
                     />
@@ -439,6 +442,7 @@ export default function UserProfile() {
                     <input
                       type="email"
                       value={user?.email || ''}
+                      aria-label="Email address"
                       readOnly
                       className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-500 cursor-not-allowed"
                     />
@@ -457,6 +461,7 @@ export default function UserProfile() {
                   <select
                     value={municipality}
                     onChange={(e) => setMunicipality(e.target.value)}
+                    aria-label="Municipality"
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
                   >
                     <option value="">Select municipality</option>
@@ -471,6 +476,7 @@ export default function UserProfile() {
                   <select
                     value={barangay}
                     onChange={(e) => setBarangay(e.target.value)}
+                    aria-label="Barangay"
                     disabled={!municipality}
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none disabled:bg-slate-50 disabled:cursor-not-allowed"
                   >

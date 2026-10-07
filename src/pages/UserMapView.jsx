@@ -600,6 +600,7 @@ export default function UserMapView({ embedded = false } = {}) {
           <select
             value={yearFilter}
             onChange={e => setYearFilter(e.target.value)}
+            aria-label="Filter by year"
             className="px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
           >
             <option value="All">All Years</option>
@@ -611,6 +612,7 @@ export default function UserMapView({ embedded = false } = {}) {
           <select
             value={municipalityFilter}
             onChange={e => setMunicipalityFilter(e.target.value)}
+            aria-label="Filter by municipality"
             className="px-3.5 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
           >
             <option value="All">All Municipalities</option>
@@ -643,7 +645,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 }`}
               >
                 {s}
-                <span className={`ml-1.5 text-xs tabular-nums ${statusFilter === s ? 'text-teal-100' : 'text-slate-400'}`}>{programCounts[s]}</span>
+                <span className={`ml-1.5 text-xs tabular-nums ${statusFilter === s ? 'text-teal-100' : 'text-slate-500'}`}>{programCounts[s]}</span>
               </button>
             ))}
           </div>
@@ -881,7 +883,7 @@ export default function UserMapView({ embedded = false } = {}) {
                               <div className="flex items-start justify-between gap-3">
                                 <div>
                                   <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
-                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                                     {isCentroidFallback ? 'MUNICIPAL CENTROID PIN' : 'BARANGAY CENTER GEOTAG'}
                                   </p>
                                 </div>
@@ -1103,11 +1105,12 @@ export default function UserMapView({ embedded = false } = {}) {
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
               <div>
                 <h2 className="font-semibold text-slate-900 text-sm">Projects</h2>
-                <p className="text-xs text-slate-400">{filtered.length} total &middot; {mappable.length} mapped</p>
+                <p className="text-xs text-slate-500">{filtered.length} total &middot; {mappable.length} mapped</p>
               </div>
               <button
                 onClick={() => setShowSidebar(false)}
-                className="lg:hidden p-1 text-slate-400 hover:text-slate-600"
+                aria-label="Close project list"
+                className="lg:hidden p-1 text-slate-500 hover:text-slate-600"
               >
                 <Icons.X />
               </button>
@@ -1116,7 +1119,7 @@ export default function UserMapView({ embedded = false } = {}) {
             {/* List */}
             <div className="flex-1 overflow-y-auto divide-y divide-zinc-50">
               {filtered.length === 0 ? (
-                <div className="p-6 text-center text-slate-400 text-sm">No projects match the filters</div>
+                <div className="p-6 text-center text-slate-500 text-sm">No projects match the filters</div>
               ) : (
                 filtered.map(p => {
                   const isActive = selectedProject?.id === p.id;
@@ -1149,7 +1152,7 @@ export default function UserMapView({ embedded = false } = {}) {
                           <p className={`font-medium line-clamp-2 leading-snug ${isActive ? 'text-emerald-800' : isNearby ? 'text-teal-800' : 'text-slate-800'}`}>
                             {p.project_name}
                           </p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-400 flex-wrap">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
                             {p.municipality && <span>{p.municipality}</span>}
                             {p.year_funded && <span>FY {p.year_funded}</span>}
                             {p.project_length_km > 0 && <span>{p.project_length_km} km</span>}
@@ -1195,7 +1198,7 @@ export default function UserMapView({ embedded = false } = {}) {
         {/* Source */}
         {!loading && projects.length > 0 && (
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Data from Department of Agriculture - RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
             </p>
           </div>

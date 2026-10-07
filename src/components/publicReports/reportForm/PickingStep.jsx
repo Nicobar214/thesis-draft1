@@ -71,7 +71,7 @@ export default function PickingStep({
               <p className="text-sm font-semibold text-slate-800">
                 No projects found within {widerSearch ? '1km' : '250m'} of your location
               </p>
-              <p className="text-xs text-slate-400 mt-0.5">GPS accuracy: ±{Math.round(gps?.accuracy || 0)}m</p>
+              <p className="text-xs text-slate-500 mt-0.5">GPS accuracy: ±{Math.round(gps?.accuracy || 0)}m</p>
             </div>
             {!widerSearch && (
               <button type="button" onClick={() => setWiderSearch(true)}
@@ -80,7 +80,7 @@ export default function PickingStep({
               </button>
             )}
             <button type="button" onClick={() => setBrowseAll(true)}
-              className="block mx-auto text-sm text-slate-400 hover:text-teal-600 underline">
+              className="block mx-auto text-sm text-slate-500 hover:text-teal-600 underline">
               Browse all projects
             </button>
           </div>
@@ -102,14 +102,14 @@ export default function PickingStep({
                       {p.status || 'Unknown'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap mb-2">
+                  <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap mb-2">
                     {dist !== null && <span className="text-teal-600 font-semibold">{fmtDist(dist)}</span>}
                     {p.municipality && <span><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{p.municipality}</span>}
                     {p.project_length_km > 0 && <span>{p.project_length_km} km road</span>}
                   </div>
                   {isOngoing && (
                     <div className="mt-2">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
                         <span>Implementation in progress</span>
                         <span>On-Going</span>
                       </div>
@@ -128,12 +128,12 @@ export default function PickingStep({
         <div className="text-center pt-1">
           {!browseAll ? (
             <button type="button" onClick={() => setBrowseAll(true)}
-              className="text-xs text-slate-400 hover:text-teal-600 underline">
+              className="text-xs text-slate-500 hover:text-teal-600 underline">
               Not near a project? Browse all
             </button>
           ) : (
             <button type="button" onClick={() => { setBrowseAll(false); setWiderSearch(false); }}
-              className="text-xs text-slate-400 hover:text-teal-600 underline">
+              className="text-xs text-slate-500 hover:text-teal-600 underline">
               ← Back to nearby projects
             </button>
           )}

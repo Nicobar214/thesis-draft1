@@ -19,11 +19,11 @@ import { buttonClass } from './ui/Button';
 function DetailItem({ icon, label, value }) {
   return (
     <div className="flex items-start gap-2.5 p-3 bg-slate-50 rounded-xl">
-      <div className="size-8 bg-white rounded-lg grid place-items-center text-slate-400 border border-slate-100 shrink-0 mt-0.5">
+      <div className="size-8 bg-white rounded-lg grid place-items-center text-slate-500 border border-slate-100 shrink-0 mt-0.5">
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-slate-400 uppercase tracking-wider">{label}</p>
+        <p className="text-xs text-slate-500 uppercase tracking-wider">{label}</p>
         <p className="text-sm font-medium text-slate-800 break-words">{value}</p>
       </div>
     </div>
@@ -56,7 +56,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
 
       {/* Specifications Grid Card */}
       <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Specifications</h4>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Specifications</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
           <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
@@ -160,7 +160,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
         </div>
 
         {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-xs text-slate-500 leading-relaxed">
             Figures marked "Estimated" are computed from the DA-BAFE 2026 indicative rate of ₱15M per kilometer and this project's reported physical progress, following the standard government mobilization/progress/retention release schedule.
           </p>
         )}
@@ -233,7 +233,7 @@ export default function FmrProjectDetailDialog({ project, tranches = [], follow 
             </span>
             <button
               onClick={onClose}
-              className="rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+              className="rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               aria-label="Close dialog"
             >
               <Icons.X />

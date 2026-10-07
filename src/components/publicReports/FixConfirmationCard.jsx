@@ -127,7 +127,7 @@ export default function FixConfirmationCard({ reportId }) {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/30"
                 placeholder={choice ? 'e.g. The road is smooth now.' : 'e.g. The pothole near the bridge is still there.'}
               />
-              <p className="text-right text-[11px] text-slate-400">{comment.length}/{MAX_COMMENT}</p>
+              <p className="text-right text-[11px] text-slate-500">{comment.length}/{MAX_COMMENT}</p>
             </div>
           )}
 

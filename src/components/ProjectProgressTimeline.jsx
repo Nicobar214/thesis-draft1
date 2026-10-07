@@ -42,7 +42,7 @@ export default function ProjectProgressTimeline({ projectId }) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
-      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Progress updates</h4>
+      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Progress updates</h4>
 
       {state.status === 'loading' && (
         <div className="space-y-3 animate-pulse" aria-hidden="true">

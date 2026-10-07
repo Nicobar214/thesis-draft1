@@ -41,6 +41,7 @@ export default function ClassifyStep({
               <button
                 key={key}
                 type="button"
+                aria-pressed={severityCategory === key}
                 onClick={() => { setSeverityCategory(key); setSpecificProblem(''); setCategory(key); }}
                 className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
                   severityCategory === key
@@ -60,10 +61,11 @@ export default function ClassifyStep({
 
         {severityCategory && (
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="classify-problem" className="block text-sm font-semibold text-slate-700 mb-2">
               What specifically is the problem?
             </label>
             <select
+              id="classify-problem"
               value={specificProblem}
               onChange={(e) => setSpecificProblem(e.target.value)}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition"

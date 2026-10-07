@@ -74,7 +74,7 @@ export default function CitizenReportTimeline({
 
             <div className="pb-4 min-w-0">
               <p
-                className={`text-sm font-medium ${step.done ? 'text-slate-900' : 'text-slate-400'}`}
+                className={`text-sm font-medium ${step.done ? 'text-slate-900' : 'text-slate-500'}`}
               >
                 {step.label}
                 {step.active && !closed && (

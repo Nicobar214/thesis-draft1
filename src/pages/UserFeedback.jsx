@@ -91,7 +91,7 @@ function FeedbackCard({ feedback, onOpen }) {
 
         <h3 className="font-medium text-slate-900 line-clamp-1">{feedback.project_name || 'General Feedback'}</h3>
         {feedback.municipality && feedback.barangay && (
-          <p className="text-xs text-slate-400 mt-0.5">{feedback.barangay}, {feedback.municipality}</p>
+          <p className="text-xs text-slate-500 mt-0.5">{feedback.barangay}, {feedback.municipality}</p>
         )}
 
         <p className={`text-sm text-slate-600 leading-relaxed mt-2 ${expanded ? '' : 'line-clamp-3'}`}>
@@ -117,7 +117,7 @@ function FeedbackCard({ feedback, onOpen }) {
           </div>
         )}
 
-        <div className="mt-auto pt-3 flex items-center justify-between text-xs text-slate-400">
+        <div className="mt-auto pt-3 flex items-center justify-between text-xs text-slate-500">
           {feedback.verification ? (
             <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium border ${
               feedback.verification === 'Verified On-Site' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -474,7 +474,7 @@ export default function UserFeedback() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{hasFilters ? `${filteredItems.length} of ${scopedItems.length}` : scopedItems.length} total</span>
+              <span className="text-sm text-slate-500">{hasFilters ? `${filteredItems.length} of ${scopedItems.length}` : scopedItems.length} total</span>
               {!loading && scopedItems.length > 0 && <ViewToggle mode={viewMode} onChange={setViewMode} />}
             </div>
           </div>
@@ -482,14 +482,14 @@ export default function UserFeedback() {
           {!loading && scopedItems.length > 0 && (
             <div className="mb-4 flex flex-col lg:flex-row gap-3">
               <div className="relative flex-1">
-                <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+                <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search project, message or location..."
                   aria-label="Search feedback"
-                  className="h-10 w-full rounded-xl border border-slate-200 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  className="h-10 w-full rounded-xl border border-slate-200 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
                 />
               </div>
               <div className="flex flex-wrap gap-2">

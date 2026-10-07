@@ -724,13 +724,14 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
               <Icons.Search />
             </div>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
+              aria-label="Search projects"
               placeholder="Search by name, municipality, location..."
               className="w-full pl-10 pr-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-shadow"
             />
@@ -739,6 +740,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <select
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
+            aria-label="Filter by year"
             className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[140px]"
           >
             <option value="All">All Years</option>
@@ -750,6 +752,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <select
             value={municipalityFilter}
             onChange={(e) => setMunicipalityFilter(e.target.value)}
+            aria-label="Filter by municipality"
             className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]"
           >
             <option value="All">All Municipalities</option>
@@ -761,6 +764,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
+            aria-label="Sort projects"
             className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]"
           >
             <option value="latest">Sort: Latest</option>
@@ -867,7 +871,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
 
         {/* Results count + view toggle */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-400">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
+          <p className="text-sm text-slate-500">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
           <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
             {[
               { id: 'table', label: 'Table', icon: <Icons.List /> },
@@ -897,7 +901,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         {/* Projects list - tabular by default, cards on request */}
         {!loading && filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200/60 py-16 text-center">
-            <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-400 mb-3">
+            <div className="mx-auto size-14 bg-slate-100 rounded-xl grid place-items-center text-slate-500 mb-3">
               <Icons.Road />
             </div>
             <p className="font-medium text-slate-900">
@@ -961,7 +965,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
                 </button>
                 {getPaginationRange(safeCurrentPage, totalPages).map((page, idx) => (
                   page === '...' ? (
-                    <span key={`dots-${idx}`} className="px-3 py-2 text-slate-400 text-sm font-semibold select-none">...</span>
+                    <span key={`dots-${idx}`} className="px-3 py-2 text-slate-500 text-sm font-semibold select-none">...</span>
                   ) : (
                     <button
                       key={page}
@@ -991,7 +995,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         {/* Source Footer */}
         {!loading && projects.length > 0 && (
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-center">
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Data from Department of Agriculture - RAED Region VI &middot; Farm-to-Market Road Development Program (FMRDP)
             </p>
           </div>

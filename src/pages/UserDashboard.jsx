@@ -70,7 +70,7 @@ function ProjectCard({ project, updatedLabel }) {
           <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <Icons.MapPin />
             <span className="truncate">{project.barangay ? `${project.barangay}, ` : ''}{project.municipality}, {project.province}</span>
-            {updatedLabel && <span className="shrink-0 text-slate-400">· Updated {updatedLabel}</span>}
+            {updatedLabel && <span className="shrink-0 text-slate-500">· Updated {updatedLabel}</span>}
           </p>
         </div>
         <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[11px] font-bold border uppercase tracking-wide ${style.badge}`}>
@@ -654,7 +654,7 @@ export default function UserDashboard() {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">Total</p>
+                  <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">Total</p>
                   <p className="text-xl font-bold leading-tight text-slate-900">{stats.total}</p>
                 </div>
                 </>)}
@@ -670,7 +670,7 @@ export default function UserDashboard() {
                     <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="flex-1 truncate font-medium text-slate-600">{item.name}</span>
                     <span className="font-bold tabular-nums text-slate-900">{item.value}</span>
-                    <span className="w-9 text-right tabular-nums text-slate-400">{stats.total ? Math.round((item.value / stats.total) * 100) : 0}%</span>
+                    <span className="w-9 text-right tabular-nums text-slate-500">{stats.total ? Math.round((item.value / stats.total) * 100) : 0}%</span>
                   </li>
                 ))}
               </ul>
@@ -733,7 +733,7 @@ export default function UserDashboard() {
                           </div>
                           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
                             <span>{formatPercentage(project.progress ?? 0)} Complete</span>
-                            <span className="text-slate-400">{formatProjectDate(project)}</span>
+                            <span className="text-slate-500">{formatProjectDate(project)}</span>
                           </div>
                         </div>
                       </article>
