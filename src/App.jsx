@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -15,7 +15,6 @@ const UserFeedback = lazyPage(() => import("./pages/UserFeedback"));
 const UserFMRProjects = lazyPage(() => import("./pages/UserFMRProjects"));
 const UserMapView = lazyPage(() => import("./pages/UserMapView"));
 const UserProfile = lazyPage(() => import("./pages/UserProfile"));
-const UserProjects = lazyPage(() => import("./pages/UserProjects"));
 const PublicReportsPage = lazyPage(() => import("./pages/PublicReportsPage"));
 const PublicReportPortalPage = lazyPage(() => import("./pages/PublicReportPortalPage"));
 const FieldEngineerAuth = lazyPage(() => import("./pages/FieldEngineerAuth"));
@@ -97,11 +96,8 @@ function App() {
             <UserFeedback />
           </ProtectedRoute>
         } />
-        <Route path="/user/projects" element={
-          <ProtectedRoute requiredRole="user">
-            <UserProjects />
-          </ProtectedRoute>
-        } />
+        {/* The old projects page was replaced by FMR Projects; keep old links working. */}
+        <Route path="/user/projects" element={<Navigate to="/user/fmr-projects" replace />} />
         <Route path="/user/fmr-projects" element={
           <ProtectedRoute requiredRole="user">
             <UserFMRProjects />

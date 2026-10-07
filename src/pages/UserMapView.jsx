@@ -37,6 +37,8 @@ import { storeGlyph } from '../lib/mapMarkerIcons';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Normalize status for consistent filtering â”€â”€â”€ */
+const LIST_BATCH = 60; // sidebar rows drawn at a time
+
 function normalizeStatus(s) {
   return normalizeRouteStatus(s);
 }
@@ -242,17 +244,27 @@ export default function UserMapView({ embedded = false } = {}) {
     fetchMarkets();
     fetchProjectTranches();
 
+    // A burst of changes (an import touching many rows, say) causes one refetch instead of one per row.
+    const timers = {};
+    const refetchSoon = (key, fn) => () => {
+      clearTimeout(timers[key]);
+      timers[key] = setTimeout(fn, 600);
+    };
+
     const channel = supabase
       .channel('map-view-fmr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchProjects)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, fetchProjectRoutes)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'road_network_gaps' }, fetchRoadGaps)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchProjectReportCounts)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, fetchFarmerBeneficiaries)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, fetchMarkets)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, fetchProjectTranches)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, refetchSoon('projects', fetchProjects))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_routes' }, refetchSoon('routes', fetchProjectRoutes))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'road_network_gaps' }, refetchSoon('gaps', fetchRoadGaps))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, refetchSoon('reports', fetchProjectReportCounts))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_beneficiaries' }, refetchSoon('farmers', fetchFarmerBeneficiaries))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, refetchSoon('markets', fetchMarkets))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, refetchSoon('tranches', fetchProjectTranches))
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function fetchFarmerBeneficiaries() {
@@ -396,6 +408,12 @@ export default function UserMapView({ embedded = false } = {}) {
       return matchesSearch && matchesStatus && matchesYear && matchesMunicipality && matchesOverdue;
     });
   }, [projects, search, statusFilter, yearFilter, municipalityFilter, showOverdueOnly]);
+
+  // The sidebar draws the first batch and grows on request: building ~340 rows at once is the slow
+  // part of opening this page. Changing any filter produces a new `filtered`, which resets the batch.
+  const [listState, setListState] = useState({ source: null, count: LIST_BATCH });
+  const listCount = listState.source === filtered ? listState.count : LIST_BATCH;
+  const visibleProjects = filtered.slice(0, listCount);
 
   const mapEntities = useMemo(() => {
     const municipalityCounts = {};
@@ -1121,7 +1139,7 @@ export default function UserMapView({ embedded = false } = {}) {
               {filtered.length === 0 ? (
                 <div className="p-6 text-center text-slate-500 text-sm">No projects match the filters</div>
               ) : (
-                filtered.map(p => {
+                visibleProjects.map(p => {
                   const isActive = selectedProject?.id === p.id;
                   const hasPins = p.start_latitude && p.start_longitude;
                   const color = getStatusColor(p.status);
@@ -1172,6 +1190,17 @@ export default function UserMapView({ embedded = false } = {}) {
                     </button>
                   );
                 })
+              )}
+              {filtered.length > listCount && (
+                <div className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => setListState({ source: filtered, count: listCount + LIST_BATCH })}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Show {Math.min(LIST_BATCH, filtered.length - listCount)} more ({filtered.length - listCount} remaining)
+                  </button>
+                </div>
               )}
             </div>
           </aside>

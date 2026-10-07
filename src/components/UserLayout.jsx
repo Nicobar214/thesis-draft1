@@ -26,7 +26,6 @@ export default function UserLayout({
   const pageTitleMap = {
     '/user': 'Dashboard',
     '/user/fmr-projects': 'FMR Projects Directory',
-    '/user/projects': 'FMR Projects Directory',
     '/user/map': 'Geospatial Map View',
     '/user/reports': 'My Road Reports',
     '/user/feedback': 'Community Feedback Hub',

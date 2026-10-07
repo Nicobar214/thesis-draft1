@@ -27,4 +27,23 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
+  {
+    // The shared UI primitives export a style helper, hook or constant next to their components.
+    // Fast refresh only matters while developing; naming the exceptions keeps the rule strict
+    // everywhere else, so a new accidental mixed export still gets flagged.
+    files: ['src/components/ui/**/*.{js,jsx}', 'src/components/lgu/RoadConditionManagement.jsx'],
+    rules: {
+      'react-refresh/only-export-components': ['error', {
+        allowConstantExport: true,
+        allowExportNames: [
+          'buttonClass',
+          'MODAL_WIDTH',
+          'PAGE_SIZES',
+          'usePagination',
+          'useViewMode',
+          'ROAD_CONDITION_DB_FIELDS',
+        ],
+      }],
+    },
+  },
 ])
