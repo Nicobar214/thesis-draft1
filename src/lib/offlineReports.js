@@ -31,13 +31,19 @@ function createReportId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// A handler may return an IDBRequest (e.g. store.get). Resolve with what it found,
+// not with the request object itself - otherwise callers read `.data` off a request.
+function isRequest(value) {
+  return Boolean(value) && typeof value === 'object' && 'readyState' in value && 'result' in value;
+}
+
 async function withStore(storeName, mode, handler) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, mode);
     const store = tx.objectStore(storeName);
     const result = handler(store);
-    tx.oncomplete = () => resolve(result);
+    tx.oncomplete = () => resolve(isRequest(result) ? result.result : result);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });

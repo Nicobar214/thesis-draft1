@@ -1,8 +1,14 @@
-/* PublicReportForm.jsx — Location-First Public Report (Region VI — Iloilo)
- * Flow: locating → picking → classify → reporting → success
+/* PublicReportForm.jsx - Location-First Public Report (Region VI - Iloilo)
+ * Flow: locating -> picking -> classify -> reporting -> success
  * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
+ *
+ * This component owns the flow and the submit. The pieces live elsewhere:
+ *   lib/useGpsLocation.js      GPS fix + drift watcher
+ *   lib/useReportCamera.js     live camera + stamped photo
+ *   lib/reportSubmission.js    nearby / validation / payload / error rules
+ *   publicReports/reportForm/  one component per step
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
@@ -14,6 +20,8 @@ import {
   makePhotoPath,
   validateReportInput,
 } from '../lib/reportSubmission';
+import { useGpsLocation } from '../lib/useGpsLocation';
+import { useReportCamera } from '../lib/useReportCamera';
 import SuccessStep from './publicReports/reportForm/SuccessStep';
 import LocatingStep from './publicReports/reportForm/LocatingStep';
 import PickingStep from './publicReports/reportForm/PickingStep';
@@ -30,21 +38,13 @@ if (typeof document !== 'undefined' && !document.getElementById(STEP_STYLE_ID)) 
   document.head.appendChild(el);
 }
 
-
 export default function PublicReportForm({ prefillCategory = null, prefillProblem = null }) {
-  // ── Step: 'locating' | 'picking' | 'classify' | 'reporting' | 'success' ──
+  // Step: 'locating' | 'picking' | 'classify' | 'reporting' | 'success'
   const [step, setStep] = useState('locating');
 
-  // ── GPS ──
-  const [gps,        setGps]        = useState(null);  // { lat, lng, accuracy }
-  const [gpsError,   setGpsError]   = useState(null);
-  // Start as loading when geolocation exists: the mount effect starts the lookup
-  // immediately, so this avoids painting a 'Detect My Location' button for one frame.
-  const [gpsLoading, setGpsLoading] = useState(() => typeof navigator !== 'undefined' && Boolean(navigator.geolocation));
-  const [gpsSlow, setGpsSlow] = useState(false);
-  const gpsWatchRef = useRef(null);
+  const { gps, gpsError, gpsLoading, gpsSlow, acquireGps, resetGps } = useGpsLocation();
 
-  // ── FMR projects ──
+  // FMR projects
   const [allProjects, setAllProjects] = useState([]);
   const [projReady,   setProjReady]   = useState(false);
   const [nearby,      setNearby]      = useState([]);
@@ -53,17 +53,15 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const [selProject,  setSelProject]  = useState(null);
   const [selProjectRoute, setSelProjectRoute] = useState(null);
 
-  // ── Camera / photo ──
-  const videoRef   = useRef(null);
-  const canvasRef  = useRef(null);
-  const streamRef  = useRef(null);
-  const [photoBlob,    setPhotoBlob]    = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
-  const [photoTs,      setPhotoTs]      = useState(null);
-  const [camError,     setCamError]     = useState(null);
-  const [camReady,     setCamReady]     = useState(false);
+  // Camera / photo (runs only while the reporting step is showing)
+  const {
+    videoRef, canvasRef,
+    photoBlob, photoPreview, photoTs,
+    camError, camReady,
+    capturePhoto, retakePhoto, resetPhoto, stopCamera,
+  } = useReportCamera({ gps, active: step === 'reporting' });
 
-  // ── Form fields ──
+  // Form fields
   const [description, setDescription] = useState('');
   const [category,    setCategory]    = useState('general');
   const [severityCategory, setSeverityCategory] = useState(prefillCategory || '');
@@ -71,7 +69,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const [fullName,    setFullName]    = useState('');
   const [contact,     setContact]     = useState('');
 
-  // ── Auth + submission ──
+  // Auth + submission
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState(null);
@@ -79,7 +77,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const [cachedProjectsMeta, setCachedProjectsMeta] = useState(null);
   const [queuedOffline, setQueuedOffline] = useState(false);
 
-  // ── Auth check ───────────────────────────────────────────────
+  // Auth check
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user); });
   }, []);
@@ -101,62 +99,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     triggerQueuedSync();
   }, [isOffline]);
 
-  // ── Acquire GPS ──────────────────────────────────────────────
-  const acquireGps = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by this browser.');
-      return;
-    }
-    setGpsLoading(true);
-    setGpsError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-        setGps(loc);
-        setGpsLoading(false);
-        // The step advances (below) once the nearby projects are ready too, so the
-        // user never lands on an empty list that fills in a moment later.
-        // Start watcher for live drift correction
-        if (gpsWatchRef.current !== null) navigator.geolocation.clearWatch(gpsWatchRef.current);
-        gpsWatchRef.current = navigator.geolocation.watchPosition(
-          (p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-          () => {},
-          { enableHighAccuracy: true, maximumAge: 5000 },
-        );
-      },
-      (err) => {
-        setGpsLoading(false);
-        if (err.code === 1) {
-          setGpsError('Location permission denied. Open your browser settings, enable Location for this site, then tap "Try Again".');
-        } else if (err.code === 3) {
-          setGpsError('GPS timed out. Move to open sky and try again.');
-        } else {
-          setGpsError(`Unable to get your location: ${err.message}`);
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
-    );
-  }, []);
-
-  // If the fix is taking a while, say so instead of leaving a silent spinner.
-  useEffect(() => {
-    if (!gpsLoading) { setGpsSlow(false); return undefined; }
-    const timer = setTimeout(() => setGpsSlow(true), 5000);
-    return () => clearTimeout(timer);
-  }, [gpsLoading]);
-
-  // Auto-start on mount
-  useEffect(() => {
-    acquireGps();
-    return () => {
-      if (gpsWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(gpsWatchRef.current);
-        gpsWatchRef.current = null;
-      }
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Load all FMR projects once GPS resolves ──────────────────
+  // Load all FMR projects (falls back to the offline cache)
   useEffect(() => {
     if (projReady) return;
     let alive = true;
@@ -203,13 +146,13 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     return () => clearTimeout(timer);
   }, [step, gps, projReady]);
 
-  // ── Recompute nearby when GPS or projects change ─────────────
+  // Recompute nearby when GPS or projects change
   useEffect(() => {
     if (!gps || !projReady) return;
     setNearby(findNearbyProjects(allProjects, gps, widerSearch));
   }, [gps, allProjects, projReady, widerSearch]);
 
-  // ── Fetch the project's mapped route once a project is selected ──
+  // Fetch the project's mapped route once a project is selected
   useEffect(() => {
     if (!selProject?.id) {
       setSelProjectRoute(null);
@@ -230,75 +173,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     return () => { alive = false; };
   }, [selProject]);
 
-  // ── Camera ────────────────────────────────────────────────────
-  const startCamera = useCallback(async () => {
-    setCamError(null);
-    setCamReady(false);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => setCamReady(true);
-      }
-    } catch (err) {
-      setCamError(
-        err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Please allow camera access.'
-          : `Camera error: ${err.message}`,
-      );
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    setCamReady(false);
-  }, []);
-
-  useEffect(() => {
-    if (step === 'reporting' && !photoBlob) startCamera();
-    return () => { if (step !== 'reporting') stopCamera(); };
-  }, [step, photoBlob, startCamera, stopCamera]);
-
-  const capturePhoto = () => {
-    const video  = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    canvas.width  = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
-    const now     = new Date();
-    setPhotoTs(now.toISOString());
-    const tsText  = now.toLocaleString('en-PH', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-    const gpsText = gps ? `GPS: ${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)} (±${Math.round(gps.accuracy || 0)}m)` : '';
-    const fontSize = Math.max(14, Math.floor(canvas.width / 50));
-    const lineH    = fontSize + 4;
-    const padding  = 8;
-    const lines    = [tsText, gpsText].filter(Boolean);
-    ctx.font         = `bold ${fontSize}px monospace`;
-    ctx.textBaseline = 'bottom';
-    const maxW   = Math.max(...lines.map((l) => ctx.measureText(l).width));
-    const stripH = lines.length * lineH + padding * 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, canvas.height - stripH, maxW + padding * 2, stripH);
-    ctx.fillStyle = '#ffffff';
-    lines.forEach((line, i) => ctx.fillText(line, padding, canvas.height - stripH + padding + (i + 1) * lineH));
-    canvas.toBlob((blob) => { setPhotoBlob(blob); setPhotoPreview(URL.createObjectURL(blob)); stopCamera(); }, 'image/jpeg', 0.85);
-  };
-
-  const retakePhoto = () => {
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoBlob(null);
-    setPhotoPreview(null);
-    startCamera();
-  };
-
-  // ── Submit ────────────────────────────────────────────────────
+  // Submit
   const handleSubmit = async () => {
     setError(null);
     const problem = validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps });
@@ -349,28 +224,18 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     }
   };
 
-  // ── Reset ─────────────────────────────────────────────────────
+  // Reset for "Submit another report"
   const resetAll = () => {
     stopCamera();
-    if (gpsWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(gpsWatchRef.current);
-      gpsWatchRef.current = null;
-    }
+    resetGps();
+    resetPhoto();
     setStep('locating');
-    setGps(null);
-    setGpsError(null);
-    // acquireGps runs a moment later; show 'loading' meanwhile so the manual button never flashes.
-    setGpsLoading(Boolean(navigator.geolocation));
     setProjReady(false);
     setAllProjects([]);
     setNearby([]);
     setWiderSearch(false);
     setBrowseAll(false);
     setSelProject(null);
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoBlob(null);
-    setPhotoPreview(null);
-    setPhotoTs(null);
     setDescription('');
     setCategory('general');
     setSeverityCategory(prefillCategory || '');
@@ -379,11 +244,12 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     setContact('');
     setError(null);
     setQueuedOffline(false);
+    // The lookup restarts a moment later; resetGps shows "loading" meanwhile so the
+    // manual button never flashes.
     setTimeout(acquireGps, 80);
   };
-  // ════════════════════════════════════════════════════════
-  //  RENDER - one component per step (see publicReports/reportForm/)
-  // ════════════════════════════════════════════════════════
+
+  // Render - one component per step (see publicReports/reportForm/)
   if (step === 'success') {
     return <SuccessStep queuedOffline={queuedOffline} resetAll={resetAll} />;
   }
