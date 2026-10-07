@@ -119,7 +119,7 @@ export default function UserProfile() {
       if (!user?.id) return;
 
       setActivityLoading(true);
-      const [{ data: reports }, { data: feedbacks }] = await Promise.all([
+      const [{ data: reports }, { data: feedbacks }, followRes] = await Promise.all([
         supabase
           .from('public_reports_citizen_view')
           .select('id, project_name, is_current_user_report')
@@ -128,6 +128,8 @@ export default function UserProfile() {
           .from('feedbacks')
           .select('id, project_name, user_id')
           .eq('user_id', user.id),
+        // Real follows, once supabase_project_follows.sql has been run (own rows only).
+        supabase.from('project_follows').select('project_id', { count: 'exact', head: true }),
       ]);
 
       const followedNames = new Set([
@@ -138,7 +140,8 @@ export default function UserProfile() {
       setActivityStats({
         reportsSubmitted: (reports || []).length,
         feedbackGiven: (feedbacks || []).length,
-        projectsFollowed: followedNames.size,
+        // Until follows exist, fall back to projects the user has reported or commented on.
+        projectsFollowed: followRes?.error || followRes?.count == null ? followedNames.size : followRes.count,
       });
       setActivityLoading(false);
     }

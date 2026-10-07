@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { notify } from '../lib/toast';
+import { useProjectFollows } from '../lib/useProjectFollows';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -7,7 +10,8 @@ import { normalizeProjectName } from '../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { formatPercentage } from '../lib/percentageFormat';
-import FmrProjectDetailDialog, { normalizeUserProjectStatus, getStatusStyle } from '../components/FmrProjectDetailDialog';
+import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
+import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 
 function parseDateOnly(value) {
@@ -357,6 +361,22 @@ export default function UserFMRProjects({ embedded = false } = {}) {
   const [currentPage, setCurrentPage] = useState(1);
   const [reportCountByProject, setReportCountByProject] = useState({});
   const [tranchesByProjectId, setTranchesByProjectId] = useState({});
+  const follows = useProjectFollows();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // /user/fmr-projects?project=<id> (from a notification) opens that project once the list has loaded.
+  useEffect(() => {
+    if (embedded || loading) return;
+    const id = searchParams.get('project');
+    if (!id) return;
+    const match = projects.find((p) => String(p.id) === id);
+    if (match) setSelectedProject(match);
+    else notify('That project is no longer available.', 'warning');
+    const next = new URLSearchParams(searchParams);
+    next.delete('project');
+    setSearchParams(next, { replace: true });
+  }, [embedded, loading, projects, searchParams, setSearchParams]);
+
   // Table on wide screens, cards on phones (a wide table forces sideways scrolling). A saved choice wins.
   const [viewMode, setViewMode] = useState(() => {
     try {
@@ -508,9 +528,11 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     const q = search.toLowerCase();
 
     const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-    const matchesStatus = statusFilter === 'Overdue'
-      ? isProjectOverdue(p)
-      : normalizeUserProjectStatus(p.status) === statusFilter;
+    const matchesStatus = statusFilter === 'Following'
+      ? follows.isFollowing(p.id)
+      : statusFilter === 'Overdue'
+        ? isProjectOverdue(p)
+        : normalizeUserProjectStatus(p.status) === statusFilter;
     const matchesYear = yearFilter === 'All' || String(Number(p.year_funded)) === yearFilter;
     const matchesMunicipality = municipalityFilter === 'All' || p.municipality === municipalityFilter;
     const matchesDate = inDateRange(getProjectDate(p), dateFrom, dateTo);
@@ -791,7 +813,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
 
           {/* Status filter pills */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {statusFilters.map(s => {
+            {(follows.available ? [...statusFilters, 'Following'] : statusFilters).map(s => {
               const count =
                 s === 'On-Going'
                   ? stats.ongoing
@@ -799,6 +821,8 @@ export default function UserFMRProjects({ embedded = false } = {}) {
                   ? stats.proposed
                   : s === 'Completed'
                   ? stats.completed
+                  : s === 'Following'
+                  ? follows.followingCount
                   : stats.overdue;
               return (
                 <button
@@ -987,6 +1011,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         <FmrProjectDetailDialog
           project={selectedProject}
           tranches={tranchesByProjectId[selectedProject.id] || []}
+          follow={follows.followProps(selectedProject.id)}
           onClose={() => setSelectedProject(null)}
         />
       )}

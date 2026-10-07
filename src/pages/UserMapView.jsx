@@ -31,6 +31,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
+import { useProjectFollows } from '../lib/useProjectFollows';
 import 'leaflet/dist/leaflet.css';
 import { storeGlyph } from '../lib/mapMarkerIcons';
 
@@ -183,6 +184,7 @@ export default function UserMapView({ embedded = false } = {}) {
   // Selecting a project focuses it on the map; this controls the details dialog.
   // Closing the dialog keeps the selection so the map stays focused on the road.
   const [detailOpen, setDetailOpen] = useState(false);
+  const follows = useProjectFollows();
   const closeDetail = () => setDetailOpen(false);
   const openProject = (project) => { setSelectedProject(project); setDetailOpen(true); };
   const [hoveredProjectId, setHoveredProjectId] = useState(null);
@@ -1185,6 +1187,7 @@ export default function UserMapView({ embedded = false } = {}) {
           <FmrProjectDetailDialog
             project={selectedProject}
             tranches={tranchesByProjectId[selectedProject.id] || []}
+            follow={follows.followProps(selectedProject.id)}
             onClose={closeDetail}
           />
         )}

@@ -20,6 +20,10 @@ const TYPE_META = {
   public_report_citizen_confirmed:      { label: 'Confirmed', accent: 'bg-emerald-500' },
   public_report_citizen_disputed:       { label: 'Disputed',  accent: 'bg-red-500' },
   public_report_support_milestone:      { label: 'Support',   accent: 'bg-violet-500' },
+  // Projects a citizen follows
+  project_started:                      { label: 'Started',   accent: 'bg-blue-500' },
+  project_milestone:                    { label: 'Progress',  accent: 'bg-amber-500' },
+  project_completed:                    { label: 'Completed', accent: 'bg-emerald-500' },
   // LGU
   lgu_threshold_alert:             { label: 'Alert',        accent: 'bg-red-500' },
   lgu_resolution_summary:          { label: 'Resolution',   accent: 'bg-emerald-500' },

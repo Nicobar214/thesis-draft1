@@ -11,25 +11,9 @@ import Icons from './Icons';
 import { normalizeProjectName } from '../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { formatPercentage } from '../lib/percentageFormat';
+import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
-
-export function normalizeUserProjectStatus(status) {
-  const lower = String(status || '').toLowerCase().replace(/[-\s]/g, '');
-  if (lower === 'ongoing') return 'On-Going';
-  if (lower === 'proposed' || lower === 'pending') return 'Proposed';
-  if (lower === 'completed') return 'Completed';
-  return status || 'Proposed';
-}
-
-export function getStatusStyle(status) {
-  const styles = {
-    'Completed':  { badge: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
-    'On-Going':   { badge: 'bg-amber-100 text-amber-700',     bar: 'bg-amber-500',   dot: 'bg-amber-500' },
-    'Proposed':   { badge: 'bg-sky-100 text-sky-700',          bar: 'bg-sky-500',     dot: 'bg-sky-500' },
-  };
-  return styles[status] || styles['Proposed'];
-}
 
 function DetailItem({ icon, label, value }) {
   return (
@@ -189,7 +173,33 @@ function ProjectDetailBody({ project, tranches = [] }) {
   );
 }
 
-export default function FmrProjectDetailDialog({ project, tranches = [], onClose }) {
+/** "Follow" control for the dialog footer: get notified as the project makes progress. */
+function FollowControl({ follow }) {
+  if (!follow?.available) return <span />;
+  const { following, count, busy, onToggle } = follow;
+  return (
+    <div className="mr-auto flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={busy}
+        aria-pressed={following}
+        className={buttonClass(following ? 'secondary' : 'primary')}
+      >
+        {following ? 'Following ✓' : 'Follow this project'}
+      </button>
+      <span className="text-xs text-slate-500" aria-live="polite">
+        {following
+          ? 'You will be notified about its progress.'
+          : count > 0
+            ? `${count} ${count === 1 ? 'person follows' : 'people follow'} this project`
+            : 'Get notified when it starts, passes each 10%, and finishes.'}
+      </span>
+    </div>
+  );
+}
+
+export default function FmrProjectDetailDialog({ project, tranches = [], follow = null, onClose }) {
   if (!project || typeof document === 'undefined') return null;
   const status = normalizeUserProjectStatus(project.status);
 
@@ -233,7 +243,8 @@ export default function FmrProjectDetailDialog({ project, tranches = [], onClose
         </div>
 
         {/* Modal Footer */}
-        <div className="flex justify-end gap-3 border-t border-slate-200/60 px-8 py-5 bg-white">
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200/60 px-8 py-5 bg-white">
+          <FollowControl follow={follow} />
           <button type="button" onClick={onClose} className={buttonClass('secondary')}>
             Close
           </button>

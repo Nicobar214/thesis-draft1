@@ -63,11 +63,16 @@ export default function UserLayout({
     return () => subscription.unsubscribe();
   }, [navigate, requireAuth]);
 
-  // A citizen's notifications are all about their own reports: open that report.
+  // A citizen's notifications are about their own reports, or about a project they follow.
+  const isProjectNotification = (n) => Boolean(n.project_id) && !n.report_id;
   const resolveNotificationTarget = (n) => ({
-    actionLabel: n.report_id ? 'Open my report' : 'Go to my reports',
+    actionLabel: isProjectNotification(n) ? 'View project' : n.report_id ? 'Open my report' : 'Go to my reports',
   });
   const openNotification = (n) => {
+    if (isProjectNotification(n)) {
+      navigate(`/user/fmr-projects?project=${n.project_id}`);
+      return;
+    }
     navigate(n.report_id ? `/user/reports?report=${n.report_id}` : '/user/reports');
   };
 
