@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 import UserLayout from '../components/UserLayout';
@@ -7,6 +7,7 @@ import Pagination, { usePagination } from '../components/ui/Pagination';
 import { ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react';
 import FeedbackDetailModal from '../components/publicReports/FeedbackDetailModal';
 import { selectCommunityFeedback } from '../lib/communityFeedback';
+import { SUPPORTABLE_STATUSES, supportCountLabel } from '../lib/reportSupport';
 
 /* â”€â”€â”€ Icons â”€â”€â”€ */
 /* â”€â”€â”€ Feedback Type Options â”€â”€â”€ */
@@ -128,6 +129,9 @@ function FeedbackCard({ feedback, onOpen }) {
           ) : <span />}
           <span>{new Date(feedback.created_at).toLocaleDateString()}</span>
         </div>
+        {feedback._supportCount > 0 && (
+          <p className="mt-2 text-xs font-medium text-violet-700">{supportCountLabel(feedback._supportCount)}</p>
+        )}
         <p className="mt-3 flex items-center gap-1 border-t border-slate-100 pt-3 text-xs font-semibold text-emerald-700">
           View details
           <ChevronRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -271,6 +275,8 @@ export default function UserFeedback() {
   const [verificationFilter, setVerificationFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [selectedItem, setSelectedItem] = useState(null);
+  // report id -> { count, mine }. null until the supporters migration exists, which keeps the feature hidden.
+  const [supportByReport, setSupportByReport] = useState(null);
   // 'community' = everyone's feedback and reports; 'mine' = only what this user submitted.
   // The dashboard's View My Feedback link arrives with ?mine=1.
   const [scope, setScope] = useState(() => (
@@ -301,14 +307,24 @@ export default function UserFeedback() {
 
   async function fetchData() {
     try {
-      const [feedbackRes, publicReportRes, projectRes] = await Promise.all([
+      const [feedbackRes, publicReportRes, projectRes, supportRes] = await Promise.all([
         // Shared with everyone, so it comes from the community view: no author id or email,
         // just an is_current_user_feedback flag (see lib/communityFeedback.js).
         selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(500)),
         // The citizen view already strips reporter identity and hides dismissed reports.
         supabase.from('public_reports_citizen_view').select('*').order('created_at', { ascending: false }).limit(500),
         supabase.from('projects').select('id, projectName, project_name, municipality, province'),
+        // Counts only - never who backed a report. Errors until supabase_report_supporters.sql is run.
+        supabase.from('public_report_support_counts').select('report_id, support_count, i_support'),
       ]);
+
+      if (!supportRes.error && supportRes.data) {
+        const next = {};
+        supportRes.data.forEach((row) => {
+          next[row.report_id] = { count: Number(row.support_count) || 0, mine: Boolean(row.i_support) };
+        });
+        setSupportByReport(next);
+      }
 
       if (feedbackRes.data) {
         setFeedbacks(feedbackRes.data);
@@ -337,6 +353,7 @@ export default function UserFeedback() {
       _type: fb.source === 'public_report' ? 'public_report_feedback' : 'feedback',
       _sortDate: fb.created_at,
       _isMine: Boolean(fb.is_current_user_feedback),
+      _supportCount: supportByReport?.[fb.public_report_id]?.count || 0,
     }));
 
     // Only add public reports that are NOT already linked as feedback
@@ -347,6 +364,7 @@ export default function UserFeedback() {
         _originalId: pr.id,
         _type: 'public_report',
         _isMine: Boolean(pr.is_current_user_report),
+        _supportCount: supportByReport?.[pr.id]?.count || 0,
         _sortDate: pr.created_at,
         project_name: pr.project_name,
         type: 'issue',
@@ -362,7 +380,7 @@ export default function UserFeedback() {
       }));
 
     return [...fbItems, ...prItems].sort((a, b) => new Date(b._sortDate) - new Date(a._sortDate));
-  }, [feedbacks, publicReports]);
+  }, [feedbacks, publicReports, supportByReport]);
 
   const mineCount = useMemo(() => combinedItems.filter((i) => i._isMine).length, [combinedItems]);
   // Everything the current tab is about, before the search and filter controls narrow it down.
@@ -395,6 +413,21 @@ export default function UserFeedback() {
     const reportId = selectedItem._originalId || selectedItem.public_report_id;
     return reportId ? publicReports.find((r) => r.id === reportId) || null : null;
   }, [selectedItem, publicReports]);
+
+  // "I see this too" state for the open report; null hides the control (migration not run yet).
+  const selectedSupport = useMemo(() => {
+    if (!selectedItem || !selectedReport || supportByReport === null) return null;
+    const entry = supportByReport[selectedReport.id] || { count: 0, mine: false };
+    return {
+      count: entry.count,
+      mine: entry.mine,
+      canSupport: !selectedItem._isMine && SUPPORTABLE_STATUSES.includes(selectedReport.status),
+    };
+  }, [selectedItem, selectedReport, supportByReport]);
+
+  const handleSupportChange = useCallback((reportId, count, mine) => {
+    setSupportByReport((prev) => ({ ...(prev || {}), [reportId]: { count, mine } }));
+  }, []);
 
   const pager = usePagination(filteredItems, [search, typeFilter, statusFilter, verificationFilter, sortBy].join('|'));
   const hasFilters = Boolean(search) || typeFilter !== 'all' || statusFilter !== 'all' || verificationFilter !== 'all';
@@ -514,7 +547,7 @@ export default function UserFeedback() {
       </div>
 
       {selectedItem && (
-        <FeedbackDetailModal key={selectedItem.id} item={selectedItem} report={selectedReport} items={filteredItems} onSelect={setSelectedItem} onClose={() => setSelectedItem(null)} />
+        <FeedbackDetailModal key={selectedItem.id} item={selectedItem} report={selectedReport} support={selectedSupport} onSupportChange={handleSupportChange} items={filteredItems} onSelect={setSelectedItem} onClose={() => setSelectedItem(null)} />
       )}
     </UserLayout>
   );

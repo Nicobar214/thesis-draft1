@@ -12,6 +12,7 @@ import { RESOLUTION_TYPE_LABELS, resolutionTypeMeaning } from '../../lib/publicR
 import { buttonClass } from '../ui/Button';
 import RepairActionPanel from './RepairActionPanel';
 import CitizenConfirmationNote from './CitizenConfirmationNote';
+import SupportCountNote from './SupportCountNote';
 
 /* resolve_public_report validates this list server-side. The labels and the
  * citizen-facing meaning live in publicReportStatus.js so the form and the
@@ -610,5 +611,10 @@ export default function AdminWorkflowControls({
 
   // The contractor-billing hold control is intentionally not rendered for now
   // (BillingHoldControl.jsx is kept in place, unused, until the policy is settled).
-  return renderAction();
+  return (
+    <div className="space-y-3">
+      <SupportCountNote key={report?.id} reportId={report?.id} />
+      {renderAction()}
+    </div>
+  );
 }

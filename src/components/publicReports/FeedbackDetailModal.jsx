@@ -7,6 +7,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, MapPinIcon } from 
 import Modal from '../ui/Modal';
 import BaseTiles from '../map/BaseTiles';
 import CitizenReportTimeline from './CitizenReportTimeline';
+import SupportReportControl from './SupportReportControl';
 import { supabase } from '../../lib/supabase';
 import { getCitizenStatus, resolveCategory, resolveSpecificProblem, SEVERITY_TAXONOMY } from '../../lib/publicReportStatus';
 import { CITIZEN_STATUS_HEX } from '../../lib/useMyReports';
@@ -56,7 +57,7 @@ function Fact({ label, children }) {
  * is what carries the photos' location, status stage, severity and milestone dates.
  * Mount with a `key` per entry so its fetched state starts fresh.
  */
-export default function FeedbackDetailModal({ item, report, items = [], onSelect, onClose }) {
+export default function FeedbackDetailModal({ item, report, support = null, onSupportChange, items = [], onSelect, onClose }) {
   const [finding, setFinding] = useState(null);
   const [resolution, setResolution] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -125,7 +126,7 @@ export default function FeedbackDetailModal({ item, report, items = [], onSelect
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Close
           </button>
-          {report && (
+          {report && item._isMine && (
             <Link to={`/user/reports?report=${report.id}`} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
               Open in My Reports
             </Link>
@@ -171,9 +172,21 @@ export default function FeedbackDetailModal({ item, report, items = [], onSelect
           )}
 
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">What you wrote</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              {item._isMine ? 'What you wrote' : 'What was reported'}
+            </p>
             <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">{item.message || 'No description provided.'}</p>
           </div>
+
+          {support && report && (
+            <SupportReportControl
+              reportId={report.id}
+              count={support.count}
+              mine={support.mine}
+              canSupport={support.canSupport}
+              onChange={(count, mine) => onSupportChange?.(report.id, count, mine)}
+            />
+          )}
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-t border-slate-100 pt-4">
             <Fact label="Filed">{fmtDateTime(item.created_at) || '-'}</Fact>
