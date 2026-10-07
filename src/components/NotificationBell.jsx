@@ -17,6 +17,8 @@ const TYPE_META = {
   public_report_repair_planned:         { label: 'Repair',   accent: 'bg-blue-500' },
   public_report_repair_ready_to_verify: { label: 'Verify',   accent: 'bg-amber-500' },
   public_report_repair_verified:        { label: 'Repaired', accent: 'bg-emerald-500' },
+  public_report_citizen_confirmed:      { label: 'Confirmed', accent: 'bg-emerald-500' },
+  public_report_citizen_disputed:       { label: 'Disputed',  accent: 'bg-red-500' },
   // LGU
   lgu_threshold_alert:             { label: 'Alert',        accent: 'bg-red-500' },
   lgu_resolution_summary:          { label: 'Resolution',   accent: 'bg-emerald-500' },
