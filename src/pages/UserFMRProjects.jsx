@@ -445,7 +445,8 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           .select('project_name'),
         supabase
           .from('project_tranches')
-          .select('*')
+          // Citizens see budget totals only - never who released a tranche or internal notes.
+          .select('id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date')
           .order('tranche_order', { ascending: true }),
       ]);
 

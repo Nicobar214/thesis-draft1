@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { getSupabaseForRole } from '../lib/supabase';
 import Logo from './Logo';
@@ -26,6 +26,30 @@ function getLoginRouteForRequiredRole(requiredRole) {
   if (role === 'lgu') return '/lgu/login';
   if (role === 'farmer') return '/farmer/login';
   return '/signin';
+}
+
+const ROLE_SKELETONS = {
+  user: UserPageSkeleton,
+  lgu: LguPageSkeleton,
+  field_engineer: FieldEngineerPageSkeleton,
+  contractor: ContractorPageSkeleton,
+  farmer: FarmerPageSkeleton,
+  admin: AdminPageSkeleton,
+};
+
+/** The portal's own skeleton, shown while auth is checked and while its page chunk downloads. */
+function roleLoadingFallback(requiredRole) {
+  const Skeleton = ROLE_SKELETONS[normalizeRole(requiredRole)];
+  if (Skeleton) return <Skeleton />;
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <Logo className="h-10 mx-auto mb-6" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -79,26 +103,8 @@ export default function ProtectedRoute({ children, requiredRole }) {
     checkAuth();
   }, [requiredRole]);
 
-  if (loading) {
-    const Skeleton = {
-      user: UserPageSkeleton,
-      lgu: LguPageSkeleton,
-      field_engineer: FieldEngineerPageSkeleton,
-      contractor: ContractorPageSkeleton,
-      farmer: FarmerPageSkeleton,
-      admin: AdminPageSkeleton,
-    }[normalizeRole(requiredRole)];
-    if (Skeleton) return <Skeleton />;
-    return (
-      <div className="min-h-dvh flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Logo className="h-10 mx-auto mb-6" />
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const loadingFallback = roleLoadingFallback(requiredRole);
+  if (loading) return loadingFallback;
 
   // Not logged in → redirect to portal-specific sign in
   if (!user) {
@@ -131,6 +137,6 @@ export default function ProtectedRoute({ children, requiredRole }) {
     return <Navigate to="/user" replace />;
   }
 
-  return children;
+  return <Suspense fallback={loadingFallback}>{children}</Suspense>;
 }
 

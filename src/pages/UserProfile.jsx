@@ -6,6 +6,12 @@ import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 
+// The preference toggles are saved to the account, but nothing sends notifications
+// based on them yet (the bell always shows everything, and there is no weekly
+// summary job). Hidden so the page does not promise something it cannot do.
+// Set to true once a consumer honours these values.
+const SHOW_NOTIFICATION_PREFERENCES = false;
+
 export default function UserProfile() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -482,6 +488,7 @@ export default function UserProfile() {
               </button>
             </section>
 
+            {SHOW_NOTIFICATION_PREFERENCES && (
             <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
               <h3 className="text-lg font-semibold text-slate-900">Notification Preferences</h3>
               <div className="mt-4 space-y-3">
@@ -510,6 +517,7 @@ export default function UserProfile() {
                 {savingPrefs ? 'Saving...' : 'Save Preferences'}
               </button>
             </section>
+            )}
 
             <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6">
               <h3 className="text-lg font-semibold text-slate-900">Security</h3>

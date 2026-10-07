@@ -302,7 +302,8 @@ export default function UserMapView({ embedded = false } = {}) {
     try {
       const { data, error } = await supabase
         .from('project_tranches')
-        .select('*')
+        // Citizens see budget totals only - never who released a tranche or internal notes.
+        .select('id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date')
         .order('tranche_order', { ascending: true });
       if (error) throw error;
       const map = {};

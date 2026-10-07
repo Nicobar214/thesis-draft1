@@ -1,33 +1,50 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
-import AdminAuthPage from "./pages/AdminAuthPage";
-import Dashboard from "./pages/Dashboard";
-import UserDashboard from "./pages/UserDashboard";
-import UserReports from "./pages/UserReports";
-import UserFeedback from "./pages/UserFeedback";
-import UserFMRProjects from "./pages/UserFMRProjects";
-import UserMapView from "./pages/UserMapView";
-import UserProfile from "./pages/UserProfile";
-import UserProjects from "./pages/UserProjects";
-import PublicReportsPage from "./pages/PublicReportsPage";
-import PublicReportPortalPage from "./pages/PublicReportPortalPage";
 import ProtectedRoute from "./components/ProtectedRoute";
-import FieldEngineerAuth from "./pages/FieldEngineerAuth";
-import FieldEngineerDashboard from "./pages/FieldEngineerDashboard";
-import ContractorAuth from "./pages/ContractorAuth";
-import ContractorDashboard from "./pages/ContractorDashboard";
-import ContractorProjects from "./pages/ContractorProjects";
-import ContractorReports from "./pages/ContractorReports";
-import LguAuth from "./pages/LguAuth";
-import LguDashboard from "./pages/LguDashboard";
-import FarmerAuth from "./pages/FarmerAuth";
-import FarmerDashboard from "./pages/FarmerDashboard";
+import Logo from "./components/Logo";
+import { lazyPage } from "./lib/lazyPage";
+
+// Pages load on demand so a citizen never downloads the admin dashboard.
+const AdminAuthPage = lazyPage(() => import("./pages/AdminAuthPage"));
+const Dashboard = lazyPage(() => import("./pages/Dashboard"));
+const UserDashboard = lazyPage(() => import("./pages/UserDashboard"));
+const UserReports = lazyPage(() => import("./pages/UserReports"));
+const UserFeedback = lazyPage(() => import("./pages/UserFeedback"));
+const UserFMRProjects = lazyPage(() => import("./pages/UserFMRProjects"));
+const UserMapView = lazyPage(() => import("./pages/UserMapView"));
+const UserProfile = lazyPage(() => import("./pages/UserProfile"));
+const UserProjects = lazyPage(() => import("./pages/UserProjects"));
+const PublicReportsPage = lazyPage(() => import("./pages/PublicReportsPage"));
+const PublicReportPortalPage = lazyPage(() => import("./pages/PublicReportPortalPage"));
+const FieldEngineerAuth = lazyPage(() => import("./pages/FieldEngineerAuth"));
+const FieldEngineerDashboard = lazyPage(() => import("./pages/FieldEngineerDashboard"));
+const ContractorAuth = lazyPage(() => import("./pages/ContractorAuth"));
+const ContractorDashboard = lazyPage(() => import("./pages/ContractorDashboard"));
+const ContractorProjects = lazyPage(() => import("./pages/ContractorProjects"));
+const ContractorReports = lazyPage(() => import("./pages/ContractorReports"));
+const LguAuth = lazyPage(() => import("./pages/LguAuth"));
+const LguDashboard = lazyPage(() => import("./pages/LguDashboard"));
+const FarmerAuth = lazyPage(() => import("./pages/FarmerAuth"));
+const FarmerDashboard = lazyPage(() => import("./pages/FarmerDashboard"));
+
 import PWAInstallBanner from "./components/PWAInstallBanner";
 import ToastViewport from "./components/ToastViewport";
 import ConfirmDialogHost from "./components/ConfirmDialogHost";
 import { triggerQueuedSync } from "./lib/offlineSync";
+
+function PageLoading() {
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <Logo className="h-10 mx-auto mb-6" />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-700 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   useEffect(() => {
@@ -57,6 +74,7 @@ function App() {
       <PWAInstallBanner />
       <ToastViewport />
       <ConfirmDialogHost />
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         {/* ===== USER SIDE (with landing page) ===== */}
         <Route path="/" element={<LandingPage />} />
@@ -150,6 +168,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+      </Suspense>
     </Router>
   );
 }
