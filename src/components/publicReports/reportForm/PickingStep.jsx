@@ -1,4 +1,5 @@
-import { MapPinIcon } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { MapPinIcon, SearchIcon } from 'lucide-react';
 import { distToProject, fmtDist, sortProjectsByDistance } from '../../../lib/reportSubmission';
 
 function statusCls(status) {
@@ -8,6 +9,21 @@ function statusCls(status) {
   if (s.includes('proposed'))                                              return 'bg-sky-100 text-sky-700';
   return 'bg-slate-100 text-slate-600';
 }
+
+function matchesStatusFilter(status, filter) {
+  if (filter === 'All') return true;
+  const s = (status || '').toLowerCase();
+  if (filter === 'Completed') return s.includes('complet');
+  if (filter === 'On-Going') return s.includes('progress') || s.includes('going') || s.includes('ongoing');
+  if (filter === 'Proposed') return s.includes('proposed');
+  return true;
+}
+
+const STATUS_FILTERS = ['All', 'On-Going', 'Proposed', 'Completed'];
+// "Browse all" is the fallback for when GPS can't find anything nearby, so it's the
+// one place this list can grow to the full project count (300+) -- reveal it in pages
+// instead of mounting every card, which is both slow to render and a long thumb-scroll.
+const BROWSE_PAGE_SIZE = 20;
 
 /** Choose which project the report is about: nearby first, with a wider search and browse-all fallback. */
 export default function PickingStep({
@@ -23,7 +39,30 @@ export default function PickingStep({
   setSelProject,
   setStep,
 }) {
-  const displayList = browseAll ? sortProjectsByDistance(allProjects, gps) : nearby;
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [visibleCount, setVisibleCount] = useState(BROWSE_PAGE_SIZE);
+
+  // A new search or filter invalidates whatever page was revealed -- each
+  // setter below resets the reveal at the moment it changes the query,
+  // rather than reacting to the change after the fact in an effect.
+  const updateQuery = (value) => { setQuery(value); setVisibleCount(BROWSE_PAGE_SIZE); };
+  const updateStatusFilter = (value) => { setStatusFilter(value); setVisibleCount(BROWSE_PAGE_SIZE); };
+
+  const browseFiltered = useMemo(() => {
+    if (!browseAll) return [];
+    const sorted = sortProjectsByDistance(allProjects, gps);
+    const q = query.trim().toLowerCase();
+    return sorted.filter((p) => {
+      const matchesQuery = !q
+        || (p.project_name || '').toLowerCase().includes(q)
+        || (p.municipality || '').toLowerCase().includes(q)
+        || (p.location || '').toLowerCase().includes(q);
+      return matchesQuery && matchesStatusFilter(p.status, statusFilter);
+    });
+  }, [browseAll, allProjects, gps, query, statusFilter]);
+
+  const displayList = browseAll ? browseFiltered.slice(0, visibleCount) : nearby;
   const lowAcc = gps && gps.accuracy > 100;
 
   return (
@@ -37,7 +76,7 @@ export default function PickingStep({
             </span>
             <span className={`text-sm font-semibold ${lowAcc ? 'text-amber-900' : 'text-teal-900'}`}>
               {browseAll
-                ? `Browsing all ${allProjects.length} projects`
+                ? `Showing ${displayList.length} of ${browseFiltered.length} project${browseFiltered.length !== 1 ? 's' : ''}`
                 : widerSearch
                 ? `${nearby.length} project${nearby.length !== 1 ? 's' : ''} within 1km`
                 : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Found {nearby.length} project{nearby.length !== 1 ? 's' : ''} near you</>}
@@ -55,6 +94,41 @@ export default function PickingStep({
             {cachedProjectsMeta?.updatedAt && (
               <span className="ml-1">Last synced {new Date(cachedProjectsMeta.updatedAt).toLocaleString()}.</span>
             )}
+          </div>
+        )}
+
+        {/* Search + status filter: only needed once the list is "all projects" --
+            the nearby list is already short and local, filtering it would be noise. */}
+        {browseAll && (
+          <div className="space-y-2.5">
+            <div className="relative">
+              <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" aria-hidden="true" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => updateQuery(e.target.value)}
+                placeholder="Search by road name or municipality..."
+                aria-label="Search projects"
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 outline-none"
+              />
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              {STATUS_FILTERS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => updateStatusFilter(s)}
+                  aria-pressed={statusFilter === s}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                    statusFilter === s
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -83,6 +157,19 @@ export default function PickingStep({
               className="block mx-auto text-sm text-slate-500 hover:text-teal-600 underline">
               Browse all projects
             </button>
+          </div>
+        )}
+
+        {browseAll && browseFiltered.length === 0 && (
+          <div className="text-center py-8 px-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+            <p className="text-sm font-semibold text-slate-800">No projects match "{query}"</p>
+            <p className="text-xs text-slate-500">Try a different road name or municipality, or clear the status filter.</p>
+            {(query || statusFilter !== 'All') && (
+              <button type="button" onClick={() => { setQuery(''); setStatusFilter('All'); setVisibleCount(BROWSE_PAGE_SIZE); }}
+                className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 transition">
+                Clear search and filter
+              </button>
+            )}
           </div>
         )}
 
@@ -124,6 +211,16 @@ export default function PickingStep({
           </div>
         )}
 
+        {browseAll && browseFiltered.length > visibleCount && (
+          <button
+            type="button"
+            onClick={() => setVisibleCount((c) => c + BROWSE_PAGE_SIZE)}
+            className="block w-full text-center py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+          >
+            Show {Math.min(BROWSE_PAGE_SIZE, browseFiltered.length - visibleCount)} more
+          </button>
+        )}
+
         {/* Escape hatch */}
         <div className="text-center pt-1">
           {!browseAll ? (
@@ -132,7 +229,7 @@ export default function PickingStep({
               Not near a project? Browse all
             </button>
           ) : (
-            <button type="button" onClick={() => { setBrowseAll(false); setWiderSearch(false); }}
+            <button type="button" onClick={() => { setBrowseAll(false); setWiderSearch(false); setQuery(''); setStatusFilter('All'); }}
               className="text-xs text-slate-500 hover:text-teal-600 underline">
               ← Back to nearby projects
             </button>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, Marker, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,6 +13,86 @@ import BaseTiles from '../map/BaseTiles';
 import { useBasemap } from '../../lib/basemaps';
 import { centroidFallbackIcon } from '../map/routeMarkerIcons';
 import { storeGlyph } from '../../lib/mapMarkerIcons';
+import { normalizeUserProjectStatus, getStatusStyle } from '../../lib/projectStatus';
+import { formatPercentage } from '../../lib/percentageFormat';
+import FmrProjectDetailDialog from '../FmrProjectDetailDialog';
+
+// Same content whether the user clicks the route line, its start, or its end.
+// Built from <div>s, not <p>s: leaflet.css gives popup paragraphs a 1.3em
+// margin that would blow the spacing apart.
+function ProjectPopupContent({ project, routeData, budget, onViewDetails }) {
+  const status = normalizeUserProjectStatus(project.status);
+  const style = getStatusStyle(status);
+  const pct = Math.min(100, Math.max(0, Number(project.accomplishment) || 0));
+  const place = [project.barangay && `Brgy. ${project.barangay}`, project.municipality].filter(Boolean).join(', ') || project.location;
+  const length = Number(project.project_length_km || project.length_km) || 0;
+  const dateLabel = status === 'Completed' ? 'Completed' : 'Target';
+  const dateValue = status === 'Completed' ? project.date_completed : project.target_completion_date;
+
+  return (
+    <div className="w-64 space-y-2.5 text-xs text-slate-700">
+      <div>
+        <div className="font-bold leading-snug text-slate-900">{project.project_name}</div>
+        {place && <div className="mt-0.5 text-slate-500">{place}</div>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${style.badge}`}>{status}</span>
+        {project.year_funded && <span className="text-slate-500">Funded {project.year_funded}</span>}
+      </div>
+
+      {status !== 'Proposed' && (
+        <div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">Accomplishment</span>
+            <span className="font-semibold text-slate-900">{formatPercentage(pct)}</span>
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+        <span className="text-slate-500">Length</span>
+        <span className="text-right font-medium text-slate-900">{length > 0 ? `${length} km` : 'N/A'}</span>
+        {dateValue && (
+          <>
+            <span className="text-slate-500">{dateLabel}</span>
+            <span className="text-right font-medium text-slate-900">{dateValue}</span>
+          </>
+        )}
+        <span className="text-slate-500">Budget</span>
+        <span className="text-right font-medium text-slate-900">
+          {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
+        </span>
+        <span className="text-slate-500">Released</span>
+        <span className="text-right font-medium text-slate-900">
+          {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
+        </span>
+      </div>
+
+      {project.remarks && (
+        <div className="border-t border-slate-100 pt-2 leading-relaxed text-slate-600">{project.remarks}</div>
+      )}
+
+      {/* Reports the route's actual stored provenance, not an assumed one. */}
+      <div className="text-[11px] text-slate-500">
+        Alignment: {routeData.routeSource
+          ? `${routeData.routeSource}${routeData.routeQuality ? ` (${routeData.routeQuality})` : ''}`
+          : 'approximate — no surveyed route on file'}
+      </div>
+
+      <button
+        type="button"
+        onClick={onViewDetails}
+        className="w-full rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-800"
+      >
+        View full details
+      </button>
+    </div>
+  );
+}
 
 const REPORT_STATUS_COLOR = {
   pending: '#f59e0b',
@@ -32,15 +112,25 @@ function reportPinIcon(color, needsAction) {
   });
 }
 
-function FitToData({ points }) {
+// Refits only when WHICH projects are shown changes (filters/search), never
+// on a plain re-render. Keying on the `points` array itself refit the map on
+// every render -- each road-snapped route arriving, each realtime refresh --
+// which yanked the view back out while the user was zooming in.
+function FitToData({ fitKey, points }) {
   const map = useMap();
+  const latestPoints = useRef(points);
+  const hasPoints = Array.isArray(points) && points.length > 0;
 
   useEffect(() => {
-    if (!Array.isArray(points) || points.length === 0) return;
-    const bounds = boundsFromPoints(points);
+    latestPoints.current = points;
+  });
+
+  useEffect(() => {
+    if (!hasPoints) return;
+    const bounds = boundsFromPoints(latestPoints.current);
     if (!bounds) return;
     map.fitBounds(bounds, { padding: [24, 24] });
-  }, [map, points]);
+  }, [map, fitKey, hasPoints]);
 
   return null;
 }
@@ -115,6 +205,7 @@ export default function LguRouteMap({
   const [snappedConnectionPoints, setSnappedConnectionPoints] = useState({ key: null, points: null });
   const [snappedProjectRoutes, setSnappedProjectRoutes] = useState({});
   const [focusedProjectId, setFocusedProjectId] = useState(null);
+  const [detailProject, setDetailProject] = useState(null);
   const [focusedGapId, setFocusedGapId] = useState(null);
 
   const connectionPoints = useMemo(() => {
@@ -230,6 +321,11 @@ export default function LguRouteMap({
     })
     .filter(Boolean);
 
+  const fitKey = useMemo(
+    () => (projects || []).map((p) => p.id).sort().join(','),
+    [projects]
+  );
+
   const fitPoints = [];
   routeLayers.forEach((layer) => {
     if (layer.routeData.points?.length > 0) {
@@ -279,6 +375,17 @@ export default function LguRouteMap({
             mouseout: () => setFocusedProjectId(null),
             click: () => setFocusedProjectId(project.id),
           };
+          const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
+          const popup = (
+            <Popup maxWidth={300}>
+              <ProjectPopupContent
+                project={project}
+                routeData={routeData}
+                budget={budget}
+                onViewDetails={() => setDetailProject(project)}
+              />
+            </Popup>
+          );
           return (
             <div key={project.id}>
               {effectivePoints?.length >= 2 && (
@@ -297,47 +404,19 @@ export default function LguRouteMap({
                       opacity: isFocused ? 0.95 : 0.72,
                     }}
                     eventHandlers={lineHandlers}
-                  />
+                  >
+                    {popup}
+                  </Polyline>
                 </>
               )}
-              {coordinates && (() => {
-                const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
-                return (
-                  <Marker position={coordinates} icon={hasRealCoordinates ? startIcon : centroidFallbackIcon} eventHandlers={lineHandlers}>
-                    <Popup>
-                      <div className="p-1 space-y-0.5 text-xs text-slate-800">
-                        <p className="font-bold text-teal-700">{project.project_name}</p>
-                        <p><span className="font-semibold text-slate-500">Status:</span> {project.status || project.project_status || 'Completed'}</p>
-                        <p><span className="font-semibold text-slate-500">Length:</span> {project.project_length_km || project.length_km || 0} km</p>
-                        {/* Reports the route's actual stored provenance. This used to print
-                            "Road Snapped: ✓ Real OSRM Network" unconditionally -- including when
-                            fetchRoadAlignedPolyline had silently returned the unmodified input
-                            after a failed request, and when the geometry was only a centroid
-                            fallback. A route with no stored alignment now says so. */}
-                        {routeData.routeSource ? (
-                          <p>
-                            <span className="font-semibold text-teal-600">Alignment:</span>{' '}
-                            {routeData.routeSource}
-                            {routeData.routeQuality ? ` (${routeData.routeQuality})` : ''}
-                          </p>
-                        ) : (
-                          <p>
-                            <span className="font-semibold text-slate-500">Alignment:</span>{' '}
-                            approximate — no surveyed route on file
-                          </p>
-                        )}
-                        <p className="pt-1 border-t border-slate-100">
-                          <span className="font-semibold text-slate-500">Budget:</span> {formatPeso(budget.totalBudget)}{budget.budgetIsEstimated ? ' (est.)' : ''}
-                          {' · '}Released {formatPeso(budget.released)}{budget.utilizationIsEstimated ? ' (est.)' : ''}
-                        </p>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })()}
+              {coordinates && (
+                <Marker position={coordinates} icon={hasRealCoordinates ? startIcon : centroidFallbackIcon} eventHandlers={lineHandlers}>
+                  {popup}
+                </Marker>
+              )}
               {routeData.endPoint && (
                 <Marker position={routeData.endPoint} icon={endIcon} eventHandlers={lineHandlers}>
-                  <Popup>{project.project_name} (End)</Popup>
+                  {popup}
                 </Marker>
               )}
             </div>
@@ -521,8 +600,16 @@ export default function LguRouteMap({
             </Marker>
           );
         })}
-        <FitToData points={fitPoints} />
+        <FitToData fitKey={fitKey} points={fitPoints} />
       </MapContainer>
+
+      {detailProject && (
+        <FmrProjectDetailDialog
+          project={detailProject}
+          tranches={tranchesByProjectId[detailProject.id] || []}
+          onClose={() => setDetailProject(null)}
+        />
+      )}
 
       <MapLegend>
         <LegendGroup label="Projects">

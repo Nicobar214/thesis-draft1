@@ -7,6 +7,7 @@ import Logo from "./components/Logo";
 import { lazyPage } from "./lib/lazyPage";
 
 // Pages load on demand so a citizen never downloads the admin dashboard.
+const FarmerLayout = lazyPage(() => import("./components/FarmerLayout"));
 const AdminAuthPage = lazyPage(() => import("./pages/AdminAuthPage"));
 const Dashboard = lazyPage(() => import("./pages/Dashboard"));
 const UserDashboard = lazyPage(() => import("./pages/UserDashboard"));
@@ -27,6 +28,11 @@ const LguAuth = lazyPage(() => import("./pages/LguAuth"));
 const LguDashboard = lazyPage(() => import("./pages/LguDashboard"));
 const FarmerAuth = lazyPage(() => import("./pages/FarmerAuth"));
 const FarmerDashboard = lazyPage(() => import("./pages/FarmerDashboard"));
+const FarmerHarvest = lazyPage(() => import("./pages/FarmerHarvest"));
+const FarmerFMRProjects = lazyPage(() => import("./pages/FarmerFMRProjects"));
+const FarmerReportIssue = lazyPage(() => import("./pages/FarmerReportIssue"));
+const FarmerMyReports = lazyPage(() => import("./pages/FarmerMyReports"));
+const FarmerMarkets = lazyPage(() => import("./pages/FarmerMarkets"));
 
 import PWAInstallBanner from "./components/PWAInstallBanner";
 import ToastViewport from "./components/ToastViewport";
@@ -148,13 +154,28 @@ function App() {
           </ProtectedRoute>
         } />
 
-        {/* ===== FARMER SIDE ===== */}
+        {/* ===== FARMER SIDE =====
+            One shared layout element for all /farmer/* pages, so the
+            sidebar/header (and the identity data they hold) mount once and
+            persist across navigation instead of remounting -- and
+            refetching -- on every page change. Child pages render through
+            FarmerLayout's <Outlet>. */}
         <Route path="/farmer/login" element={<FarmerAuth />} />
-        <Route path="/farmer" element={
-          <ProtectedRoute requiredRole="farmer">
-            <FarmerDashboard />
-          </ProtectedRoute>
-        } />
+        <Route
+          path="/farmer"
+          element={
+            <ProtectedRoute requiredRole="farmer">
+              <FarmerLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<FarmerDashboard />} />
+          <Route path="harvest" element={<FarmerHarvest />} />
+          <Route path="report" element={<FarmerReportIssue />} />
+          <Route path="reports" element={<FarmerMyReports />} />
+          <Route path="fmr-projects" element={<FarmerFMRProjects />} />
+          <Route path="markets" element={<FarmerMarkets />} />
+        </Route>
 
         {/* ===== ADMIN SIDE (no landing page, direct login) ===== */}
         <Route path="/admin" element={<AdminAuthPage />} />

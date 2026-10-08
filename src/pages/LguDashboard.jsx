@@ -26,6 +26,7 @@ import roadInventory from '../data/leonRoadInventory.json';
 import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
+import { normalizeUserProjectStatus } from '../lib/projectStatus';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -161,6 +162,7 @@ function normalizeBeneficiaryRow(row) {
 
   return {
     id: row.id,
+    userId: row.user_id || null,
     beneficiaryId: row.beneficiary_id || row.id,
     fullName: row.full_name || 'Unnamed Farmer',
     rsbsaNumber: row.rsbsa_number || '',
@@ -218,12 +220,16 @@ export default function LguDashboard() {
   const [roadGaps, setRoadGaps] = useState([]);
   const [projectTranches, setProjectTranches] = useState([]);
   const [escalations, setEscalations] = useState([]);
-  const [findings, setFindings] = useState([]);
   const [beneficiaries, setBeneficiaries] = useState([]);
+  const [harvestLogs, setHarvestLogs] = useState([]);
+  // Per-source load errors for Analytics, so a failed query reads as
+  // "unavailable" there instead of an empty array posing as a real zero.
+  const [analyticsErrors, setAnalyticsErrors] = useState({ projects: null, harvest: null, beneficiaries: null });
   const [beneficiariesLoading, setBeneficiariesLoading] = useState(false);
   const [beneficiarySearch, setBeneficiarySearch] = useState('');
   const [beneficiaryStatusFilter, setBeneficiaryStatusFilter] = useState('all');
   const [beneficiaryCropFilter, setBeneficiaryCropFilter] = useState('all');
+  const [beneficiaryBarangayFilter, setBeneficiaryBarangayFilter] = useState('all');
   const [beneficiarySortBy, setBeneficiarySortBy] = useState('area-desc');
   const [beneficiaryPage, setBeneficiaryPage] = useState(1);
   const [markets, setMarkets] = useState([]);
@@ -578,6 +584,7 @@ export default function LguDashboard() {
     const filtered = beneficiaries.filter((row) => {
       if (beneficiaryStatusFilter !== 'all' && row.validationStatus !== beneficiaryStatusFilter) return false;
       if (beneficiaryCropFilter !== 'all' && row.crop !== beneficiaryCropFilter) return false;
+      if (beneficiaryBarangayFilter !== 'all' && row.barangay !== beneficiaryBarangayFilter) return false;
       if (!query) return true;
       return [row.fullName, row.beneficiaryId, row.rsbsaNumber, row.municipality, row.barangay, row.linkedProject]
         .some((value) => String(value || '').toLowerCase().includes(query));
@@ -605,11 +612,52 @@ export default function LguDashboard() {
       }
       return 0;
     });
-  }, [beneficiaries, beneficiarySearch, beneficiaryStatusFilter, beneficiaryCropFilter, beneficiarySortBy]);
+  }, [beneficiaries, beneficiarySearch, beneficiaryStatusFilter, beneficiaryCropFilter, beneficiaryBarangayFilter, beneficiarySortBy]);
+
+  // Computed from the records, replacing a card that always read "100% Validated".
+  const beneficiaryStats = useMemo(() => {
+    const total = beneficiaries.length;
+    const count = (status) => beneficiaries.filter((b) => b.validationStatus === status).length;
+    const validated = count('Validated');
+    const areaHa = beneficiaries.reduce((sum, b) => sum + (Number(b.farmAreaHa) || 0), 0);
+    return {
+      total,
+      validated,
+      validatedPct: total > 0 ? (validated / total) * 100 : null,
+      forVerification: count('For Verification'),
+      needsCorrection: count('Needs Correction'),
+      barangays: new Set(beneficiaries.map((b) => b.barangay).filter(Boolean)).size,
+      areaHa,
+      avgAreaHa: total > 0 ? areaHa / total : null,
+    };
+  }, [beneficiaries]);
+
+  // Filter options come from the records themselves, not a hardcoded list.
+  const beneficiaryFilterOptions = useMemo(() => {
+    const STATUS_ORDER = ['For Verification', 'Needs Correction', 'Validated', 'Duplicate Record', 'Rejected', 'Archived'];
+    const present = new Set(beneficiaries.map((b) => b.validationStatus).filter(Boolean));
+    const unique = (key) => [...new Set(beneficiaries.map((b) => b[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    return {
+      statuses: STATUS_ORDER.filter((s) => present.has(s)),
+      crops: unique('crop'),
+      barangays: unique('barangay'),
+    };
+  }, [beneficiaries]);
+
+  const beneficiaryFiltersActive = Boolean(beneficiarySearch.trim())
+    || beneficiaryStatusFilter !== 'all'
+    || beneficiaryCropFilter !== 'all'
+    || beneficiaryBarangayFilter !== 'all';
+  const clearBeneficiaryFilters = () => {
+    setBeneficiarySearch('');
+    setBeneficiaryStatusFilter('all');
+    setBeneficiaryCropFilter('all');
+    setBeneficiaryBarangayFilter('all');
+  };
 
   useEffect(() => {
     setBeneficiaryPage(1);
-  }, [beneficiarySearch, beneficiaryStatusFilter, beneficiaryCropFilter, beneficiarySortBy]);
+  }, [beneficiarySearch, beneficiaryStatusFilter, beneficiaryCropFilter, beneficiaryBarangayFilter, beneficiarySortBy]);
 
   const beneficiaryRowsPerPage = 8;
   const totalBeneficiaryPages = Math.ceil(filteredBeneficiaries.length / beneficiaryRowsPerPage);
@@ -655,9 +703,11 @@ export default function LguDashboard() {
       if (error) throw error;
 
       setBeneficiaries((data || []).map(normalizeBeneficiaryRow));
+      setAnalyticsErrors((prev) => ({ ...prev, beneficiaries: null }));
     } catch (err) {
       console.error('Failed to fetch beneficiary records:', err.message);
       setBeneficiaries([]);
+      setAnalyticsErrors((prev) => ({ ...prev, beneficiaries: err.message || 'Failed to load' }));
     } finally {
       setBeneficiariesLoading(false);
     }
@@ -924,24 +974,38 @@ export default function LguDashboard() {
         escalationsQuery = escalationsQuery.eq('municipality', municipalityScope);
       }
 
-      const [reportsRes, projectsRes, escalationsRes, routesRes, findingsRes, marketsRes, tranchesRes, gapsRes] = await Promise.all([
+      // farmer_harvest_logs has no municipality column of its own -- scoping
+      // to this LGU happens at the RLS layer (see
+      // supabase_lgu_analytics_rls_scoping.sql) plus the client-side join to
+      // the already municipality-scoped `beneficiaries` state in
+      // lguAnalytics.js. Until that migration is applied, this select
+      // returns every farmer's rows (pre-existing gap, not introduced here).
+      const [reportsRes, projectsRes, escalationsRes, routesRes, marketsRes, tranchesRes, gapsRes, harvestLogsRes] = await Promise.all([
         reportsQuery,
         projectsQuery,
         escalationsQuery,
         supabase.from('project_routes').select('*'),
-        supabase.from('public_report_field_findings').select('*').order('submitted_at', { ascending: false }),
         supabase.from('market_locations').select('*').order('market_name', { ascending: true }),
         supabase.from('project_tranches').select('*').order('tranche_order', { ascending: true }),
         supabase.from('road_network_gaps').select('*').order('gap_km', { ascending: false }),
+        supabase.from('farmer_harvest_logs').select('id, farmer_id, crop, quantity_kg, harvest_date'),
       ]);
+
+      if (projectsRes.error) console.error('Failed to fetch projects:', projectsRes.error.message);
+      if (harvestLogsRes.error) console.error('Failed to fetch harvest logs:', harvestLogsRes.error.message);
+      setAnalyticsErrors((prev) => ({
+        ...prev,
+        projects: projectsRes.error?.message || null,
+        harvest: harvestLogsRes.error?.message || null,
+      }));
 
       setReports(reportsRes.data || []);
       setProjects(projectsRes.data || []);
       setEscalations(escalationsRes.data || []);
-      setFindings(findingsRes.data || []);
       setMarkets(marketsRes.data || []);
       setProjectTranches(tranchesRes.data || []);
       setRoadGaps(gapsRes.data || []);
+      setHarvestLogs(harvestLogsRes.data || []);
 
       const nextRoutes = {};
       (routesRes.data || []).forEach((row) => {
@@ -1014,7 +1078,7 @@ export default function LguDashboard() {
 
   const summary = useMemo(() => {
     const totalProjects = projects.length;
-    const activeProjects = projects.filter(p => p.project_status === 'In Progress' || p.project_status === 'Under Construction').length;
+    const activeProjects = projects.filter((p) => normalizeUserProjectStatus(p.status) === 'On-Going').length;
     return {
       total: filteredReports.length,
       pending: filteredReports.filter((r) => r.status === 'pending').length,
@@ -1104,6 +1168,7 @@ export default function LguDashboard() {
       id: 'analytics',
       label: 'Analytics',
       description: 'Trends and reporting',
+      headerDescription: 'Monitor FMR project implementation, farmer beneficiaries, and reported agricultural output.',
       icon: (
         <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v5.25c0 .621-.504 1.125-1.125 1.125h-2.25A1.125 1.125 0 013 18.375v-5.25zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125v-9.75zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v14.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -1343,9 +1408,8 @@ export default function LguDashboard() {
                 </span>
               </button>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">LGU Oversight Portal</p>
                 <h2 className="truncate text-lg font-bold text-slate-900">{activeSection.label}</h2>
-                <p className="truncate text-sm text-slate-500">{activeSection.description}</p>
+                <p className="truncate text-sm text-slate-500">{activeSection.headerDescription || activeSection.description}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1512,7 +1576,7 @@ export default function LguDashboard() {
 
                 {/* Road Inventory Cards list (Full Width) */}
                 <div className="space-y-4">
-                  <RoadInventoryTab />
+                  <RoadInventoryTab projects={projects} tranchesByProjectId={tranchesByProjectId} />
                 </div>
               </div>
             )}
@@ -1520,7 +1584,7 @@ export default function LguDashboard() {
             {activeTab === 'beneficiaries' && (
               <section className="space-y-5">
                 {/* Summary Metric Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
                   {/* Card 1: Total Beneficiaries */}
                   <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
                     <div className="p-3 bg-teal-50 text-teal-700 rounded-xl">
@@ -1530,8 +1594,10 @@ export default function LguDashboard() {
                     </div>
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Beneficiaries</p>
-                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">{beneficiaries.length}</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Farmers in listing</p>
+                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">{beneficiaryStats.total.toLocaleString()}</h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Across {beneficiaryStats.barangays} barangay{beneficiaryStats.barangays === 1 ? '' : 's'}
+                      </p>
                     </div>
                   </div>
 
@@ -1545,9 +1611,11 @@ export default function LguDashboard() {
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Cultivated Area</p>
                       <h4 className="text-xl font-bold text-slate-900 mt-0.5">
-                        {beneficiaries.reduce((sum, b) => sum + Number(b.farmAreaHa || 0), 0).toFixed(2)} ha
+                        {beneficiaryStats.areaHa.toLocaleString('en-US', { maximumFractionDigits: 2 })} ha
                       </h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Land area supported</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {beneficiaryStats.avgAreaHa === null ? 'No farm area recorded' : `Avg. ${beneficiaryStats.avgAreaHa.toFixed(2)} ha per farmer`}
+                      </p>
                     </div>
                   </div>
 
@@ -1593,15 +1661,39 @@ export default function LguDashboard() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validation Status</p>
-                      <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                        100% Validated
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validated</p>
+                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">
+                        {beneficiaryStats.validatedPct === null ? '—' : `${beneficiaryStats.validatedPct.toFixed(0)}%`}
                       </h4>
                       <p className="text-[10px] text-slate-500 mt-0.5">
-                        All profiles verified
+                        {beneficiaryStats.validated.toLocaleString()} of {beneficiaryStats.total.toLocaleString()} records
                       </p>
                     </div>
                   </div>
+
+                  {/* Card 5: Awaiting Verification */}
+                  <button
+                    type="button"
+                    onClick={() => { setBeneficiaryStatusFilter('For Verification'); setBeneficiarySubTab('list'); }}
+                    disabled={beneficiaryStats.forVerification === 0}
+                    className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 text-left hover:shadow-md transition-shadow disabled:cursor-default disabled:hover:shadow-sm"
+                    title={beneficiaryStats.forVerification > 0 ? 'Show records awaiting verification' : undefined}
+                  >
+                    <div className="p-3 bg-orange-50 text-orange-700 rounded-xl">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Awaiting Verification</p>
+                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">{beneficiaryStats.forVerification.toLocaleString()}</h4>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {beneficiaryStats.needsCorrection > 0
+                          ? `${beneficiaryStats.needsCorrection} more need correction`
+                          : 'None need correction'}
+                      </p>
+                    </div>
+                  </button>
                 </div>
 
                 {/* Clickable Sub-Nav Bar */}
@@ -2030,11 +2122,37 @@ export default function LguDashboard() {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-3 items-center text-xs">
+                    <div className="flex flex-wrap gap-3 items-end text-xs">
+                      {/* Filter by Validation Status */}
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Validation Status</span>
+                        <select
+                          value={beneficiaryStatusFilter}
+                          onChange={(e) => setBeneficiaryStatusFilter(e.target.value)}
+                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                        >
+                          <option value="all">All Statuses</option>
+                          {beneficiaryFilterOptions.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </label>
 
+                      {/* Filter by Barangay */}
+                      {beneficiaryFilterOptions.barangays.length > 1 && (
+                        <label className="flex flex-col gap-1">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Barangay</span>
+                          <select
+                            value={beneficiaryBarangayFilter}
+                            onChange={(e) => setBeneficiaryBarangayFilter(e.target.value)}
+                            className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          >
+                            <option value="all">All Barangays</option>
+                            {beneficiaryFilterOptions.barangays.map((b) => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </label>
+                      )}
 
                       {/* Filter by Crop */}
-                      <div className="flex flex-col gap-1">
+                      <label className="flex flex-col gap-1">
                         <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Crop Type</span>
                         <select
                           value={beneficiaryCropFilter}
@@ -2042,13 +2160,9 @@ export default function LguDashboard() {
                           className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
                         >
                           <option value="all">All Crops</option>
-                          <option value="Rice">Rice</option>
-                          <option value="Corn">Corn</option>
-                          <option value="Sugarcane">Sugarcane</option>
-                          <option value="Coconut">Coconut</option>
-                          <option value="Vegetables">Vegetables</option>
+                          {beneficiaryFilterOptions.crops.map((c) => <option key={c} value={c}>{c}</option>)}
                         </select>
-                      </div>
+                      </label>
 
                       {/* Sort By Option */}
                       <div className="flex flex-col gap-1">
@@ -2066,7 +2180,20 @@ export default function LguDashboard() {
                           <option value="area-asc">Farm Area (Smallest)</option>
                         </select>
                       </div>
+
+                      {beneficiaryFiltersActive && (
+                        <button
+                          type="button"
+                          onClick={clearBeneficiaryFilters}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+                        >
+                          Clear filters
+                        </button>
+                      )}
                     </div>
+                    <p className="mt-3 text-[11px] text-slate-500">
+                      Showing {filteredBeneficiaries.length.toLocaleString()} of {beneficiaries.length.toLocaleString()} records
+                    </p>
                   </div>
 
                   {/* Tabular Form */}
@@ -2325,10 +2452,12 @@ export default function LguDashboard() {
 
             {activeTab === 'analytics' && (
               <LguAnalyticsTab
-                reports={reports}
-                escalations={escalations}
                 projects={projects}
-                findings={findings}
+                beneficiaries={beneficiaries}
+                harvestLogs={harvestLogs}
+                loading={loading || beneficiariesLoading}
+                errors={analyticsErrors}
+                onRetry={() => { fetchAll(true); fetchBeneficiaries(); }}
               />
             )}
 

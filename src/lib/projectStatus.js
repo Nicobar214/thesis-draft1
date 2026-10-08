@@ -16,3 +16,35 @@ export function getStatusStyle(status) {
   };
   return styles[status] || styles['Proposed'];
 }
+
+export function parseDateOnly(value) {
+  if (!value) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    return new Date(y, mo, d);
+  }
+  const parsed = new Date(str);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+export function getDaysDeltaFromToday(targetDateValue) {
+  const targetDate = parseDateOnly(targetDateValue);
+  if (!targetDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+export function isProjectOverdue(project) {
+  const status = normalizeUserProjectStatus(project?.status);
+  if (status === 'Completed') return false;
+  const delta = getDaysDeltaFromToday(project?.target_completion_date);
+  return typeof delta === 'number' && delta < 0;
+}

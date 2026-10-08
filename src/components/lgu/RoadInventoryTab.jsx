@@ -2,6 +2,9 @@ import { useMemo, useState, useEffect } from 'react';
 
 import roadInventory from '../../data/leonRoadInventory.json';
 import { getPaginationRange } from '../../lib/paginationUtils';
+import ViewToggle, { useViewMode } from '../ui/ViewToggle';
+import FmrProjectDetailDialog from '../FmrProjectDetailDialog';
+import RoadInventoryDetailDialog from './RoadInventoryDetailDialog';
 
 function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || value === '') return 'N/A';
@@ -27,13 +30,30 @@ function getConditionBadgeTone(condition) {
   return 'bg-slate-50 border-slate-200 text-slate-700';
 }
 
-export default function RoadInventoryTab() {
+export default function RoadInventoryTab({ projects = [], tranchesByProjectId = {} }) {
   const [query, setQuery] = useState('');
+  const [selectedRoad, setSelectedRoad] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+
+  // fmr_projects.inventory_road_name holds the surveyed road name a project
+  // was built on (set by supabase_leon_realistic_routes.sql).
+  const projectsByRoad = useMemo(() => {
+    const map = new Map();
+    projects.forEach((p) => {
+      const name = String(p.inventory_road_name || '').trim();
+      if (!name) return;
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(p);
+    });
+    return map;
+  }, [projects]);
+  const linkedProjectsFor = (road) => projectsByRoad.get(String(road?.roadName || '').trim()) || [];
   const [barangayFilter, setBarangayFilter] = useState('all');
   const [surfaceFilter, setSurfaceFilter] = useState('all');
   const [conditionFilter, setConditionFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6;
+  const [viewMode, setViewMode] = useViewMode('lgu-road-inventory-view');
+  const itemsPerPage = viewMode === 'table' ? 10 : 6;
 
   const inventory = useMemo(() => (Array.isArray(roadInventory) ? roadInventory : []), []);
 
@@ -90,13 +110,13 @@ export default function RoadInventoryTab() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, barangayFilter, surfaceFilter, conditionFilter]);
+  }, [query, barangayFilter, surfaceFilter, conditionFilter, viewMode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
   const paginatedRows = useMemo(() => {
     return filteredRows.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
-  }, [filteredRows, safePage]);
+  }, [filteredRows, safePage, itemsPerPage]);
 
   return (
     <div className="space-y-4">
@@ -176,26 +196,95 @@ export default function RoadInventoryTab() {
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <p>Showing {filteredRows.length} of {inventory.length} roads.</p>
-          {hasFilters && (
-            <button
-              onClick={() => {
-                setQuery('');
-                setBarangayFilter('all');
-                setSurfaceFilter('all');
-                setConditionFilter('all');
-              }}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Clear Filters
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {hasFilters && (
+              <button
+                onClick={() => {
+                  setQuery('');
+                  setBarangayFilter('all');
+                  setSurfaceFilter('all');
+                  setConditionFilter('all');
+                }}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Clear Filters
+              </button>
+            )}
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
+          </div>
         </div>
 
+        {filteredRows.length === 0 ? (
+          <div className="py-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+            No roads match the current filters.
+          </div>
+        ) : viewMode === 'table' ? (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[52rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3">Road Name</th>
+                  <th scope="col" className="px-4 py-3">Barangay</th>
+                  <th scope="col" className="px-4 py-3 text-right">Length (km)</th>
+                  <th scope="col" className="px-4 py-3">Surface</th>
+                  <th scope="col" className="px-4 py-3">Condition</th>
+                  <th scope="col" className="px-4 py-3 text-right">Right of Way (m)</th>
+                  <th scope="col" className="px-4 py-3 text-right">Year Built</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedRows.map((row) => (
+                  <tr
+                    key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
+                    onClick={() => setSelectedRoad(row)}
+                    className="cursor-pointer align-top transition-colors hover:bg-emerald-50/40"
+                  >
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSelectedRoad(row); }}
+                        className="text-left font-semibold text-slate-900 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded"
+                      >
+                        {row.roadName || 'N/A'}
+                      </button>
+                      {linkedProjectsFor(row).length > 0 && (
+                        <span className="ml-2 inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-emerald-700">
+                          FMR project
+                        </span>
+                      )}
+                      {row.surfaceSummary && (
+                        <p className="mt-0.5 max-w-sm truncate text-xs text-slate-500" title={row.surfaceSummary}>
+                          {row.surfaceSummary}
+                        </p>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.barangay || 'N/A'}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatNumber(row.lengthKm)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-semibold ${getSurfaceBadgeTone(row.surfaceType)}`}>
+                        {row.surfaceType || 'Unknown'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize ${getConditionBadgeTone(row.condition)}`}>
+                        {row.condition || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatNumber(row.row, 2)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{row.yearConstructed || 'N/A'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {paginatedRows.map((row) => (
-            <div
+            <button
+              type="button"
               key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
-              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-slate-300 hover:shadow-md"
+              onClick={() => setSelectedRoad(row)}
+              className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-[box-shadow,border-color] duration-200 hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
             >
               <div>
                 <div className="flex items-start justify-between gap-3">
@@ -245,14 +334,15 @@ export default function RoadInventoryTab() {
                   </p>
                 </div>
               )}
-            </div>
+              {linkedProjectsFor(row).length > 0 && (
+                <p className="mt-3 text-[11px] font-semibold text-emerald-700">
+                  {linkedProjectsFor(row).length} FMR project{linkedProjectsFor(row).length === 1 ? '' : 's'} on this road
+                </p>
+              )}
+            </button>
           ))}
-          {filteredRows.length === 0 && (
-            <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-              No roads match the current filters.
-            </div>
-          )}
         </div>
+        )}
 
         {filteredRows.length > 0 && (
           <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5 flex-wrap gap-4">
@@ -300,6 +390,25 @@ export default function RoadInventoryTab() {
           </div>
         )}
       </section>
+
+      {selectedRoad && (
+        <RoadInventoryDetailDialog
+          road={selectedRoad}
+          linkedProjects={linkedProjectsFor(selectedRoad)}
+          onSelectProject={(project) => {
+            setSelectedRoad(null);
+            setSelectedProject(project);
+          }}
+          onClose={() => setSelectedRoad(null)}
+        />
+      )}
+      {selectedProject && (
+        <FmrProjectDetailDialog
+          project={selectedProject}
+          tranches={tranchesByProjectId[selectedProject.id] || []}
+          onClose={() => setSelectedProject(null)}
+        />
+      )}
     </div>
   );
 }

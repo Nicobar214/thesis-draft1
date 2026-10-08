@@ -1,5 +1,5 @@
-import { LockIcon, ZapIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BanknoteIcon, CircleCheckIcon, FilePenLineIcon, FileTextIcon, HourglassIcon, LockIcon, SearchIcon, ZapIcon } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,6 +13,11 @@ import { getBarangays } from '../../data/iloiloLocations';
 import { boundsFromPoints, getMunicipalityCentroid, fetchRoadAlignedPolyline, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
 import { fetchProposalActivity, describeActionType, formatActivityActor } from '../../lib/proposalActivity';
+import { PROPOSAL_SLA_DAYS } from '../../lib/mapRouteUtils';
+import { DEFAULT_PROPOSAL_FILTERS, filterProposals, proposalFilterOptions, summarizeProposals } from '../../lib/proposalStats';
+import { KpiCard } from './analyticsParts';
+import ViewToggle, { useViewMode } from '../ui/ViewToggle';
+import Pagination, { usePagination } from '../ui/Pagination';
 
 const ROAD_TYPES = ['Concreting', 'Opening/Construction', 'Rehabilitation', 'Widening', 'Others'];
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
@@ -125,6 +130,29 @@ function ActivityIcon({ type }) {
   );
 }
 
+function ProposalHistory({ loading, logs }) {
+  if (loading) return <p className="text-xs text-slate-500">Loading history…</p>;
+  if (!logs || logs.length === 0) return <p className="text-xs text-slate-500">No activity recorded yet.</p>;
+  return logs.map((log) => {
+    const { label, icon } = describeActionType(log.action_type);
+    return (
+      <div key={log.id} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-xs">
+        <div className="flex gap-2.5">
+          <ActivityIcon type={icon} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-semibold text-slate-900">{label}</p>
+              <p className="text-[10px] font-medium text-slate-400">{new Date(log.created_at).toLocaleString()}</p>
+            </div>
+            <p className="mt-0.5 text-[10px] text-slate-400 font-medium">{formatActivityActor(log)}</p>
+            {log.description && <p className="mt-1 text-[11px] text-slate-600 leading-relaxed">{log.description}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  });
+}
+
 const emptyForm = {
   project_name: '',
   road_type: 'Concreting',
@@ -167,6 +195,15 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [historyLoadingId, setHistoryLoadingId] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('form');
   const [selectedProposalForModal, setSelectedProposalForModal] = useState(null);
+  const [listFilters, setListFilters] = useState(DEFAULT_PROPOSAL_FILTERS);
+  const [viewMode, setViewMode] = useViewMode('lgu-proposals-view');
+  const proposalPager = usePagination(visibleProposals, `${JSON.stringify(listFilters)}|${viewMode}`, 10);
+
+  const proposalSummary = useMemo(() => summarizeProposals(proposals), [proposals]);
+  const filterOptions = useMemo(() => proposalFilterOptions(proposals), [proposals]);
+  const visibleProposals = useMemo(() => filterProposals(proposals, listFilters), [proposals, listFilters]);
+  const listFiltersActive = Object.keys(DEFAULT_PROPOSAL_FILTERS).some((k) => k !== 'sort' && listFilters[k] !== DEFAULT_PROPOSAL_FILTERS[k]);
+  const setListFilter = (patch) => setListFilters((f) => ({ ...f, ...patch }));
 
   const fetchProposals = useCallback(async () => {
     if (!user) return;
@@ -912,14 +949,220 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
           </form>
         </div>
       ) : (
+        <div className="space-y-5">
+        {proposals.length > 0 && (
+          <section aria-label="Proposal summary" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <KpiCard
+              icon={FileTextIcon}
+              label="Total Proposals"
+              value={proposalSummary.total.toLocaleString()}
+              hint={`Across ${proposalSummary.barangays} barangay${proposalSummary.barangays === 1 ? '' : 's'}`}
+            />
+            <KpiCard
+              icon={HourglassIcon}
+              label="Awaiting DA Review"
+              value={proposalSummary.awaiting.toLocaleString()}
+              hint={proposalSummary.overdue > 0
+                ? `${proposalSummary.overdue} past the ${PROPOSAL_SLA_DAYS}-day review target`
+                : `None past the ${PROPOSAL_SLA_DAYS}-day review target`}
+            />
+            <KpiCard
+              icon={FilePenLineIcon}
+              label="Needs Your Revision"
+              value={proposalSummary.needsRevision.toLocaleString()}
+              hint={proposalSummary.needsRevision > 0 ? 'Returned by DA — revise and resubmit' : 'Nothing returned for revision'}
+            />
+            <KpiCard
+              icon={CircleCheckIcon}
+              label="Approved"
+              value={proposalSummary.approved.toLocaleString()}
+              hint={proposalSummary.approvalRate === null
+                ? 'No DA decisions yet'
+                : `${proposalSummary.approvalRate.toFixed(0)}% of decided proposals approved`}
+            />
+            <KpiCard
+              icon={BanknoteIcon}
+              label="Requested Budget"
+              value={formatPeso(proposalSummary.requestedBudget)}
+              hint={`${proposalSummary.requestedKm.toLocaleString('en-US', { maximumFractionDigits: 2 })} km proposed, excluding rejected`}
+            />
+          </section>
+        )}
+
+        {proposals.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="relative flex w-full flex-col gap-1 text-xs font-medium text-slate-600 sm:w-64">
+                Search
+                <SearchIcon className="pointer-events-none absolute bottom-2.5 left-2.5 size-3.5 text-slate-400" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={listFilters.search}
+                  onChange={(e) => setListFilter({ search: e.target.value })}
+                  placeholder="Project name, barangay…"
+                  className="h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                />
+              </label>
+              <label className="flex w-full flex-col gap-1 text-xs font-medium text-slate-600 sm:w-auto">
+                Status
+                <select value={listFilters.status} onChange={(e) => setListFilter({ status: e.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 sm:w-44">
+                  <option value="all">All statuses</option>
+                  <option value="awaiting">Awaiting DA review</option>
+                  {filterOptions.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              {filterOptions.barangays.length > 1 && (
+                <label className="flex w-full flex-col gap-1 text-xs font-medium text-slate-600 sm:w-auto">
+                  Barangay
+                  <select value={listFilters.barangay} onChange={(e) => setListFilter({ barangay: e.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 sm:w-44">
+                    <option value="all">All barangays</option>
+                    {filterOptions.barangays.map((b) => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </label>
+              )}
+              {filterOptions.years.length > 1 && (
+                <label className="flex w-full flex-col gap-1 text-xs font-medium text-slate-600 sm:w-auto">
+                  Target funding year
+                  <select value={listFilters.year} onChange={(e) => setListFilter({ year: e.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 sm:w-36">
+                    <option value="all">All years</option>
+                    {filterOptions.years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+                  </select>
+                </label>
+              )}
+              <label className="flex w-full flex-col gap-1 text-xs font-medium text-slate-600 sm:w-auto">
+                Sort by
+                <select value={listFilters.sort} onChange={(e) => setListFilter({ sort: e.target.value })} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 sm:w-48">
+                  <option value="newest">Newest submitted</option>
+                  <option value="oldest">Oldest submitted</option>
+                  <option value="pending-longest">Waiting longest for review</option>
+                  <option value="budget-desc">Highest budget</option>
+                  <option value="length-desc">Longest road</option>
+                </select>
+              </label>
+              {listFiltersActive && (
+                <button
+                  type="button"
+                  onClick={() => setListFilters((f) => ({ ...DEFAULT_PROPOSAL_FILTERS, sort: f.sort }))}
+                  className="h-9 rounded-lg px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-[11px] text-slate-500">
+                Showing {visibleProposals.length} of {proposals.length} proposal{proposals.length === 1 ? '' : 's'}
+              </p>
+              <ViewToggle mode={viewMode} onChange={setViewMode} />
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'table' && !loading && visibleProposals.length > 0 ? (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[62rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3">Project</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3">Submitted</th>
+                  <th scope="col" className="px-4 py-3 text-right">Length (km)</th>
+                  <th scope="col" className="px-4 py-3 text-right">Budget</th>
+                  <th scope="col" className="px-4 py-3 text-right">Farmers</th>
+                  <th scope="col" className="px-4 py-3">Funding Year</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {proposalPager.pageItems.map((p) => {
+                  const chip = getPendingDaysChip(p.submitted_at, p.status);
+                  const historyOpen = expandedHistoryId === p.id;
+                  return (
+                    <Fragment key={p.id}>
+                      <tr className="align-top transition-colors hover:bg-slate-50/70">
+                        <td className="max-w-xs px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProposalForModal(p)}
+                            className="rounded text-left font-semibold text-slate-900 transition hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40"
+                          >
+                            {p.project_name}
+                          </button>
+                          <p className="mt-0.5 text-xs text-slate-500">{p.barangay ? `Brgy. ${p.barangay}` : 'Barangay not set'}</p>
+                          {p.status === 'Needs Revision' && p.review_notes && (
+                            <p className="mt-1 line-clamp-2 text-xs text-orange-700" title={p.review_notes}>DA notes: {p.review_notes}</p>
+                          )}
+                          {p.status === 'Rejected' && p.review_notes && (
+                            <p className="mt-1 line-clamp-2 text-xs text-red-700" title={p.review_notes}>Reason: {p.review_notes}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusTone(p.status)}`}>
+                            {p.status}{p.revision_count > 0 ? ` (rev. ${p.revision_count})` : ''}
+                          </span>
+                          {chip && (
+                            <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${chip.className}`}>{chip.text}</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">{new Date(p.submitted_at).toLocaleDateString()}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-700">{Number(p.estimated_length_km) > 0 ? p.estimated_length_km : '—'}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">{Number(p.estimated_budget) > 0 ? formatPeso(p.estimated_budget) : '—'}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-slate-700">{Number(p.beneficiary_farmers_count) > 0 ? p.beneficiary_farmers_count : '—'}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">{p.target_funding_year ? `FY ${p.target_funding_year}` : '—'}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-1.5 whitespace-nowrap">
+                            {p.status === 'Needs Revision' && (
+                              <button type="button" onClick={() => startResubmit(p)} className={buttonClass('warning', 'sm')}>
+                                Edit & Resubmit
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProposalForModal(p)}
+                              className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-100"
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleHistory(p.id)}
+                              aria-expanded={historyOpen}
+                              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                            >
+                              {historyOpen ? 'Hide History' : 'History'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {historyOpen && (
+                        <tr className="bg-slate-50/50">
+                          <td colSpan={8} className="px-4 py-3">
+                            <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                              <ProposalHistory loading={historyLoadingId === p.id} logs={historyByProposalId[p.id]} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
         /* Proposals list in full width card grid */
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {loading ? (
             <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 text-center">Loading your proposals...</div>
           ) : proposals.length === 0 ? (
             <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 text-center">No proposals submitted yet.</div>
+          ) : visibleProposals.length === 0 ? (
+            <div className="col-span-full rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500 text-center">
+              No proposals match these filters.{' '}
+              <button type="button" onClick={() => setListFilters(DEFAULT_PROPOSAL_FILTERS)} className="font-semibold text-teal-700 hover:underline">Clear filters</button>
+            </div>
           ) : (
-            proposals.map((p) => (
+            proposalPager.pageItems.map((p) => (
               <article key={p.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow duration-200 flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1056,36 +1299,21 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
 
                   {expandedHistoryId === p.id && (
                     <div className="space-y-2 pt-2 border-t border-slate-50 mt-1 max-h-[220px] overflow-y-auto pr-1">
-                      {historyLoadingId === p.id ? (
-                        <p className="text-xs text-slate-500">Loading history…</p>
-                      ) : (historyByProposalId[p.id] || []).length === 0 ? (
-                        <p className="text-xs text-slate-500">No activity recorded yet.</p>
-                      ) : (
-                        (historyByProposalId[p.id] || []).map((log) => {
-                          const { label, icon } = describeActionType(log.action_type);
-                          return (
-                            <div key={log.id} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5 text-xs">
-                              <div className="flex gap-2.5">
-                                <ActivityIcon type={icon} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <p className="font-semibold text-slate-900">{label}</p>
-                                    <p className="text-[10px] font-medium text-slate-400">{new Date(log.created_at).toLocaleString()}</p>
-                                  </div>
-                                  <p className="mt-0.5 text-[10px] text-slate-400 font-medium">{formatActivityActor(log)}</p>
-                                  {log.description && <p className="mt-1 text-[11px] text-slate-600 leading-relaxed">{log.description}</p>}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
+                      <ProposalHistory loading={historyLoadingId === p.id} logs={historyByProposalId[p.id]} />
                     </div>
                   )}
                 </div>
               </article>
             ))
           )}
+        </div>
+        )}
+
+        {!loading && visibleProposals.length > 10 && (
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <Pagination pager={proposalPager} noun="proposal" />
+          </div>
+        )}
         </div>
       )}
 

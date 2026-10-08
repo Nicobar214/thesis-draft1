@@ -24,6 +24,14 @@ import {
 const MAX_DISTANCE_M = 500;
 // A fix this loose could put the engineer anywhere within a few blocks.
 const MAX_ACCURACY_M = 100;
+// A single getCurrentPosition() call often returns the device's first, worst
+// fix (cold GPS, stale cell/Wi-Fi positioning) even when a much better one
+// arrives a few seconds later. Rather than judge the engineer on that first
+// read, sample for up to this long and keep the most accurate fix seen.
+const POSITION_POLL_MS = 9000;
+// Stop polling early once a fix this good arrives -- no reason to make the
+// engineer wait out the full window if GPS has already locked on well.
+const ACCURACY_GOOD_ENOUGH_M = 25;
 const PHOTO_BUCKET = 'public-report-photos';
 
 function fmtDate(value) {
@@ -60,6 +68,62 @@ function geoErrorMessage(err) {
 }
 
 /**
+ * Sample position fixes for up to `durationMs` and resolve with the most
+ * accurate one seen, instead of trusting whatever getCurrentPosition()
+ * happens to return first. Resolves early once a fix is already good enough.
+ * `onSample` fires on every improved fix, so the UI can show live progress.
+ */
+function readBestPosition({ durationMs = POSITION_POLL_MS, goodEnoughM = ACCURACY_GOOD_ENOUGH_M, onSample } = {}) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('unsupported'));
+      return;
+    }
+    let best = null;
+    let watchId = null;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timer);
+      if (best) resolve(best);
+      else reject(new Error('timeout'));
+    };
+
+    const timer = setTimeout(finish, durationMs);
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const sample = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          capturedAt: new Date().toISOString(),
+        };
+        if (!best || sample.accuracy < best.accuracy) {
+          best = sample;
+          onSample?.(sample);
+        }
+        if (sample.accuracy <= goodEnoughM) finish();
+      },
+      (err) => {
+        // A fix already in hand survives a later error (e.g. a transient
+        // signal drop); only reject outright if nothing has come in yet.
+        if (!best) {
+          settled = true;
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          clearTimeout(timer);
+          reject(err);
+        }
+      },
+      { enableHighAccuracy: true, timeout: durationMs, maximumAge: 0 }
+    );
+  });
+}
+
+/**
  * Engineer's on-site confirmation that follow-up work was really done.
  *
  * The admin records work as done; this is the independent check. The flow is
@@ -80,6 +144,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const [geo, setGeo] = useState(null); // gate check
   const [geoBusy, setGeoBusy] = useState(false);
   const [geoError, setGeoError] = useState('');
+  const [geoLiveAccuracy, setGeoLiveAccuracy] = useState(null); // best fix seen so far, while polling
 
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -221,13 +286,15 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const checkLocation = async () => {
     setGeoBusy(true);
     setGeoError('');
+    setGeoLiveAccuracy(null);
     try {
-      setGeo(await readPosition());
+      setGeo(await readBestPosition({ onSample: (s) => setGeoLiveAccuracy(s.accuracy) }));
     } catch (err) {
       setGeo(null);
       setGeoError(geoErrorMessage(err));
     } finally {
       setGeoBusy(false);
+      setGeoLiveAccuracy(null);
     }
   };
 
@@ -464,7 +531,11 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
               disabled={geoBusy || busy}
               className="w-full rounded-lg border border-slate-300 bg-white py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              {geoBusy ? 'Reading location...' : geo ? 'Check again' : 'Check my location'}
+              {geoBusy
+                ? geoLiveAccuracy != null
+                  ? `Improving accuracy... (±${Math.round(geoLiveAccuracy)} m so far)`
+                  : 'Reading location...'
+                : geo ? 'Check again' : 'Check my location'}
             </button>
             {geoError && <p className="mt-1.5 text-xs text-red-700">{geoError}</p>}
             {geo && !geoError && (
