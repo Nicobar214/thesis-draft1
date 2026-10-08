@@ -19,6 +19,7 @@ import {
   createDisplayRoutePoints,
   fetchRoadAlignedPolyline,
   getProjectBarangay,
+  getLocationConfidence,
   getRouteStatusTheme,
   getTargetDateChip,
   isOverdueProject,
@@ -420,19 +421,15 @@ export default function UserMapView({ embedded = false } = {}) {
     return filtered.map((project) => {
       const route = buildRoutePoints(project, routeByProjectId[project.id]);
       
-      const hasActualCoordinates = route.hasPolyline || Boolean(project.start_latitude && project.start_longitude);
+      const confidence = getLocationConfidence(project, routeByProjectId[project.id]);
+      const hasActualCoordinates = confidence !== 'unknown';
+      const isApproximate = confidence === 'approximate';
+      const isCentroidFallback = confidence === 'unknown';
       let coordinates = null;
-      let isApproximate = false;
-      let isCentroidFallback = false;
 
       if (hasActualCoordinates) {
         coordinates = route.startPoint || [project.start_latitude, project.start_longitude];
-        const remarks = String(project.remarks || '').toLowerCase();
-        if (remarks.includes('auto-geocoded')) {
-          isApproximate = true;
-        }
       } else {
-        isCentroidFallback = true;
         const muni = project.municipality || 'Leon';
         municipalityCounts[muni] = (municipalityCounts[muni] || 0) + 1;
         coordinates = getJitteredCentroid(muni, municipalityCounts[muni]);
@@ -892,7 +889,7 @@ export default function UserMapView({ embedded = false } = {}) {
                             <div className="p-1">
                               <strong className="text-slate-900 block font-semibold">{project.project_name}</strong>
                               <span className="text-[10px] text-slate-500 block mt-0.5">
-                                {isCentroidFallback ? <><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Centroid Fallback</> : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Barangay Center</>}
+                                {isCentroidFallback ? <><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Exact location not recorded</> : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Approximate location</>}
                               </span>
                             </div>
                           </Tooltip>

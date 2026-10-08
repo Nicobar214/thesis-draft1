@@ -1,5 +1,5 @@
-import { CameraIcon, FileTextIcon, TriangleAlertIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { CameraIcon, CheckCircle2Icon, ChevronRightIcon, FileTextIcon, RotateCcwIcon, SearchCheckIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -47,6 +47,62 @@ function StatusPill({ proposal }) {
     </span>
   );
 }
+
+/* The DA review pipeline, in forward order. "Needs Revision" and "Rejected"
+   are deliberately not part of this array: they're off-ramps a proposal can
+   hit from "Under Validation" rather than steps every proposal passes
+   through, so they get their own non-numbered row (PROPOSAL_OUTCOME_BUCKETS)
+   instead of being numbered 4 and 5 as if rejection always follows approval. */
+const PROPOSAL_STATUS_BUCKETS = [
+  {
+    key: 'Submitted',
+    label: 'Submitted',
+    hint: 'Newly submitted by the LGU, awaiting DA review',
+    icon: FileTextIcon,
+    bar: 'bg-sky-500',
+    value: 'text-sky-700',
+    activeRing: 'ring-sky-500/40 border-sky-400 bg-sky-50/60',
+  },
+  {
+    key: 'Under Validation',
+    label: 'Under Validation',
+    hint: 'DA is actively reviewing feasibility',
+    icon: SearchCheckIcon,
+    bar: 'bg-indigo-500',
+    value: 'text-indigo-700',
+    activeRing: 'ring-indigo-500/40 border-indigo-400 bg-indigo-50/60',
+  },
+  {
+    key: 'Approved',
+    label: 'Approved',
+    hint: 'Validated as feasible — logged as a project or awaiting creation',
+    icon: CheckCircle2Icon,
+    bar: 'bg-emerald-500',
+    value: 'text-emerald-700',
+    activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60',
+  },
+];
+
+const PROPOSAL_OUTCOME_BUCKETS = [
+  {
+    key: 'Needs Revision',
+    label: 'Needs Revision',
+    hint: 'Sent back to the LGU for changes, then resubmitted for validation',
+    icon: RotateCcwIcon,
+    bar: 'bg-orange-500',
+    value: 'text-orange-700',
+    activeRing: 'ring-orange-500/40 border-orange-400 bg-orange-50/60',
+  },
+  {
+    key: 'Rejected',
+    label: 'Rejected',
+    hint: 'Not feasible — closed without becoming a project',
+    icon: XCircleIcon,
+    bar: 'bg-red-500',
+    value: 'text-red-700',
+    activeRing: 'ring-red-500/40 border-red-400 bg-red-50/60',
+  },
+];
 
 function ActivityIcon({ type }) {
   const baseClass = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border';
@@ -502,6 +558,12 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
     return new Map(scored.map((r) => [r.proposal.id, r]));
   }, [proposals]);
 
+  const statusCounts = useMemo(() => {
+    const counts = { All: (proposals || []).length };
+    (proposals || []).forEach((p) => { counts[p.status] = (counts[p.status] || 0) + 1; });
+    return counts;
+  }, [proposals]);
+
   const filtered = useMemo(() => {
     return (proposals || []).filter((p) => {
       const matchesStatus = statusFilter === 'All' || p.status === statusFilter;
@@ -540,11 +602,6 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
             <p className="text-sm text-slate-500 mt-0.5">Farm-to-Market Road proposals submitted by municipalities, pending DA feasibility validation.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              {['All', 'Submitted', 'Under Validation', 'Needs Revision', 'Approved', 'Rejected'].map((s) => (
-                <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</option>
-              ))}
-            </select>
             <select value={municipalityFilter} onChange={(e) => setMunicipalityFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="All">All Municipalities</option>
               {getMunicipalities().map((m) => <option key={m} value={m}>{m}</option>)}
@@ -553,6 +610,115 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
               <option value="newest">Sort: Newest First</option>
               <option value="oldest_pending">Sort: Oldest Pending First</option>
             </select>
+          </div>
+        </div>
+
+        {/* Status cards double as the filter, laid out as the pipeline the DA
+            actually runs: Submitted -> Under Validation -> Approved, numbered
+            and chevron-connected. "Needs Revision" and "Rejected" are
+            off-ramps from Under Validation rather than later steps, so they
+            sit in their own unnumbered row instead of implying every proposal
+            passes through rejection after approval. */}
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Validation pipeline &middot; 3 steps
+            </p>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('All')}
+              aria-pressed={statusFilter === 'All'}
+              className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
+                statusFilter === 'All'
+                  ? 'border-slate-800 bg-slate-800 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              All proposals ({statusCounts.All || 0})
+            </button>
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2 sm:gap-3">
+            {PROPOSAL_STATUS_BUCKETS.map((bucket, idx) => {
+              const active = statusFilter === bucket.key;
+              const count = statusCounts[bucket.key] || 0;
+              const Icon = bucket.icon;
+              return (
+                <Fragment key={bucket.key}>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(bucket.key)}
+                    aria-pressed={active}
+                    title={bucket.hint}
+                    className={`relative min-w-0 rounded-xl border bg-white pl-3 pr-2.5 pt-5 pb-3 text-left shadow-sm transition-all ${
+                      active
+                        ? `ring-2 ${bucket.activeRing}`
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                    }`}
+                  >
+                    <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${bucket.bar}`} />
+                    <span
+                      aria-hidden="true"
+                      className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${bucket.bar}`}
+                    >
+                      {idx + 1}
+                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`block text-2xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
+                        {count}
+                      </span>
+                      <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
+                    </div>
+                    <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
+                      {bucket.label}
+                    </span>
+                  </button>
+                  {idx < PROPOSAL_STATUS_BUCKETS.length - 1 && (
+                    <span aria-hidden="true" className="flex items-center justify-center text-slate-300">
+                      <ChevronRightIcon className="size-4" aria-hidden="true" />
+                    </span>
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
+
+          <div className="mt-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Other outcomes &middot; off the main path
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:max-w-md">
+              {PROPOSAL_OUTCOME_BUCKETS.map((bucket) => {
+                const active = statusFilter === bucket.key;
+                const count = statusCounts[bucket.key] || 0;
+                const Icon = bucket.icon;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    onClick={() => setStatusFilter(active ? 'All' : bucket.key)}
+                    aria-pressed={active}
+                    title={bucket.hint}
+                    className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-2.5 text-left shadow-sm transition-colors ${
+                      active
+                        ? `ring-2 ${bucket.activeRing}`
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                    }`}
+                  >
+                    <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${bucket.bar}`} />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`block text-xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
+                        {count}
+                      </span>
+                      <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
+                    </div>
+                    <span className="mt-1 block text-[11px] font-medium leading-tight text-slate-600">
+                      {bucket.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

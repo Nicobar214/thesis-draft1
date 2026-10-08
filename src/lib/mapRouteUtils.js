@@ -205,6 +205,54 @@ export function isOverdueProject(project) {
 }
 
 /**
+ * How much to trust a project's plotted position.
+ *
+ * Replaces four separate copies of `remarks.includes('auto-geocoded')` across
+ * Dashboard.jsx and UserMapView.jsx. That test string-matched a free-text notes
+ * column, which forced the background geocoder to write machine text into
+ * `remarks` just so the maps could detect its own output. Provenance now has a
+ * real column, `fmr_projects.coordinate_source` (supabase_coordinate_source_column.sql).
+ *
+ * Returns one of:
+ *   'surveyed'    - geometry traced to a road network or supplied by the DA
+ *   'approximate' - placed at the barangay centre by the geocoder
+ *   'unknown'     - no coordinates at all; the map falls back to a municipal pin
+ *
+ * Precedence, most reliable signal first:
+ *   1. No coordinates anywhere (no route polyline, no start lat/lng) -> 'unknown'.
+ *      Nothing below matters if there is nothing to plot.
+ *   2. A project_routes row with a known `route_source` -> 'surveyed'. An actual
+ *      drawn or generated path is the strongest evidence available, and it wins
+ *      even if `coordinate_source` disagrees (e.g. a project was geocoded first,
+ *      then later routed by the OSM generator but the project row was never
+ *      re-stamped).
+ *   3. `project.coordinate_source` -- the real column, so trusted ahead of the
+ *      legacy marker below: 'nominatim-barangay' -> 'approximate'; anything else
+ *      truthy ('da-records', 'osm-local-graph', ...) -> 'surveyed'.
+ *   4. `project.remarks` containing 'auto-geocoded' -- the legacy marker, read
+ *      only for rows from before supabase_coordinate_source_column.sql has run.
+ *      -> 'approximate'.
+ *   5. Otherwise, coordinates exist with no negative signal -> 'surveyed'. This
+ *      is what a plain DA-RAED row with real coordinates and no remarks note
+ *      looks like, both before and after the migration.
+ */
+export function getLocationConfidence(project, routeRecord = null) {
+  const route = buildRoutePoints(project, routeRecord);
+  const hasCoordinates = route.hasPolyline || Boolean(project?.start_latitude && project?.start_longitude);
+  if (!hasCoordinates) return 'unknown';
+
+  if (routeRecord?.route_source) return 'surveyed';
+
+  const source = String(project?.coordinate_source || '').toLowerCase();
+  if (source === 'nominatim-barangay') return 'approximate';
+  if (source) return 'surveyed';
+
+  if (String(project?.remarks || '').toLowerCase().includes('auto-geocoded')) return 'approximate';
+
+  return 'surveyed';
+}
+
+/**
  * The barangay a project sits in.
  *
  * Prefers the real `barangay` column, which fmr_projects previously did not have

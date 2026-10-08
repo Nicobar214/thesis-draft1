@@ -3,8 +3,9 @@
  * submission. Clicking a row opens the full project detail (description,
  * schedule, submission history); the Submit Update action stays inline.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CheckCircle2Icon, ChevronRightIcon, ClipboardListIcon, HardHatIcon } from 'lucide-react';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import ContractorProgressForm from './ContractorProgressForm';
@@ -25,19 +26,36 @@ const fmtShortDate = (value) => {
 };
 
 // ── FMR status badge ─────────────────────────────────────────
-function FmrStatusBadge({ status }) {
+function normalizeFmrStatus(status) {
   const s = (status || '').toLowerCase();
-  let cls = 'bg-sky-50 text-sky-700 border-sky-200';
-  let label = status || 'Proposed';
-  if (s.includes('complet')) { cls = 'bg-emerald-50 text-emerald-700 border-emerald-200'; label = 'Completed'; }
-  else if (s.includes('going') || s.includes('ongoing')) { cls = 'bg-amber-50 text-amber-700 border-amber-200'; label = 'On-Going'; }
-  else if (s.includes('proposed')) { cls = 'bg-sky-50 text-sky-700 border-sky-200'; label = 'Proposed'; }
+  if (s.includes('complet')) return 'Completed';
+  if (s.includes('going') || s.includes('ongoing')) return 'On-Going';
+  return 'Proposed';
+}
+
+const FMR_STATUS_BADGE_CLASS = {
+  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'On-Going': 'bg-amber-50 text-amber-700 border-amber-200',
+  Proposed: 'bg-sky-50 text-sky-700 border-sky-200',
+};
+
+function FmrStatusBadge({ status }) {
+  const label = normalizeFmrStatus(status);
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${cls}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${FMR_STATUS_BADGE_CLASS[label]}`}>
       {label}
     </span>
   );
 }
+
+/* Project lifecycle, in order. These cards double as the filter for the
+   table below, mirroring the pipeline cards on the admin dashboard so a
+   contractor sees the same status language their DA counterpart does. */
+const PROJECT_STATUS_BUCKETS = [
+  { key: 'Proposed', label: 'Proposed', hint: 'Logged by the DA, not yet started', icon: ClipboardListIcon, bar: 'bg-sky-500', value: 'text-sky-700', activeRing: 'ring-sky-500/40 border-sky-400 bg-sky-50/60' },
+  { key: 'On-Going', label: 'On-Going', hint: 'Active construction — you can submit progress updates', icon: HardHatIcon, bar: 'bg-amber-500', value: 'text-amber-700', activeRing: 'ring-amber-500/40 border-amber-400 bg-amber-50/60' },
+  { key: 'Completed', label: 'Completed', hint: 'Finished and accepted', icon: CheckCircle2Icon, bar: 'bg-emerald-500', value: 'text-emerald-700', activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60' },
+];
 
 function WorkPlanStatusBadge({ status }) {
   const normalized = status || 'none';
@@ -65,6 +83,7 @@ export default function ContractorProjects() {
   const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
   const [successMessage, setSuccessMessage] = useState('');
   const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('All');
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -144,12 +163,31 @@ export default function ContractorProjects() {
     }
   }, [user, fetchData]);
 
-  const totalPages = Math.max(1, Math.ceil(projects.length / ROWS_PER_PAGE));
+  const statusCounts = useMemo(() => {
+    const counts = { All: projects.length };
+    projects.forEach((p) => {
+      const status = normalizeFmrStatus(p.status);
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }, [projects]);
+
+  const filteredProjects = useMemo(
+    () => (statusFilter === 'All' ? projects : projects.filter((p) => normalizeFmrStatus(p.status) === statusFilter)),
+    [projects, statusFilter]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredProjects.length / ROWS_PER_PAGE));
   const safePage = Math.min(page, totalPages);
   const paginatedProjects = useMemo(
-    () => projects.slice((safePage - 1) * ROWS_PER_PAGE, safePage * ROWS_PER_PAGE),
-    [projects, safePage]
+    () => filteredProjects.slice((safePage - 1) * ROWS_PER_PAGE, safePage * ROWS_PER_PAGE),
+    [filteredProjects, safePage]
   );
+
+  const handleStatusFilterChange = (next) => {
+    setStatusFilter(next);
+    setPage(1);
+  };
 
   const handleFormClose = () => {
     setSelectedProject(null);
@@ -196,6 +234,76 @@ export default function ContractorProjects() {
           </div>
         )}
 
+        {/* Status cards double as the filter for the table below, numbered
+            and chevron-connected in lifecycle order so "where is this
+            project" reads the same way it does on the admin dashboard. */}
+        {projects.length > 0 && (
+          <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Project lifecycle &middot; 3 steps
+              </p>
+              <button
+                type="button"
+                onClick={() => handleStatusFilterChange('All')}
+                aria-pressed={statusFilter === 'All'}
+                className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
+                  statusFilter === 'All'
+                    ? 'border-slate-800 bg-slate-800 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                All projects ({statusCounts.All || 0})
+              </button>
+            </div>
+
+            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2 sm:gap-3">
+              {PROJECT_STATUS_BUCKETS.map((bucket, idx) => {
+                const active = statusFilter === bucket.key;
+                const count = statusCounts[bucket.key] || 0;
+                const Icon = bucket.icon;
+                return (
+                  <Fragment key={bucket.key}>
+                    <button
+                      type="button"
+                      onClick={() => handleStatusFilterChange(bucket.key)}
+                      aria-pressed={active}
+                      title={bucket.hint}
+                      className={`relative min-w-0 rounded-xl border bg-white pl-3 pr-2.5 pt-5 pb-3 text-left shadow-sm transition-all ${
+                        active
+                          ? `ring-2 ${bucket.activeRing}`
+                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                      }`}
+                    >
+                      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${bucket.bar}`} />
+                      <span
+                        aria-hidden="true"
+                        className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${bucket.bar}`}
+                      >
+                        {idx + 1}
+                      </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`block text-2xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
+                          {count}
+                        </span>
+                        <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
+                      </div>
+                      <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
+                        {bucket.label}
+                      </span>
+                    </button>
+                    {idx < PROJECT_STATUS_BUCKETS.length - 1 && (
+                      <span aria-hidden="true" className="flex items-center justify-center text-slate-300">
+                        <ChevronRightIcon className="size-4" aria-hidden="true" />
+                      </span>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {projects.length === 0 ? (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm py-16 text-center">
             <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -205,6 +313,23 @@ export default function ContractorProjects() {
             </div>
             <p className="text-base font-bold text-slate-900">No projects assigned yet</p>
             <p className="text-sm text-slate-500 mt-1">An administrator will assign projects to you.</p>
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm py-16 text-center">
+            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-base font-bold text-slate-900">No projects at this stage</p>
+            <p className="text-sm text-slate-500 mt-1">Nothing matches the selected status card right now.</p>
+            <button
+              type="button"
+              onClick={() => handleStatusFilterChange('All')}
+              className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 transition-colors"
+            >
+              Show all projects
+            </button>
           </div>
         ) : (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
@@ -362,8 +487,8 @@ export default function ContractorProjects() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-5 py-3.5">
               <p className="text-xs text-slate-500">
                 Showing <span className="font-bold text-slate-700">{(safePage - 1) * ROWS_PER_PAGE + 1}</span>–
-                <span className="font-bold text-slate-700">{Math.min(safePage * ROWS_PER_PAGE, projects.length)}</span> of{' '}
-                <span className="font-bold text-slate-700">{projects.length}</span>
+                <span className="font-bold text-slate-700">{Math.min(safePage * ROWS_PER_PAGE, filteredProjects.length)}</span> of{' '}
+                <span className="font-bold text-slate-700">{filteredProjects.length}</span>
               </p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1.5">

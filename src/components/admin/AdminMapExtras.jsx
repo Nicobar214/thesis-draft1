@@ -3,21 +3,20 @@ import { Marker, Popup } from 'react-leaflet';
 import BaseTiles from '../map/BaseTiles';
 import L from 'leaflet';
 
-const REPORT_STATUS_COLOR = {
-  pending: '#f59e0b',
-  reviewed: '#0ea5e9',
-  resolved: '#059669',
-  dismissed: '#64748b',
-};
-
+// Every project marker on this map already uses emerald (Completed), amber
+// (On-Going) or blue (Proposed), so a report pin in any of those colors reads
+// as "another project" at a glance. Pink/magenta doesn't appear anywhere else
+// on the map (routes, gaps, legend), so a report pin is unmistakable on sight;
+// status is still shown in the popup text rather than encoded by hue.
+const REPORT_PIN_COLOR = '#db2777';
 
 function pinIcon(color) {
   return new L.DivIcon({
     className: 'admin-report-pin',
-    html: `<div style="background:${color};width:22px;height:22px;border-radius:9999px;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:9999px;background:#fff"></div></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
-    popupAnchor: [0, -11],
+    html: `<div style="background:${color};width:24px;height:24px;border-radius:9999px;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center"><div style="width:6px;height:6px;border-radius:9999px;background:#fff"></div></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
   });
 }
 
@@ -38,7 +37,7 @@ export function AdminReportPins({ reports, visible, onOpen }) {
 
   if (!visible) return null;
   return points.map(({ report, lat, lng }) => (
-    <Marker key={`admin-report-pin-${report.id}`} position={[lat, lng]} icon={pinIcon(REPORT_STATUS_COLOR[report.status] || '#64748b')}>
+    <Marker key={`admin-report-pin-${report.id}`} position={[lat, lng]} icon={pinIcon(REPORT_PIN_COLOR)}>
       <Popup>
         <div className="space-y-1 p-1 text-xs">
           <p className="font-bold capitalize text-slate-900">{report.status || 'pending'}{report.verification ? ` · ${report.verification}` : ''}</p>
