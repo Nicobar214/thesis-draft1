@@ -1,7 +1,7 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
-import { ArchiveIcon, CheckCircle2Icon, CheckIcon, ChevronRightIcon, CircleHelpIcon, ClipboardListIcon, HardHatIcon, MapPinIcon, RotateCcwIcon, SearchIcon, ShieldCheckIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, UserPlusIcon, WrenchIcon, XCircleIcon, XIcon, ZapIcon } from 'lucide-react';
+import { ArchiveIcon, CheckCircle2Icon, CheckIcon, CircleHelpIcon, ClipboardListIcon, HardHatIcon, MapPinIcon, RotateCcwIcon, SearchIcon, ShieldCheckIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, UserPlusIcon, WrenchIcon, XCircleIcon, XIcon, ZapIcon } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
 import { supabaseAdminPortal as supabase, supabaseAdmin } from '../lib/supabase';
 import { formatPercentage } from '../lib/percentageFormat';
@@ -67,6 +67,9 @@ import { FileTextIcon } from 'lucide-react';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import { buildFarmerBeneficiaries } from '../utils/farmerBeneficiaryData';
 import Icons from '../components/Icons';
+import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
+import ReviewQueueSummary from '../components/admin/ReviewQueueSummary';
+import Pagination, { usePagination } from '../components/ui/Pagination';
 import Logo from '../components/Logo';
 import StableHeatLayer from '../components/map/StableHeatLayer';
 import { useHeatLapse } from '../lib/useHeatLapse';
@@ -512,25 +515,40 @@ const ADMIN_BUCKET_ICONS = {
   ready_to_resolve: CheckCircle2Icon,
   closed: ArchiveIcon,
 };
-const ADMIN_BUCKET_OWNER_LABEL = { admin: 'Needs you', engineer: 'With engineer' };
 
 /* Card styling for the progress-update workflow stages from progressWorkflow.js
    (WORKFLOW_STAGES / getWorkflowStage). PENDING_ENGINEER -> PENDING_ADMIN ->
    APPROVED is the forward pipeline that progressWorkflow.js's own header
    comment already names ("contractor claim -> engineer certification ->
    admin approval -> official"); DISPUTED and RETURNED are off-ramps back to
-   the contractor, not later steps, so they're kept out of the numbered row.
-   Colours mirror STAGE_META's `tone` there so a stage means the same thing
-   in the cards as it does in the per-row status badge. */
+   the contractor, not later steps.
+   Tones follow the shared Review Queue palette (lib/reviewQueueTones.js):
+   amber = waiting on the admin, slate = with someone else, emerald = done,
+   rose = sent back. */
 const PROGRESS_STAGE_CARD_STYLE = {
-  [WORKFLOW_STAGES.PENDING_ENGINEER]: { label: 'Pending Engineer', hint: 'Awaiting the supervising engineer to certify this accomplishment on site', icon: HardHatIcon, bar: 'bg-amber-500', value: 'text-amber-700', activeRing: 'ring-amber-500/40 border-amber-400 bg-amber-50/60' },
-  [WORKFLOW_STAGES.PENDING_ADMIN]: { label: 'Pending Admin', hint: 'Certified by the engineer — awaiting your approval as official', icon: ShieldCheckIcon, bar: 'bg-sky-500', value: 'text-sky-700', activeRing: 'ring-sky-500/40 border-sky-400 bg-sky-50/60' },
-  [WORKFLOW_STAGES.APPROVED]: { label: 'Approved', hint: 'Approved — this is now the official project accomplishment', icon: CheckCircle2Icon, bar: 'bg-emerald-500', value: 'text-emerald-700', activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60' },
-  [WORKFLOW_STAGES.DISPUTED]: { label: 'Disputed', hint: 'The engineer disputed this figure — the contractor must resubmit', icon: XCircleIcon, bar: 'bg-rose-500', value: 'text-rose-700', activeRing: 'ring-rose-500/40 border-rose-400 bg-rose-50/60' },
-  [WORKFLOW_STAGES.RETURNED]: { label: 'Returned', hint: 'You returned this submission — the contractor must resubmit', icon: RotateCcwIcon, bar: 'bg-rose-500', value: 'text-rose-700', activeRing: 'ring-rose-500/40 border-rose-400 bg-rose-50/60' },
+  [WORKFLOW_STAGES.PENDING_ENGINEER]: { label: 'Pending Engineer', hint: 'Awaiting the supervising engineer to certify this accomplishment on site', icon: HardHatIcon, tone: 'waiting' },
+  [WORKFLOW_STAGES.PENDING_ADMIN]: { label: 'Pending Admin', hint: 'Certified by the engineer — awaiting your approval as official', icon: ShieldCheckIcon, tone: 'action' },
+  [WORKFLOW_STAGES.APPROVED]: { label: 'Approved', hint: 'Approved — this is now the official project accomplishment', icon: CheckCircle2Icon, tone: 'done' },
+  [WORKFLOW_STAGES.DISPUTED]: { label: 'Disputed', hint: 'The engineer disputed this figure — the contractor must resubmit', icon: XCircleIcon, tone: 'problem' },
+  [WORKFLOW_STAGES.RETURNED]: { label: 'Returned', hint: 'You returned this submission — the contractor must resubmit', icon: RotateCcwIcon, tone: 'problem' },
 };
 const PROGRESS_STAGE_PIPELINE = [WORKFLOW_STAGES.PENDING_ENGINEER, WORKFLOW_STAGES.PENDING_ADMIN, WORKFLOW_STAGES.APPROVED];
 const PROGRESS_STAGE_OUTCOMES = [WORKFLOW_STAGES.DISPUTED, WORKFLOW_STAGES.RETURNED];
+
+/* Header title + one-line description per admin tab. Every tab needs an entry
+   (Project Mgmt used to be missing, leaving its header blank). */
+const ADMIN_PAGE_META = {
+  projects: { title: 'FMR Projects', description: 'Manage all Farm-to-Market Road projects' },
+  analytics: { title: 'Analytics', description: 'Program performance, citizen reports, and data coverage' },
+  priorities: { title: 'Priorities', description: 'Weighted ranking of road gaps for investment' },
+  'public-reports': { title: 'Public Reports', description: 'Location-verified citizen reports on FMR roads' },
+  'progress-updates': { title: 'Progress Updates', description: 'Contractor-submitted progress for review and approval' },
+  'lgu-proposals': { title: 'LGU Proposals', description: 'LGU-submitted FMR proposals for feasibility validation' },
+  'project-mgmt': { title: 'Project Management', description: 'Schedules, timelines, and activity across FMR projects' },
+  farmers: { title: 'Farmer Beneficiaries', description: 'LGU-submitted farmer beneficiaries for DA review' },
+  reports: { title: 'Reports', description: 'Generate and view project reports' },
+  settings: { title: 'Settings', description: 'Account and system preferences' },
+};
 
 /* Segmented control for the heatmap window. Rendered on both admin maps, which
    share heatmapInterval state, so switching on one updates the other. */
@@ -945,6 +963,13 @@ export default function Dashboard() {
   const [progressUpdatesLoading, setProgressUpdatesLoading] = useState(false);
   const [progressUpdatesLastSyncedAt, setProgressUpdatesLastSyncedAt] = useState(null);
   const [progressUpdateStageFilter, setProgressUpdateStageFilter] = useState('All');
+  // Lifted to top level (not inside the tab's conditional render) so the
+  // pagination hook is called on every render, not just while this tab is active.
+  const filteredProgressUpdates = useMemo(
+    () => (progressUpdateStageFilter === 'All' ? progressUpdates : progressUpdates.filter((u) => getWorkflowStage(u) === progressUpdateStageFilter)),
+    [progressUpdates, progressUpdateStageFilter]
+  );
+  const progressPager = usePagination(filteredProgressUpdates, progressUpdateStageFilter);
   // Set by a notification click so the target tab can open/highlight the exact record.
   const [focusProgressId, setFocusProgressId] = useState(null);
   const [focusProposalId, setFocusProposalId] = useState(null);
@@ -3748,20 +3773,17 @@ export default function Dashboard() {
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gradient-to-b from-slate-950 to-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } border-r border-slate-800/60 shadow-xl`}>
-        {/* Logo */}
-        <div className="px-5 py-6 border-b border-slate-800/60">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3.5 overflow-hidden">
-              {sidebarCollapsed ? (
-                <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
-              ) : (
-                <div className="flex flex-col gap-1">
-                  <Logo tone="light" className="h-8" />
-                  <p className="text-[10px] font-bold text-slate-500 tracking-wider uppercase">FMR Portal v1.0</p>
-                </div>
-              )}
+        {/* Logo -- same height as the page header (h-20 / sm:h-24) so the two
+            bottom borders line up into one line across the screen. */}
+        <div className={`flex h-20 sm:h-24 shrink-0 items-center border-b border-slate-800/60 ${sidebarCollapsed ? 'justify-center px-2' : 'px-6'}`}>
+          {sidebarCollapsed ? (
+            <Logo variant="glyph" tone="light" className="size-11" alt="KalsaTrack" />
+          ) : (
+            <div className="flex flex-col items-start gap-1.5 overflow-hidden">
+              <Logo tone="light" className="h-11" />
+              <p className="pl-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-teal-400">Admin Portal</p>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Navigation */}
@@ -3853,19 +3875,10 @@ export default function Dashboard() {
           {!sidebarCollapsed && <AttentionSummary rows={attentionRows} />}
         </nav>
 
-        {/* User Profile */}
+        {/* Footer: connection status and sign out. The signed-in identity
+            moved to the top-right of the header. */}
         <div className={`${sidebarCollapsed ? 'p-2.5' : 'p-5'} border-t border-slate-800/60 bg-slate-900/60`}>
           <ConnectionStatus collapsed={sidebarCollapsed} />
-          <div className="flex items-center gap-3 px-1.5 py-2 overflow-hidden">
-            <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center font-extrabold text-sm shadow-md shadow-teal-500/20 flex-shrink-0 text-white select-none">
-              {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
-            </div>
-            <div className={`transition-all duration-300 ease-in-out flex flex-col ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-auto opacity-100 flex-grow'
-              }`}>
-              <p className="font-bold text-[13.5px] text-white truncate leading-snug">{adminIdentity.full_name}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5 truncate">{adminIdentity.email}</p>
-            </div>
-          </div>
           <button
             onClick={handleSignOut}
             title={sidebarCollapsed ? 'Sign Out' : undefined}
@@ -3888,36 +3901,20 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className={`flex-1 min-h-dvh transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
         {/* Header */}
-        <header className="bg-gradient-to-br from-slate-50 to-slate-100 backdrop-blur-lg border-b border-slate-200/50 sticky top-0 z-20">
-          <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="pl-12 lg:pl-0">
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                {activeTab === 'projects' && 'FMR Projects'}
-                {activeTab === 'analytics' && 'Analytics'}
-                {activeTab === 'farmers' && 'Farmer Beneficiaries'}
-                {activeTab === 'priorities' && 'Priorities'}
-                {activeTab === 'reports' && 'Reports'}
-                {activeTab === 'public-reports' && 'Public Reports'}
-                {activeTab === 'progress-updates' && 'Progress Updates'}
-                {activeTab === 'lgu-proposals' && 'LGU Proposals'}
-                {activeTab === 'settings' && 'Settings'}
+        {/* One fixed height on every tab (matching the sidebar's logo strip so
+            the two bottom borders meet), one-line title and description, and
+            the same actions on the right: page action, bell, profile. */}
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+          <div className="flex h-20 sm:h-24 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="min-w-0 pl-12 lg:pl-0">
+              <h1 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
+                {(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).title}
               </h1>
-              <p className="text-sm text-slate-600 mt-1">
-                {activeTab === 'projects' && 'Manage all Farm-to-Market Road projects'}
-                {activeTab === 'analytics' && 'Project performance metrics and trends'}
-                {activeTab === 'farmers' && 'LGU-submitted farmer beneficiaries linked to FMR project service areas for DA review'}
-                {activeTab === 'priorities' && 'Weighted ranking of FMR project urgency'}
-                {activeTab === 'reports' && 'Generate and view project reports'}
-                {activeTab === 'public-reports' && 'Location-verified reports submitted from the public landing page'}
-                {activeTab === 'progress-updates' && 'Review contractor-submitted progress updates for FMR projects'}
-                {activeTab === 'lgu-proposals' && 'Validate LGU-submitted Farm-to-Market Road project proposals for feasibility'}
-                {activeTab === 'settings' && 'Configure system preferences'}
+              <p className="mt-0.5 hidden truncate text-sm text-slate-500 sm:block">
+                {(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).description}
               </p>
             </div>
-            {/* One actions group, so the header's justify-between resolves to
-                title on the left and actions on the right. The bell sits after the
-                primary action, which is where the eye lands last. */}
-            <div className="flex items-center gap-2.5 self-start sm:self-auto">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {activeTab === 'projects' && (
                 <button
                   onClick={() => {
@@ -3933,12 +3930,12 @@ export default function Dashboard() {
                     setNewProjectRouteMode('waypoint');
                     setShowAddModal(true);
                   }}
-                  className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white px-6 py-3 rounded-xl font-semibold text-sm flex items-center gap-2.5 transition-all duration-200 shadow-lg shadow-teal-500/25 hover:shadow-xl hover:shadow-teal-500/30"
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  New Project
+                  <span className="hidden sm:inline">New Project</span>
                 </button>
               )}
 
@@ -3947,6 +3944,24 @@ export default function Dashboard() {
                 resolveTarget={resolveNotificationTarget}
                 onSelect={openNotification}
               />
+
+              {/* Signed-in admin, top right (moved from the sidebar footer).
+                  Opens Settings, where the account details live. */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                title="Account settings"
+                aria-label="Account settings"
+                className="flex items-center gap-3 rounded-xl border-l border-slate-200 py-1 pl-3 pr-1 transition-colors hover:bg-slate-50 sm:pl-4"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 text-sm font-bold text-white shadow-sm sm:size-10">
+                  {(adminIdentity.full_name || 'A').charAt(0).toUpperCase()}
+                </span>
+                <span className="hidden min-w-0 text-left md:block">
+                  <span className="block max-w-[11rem] truncate text-sm font-bold text-slate-900">{adminIdentity.full_name}</span>
+                  <span className="block max-w-[11rem] truncate text-xs text-slate-500">{adminIdentity.email}</span>
+                </span>
+              </button>
             </div>
           </div>
         </header>
@@ -5007,45 +5022,16 @@ export default function Dashboard() {
                   );
                 })()}
 
-                {/* Summary Stat Chips */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-50 to-cyan-100 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" /></svg>
-                      </div>
-                    </div>
-                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.all}</p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Total FMR Projects</p>
-                  </div>
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                      </div>
-                    </div>
-                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.completed}</p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Completed</p>
-                  </div>
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      </div>
-                    </div>
-                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.ongoing}</p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">On-Going</p>
-                  </div>
-                  <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-50 to-sky-100 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0" /></svg>
-                      </div>
-                    </div>
-                    <p className="text-3xl font-bold text-slate-900 tracking-tight">{fmrCounts.proposed}</p>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">Proposed</p>
-                  </div>
-                </div>
+                {/* Same KPI hierarchy as the farmer portal (shared component). */}
+                <FmrProjectKpis
+                  stats={{
+                    total: fmrCounts.all,
+                    completed: fmrCounts.completed,
+                    ongoing: fmrCounts.ongoing,
+                    proposed: fmrCounts.proposed,
+                    totalKm: fmrProjects.reduce((sum, p) => sum + (Number(p.project_length_km) || 0), 0),
+                  }}
+                />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-white border border-slate-200/60 rounded-2xl p-5 hover:shadow-md transition-shadow">
@@ -5591,16 +5577,13 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-6">
-                {/* ── Header ─────────────────────────────────────────── */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Project Management</h2>
-                    <p className="text-sm text-slate-500 mt-0.5">{filteredFmrProjects.length} filtered FMR projects · Farm-to-Market Road Program</p>
-                  </div>
+                {/* Count + status pills. The page title lives in the shared header. */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <p className="text-sm text-slate-500">{filteredFmrProjects.length} filtered FMR projects</p>
                   {/* KPI pills row */}
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { label: 'Proposed', val: kanbanGroups.proposed.length, cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+                      { label: 'Proposed', val: kanbanGroups.proposed.length, cls: 'bg-sky-50 text-sky-700 border-sky-200' },
                       { label: 'On-Going', val: kanbanGroups.ongoing.length, cls: 'bg-amber-50 text-amber-700 border-amber-200' },
                       { label: 'Completed', val: kanbanGroups.completed.length, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
                     ].map(k => (
@@ -6342,19 +6325,44 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-8">
-                {/* Summary stats */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                  <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-blue-700">{classifiedFmrProjects.ongoingProjects.length}</p>
-                    <p className="text-sm text-blue-600 mt-1 font-medium">Ongoing Projects</p>
-                  </div>
-                  <div className="bg-red-50 border border-red-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-red-700">{classifiedFmrProjects.delayedProjects.length}</p>
-                    <p className="text-sm text-red-600 mt-1 font-medium">Delayed Projects</p>
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-6">
-                    <p className="text-3xl font-bold text-emerald-700">{classifiedFmrProjects.completedProjects.length}</p>
-                    <p className="text-sm text-emerald-600 mt-1 font-medium">Completed Projects</p>
+                {/* Summary stats: Delayed is the lead card -- it's what needs the
+                    admin's attention, not just the largest count. */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-label="Project status summary">
+                  <article className="rounded-2xl border border-red-200/70 bg-gradient-to-br from-red-50 to-white p-6 shadow-sm">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-red-700">Delayed Projects</p>
+                        <p className="mt-2 text-5xl font-semibold tracking-tight text-red-800 tabular-nums">{classifiedFmrProjects.delayedProjects.length}</p>
+                        <p className="mt-1.5 text-sm text-red-600">Past target completion date</p>
+                      </div>
+                      <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-red-100 text-red-700">
+                        <TriangleAlertIcon className="size-6" />
+                      </div>
+                    </div>
+                  </article>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <article className="flex flex-col rounded-2xl border border-slate-200/60 bg-white p-4 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600">
+                          <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </span>
+                        <p className="text-xs font-medium text-slate-500">Ongoing</p>
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">{classifiedFmrProjects.ongoingProjects.length}</p>
+                    </article>
+
+                    <article className="flex flex-col rounded-2xl border border-slate-200/60 bg-white p-4 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+                          <CheckCircle2Icon className="size-4" />
+                        </span>
+                        <p className="text-xs font-medium text-slate-500">Completed</p>
+                      </div>
+                      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">{classifiedFmrProjects.completedProjects.length}</p>
+                    </article>
                   </div>
                 </div>
 
@@ -6875,168 +6883,41 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-6">
-                {/* Section header: what this is, and the one number that
-                    matters — how much work is sitting with the admin. */}
-                <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-                  <div className="min-w-0">
-                    <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-                      Citizen Reports
-                    </h2>
-                    <p className="text-sm text-slate-500 mt-1">
-                      Public reports on Region VI farm-to-market roads
-                      <span className="text-slate-300"> · </span>
-                      {bucketCounts.all} total
-                      <span className="text-slate-300"> · </span>
-                      {verifiedCount} verified on-site
-                    </p>
-                  </div>
-                  <div className="flex items-end gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setPublicReportFilter('all')}
-                      aria-pressed={publicReportFilter === 'all'}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        publicReportFilter === 'all'
-                          ? 'border-slate-800 bg-slate-800 text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      All reports
-                    </button>
-                  <div className="text-left sm:text-right">
-                    <p className="text-2xl font-semibold tabular-nums leading-none text-slate-900">
-                      {bucketCounts.actionNeeded}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {bucketCounts.actionNeeded === 1 ? 'report awaits you' : 'reports await you'}
-                    </p>
-                  </div>
-                  </div>
-                </div>
-
-                {/* Workload cards double as the filter for the list below, and are
-                    pinned under the header while the list scrolls so the admin never
-                    loses the filter bar. Numbered badges + connecting chevrons (xl+)
-                    lay the six buckets out as one pipeline rather than six unrelated
-                    tiles; the small caption under each count names whose turn it is
-                    (admin vs. engineer), using the `owner` field ADMIN_BUCKETS already
-                    carries, so "what's next" reads from the UI instead of the hint
-                    tooltip alone. */}
-                <div className="sticky top-[148px] sm:top-[100px] z-10 -mx-4 sm:-mx-6 lg:-mx-8 border-b border-slate-200/70 bg-gradient-to-br from-slate-50 to-slate-100 px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Report lifecycle &middot; 6 steps
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:flex xl:flex-nowrap xl:items-stretch gap-3 xl:gap-0">
-                    {ADMIN_BUCKETS.map((bucket, idx) => {
-                      const active = publicReportFilter === bucket.key;
-                      const count = bucketCounts[bucket.key] || 0;
-                      const Icon = ADMIN_BUCKET_ICONS[bucket.key];
-                      return (
-                        <Fragment key={bucket.key}>
-                          <button
-                            type="button"
-                            onClick={() => setPublicReportFilter(bucket.key)}
-                            aria-pressed={active}
-                            title={bucket.hint}
-                            className={`relative flex-1 xl:min-w-0 rounded-xl border bg-white pl-4 pr-3 pt-5 pb-3 text-left shadow-sm transition-all ${
-                              active
-                                ? `ring-2 ${bucket.activeRing}`
-                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                            }`}
-                          >
-                            <span
-                              aria-hidden="true"
-                              className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${bucket.bar}`}
-                            />
-                            <span
-                              aria-hidden="true"
-                              className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${bucket.bar}`}
-                            >
-                              {bucket.key === 'closed' ? <CheckIcon className="size-3" aria-hidden="true" /> : idx + 1}
-                            </span>
-                            <div className="flex items-center justify-between gap-2">
-                              <span
-                                className={`block text-2xl font-semibold leading-none tabular-nums ${
-                                  count === 0 ? 'text-slate-300' : bucket.value
-                                }`}
-                              >
-                                {count}
-                              </span>
-                              {Icon && (
-                                <Icon
-                                  className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`}
-                                  aria-hidden="true"
-                                />
-                              )}
-                            </div>
-                            <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
-                              {bucket.label}
-                            </span>
-                            <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-slate-400">
-                              {bucket.owner ? ADMIN_BUCKET_OWNER_LABEL[bucket.owner] : 'Resolved'}
-                            </span>
-                          </button>
-                          {idx < ADMIN_BUCKETS.length - 1 && (
-                            <span aria-hidden="true" className="hidden xl:flex w-5 shrink-0 items-center justify-center text-slate-300">
-                              <ChevronRightIcon className="size-4" aria-hidden="true" />
-                            </span>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-
-                  {/* Repair follow-up: work that only exists once a report has
-                      already left the pipeline above, so it gets its own visual
-                      language (wrench, no step number, no connector) instead of
-                      pretending to be steps 7 and 8. */}
-                  <div className="mt-3">
-                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      <WrenchIcon className="size-3" aria-hidden="true" />
-                      Repair follow-up
-                      <span className="normal-case font-normal tracking-normal text-slate-400">&middot; after a report closes</span>
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 sm:max-w-md">
-                      {REPAIR_QUEUE_BUCKETS.map((bucket) => {
-                        const active = publicReportFilter === bucket.key;
-                        const count = bucketCounts[bucket.key] || 0;
-                        return (
-                          <button
-                            key={bucket.key}
-                            type="button"
-                            onClick={() => setPublicReportFilter(active ? 'all' : bucket.key)}
-                            aria-pressed={active}
-                            title={bucket.hint}
-                            className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-2.5 text-left shadow-sm transition-colors ${
-                              active
-                                ? `ring-2 ${bucket.activeRing}`
-                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                            }`}
-                          >
-                            <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${bucket.bar}`} />
-                            <span
-                              className={`block text-xl font-semibold leading-none tabular-nums ${
-                                count === 0 ? 'text-slate-300' : bucket.value
-                              }`}
-                            >
-                              {count}
-                            </span>
-                            <span className="mt-1 block text-[11px] font-medium leading-tight text-slate-600">
-                              {bucket.label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+                {/* Lead card: how much work is sitting with the admin. Stage
+                    cards double as the list filter. Shared with the other two
+                    Review Queue pages so colors mean the same thing on all three. */}
+                <ReviewQueueSummary
+                  lead={{
+                    value: bucketCounts.actionNeeded,
+                    label: `${bucketCounts.actionNeeded === 1 ? 'report' : 'reports'} awaiting your action`,
+                  }}
+                  groups={[
+                    {
+                      label: 'Report pipeline',
+                      stages: ADMIN_BUCKETS.map((b) => ({
+                        key: b.key, label: b.label, count: bucketCounts[b.key] || 0, tone: b.tone, hint: b.hint, icon: ADMIN_BUCKET_ICONS[b.key],
+                      })),
+                    },
+                    {
+                      label: 'Repair follow-up',
+                      stages: REPAIR_QUEUE_BUCKETS.map((b) => ({
+                        key: b.key, label: b.label, count: bucketCounts[b.key] || 0, tone: b.tone, hint: b.hint, icon: WrenchIcon,
+                      })),
+                    },
+                  ]}
+                  activeKey={publicReportFilter}
+                  onSelect={setPublicReportFilter}
+                  allKey="all"
+                  allCount={bucketCounts.all}
+                  allLabel="All reports"
+                />
 
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                   <div className="flex flex-col gap-3 border-b border-slate-100 pb-3 lg:flex-row lg:items-end lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-sm font-semibold tracking-tight text-slate-900">Filter Public Reports</h3>
-                        <span className="inline-flex h-6 items-center rounded-full bg-indigo-50 px-2.5 text-[11px] font-semibold text-indigo-700">
+                        <span className="inline-flex h-6 items-center rounded-full bg-teal-50 px-2.5 text-[11px] font-semibold text-teal-700">
                           {filteredPublicReports.length} result{filteredPublicReports.length !== 1 ? 's' : ''}
                         </span>
                       </div>
@@ -7045,7 +6926,7 @@ export default function Dashboard() {
 
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                        <span className="inline-block h-2 w-2 rounded-full bg-indigo-500" />
+                        <span className="inline-block h-2 w-2 rounded-full bg-slate-400" />
                         {publicReports.length} total reports
                       </div>
                       {(publicReportSearch || publicReportFilter !== 'all' || publicReportCategoryFilter !== 'all' || publicReportDateFrom || publicReportDateTo || publicReportMunicipalityFilter !== 'all' || publicReportBarangayFilter !== 'all' || publicReportStreetFilter !== 'all' || publicReportProjectFilter) && (
@@ -8008,147 +7889,48 @@ export default function Dashboard() {
               const stage = getWorkflowStage(u);
               stageCounts[stage] = (stageCounts[stage] || 0) + 1;
             });
-            const filteredProgressUpdates = progressUpdateStageFilter === 'All'
-              ? progressUpdates
-              : progressUpdates.filter((u) => getWorkflowStage(u) === progressUpdateStageFilter);
             const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
             const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
             return (
               <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Operations Review Queue</p>
-                    <p className="text-sm text-slate-500 mt-1">Track contractor submissions, approval outcomes, and review timestamps.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Last synced</p>
-                      <p className="text-sm text-slate-600">{progressUpdatesLastSyncedAt ? fmtDateTime(progressUpdatesLastSyncedAt) : 'Not yet synced'}</p>
-                    </div>
-                    <button
-                      onClick={fetchProgressUpdates}
-                      disabled={progressUpdatesLoading}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    >
-                      <svg className={`w-4 h-4 ${progressUpdatesLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
-                      </svg>
-                      {progressUpdatesLoading ? 'Refreshing…' : 'Refresh'}
-                    </button>
-                  </div>
+                <div className="flex items-center justify-end gap-3">
+                  <span className="text-xs text-slate-400">
+                    Synced {progressUpdatesLastSyncedAt ? fmtDateTime(progressUpdatesLastSyncedAt) : '—'}
+                  </span>
+                  <button
+                    onClick={fetchProgressUpdates}
+                    disabled={progressUpdatesLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <svg className={`size-3.5 ${progressUpdatesLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
+                    </svg>
+                    {progressUpdatesLoading ? 'Refreshing…' : 'Refresh'}
+                  </button>
                 </div>
 
-                {/* Workflow cards double as the filter for the table below, laid
-                    out as the real pipeline (see progressWorkflow.js): a
-                    contractor's claim moves Pending Engineer -> Pending Admin ->
-                    Approved. Disputed and Returned are off-ramps back to the
-                    contractor from either review stage, not later numbered
-                    steps, so they sit in their own row rather than implying
-                    every submission passes through them after approval. */}
-                <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Review pipeline &middot; 3 steps
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setProgressUpdateStageFilter('All')}
-                      aria-pressed={progressUpdateStageFilter === 'All'}
-                      className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
-                        progressUpdateStageFilter === 'All'
-                          ? 'border-slate-800 bg-slate-800 text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      All submissions ({stageCounts.All || 0})
-                    </button>
-                  </div>
+                <ReviewQueueSummary
+                  lead={{
+                    value: stageCounts[WORKFLOW_STAGES.PENDING_ADMIN] || 0,
+                    label: `${(stageCounts[WORKFLOW_STAGES.PENDING_ADMIN] || 0) === 1 ? 'update' : 'updates'} awaiting your approval`,
+                  }}
+                  groups={[{
+                    stages: [...PROGRESS_STAGE_PIPELINE, ...PROGRESS_STAGE_OUTCOMES].map((key) => ({
+                      key,
+                      label: PROGRESS_STAGE_CARD_STYLE[key].label,
+                      count: stageCounts[key] || 0,
+                      tone: PROGRESS_STAGE_CARD_STYLE[key].tone,
+                      hint: PROGRESS_STAGE_CARD_STYLE[key].hint,
+                      icon: PROGRESS_STAGE_CARD_STYLE[key].icon,
+                    })),
+                  }]}
+                  activeKey={progressUpdateStageFilter}
+                  onSelect={setProgressUpdateStageFilter}
+                  allKey="All"
+                  allCount={stageCounts.All || 0}
+                  allLabel="All submissions"
+                />
 
-                  <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2 sm:gap-3">
-                    {PROGRESS_STAGE_PIPELINE.map((stageKey, idx) => {
-                      const style = PROGRESS_STAGE_CARD_STYLE[stageKey];
-                      const Icon = style.icon;
-                      const active = progressUpdateStageFilter === stageKey;
-                      const count = stageCounts[stageKey] || 0;
-                      return (
-                        <Fragment key={stageKey}>
-                          <button
-                            type="button"
-                            onClick={() => setProgressUpdateStageFilter(stageKey)}
-                            aria-pressed={active}
-                            title={style.hint}
-                            className={`relative min-w-0 rounded-xl border bg-white pl-3 pr-2.5 pt-5 pb-3 text-left shadow-sm transition-all ${
-                              active
-                                ? `ring-2 ${style.activeRing}`
-                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                            }`}
-                          >
-                            <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${style.bar}`} />
-                            <span
-                              aria-hidden="true"
-                              className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${style.bar}`}
-                            >
-                              {idx + 1}
-                            </span>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`block text-2xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : style.value}`}>
-                                {count}
-                              </span>
-                              <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : style.value}`} aria-hidden="true" />
-                            </div>
-                            <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
-                              {style.label}
-                            </span>
-                          </button>
-                          {idx < PROGRESS_STAGE_PIPELINE.length - 1 && (
-                            <span aria-hidden="true" className="flex items-center justify-center text-slate-300">
-                              <ChevronRightIcon className="size-4" aria-hidden="true" />
-                            </span>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-3">
-                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Other outcomes &middot; off the main path
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 sm:max-w-md">
-                      {PROGRESS_STAGE_OUTCOMES.map((stageKey) => {
-                        const style = PROGRESS_STAGE_CARD_STYLE[stageKey];
-                        const Icon = style.icon;
-                        const active = progressUpdateStageFilter === stageKey;
-                        const count = stageCounts[stageKey] || 0;
-                        return (
-                          <button
-                            key={stageKey}
-                            type="button"
-                            onClick={() => setProgressUpdateStageFilter(active ? 'All' : stageKey)}
-                            aria-pressed={active}
-                            title={style.hint}
-                            className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-2.5 text-left shadow-sm transition-colors ${
-                              active
-                                ? `ring-2 ${style.activeRing}`
-                                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                            }`}
-                          >
-                            <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${style.bar}`} />
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`block text-xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : style.value}`}>
-                                {count}
-                              </span>
-                              <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : style.value}`} aria-hidden="true" />
-                            </div>
-                            <span className="mt-1 block text-[11px] font-medium leading-tight text-slate-600">
-                              {style.label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
 
                 {/* Table */}
                 <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
@@ -8189,7 +7971,7 @@ export default function Dashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {filteredProgressUpdates.map((upd) => {
+                          {progressPager.pageItems.map((upd) => {
                             const contractorProfile = contractors.find(c => c.id === upd.contractor_id);
                             const contractorName = contractorProfile?.full_name || contractorProfile?.email || upd.contractor_id?.slice(0, 8) || '—';
                             const projectName = upd.fmr_projects?.project_name || `Project ${upd.fmr_project_id}`;
@@ -8316,6 +8098,8 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
+
+                <Pagination pager={progressPager} noun="update" />
               </div>
             );
           })()}
@@ -8323,10 +8107,6 @@ export default function Dashboard() {
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-              <div className="px-8 py-7 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">System Settings</h2>
-                <p className="text-sm text-slate-500 mt-1.5">Configure your dashboard preferences</p>
-              </div>
               <div className="p-8 space-y-8">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Admin Preferences</h3>

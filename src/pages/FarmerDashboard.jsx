@@ -179,7 +179,10 @@ export default function FarmerDashboard() {
   const roadDistToMarket = snappedSupplyPath ? calculatePolylineDistanceKm(snappedSupplyPath) * 1000 : distToMarket;
 
   return (
-      <div className="flex flex-col lg:flex-row gap-5">
+      // On desktop the row fills the viewport below the header (h-24 = 6rem)
+      // and the page padding (py-6 = 3rem); the map takes up the extra height
+      // instead of leaving an empty band at the bottom of the screen.
+      <div className="flex flex-col lg:flex-row gap-5 lg:min-h-[calc(100dvh-9rem)]">
         {/* Left Side: Summary Card */}
         <aside className="w-full lg:w-80 shrink-0 space-y-4 sm:space-y-6">
           {/* Profile Details */}
@@ -238,13 +241,13 @@ export default function FarmerDashboard() {
 
         {/* Right Side: Map */}
         <section className="flex-1 flex flex-col gap-5 min-w-0">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+          <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 gap-4">
             <div>
               <h3 className="font-bold text-slate-900 text-base sm:text-lg">Supply Chain Access Map</h3>
               <p className="text-xs text-slate-500 mt-0.5">Visualize your farm location routing through your linked Farm-to-Market Road project to the municipal market center.</p>
             </div>
 
-            <div className="h-[320px] sm:h-[420px] rounded-2xl overflow-hidden border border-slate-200 relative z-10 shadow-inner">
+            <div className="h-[320px] sm:h-[420px] lg:h-auto lg:flex-1 lg:min-h-[420px] rounded-2xl overflow-hidden border border-slate-200 relative z-10 shadow-inner">
               {farmLat && farmLng ? (
                 <MapContainer
                   center={[farmLat, farmLng]}

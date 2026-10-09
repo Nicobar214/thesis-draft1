@@ -149,7 +149,12 @@ function HeatLayer({ points }) {
   return (
     <StableHeatLayer
       points={points}
-      radiusMeters={1200}
+      radiusMeters={800}
+      maxRadiusPx={100}
+      // A municipal view usually has only a handful of reports, so a small
+      // natural cluster shouldn't read as intensely as a true hotspot does
+      // on the provincewide admin map -- more headroom keeps it calmer.
+      maxHeadroom={2.5}
       gradient={{ 0.2: '#38bdf8', 0.5: '#f59e0b', 0.8: '#ef4444' }}
     />
   );
@@ -635,7 +640,6 @@ export default function LguRouteMap({
             {[['pending', 'Pending'], ['reviewed', 'Reviewed'], ['resolved', 'Resolved']].map(([k, label]) => (
               <LegendDot key={k} color="" style={{ background: REPORT_STATUS_COLOR[k] }} label={label} />
             ))}
-            <LegendDot color="bg-white" ring="ring-2 ring-red-600" label="Needs LGU action" />
           </LegendGroup>
         )}
       </MapLegend>

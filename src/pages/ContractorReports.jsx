@@ -1,13 +1,14 @@
 /* ContractorReports.jsx – Operations page for contractor progress history
  * and public reports linked to assigned projects.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import { formatPercentage } from '../lib/percentageFormat';
 import { toast } from '../lib/toast';
-import { pipelineStage } from '../lib/contractorPipeline';
+import { pipelineStage, STAGES } from '../lib/contractorPipeline';
+import Pagination, { usePagination } from '../components/ui/Pagination';
 
 // ── Status badge ─────────────────────────────────────────────
 function ReportStatusBadge({ status }) {
@@ -60,6 +61,14 @@ export default function ContractorReports() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [remarkState, setRemarkState] = useState({}); // { [reportId]: { open, text, saving } }
+
+  // ── Progress history filters ────────────────────────────────
+  const [progressSearch, setProgressSearch] = useState('');
+  const [progressStageFilter, setProgressStageFilter] = useState('All');
+
+  // ── Public reports filters ──────────────────────────────────
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportStatusFilter, setReportStatusFilter] = useState('All');
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -182,6 +191,31 @@ export default function ContractorReports() {
   const fmtDateTime = (d) =>
     d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
+  // ── Filtered + paginated progress history ───────────────────
+  const filteredProgressHistory = useMemo(() => {
+    const q = progressSearch.trim().toLowerCase();
+    return progressHistory.filter((item) => {
+      if (progressStageFilter !== 'All' && pipelineStage(item).key !== progressStageFilter) return false;
+      if (q && !(item.fmr_projects?.project_name || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [progressHistory, progressSearch, progressStageFilter]);
+  const progressPager = usePagination(filteredProgressHistory, `${progressSearch}|${progressStageFilter}`);
+
+  // ── Filtered + paginated public reports ─────────────────────
+  const filteredPublicReports = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    return publicReports.filter((rpt) => {
+      if (reportStatusFilter !== 'All' && rpt.status !== reportStatusFilter) return false;
+      if (q) {
+        const hay = `${rpt.project_name || ''} ${rpt.description || ''} ${rpt.barangay || ''} ${rpt.municipality || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [publicReports, reportSearch, reportStatusFilter]);
+  const reportsPager = usePagination(filteredPublicReports, `${reportSearch}|${reportStatusFilter}`);
+
   if (loading) {
     return (
       <ContractorLayout>
@@ -230,18 +264,47 @@ export default function ContractorReports() {
         </div>
 
         <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
-              <p className="text-sm text-slate-500 mt-1">Every contractor update, its review outcome, and the current project progress.</p>
+          <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
+                <p className="text-sm text-slate-500 mt-1">Every contractor update, its review outcome, and the current project progress.</p>
+              </div>
+              <span className="text-sm font-medium text-slate-500 whitespace-nowrap">{filteredProgressHistory.length} of {progressHistory.length} record{progressHistory.length !== 1 ? 's' : ''}</span>
             </div>
-            <span className="text-sm font-medium text-slate-500">{progressHistory.length} record{progressHistory.length !== 1 ? 's' : ''}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={progressSearch}
+                onChange={(e) => setProgressSearch(e.target.value)}
+                placeholder="Search by project name..."
+                className="h-10 flex-1 min-w-[12rem] px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+              />
+              <select
+                value={progressStageFilter}
+                onChange={(e) => setProgressStageFilter(e.target.value)}
+                className="h-10 px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none cursor-pointer"
+              >
+                <option value="All">All Stages</option>
+                {Object.values(STAGES).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
           </div>
 
           {progressHistory.length === 0 ? (
             <div className="py-14 text-center">
               <p className="text-base font-bold text-slate-900">No submission history yet</p>
               <p className="text-sm text-slate-500 mt-1">Your approved, pending, and rejected progress updates will appear here.</p>
+            </div>
+          ) : filteredProgressHistory.length === 0 ? (
+            <div className="py-14 text-center">
+              <p className="text-base font-bold text-slate-900">No submissions match these filters</p>
+              <button
+                onClick={() => { setProgressSearch(''); setProgressStageFilter('All'); }}
+                className="mt-2 text-sm font-semibold text-teal-700 hover:underline"
+              >
+                Clear filters
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -259,7 +322,7 @@ export default function ContractorReports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {progressHistory.map((item) => (
+                  {progressPager.pageItems.map((item) => (
                     <tr key={item.id} id={`update-${item.id}`} className={`transition-colors align-top ${item.id === highlightId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60'}`}>
                       <td className="px-5 py-4 max-w-xs">
                         <p className="text-sm font-semibold text-slate-900 line-clamp-2">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
@@ -295,6 +358,11 @@ export default function ContractorReports() {
               </table>
             </div>
           )}
+          {filteredProgressHistory.length > 0 && (
+            <div className="px-6 py-4 border-t border-slate-100">
+              <Pagination pager={progressPager} noun="record" />
+            </div>
+          )}
         </div>
 
         {publicReports.length === 0 ? (
@@ -309,13 +377,45 @@ export default function ContractorReports() {
           </div>
         ) : (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
-                <p className="text-sm text-slate-500 mt-1">Citizen-submitted reports tied to your assigned projects.</p>
+            <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
+                  <p className="text-sm text-slate-500 mt-1">Citizen-submitted reports tied to your assigned projects.</p>
+                </div>
+                <span className="text-sm font-medium text-slate-500 whitespace-nowrap">{filteredPublicReports.length} of {publicReports.length} report{publicReports.length !== 1 ? 's' : ''}</span>
               </div>
-              <span className="text-sm font-medium text-slate-500">{publicReports.length} report{publicReports.length !== 1 ? 's' : ''}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={reportSearch}
+                  onChange={(e) => setReportSearch(e.target.value)}
+                  placeholder="Search reports..."
+                  className="h-10 flex-1 min-w-[12rem] px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                />
+                <select
+                  value={reportStatusFilter}
+                  onChange={(e) => setReportStatusFilter(e.target.value)}
+                  className="h-10 px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none cursor-pointer"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="reviewed">Reviewed</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+              </div>
             </div>
+            {filteredPublicReports.length === 0 ? (
+              <div className="py-14 text-center">
+                <p className="text-base font-bold text-slate-900">No reports match these filters</p>
+                <button
+                  onClick={() => { setReportSearch(''); setReportStatusFilter('All'); }}
+                  className="mt-2 text-sm font-semibold text-teal-700 hover:underline"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px]">
                 <thead>
@@ -329,7 +429,7 @@ export default function ContractorReports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {publicReports.map((rpt) => {
+                  {reportsPager.pageItems.map((rpt) => {
                     const rstate = remarkState[rpt.id] || { open: false, text: rpt.contractor_remark || '', saving: false };
                     return (
                       <tr key={rpt.id} className="hover:bg-slate-50/60 transition-colors align-top">
@@ -431,6 +531,12 @@ export default function ContractorReports() {
                 </tbody>
               </table>
             </div>
+            )}
+            {filteredPublicReports.length > 0 && (
+              <div className="px-6 py-4 border-t border-slate-100">
+                <Pagination pager={reportsPager} noun="report" />
+              </div>
+            )}
           </div>
         )}
       </div>

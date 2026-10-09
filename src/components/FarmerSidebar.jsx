@@ -9,23 +9,23 @@ import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
 // "FMR", "Directory") a first-time farmer user would have to decode.
 const navItems = [
   { to: '/farmer', label: 'My Farm', icon: Icons.MapPin },
-  { to: '/farmer/harvest', label: 'My Harvest', icon: Icons.Wheat },
-  { to: '/farmer/report', label: 'Report Issue', icon: Icons.Warning },
+  { to: '/farmer/harvest', label: 'Harvest', icon: Icons.Wheat },
   { to: '/farmer/reports', label: 'My Reports', icon: Icons.Document },
   { to: '/farmer/fmr-projects', label: 'Road Projects', icon: Icons.Road },
   { to: '/farmer/markets', label: 'Markets', icon: Icons.Building },
 ];
 
 // Three groups by what the page is FOR, not just what it's called:
-//   Overview   - the one "where do things stand" home page
+//   Overview   - "where do things stand": my farm, and the road projects
+//                serving it
 //   My Activity - things that are the farmer's own (mirrors the citizen
 //                 portal's identical "My Activity" group, for the same
 //                 reason: these are personal records, not reference data)
 //   Browse     - everyone's data, for looking things up rather than acting
 const NAV_GROUPS = [
-  { label: 'Overview', to: ['/farmer'] },
-  { label: 'My Activity', to: ['/farmer/harvest', '/farmer/report', '/farmer/reports'] },
-  { label: 'Browse', to: ['/farmer/fmr-projects', '/farmer/markets'] },
+  { label: 'Overview', to: ['/farmer', '/farmer/fmr-projects'] },
+  { label: 'My Activity', to: ['/farmer/harvest', '/farmer/reports'] },
+  { label: 'Browse', to: ['/farmer/markets'] },
 ];
 
 export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRecord, pendingReportsCount = 0 }) {
@@ -47,13 +47,15 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800 shrink-0">
+      {/* Same height as the page header (h-20 / sm:h-24) so the two bottom
+          borders line up into one continuous line across the screen. */}
+      <div className={`flex items-center h-20 sm:h-24 border-b border-slate-800 shrink-0 ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
         {collapsed ? (
-          <Logo variant="glyph" tone="light" className="size-9" alt="KalsaTrack" />
+          <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
         ) : (
-          <div className="flex flex-col gap-1 min-w-0">
-            <Logo tone="light" className="h-7" />
-            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider leading-none">
+          <div className="flex flex-col items-start gap-1.5 min-w-0">
+            <Logo tone="light" className="h-10" />
+            <span className="pl-0.5 text-[10px] font-semibold text-emerald-400 uppercase tracking-[0.2em] leading-none">
               Farmer Portal
             </span>
           </div>
@@ -70,8 +72,8 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
               <p className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${gi > 0 ? 'pt-4' : 'pt-1'}`}>{group.label}</p>
             )}
             {group.to.map((path) => navItems.find((n) => n.to === path)).filter(Boolean).map((item) => {
-              const active = isActive(item.to);
               const Icon = item.icon;
+              const active = isActive(item.to);
               const badge = item.to === '/farmer/reports' ? pendingReportsCount : 0;
               return (
                 <Link

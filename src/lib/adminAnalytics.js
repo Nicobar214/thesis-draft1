@@ -305,8 +305,13 @@ export function computeAdminAnalytics(data, { months = 12, now = Date.now() } = 
   const reports = reportStats(data.reports, months, now);
   const review = reviewStats(data.progressUpdates, data.proposals, months, now);
 
-  const lastYear = infra.delivery[infra.delivery.length - 1];
-  const prevYear = infra.delivery[infra.delivery.length - 2];
+  // Year-over-year compares the last two COMPLETE years. Including the current,
+  // still-running year compared a few months against a full year -- e.g. "-100%"
+  // road length delivered in January simply because nothing had finished yet.
+  const currentYear = new Date(now).getFullYear();
+  const completeYears = infra.delivery.filter((d) => d.year < currentYear);
+  const lastYear = completeYears[completeYears.length - 1];
+  const prevYear = completeYears[completeYears.length - 2];
   const yoy = (cur, prev) => ({ cur, prev, abs: cur - prev, pct: prev > 0 ? ((cur - prev) / prev) * 100 : null });
 
   const kpis = [

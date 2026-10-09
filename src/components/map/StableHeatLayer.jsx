@@ -23,6 +23,13 @@ const EARTH_M_PER_PX_AT_Z0 = 156543.03392; // meters per pixel at zoom 0, on the
  * seen across ALL dates, so an area visibly brightens as reports pile up and
  * fades as they age out, instead of every frame rescaling to look equally hot.
  *
+ * maxHeadroom: how far above the current peak the color ceiling sits (default
+ * 1.25x). Auto-scaling always makes the single densest cell look hot, which is
+ * right when that cell represents a real hotspot among many points -- but with
+ * only a handful of points total, a small natural cluster ends up looking as
+ * alarming as a true hotspot. Raise this where that view tends to have sparse
+ * data, so a few nearby reports read as a hint rather than an emergency.
+ *
  * The layer is created once and its data swapped in place, so changing `points`
  * every frame (an animation) does not flicker.
  *
@@ -41,6 +48,7 @@ export default function StableHeatLayer({
   gradient,
   minOpacity = 0.2,
   fixedMax,
+  maxHeadroom = 1.25,
 }) {
   const map = useMap();
   const layerRef = useRef(null);
@@ -89,9 +97,9 @@ export default function StableHeatLayer({
     if (!layer) return;
     const pts = Array.isArray(points) ? points : [];
     const peak = fixedMax ?? cellPeak(pts, radiusMeters, blurRatio);
-    layer.setOptions({ max: Math.max(1, peak) * 1.25 });
+    layer.setOptions({ max: Math.max(1, peak) * maxHeadroom });
     layer.setLatLngs(pts);
-  }, [points, fixedMax, visible, radiusMeters, minRadiusPx, maxRadiusPx, blurRatio, minOpacity, gradientKey]);
+  }, [points, fixedMax, maxHeadroom, visible, radiusMeters, minRadiusPx, maxRadiusPx, blurRatio, minOpacity, gradientKey]);
 
   return null;
 }

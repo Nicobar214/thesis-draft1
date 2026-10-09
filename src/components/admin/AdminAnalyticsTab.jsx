@@ -19,8 +19,8 @@ import {
 import {
   ArrowDownRightIcon,
   ArrowUpRightIcon,
+  ChevronDownIcon,
   CircleCheckIcon,
-  DatabaseIcon,
   InfoIcon,
   LightbulbIcon,
   MinusIcon,
@@ -28,14 +28,18 @@ import {
 } from 'lucide-react';
 import { computeAdminAnalytics, monthsSinceFirstRecord } from '../../lib/adminAnalytics';
 
+// One palette, each color with one job:
+//   teal    - the data itself (lines, single-series bars, sparklines)
+//   slate   - volume/baseline bars (funded, filed, submitted, allocated)
+//   amber   - open / needs attention
+//   emerald, amber, sky - project status only (Completed / On-Going / Proposed)
+//   rose    - only for poor data coverage
 const COLORS = {
   teal: '#0d9488',
   slate: '#94a3b8',
-  slateDark: '#475569',
   amber: '#f59e0b',
   rose: '#e11d48',
   sky: '#0ea5e9',
-  indigo: '#6366f1',
   emerald: '#10b981',
 };
 const STATUS_COLORS = { Completed: COLORS.emerald, 'On-Going': COLORS.amber, Proposed: COLORS.sky };
@@ -46,16 +50,7 @@ const tooltipStyle = { borderRadius: 12, border: '1px solid #e2e8f0', boxShadow:
 const PERIODS = [
   { id: '6', label: '6 months', months: 6 },
   { id: '12', label: '12 months', months: 12 },
-  { id: 'all', label: 'Since first record', months: null },
-];
-
-const SECTIONS = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'delivery', label: 'Infrastructure delivery' },
-  { id: 'reports', label: 'Citizen reports' },
-  { id: 'workflow', label: 'Review workflow' },
-  { id: 'funding', label: 'Funding' },
-  { id: 'coverage', label: 'Data coverage' },
+  { id: 'all', label: 'All time', months: null },
 ];
 
 const fmtInt = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('en-US'));
@@ -77,18 +72,12 @@ const TAKEAWAY_TONES = {
   neutral: 'border-slate-200 bg-slate-50 text-slate-600',
 };
 
-/** Level 1: a numbered section with a one-line, data-driven takeaway so the headline is readable without opening the charts. */
-function Section({ id, n, title, description, takeaway, children }) {
+/** Level 1: a section; its one-line, data-driven takeaway carries the headline. */
+function Section({ id, title, takeaway, children }) {
   return (
     <section id={`analytics-${id}`} className="scroll-mt-24 space-y-4">
-      <div className="flex flex-col gap-2 border-b-2 border-slate-900/10 pb-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">{n}</span>
-          <div>
-            <h2 className="text-xl font-bold tracking-tight text-slate-900">{title}</h2>
-            <p className="max-w-2xl text-sm text-slate-500">{description}</p>
-          </div>
-        </div>
+      <div className="flex flex-col gap-2 border-b-2 border-slate-900/10 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-xl font-bold tracking-tight text-slate-900">{title}</h2>
         {takeaway && (
           <span className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border px-3 py-1 text-xs font-semibold sm:self-end ${TAKEAWAY_TONES[takeaway.tone] || TAKEAWAY_TONES.neutral}`}>
             {takeaway.tone === 'warn' && <TriangleAlertIcon className="size-3.5" aria-hidden="true" />}
@@ -141,10 +130,10 @@ function Delta({ delta, polarity }) {
   );
 }
 
-function Sparkline({ data, color, id }) {
-  if (!data || data.length < 2) return <div className="h-12" />;
+function Sparkline({ data, color, id, height = 'h-12' }) {
+  if (!data || data.length < 2) return <div className={height} />;
   return (
-    <div className="h-12">
+    <div className={height}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
           <defs>
@@ -162,87 +151,97 @@ function Sparkline({ data, color, id }) {
   );
 }
 
-const KPI_COLORS = { portfolio: COLORS.teal, delivered: COLORS.emerald, reports: COLORS.indigo, backlog: COLORS.amber, resolution: COLORS.sky };
+// Every KPI card is neutral (white, slate border, teal trend). The only color
+// carrying meaning is the small change pill: green better, red worse.
+const kpiDisplay = (kpi) => (kpi.key === 'resolution'
+  ? fmtDuration(kpi.value === null ? null : kpi.value)
+  : kpi.value === null ? '-' : fmtInt(kpi.value));
 
-function KpiCard({ kpi }) {
-  const color = KPI_COLORS[kpi.key] || COLORS.teal;
-  const display = kpi.key === 'resolution'
-    ? fmtDuration(kpi.value === null ? null : kpi.value)
-    : kpi.value === null ? '-' : fmtInt(kpi.value);
-  // Data-driven status: only a real, directional change earns a colour.
-  const abs = kpi.delta?.abs ?? 0;
-  const status = abs === 0 || kpi.polarity === 'neutral' || !kpi.polarity
-    ? 'neutral'
-    : (kpi.polarity === 'up-good' ? abs > 0 : abs < 0) ? 'good' : 'warn';
-  const frame = {
-    warn: 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
-    good: 'border-emerald-200 bg-white',
-    neutral: 'border-slate-200 bg-white',
-  }[status];
-  const bar = { warn: 'bg-amber-500', good: 'bg-emerald-500', neutral: 'bg-slate-200' }[status];
+/** Headline KPI: the largest figure on the page, with its trend. */
+function HeroKpi({ kpi }) {
   return (
-    <div className={`relative flex flex-col overflow-hidden rounded-2xl border p-4 pt-5 shadow-sm ${frame}`}>
-      <span className={`absolute inset-x-0 top-0 h-1 ${bar}`} aria-hidden="true" />
+    <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{kpi.label}</p>
+        <p className="text-sm font-semibold text-slate-600">{kpi.label}</p>
         <Delta delta={kpi.delta} polarity={kpi.polarity} />
       </div>
-      <p className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-        {display}
-        {kpi.key !== 'resolution' && <span className="ml-1.5 text-xs font-medium text-slate-400">{kpi.unit}</span>}
+      <p className="mt-2 text-5xl font-bold tracking-tight text-slate-900 tabular-nums">
+        {kpiDisplay(kpi)}
+        {kpi.key !== 'resolution' && <span className="ml-2 text-base font-medium text-slate-400">{kpi.unit}</span>}
       </p>
-      <Sparkline data={kpi.trend} color={color} id={kpi.key} />
-      <p className="text-[10px] uppercase tracking-wider text-slate-400">{kpi.trendLabel}</p>
-      {kpi.delta?.label && <p className="text-[10px] text-slate-400">{kpi.delta.label}</p>}
-      <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] leading-snug text-slate-500">{kpi.foot}</p>
+      <p className="mt-1 text-sm text-slate-500">{kpi.foot}</p>
+      <div className="mt-auto pt-4">
+        <Sparkline data={kpi.trend} color={COLORS.teal} id={kpi.key} height="h-16" />
+      </div>
     </div>
   );
 }
 
-// eslint-disable-next-line no-unused-vars -- Icon is used as a JSX tag below
-function Item({ i, Icon, cls }) {
+/** Supporting KPI: smaller type, no footnote. */
+function CompactKpi({ kpi }) {
   return (
-    <li className="flex items-start gap-2 text-sm text-slate-700">
-      <Icon className={`mt-0.5 size-4 shrink-0 ${cls}`} aria-hidden="true" />
-      <span>{i.text}</span>
-    </li>
+    <div className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold text-slate-500">{kpi.label}</p>
+        <Delta delta={kpi.delta} polarity={kpi.polarity} />
+      </div>
+      <p className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+        {kpiDisplay(kpi)}
+        {kpi.key !== 'resolution' && <span className="ml-1.5 text-xs font-medium text-slate-400">{kpi.unit}</span>}
+      </p>
+      <Sparkline data={kpi.trend} color={COLORS.teal} id={kpi.key} height="h-10" />
+    </div>
   );
 }
 
+const HERO_KPIS = ['portfolio', 'delivered'];
+
+const INSIGHT_ICON = {
+  warn: { Icon: TriangleAlertIcon, cls: 'text-amber-600' },
+  good: { Icon: CircleCheckIcon, cls: 'text-emerald-600' },
+  info: { Icon: InfoIcon, cls: 'text-slate-400' },
+};
+
+/**
+ * Collapsed by default to a single line that says only what matters (how
+ * many items need attention); opening it shows one short list, urgent first.
+ */
 function InsightList({ insights }) {
+  const [open, setOpen] = useState(false);
   if (!insights.length) return null;
   const warn = insights.filter((i) => i.tone === 'warn');
-  const good = insights.filter((i) => i.tone === 'good');
-  const info = insights.filter((i) => i.tone !== 'warn' && i.tone !== 'good');
+  const ordered = [...warn, ...insights.filter((i) => i.tone === 'good'), ...insights.filter((i) => i.tone !== 'warn' && i.tone !== 'good')];
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <p className="flex items-center gap-2 border-b border-slate-100 px-5 py-3 text-sm font-bold text-slate-900">
-        <LightbulbIcon className="size-4 text-amber-500" aria-hidden="true" /> What the numbers say
-        <span className="ml-auto text-[11px] font-medium text-slate-400">Generated from the data, most urgent first</span>
-      </p>
-      {warn.length > 0 && (
-        <div className="border-l-4 border-amber-500 bg-amber-50/70 px-5 py-4">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-amber-700">Needs attention · {warn.length}</p>
-          <ul className="grid gap-2.5 md:grid-cols-2">
-            {warn.map((i, idx) => <Item key={idx} i={i} Icon={TriangleAlertIcon} cls="text-amber-600" />)}
-          </ul>
-        </div>
-      )}
-      {(good.length > 0 || info.length > 0) && (
-        <div className="grid gap-4 px-5 py-4 md:grid-cols-2">
-          {good.length > 0 && (
-            <div>
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-emerald-700">Going well</p>
-              <ul className="space-y-2">{good.map((i, idx) => <Item key={idx} i={i} Icon={CircleCheckIcon} cls="text-emerald-600" />)}</ul>
-            </div>
-          )}
-          {info.length > 0 && (
-            <div>
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Good to know</p>
-              <ul className="space-y-2">{info.map((i, idx) => <Item key={idx} i={i} Icon={InfoIcon} cls="text-sky-600" />)}</ul>
-            </div>
-          )}
-        </div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-slate-50"
+      >
+        <LightbulbIcon className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+        <span className="text-sm font-bold text-slate-900">Key insights</span>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${warn.length ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>
+          {warn.length ? `${warn.length} need${warn.length === 1 ? 's' : ''} attention` : 'All clear'}
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+          {open ? 'Hide' : 'Show'}
+          <ChevronDownIcon className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </span>
+      </button>
+      {open && (
+        <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          {ordered.map((i, idx) => {
+            const { Icon, cls } = INSIGHT_ICON[i.tone] || INSIGHT_ICON.info;
+            return (
+              <li key={idx} className={`flex items-start gap-2.5 px-5 py-2.5 text-sm text-slate-700 ${i.tone === 'warn' ? 'bg-amber-50/50' : ''}`}>
+                <Icon className={`mt-0.5 size-4 shrink-0 ${cls}`} aria-hidden="true" />
+                <span>{i.text}</span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
@@ -273,7 +272,28 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
   const [period, setPeriod] = useState('all');
   const [now] = useState(() => Date.now()); // fixed at mount; keeps render pure
 
-  const data = useMemo(() => ({ projects, reports, progressUpdates, proposals }), [projects, reports, progressUpdates, proposals]);
+  const [municipality, setMunicipality] = useState('all');
+
+  const municipalities = useMemo(() => {
+    const names = [...(projects || []), ...(reports || []), ...(proposals || [])]
+      .map((r) => String(r.municipality || '').trim())
+      .filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }, [projects, reports, proposals]);
+
+  // One filter, applied to every source so all sections agree. Progress
+  // updates carry their project's municipality via the fmr_projects embed.
+  const data = useMemo(() => {
+    if (municipality === 'all') return { projects, reports, progressUpdates, proposals };
+    const inMuni = (value) => String(value || '').trim() === municipality;
+    return {
+      projects: (projects || []).filter((p) => inMuni(p.municipality)),
+      reports: (reports || []).filter((r) => inMuni(r.municipality)),
+      progressUpdates: (progressUpdates || []).filter((u) => inMuni(u.fmr_projects?.municipality)),
+      proposals: (proposals || []).filter((p) => inMuni(p.municipality)),
+    };
+  }, [municipality, projects, reports, progressUpdates, proposals]);
+  const filtersActive = municipality !== 'all' || period !== 'all';
   const months = useMemo(() => {
     const chosen = PERIODS.find((p) => p.id === period);
     return chosen?.months ?? monthsSinceFirstRecord(data, now);
@@ -291,7 +311,6 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
     .filter((c) => c.funded > 0)
     .map((c) => ({ year: String(c.year), Completed: c.completed, 'On-Going': c.ongoing, Proposed: c.proposed, funded: c.funded }));
 
-  const scrollTo = (id) => document.getElementById(`analytics-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const hasReportData = rep.total > 0;
 
   // One-line, data-driven headline per section (level-1 hierarchy).
@@ -312,15 +331,20 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
 
   return (
     <div className="space-y-10">
-      {/* Header + controls */}
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="max-w-3xl text-sm text-slate-500">
-              Delivery of the FMR program, how citizens and engineers are responding, and how complete the records are. Computed live from the current data.
-            </p>
-          </div>
-          <div role="group" aria-label="Period for monthly charts" className="flex shrink-0 rounded-xl border border-slate-200 bg-white p-0.5 text-xs">
+      {/* Filters */}
+      <div className="flex justify-end">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="analytics-municipality">Municipality</label>
+          <select
+            id="analytics-municipality"
+            value={municipality}
+            onChange={(e) => setMunicipality(e.target.value)}
+            className={`h-9 rounded-xl border px-3 text-xs font-semibold outline-none transition focus:ring-2 focus:ring-teal-500/20 ${municipality !== 'all' ? 'border-teal-300 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700'}`}
+          >
+            <option value="all">All municipalities</option>
+            {municipalities.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <div role="group" aria-label="Period" className="flex rounded-xl border border-slate-200 bg-white p-0.5 text-xs">
             {PERIODS.map((p) => (
               <button
                 key={p.id}
@@ -333,34 +357,38 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
               </button>
             ))}
           </div>
-        </div>
-        <nav aria-label="Analytics sections" className="flex flex-wrap gap-1.5">
-          {SECTIONS.map((s, i) => (
+          {filtersActive && (
             <button
-              key={s.id}
               type="button"
-              onClick={() => scrollTo(s.id)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+              onClick={() => { setMunicipality('all'); setPeriod('all'); }}
+              className="h-9 rounded-xl px-3 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             >
-              <span className="mr-1.5 text-slate-400">{i + 1}</span>{s.label}
+              Clear
             </button>
-          ))}
-        </nav>
+          )}
+        </div>
       </div>
 
       <InsightList insights={a.insights} />
 
       {/* 1. Summary */}
-      <Section id="summary" n="1" title="Summary" takeaway={takeaways.summary} description={`Headline indicators. Sparklines show the trend; the arrow compares with the previous period. Monthly figures cover the last ${months} months.`}>
-        <div className="grid grid-cols-1 gap-4 rounded-3xl bg-slate-100/70 p-3 sm:grid-cols-2 xl:grid-cols-5">
-          {a.kpis.map((k) => <KpiCard key={k.key} kpi={k} />)}
+      {/* Hierarchy: the program's two headline figures large, the three
+          report-handling figures compact underneath. */}
+      <Section id="summary" title="Summary" takeaway={takeaways.summary}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+          {a.kpis.filter((k) => HERO_KPIS.includes(k.key)).map((k) => (
+            <div key={k.key} className="sm:col-span-1 xl:col-span-3"><HeroKpi kpi={k} /></div>
+          ))}
+          {a.kpis.filter((k) => !HERO_KPIS.includes(k.key)).map((k) => (
+            <div key={k.key} className="xl:col-span-2"><CompactKpi kpi={k} /></div>
+          ))}
         </div>
       </Section>
 
       {/* 2. Infrastructure delivery */}
-      <Section id="delivery" n="2" title="Infrastructure delivery" takeaway={takeaways.delivery} description="What has been funded, what has been finished, and where it is. Grouped by funding year because that is the time record the program data keeps.">
+      <Section id="delivery" title="Infrastructure delivery" takeaway={takeaways.delivery}>
         <div className="grid gap-4 xl:grid-cols-3">
-          <Panel title="Project status" subtitle={`${fmtInt(infra.total)} FMR projects in the portfolio`}>
+          <Panel title="Project status">
             {statusData.length === 0 ? <Empty /> : (
               <div className="flex items-center gap-4">
                 <div className="relative h-44 w-44 shrink-0">
@@ -394,7 +422,7 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
             )}
           </Panel>
 
-          <Panel featured className="xl:col-span-2" title="Funded and completed per year" subtitle="Bars: projects funded in the year. Line: roads finished in the year (by completion date).">
+          <Panel featured className="xl:col-span-2" title="Funded and completed per year">
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={infra.delivery} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -410,7 +438,7 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
             </div>
           </Panel>
 
-          <Panel className="xl:col-span-2" title="Where each funding year stands" subtitle="Share of each year's projects that are completed, on-going or still proposed. A year stuck at 0% completed is a delivery backlog.">
+          <Panel className="xl:col-span-2" title="Where each funding year stands">
             {cohortRows.length === 0 ? <Empty /> : (
               <div style={{ height: Math.max(180, cohortRows.length * 34 + 40) }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -429,7 +457,7 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
             )}
           </Panel>
 
-          <Panel title="By municipality" subtitle="Projects (bar) and road length, top 8">
+          <Panel title="By municipality" subtitle="Top 8">
             {infra.byMunicipality.length === 0 ? <Empty /> : (
               <BarList
                 rows={infra.byMunicipality.slice(0, 8).map((m) => ({ label: `${m.municipality} · ${fmtInt(m.km)} km`, count: m.count }))}
@@ -441,10 +469,10 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
       </Section>
 
       {/* 3. Citizen reports */}
-      <Section id="reports" n="3" title="Citizen reports and responsiveness" takeaway={takeaways.reports} description="How many problems are being reported, how many are still open, and how quickly they are resolved.">
+      <Section id="reports" title="Citizen reports and responsiveness" takeaway={takeaways.reports}>
         {!hasReportData ? <Empty>No citizen reports yet.</Empty> : (
           <div className="grid gap-4 xl:grid-cols-3">
-            <Panel featured className="xl:col-span-2" title="Filed and resolved per month" subtitle="Bars: reports filed. Line: reports resolved that month.">
+            <Panel featured className="xl:col-span-2" title="Filed and resolved per month">
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={rep.series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -453,14 +481,14 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
                     <YAxis tick={axis} allowDecimals={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="filed" name="Filed" fill={COLORS.indigo} radius={[6, 6, 0, 0]} />
-                    <Line dataKey="resolved" name="Resolved" stroke={COLORS.emerald} strokeWidth={2.5} dot={{ r: 3 }} />
+                    <Bar dataKey="filed" name="Filed" fill={COLORS.slate} radius={[6, 6, 0, 0]} />
+                    <Line dataKey="resolved" name="Resolved" stroke={COLORS.teal} strokeWidth={2.5} dot={{ r: 3 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </Panel>
 
-            <Panel title="Open reports over time" subtitle="Still unresolved at each month end. Rising means reports arrive faster than they are closed.">
+            <Panel title="Open reports over time">
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={rep.series} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -480,13 +508,12 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
               </div>
             </Panel>
 
-            <Panel title="What is being reported" subtitle="By issue type">
-              {rep.categories.length === 0 ? <Empty /> : <BarList rows={rep.categories} color={COLORS.indigo} />}
+            <Panel title="What is being reported">
+              {rep.categories.length === 0 ? <Empty /> : <BarList rows={rep.categories} color={COLORS.teal} />}
             </Panel>
 
             <Panel
               title="Time to resolve"
-              subtitle={rep.resolvedTotal ? `${rep.resolvedTotal} resolved reports with a recorded resolution time` : 'No resolution times recorded yet'}
               action={rep.withinTwoWeeks !== null ? (
                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{rep.withinTwoWeeks.toFixed(0)}% within 14 d</span>
               ) : null}
@@ -499,14 +526,14 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
                       <XAxis dataKey="label" tick={{ ...axis, fontSize: 10 }} interval={0} />
                       <YAxis tick={axis} allowDecimals={false} />
                       <Tooltip contentStyle={tooltipStyle} />
-                      <Bar dataKey="count" name="Reports" fill={COLORS.sky} radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="count" name="Reports" fill={COLORS.teal} radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
             </Panel>
 
-            <Panel title="Where reports are still open" subtitle="Top 5 locations">
+            <Panel title="Where reports are still open" subtitle="Top 5">
               {rep.hotspots.length === 0 ? <Empty>Nothing open.</Empty> : (
                 <BarList rows={rep.hotspots.map((h) => ({ label: h.place, count: h.count }))} color={COLORS.amber} />
               )}
@@ -516,13 +543,12 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
       </Section>
 
       {/* 4. Review workflow */}
-      <Section id="workflow" n="4" title="Review workflow" takeaway={takeaways.workflow} description="How fast the review queues move: contractor progress updates and LGU road proposals.">
+      <Section id="workflow" title="Review workflow" takeaway={takeaways.workflow}>
         <div className="grid gap-4 xl:grid-cols-3">
           <Panel
             featured
             className="xl:col-span-2"
             title="Progress updates"
-            subtitle="Bars: submitted. Line: reviewed that month."
             action={(
               <span className="text-[11px] text-slate-500">
                 Median review {fmtDuration(review.updateMedianDays)}
@@ -575,13 +601,13 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
       </Section>
 
       {/* 5. Funding */}
-      <Section id="funding" n="5" title="Funding" takeaway={takeaways.funding} description="Budget and releases, for the projects that record a budget. Most older roads have no budget on file, so this is not the whole program.">
+      <Section id="funding" title="Funding" takeaway={takeaways.funding}>
         <div className="grid gap-4 xl:grid-cols-3">
-          <Panel featured title="Release rate" subtitle={`${infra.budget.projects} project${infra.budget.projects === 1 ? '' : 's'} with a recorded budget`}>
+          <Panel featured title="Release rate">
             {infra.budget.projects === 0 ? <Empty>No budgets recorded.</Empty> : (
               <div className="space-y-4">
                 <div>
-                  <p className="text-3xl font-bold tracking-tight text-slate-900">{infra.budget.rate === null ? '-' : `${infra.budget.rate.toFixed(0)}%`}</p>
+                  <p className="text-5xl font-bold tracking-tight text-slate-900 tabular-nums">{infra.budget.rate === null ? '-' : `${infra.budget.rate.toFixed(0)}%`}</p>
                   <p className="text-xs text-slate-500">of allocated funds released</p>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -595,7 +621,7 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
             )}
           </Panel>
 
-          <Panel className="xl:col-span-2" title="Budget and releases by project" subtitle="Largest allocations first">
+          <Panel className="xl:col-span-2" title="Budget and releases by project">
             {infra.budgetByProject.length === 0 ? <Empty /> : (
               <div style={{ height: Math.max(180, infra.budgetByProject.length * 34 + 40) }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -616,12 +642,8 @@ export default function AdminAnalyticsTab({ projects, reports, progressUpdates, 
       </Section>
 
       {/* 6. Data coverage */}
-      <Section id="coverage" n="6" title="Data coverage" takeaway={takeaways.coverage} description="How much of each record is filled in. Every figure above depends on these fields, so low coverage is a limit on what the analysis can claim.">
-        <Panel
-          title="Completeness of project records"
-          subtitle={`${fmtInt(infra.total)} projects`}
-          action={<DatabaseIcon className="size-4 text-slate-300" aria-hidden="true" />}
-        >
+      <Section id="coverage" title="Data coverage" takeaway={takeaways.coverage}>
+        <Panel title="Completeness of project records">
           <ul className="grid gap-x-8 gap-y-3 md:grid-cols-2">
             {infra.coverage.map((c) => {
               const tone = c.pct >= 80 ? COLORS.emerald : c.pct >= 40 ? COLORS.amber : COLORS.rose;

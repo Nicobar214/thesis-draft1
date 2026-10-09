@@ -301,8 +301,43 @@ export function computeRoadGapPriorityScoresLegacy(projects, roadInventory = [],
 // Module 1: Road Network Gap Prioritization
 // ---------------------------------------------------------------------------
 
-/** Published weights. Unchanged from the original formulation. */
-export const GAP_WEIGHTS = { G: 0.40, E: 0.35, M: 0.25 };
+/**
+ * Published weights.
+ *
+ *  - G (40%) gap length: the surveyed unpaved km
+ *  - A (35%) access: connectivity and market access, merged. Both asked how well
+ *            closing the gap ties the road network to the market, so scoring them
+ *            as two factors counted that one idea twice. A keeps their previous
+ *            relative balance (35:25) via ACCESS_MIX.
+ *  - C (25%) surface condition: how bad the existing surface is, from the survey
+ *            (Earth worse than Gravel; Poor worse than Fair). Replaces the weight
+ *            freed by the merge with a factor that measures something different.
+ */
+export const GAP_WEIGHTS = { G: 0.40, A: 0.35, C: 0.25 };
+
+/** Inside A: connectivity vs market access, in their previous 35:25 proportion. */
+export const ACCESS_MIX = { connectivity: 35 / 60, market: 25 / 60 };
+
+/**
+ * Surface severity points (0-100 after adding both parts). An Earth surface is
+ * worse than Gravel regardless of condition, so surface type carries the larger
+ * share. A missing value takes the midpoint of its range rather than zero, so a
+ * gap is never ranked as "fine" just because a field was left blank.
+ */
+const SURFACE_TYPE_POINTS = { earth: 60, gravel: 30 };
+const SURFACE_TYPE_UNKNOWN = 45;
+const CONDITION_POINTS = { poor: 40, fair: 20, good: 0 };
+const CONDITION_UNKNOWN = 20;
+
+export function surfaceSeverity(gapType, condition) {
+  const type = String(gapType || '').toLowerCase();
+  const typePoints = /earth/.test(type) ? SURFACE_TYPE_POINTS.earth
+    : /gravel/.test(type) ? SURFACE_TYPE_POINTS.gravel
+    : SURFACE_TYPE_UNKNOWN;
+  const cond = String(condition || '').trim().toLowerCase();
+  const conditionPoints = cond in CONDITION_POINTS ? CONDITION_POINTS[cond] : CONDITION_UNKNOWN;
+  return typePoints + conditionPoints;
+}
 
 /**
  * Market-access direction.
@@ -334,17 +369,18 @@ const distinctCount = (values) =>
  * Scores rows of public.road_network_gaps, where a gap is the surveyed unpaved
  * (Earth + Gravel) portion of a barangay road drawn on that road's own alignment.
  * Scoring the gap rather than the project is what lets all three factors come from
- * measured data instead of from the project's name:
+ * measured data instead of from the project's name (weights: see GAP_WEIGHTS):
  *
- *  - G (40%) gap_km, the surveyed unpaved length
- *  - E (35%) connectivity benefit from the gap graph: whether closing the gap joins
- *            two funded FMR segments, and how much built road already meets the
- *            barangays at either end
- *  - M (25%) market access, from market_distance_km measured over the same local
- *            road network the geometry came from
+ *  - G gap_km, the surveyed unpaved length
+ *  - A access, mixing (ACCESS_MIX):
+ *      connectivity -- whether closing the gap joins two funded FMR segments, and
+ *                      how much built road already meets the barangays at either end
+ *      market       -- market_distance_km over the same local road network
+ *  - C surface condition severity, from gap_type and surface_condition
  *
- * Returns rows shaped like the other scorers (project, score, rank, reason, G/E/M)
- * so PriorityTab renders them unchanged, plus `gap` and `factorVariance`.
+ * Returns rows with project, score, rank, reason and G/A/C, plus `gap` and
+ * `factorVariance`. The two halves of A stay on the row as E and M so the
+ * write-up can show what A is made of.
  */
 export function computeRoadGapPriorityScores(gaps, projects = [], reports = []) {
   const safeGaps = Array.isArray(gaps) ? gaps : [];
@@ -432,10 +468,15 @@ export function computeRoadGapPriorityScores(gaps, projects = [], reports = []) 
       M = (MARKET_PROXIMITY_SCORES_HIGHER ? proximity : 1 - proximity) * 100;
     }
 
+    const A = E * ACCESS_MIX.connectivity + M * ACCESS_MIX.market;
+    const C = surfaceSeverity(r.gapType, r.surfaceCondition);
+
     return {
       ...r,
-      score: Math.round(G * GAP_WEIGHTS.G + E * GAP_WEIGHTS.E + M * GAP_WEIGHTS.M),
+      score: Math.round(G * GAP_WEIGHTS.G + A * GAP_WEIGHTS.A + C * GAP_WEIGHTS.C),
       G: Math.round(G),
+      A: Math.round(A),
+      C: Math.round(C),
       E: Math.round(E),
       M: Math.round(M),
       // Fields the shared row renderer expects from the agri module.
@@ -450,12 +491,12 @@ export function computeRoadGapPriorityScores(gaps, projects = [], reports = []) 
   // nothing without anyone noticing. Surface it instead of letting it hide.
   const factorVariance = {
     G: distinctCount(scored.map((r) => r.G)),
-    E: distinctCount(scored.map((r) => r.E)),
-    M: distinctCount(scored.map((r) => r.M)),
+    A: distinctCount(scored.map((r) => r.A)),
+    C: distinctCount(scored.map((r) => r.C)),
     rows: scored.length,
   };
   if (scored.length > 1) {
-    const inert = ['G', 'E', 'M'].filter((key) => factorVariance[key] < 2);
+    const inert = ['G', 'A', 'C'].filter((key) => factorVariance[key] < 2);
     if (inert.length > 0) {
       console.warn(
         `[priorityScoring] Factor(s) ${inert.join(', ')} are constant across ${scored.length} gaps, so ` +

@@ -1,16 +1,17 @@
 /* FarmerMyReports.jsx - Track the farmer's own submitted road reports, at /farmer/reports */
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ClipboardListIcon, TriangleAlertIcon } from "lucide-react";
+import { useOutletContext, useSearchParams } from "react-router-dom";
+import { CameraIcon, ClipboardListIcon } from "lucide-react";
 import { supabaseFarmer as supabase } from "../lib/supabase";
-import { useFarmerReports } from "../lib/useFarmerReports";
 import Icons from "../components/Icons";
 import DAResolutionCertificate from "../components/publicReports/DAResolutionCertificate";
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
 
 export default function FarmerMyReports() {
-  const navigate = useNavigate();
-  const { reports: myReports } = useFarmerReports();
+  // The layout owns the report list (one fetch + one realtime channel shared
+  // with the sidebar badge) and the report dialog, so a submission made from
+  // anywhere refreshes this page immediately.
+  const { reports: myReports, reportsLoading, openReport } = useOutletContext();
   const [searchParams] = useSearchParams();
 
   const [expandedMapReportId, setExpandedMapReportId] = useState(null);
@@ -87,18 +88,30 @@ export default function FarmerMyReports() {
             <p className="text-xs text-slate-500 mt-0.5">Track the status of damage reports submitted from your account.</p>
           </div>
           <button
-            onClick={() => navigate("/farmer/report")}
-            className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 w-full sm:w-auto"
+            type="button"
+            onClick={openReport}
+            className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center justify-center gap-2 w-full sm:w-auto"
           >
-            <span><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Submit New Report</span>
+            <CameraIcon className="size-4" aria-hidden="true" />
+            Submit New Report
           </button>
         </div>
 
-        {myReports.length === 0 ? (
+        {reportsLoading && myReports.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-400">Loading your reports…</div>
+        ) : myReports.length === 0 ? (
           <div className="py-12 text-center text-slate-400 space-y-2">
             <ClipboardListIcon className="size-9 mx-auto text-slate-300" aria-hidden="true" />
             <p className="font-semibold text-slate-700 text-sm">No reports submitted yet</p>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">If you encounter issues on your FMR access road, click "Submit New Report" to alert your LGU and DA engineers.</p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">If you encounter issues on your FMR access road, submit a report to alert your LGU and DA engineers.</p>
+            <button
+              type="button"
+              onClick={openReport}
+              className="mt-2 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-800"
+            >
+              <CameraIcon className="size-4" aria-hidden="true" />
+              Report a road issue
+            </button>
           </div>
         ) : (
           <div className="space-y-3">

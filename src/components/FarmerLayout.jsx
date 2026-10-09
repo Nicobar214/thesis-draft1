@@ -1,13 +1,14 @@
 import { Suspense, useEffect, useState } from 'react';
-import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { supabaseFarmer as supabase } from '../lib/supabase';
 import { useFarmerRecord } from '../lib/useFarmerRecord';
 import { useFarmerReports } from '../lib/useFarmerReports';
 import FarmerSidebar from './FarmerSidebar';
 import FarmerWelcomeTour from './farmer/FarmerWelcomeTour';
 import FarmerProfileModal from './farmer/FarmerProfileModal';
+import FarmerReportModal from './farmer/FarmerReportModal';
 import NotificationBell from './NotificationBell';
-import { HelpCircleIcon } from 'lucide-react';
+import { CameraIcon, HelpCircleIcon } from 'lucide-react';
 
 function PageLoadingFallback() {
   return (
@@ -37,16 +38,32 @@ export default function FarmerLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [helpReopenCount, setHelpReopenCount] = useState(0);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { user, farmerRecord, loading, reload: reloadFarmerRecord } = useFarmerRecord();
-  const { reports } = useFarmerReports();
+  const { reports, loading: reportsLoading, reload: reloadReports } = useFarmerReports();
+
+  // The report dialog's open state lives in the URL (?action=new), the same
+  // contract as the citizen portal's /user/reports?action=new. That keeps the
+  // old /farmer/report route working (it redirects here), and lets a phone's
+  // Back button close the dialog instead of leaving the page.
+  const showReportModal = searchParams.get('action') === 'new';
+  const openReport = () => setSearchParams((prev) => {
+    const next = new URLSearchParams(prev);
+    next.set('action', 'new');
+    return next;
+  });
+  const closeReport = () => setSearchParams((prev) => {
+    const next = new URLSearchParams(prev);
+    next.delete('action');
+    return next;
+  }, { replace: true });
 
   // Matches FarmerSidebar's navItems labels exactly -- the header and the
   // sidebar should never name the current page two different ways.
   const pageTitleMap = {
     '/farmer': 'My Farm',
-    '/farmer/harvest': 'My Harvest',
-    '/farmer/report': 'Report Issue',
+    '/farmer/harvest': 'Harvest',
     '/farmer/reports': 'My Reports',
     '/farmer/fmr-projects': 'Road Projects',
     '/farmer/markets': 'Markets',
@@ -56,7 +73,6 @@ export default function FarmerLayout() {
   const pageDescriptionMap = {
     '/farmer': 'Your farm, nearest road project, and nearest market at a glance.',
     '/farmer/harvest': 'Log your harvests and track your output over time.',
-    '/farmer/report': 'Report a road problem so the DA can take action.',
     '/farmer/reports': 'Track the status of reports you’ve submitted.',
     '/farmer/fmr-projects': 'Every Farm-to-Market Road project in your area.',
     '/farmer/markets': 'Find nearby markets to sell or distribute your harvest.',
@@ -140,6 +156,18 @@ export default function FarmerLayout() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4">
+              {/* Primary action, on every farmer page -- reporting a road
+                  problem should never be more than one tap away. */}
+              <button
+                type="button"
+                onClick={openReport}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800 active:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+              >
+                <CameraIcon className="size-4 sm:size-5" aria-hidden="true" />
+                <span className="sm:hidden">Report</span>
+                <span className="hidden sm:inline">Report Road Issue</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setHelpReopenCount((c) => c + 1)}
@@ -180,12 +208,19 @@ export default function FarmerLayout() {
 
         <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
           <Suspense fallback={<PageLoadingFallback />}>
-            <Outlet />
+            <Outlet context={{ openReport, reports, reportsLoading, reloadReports }} />
           </Suspense>
         </div>
       </main>
 
       <FarmerWelcomeTour userId={user?.id} reopenSignal={helpReopenCount} />
+
+      {showReportModal && (
+        <FarmerReportModal
+          onClose={closeReport}
+          onSubmitted={reloadReports}
+        />
+      )}
 
       {showProfileModal && (
         <FarmerProfileModal

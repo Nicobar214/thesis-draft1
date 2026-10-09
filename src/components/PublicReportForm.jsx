@@ -38,7 +38,14 @@ if (typeof document !== 'undefined' && !document.getElementById(STEP_STYLE_ID)) 
   document.head.appendChild(el);
 }
 
-export default function PublicReportForm({ prefillCategory = null, prefillProblem = null }) {
+/**
+ * `client` is the Supabase client whose session owns the report. It defaults
+ * to the citizen client; other portals (e.g. farmers) must pass their own,
+ * since each role keeps its session under a separate storage key. With the
+ * wrong client the report is saved anonymously and never shows up in that
+ * user's "My Reports".
+ */
+export default function PublicReportForm({ prefillCategory = null, prefillProblem = null, client = supabase, onSubmitted }) {
   // Step: 'locating' | 'picking' | 'classify' | 'reporting' | 'success'
   const [step, setStep] = useState('locating');
 
@@ -79,8 +86,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
   // Auth check
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user); });
-  }, []);
+    client.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user); });
+  }, [client]);
 
   useEffect(() => {
     const updateStatus = () => setIsOffline(!navigator.onLine);
@@ -106,7 +113,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
     const loadProjects = async () => {
       try {
-        const { data, error: fetchErr } = await supabase
+        const { data, error: fetchErr } = await client
           .from('fmr_projects')
           .select('id, project_name, start_latitude, start_longitude, end_latitude, end_longitude, municipality, location, status, project_length_km');
 
@@ -135,7 +142,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     return () => {
       alive = false;
     };
-  }, [projReady]);
+  }, [projReady, client]);
 
   // Leave 'locating' only when we have both a position and the project list. A short
   // pause on the confirmation keeps it from flashing past; if the list is slow we
@@ -159,7 +166,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       return;
     }
     let alive = true;
-    supabase
+    client
       .from('project_routes')
       .select('*')
       .eq('project_id', selProject.id)
@@ -171,7 +178,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         if (alive) setSelProjectRoute(null);
       });
     return () => { alive = false; };
-  }, [selProject]);
+  }, [selProject, client]);
 
   // Submit
   const handleSubmit = async () => {
@@ -188,7 +195,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     });
 
     const queueForLater = async (reason) => {
-      const session = await supabase.auth.getSession();
+      const session = await client.auth.getSession();
       const authToken = session?.data?.session?.access_token || null;
       const queued = await enqueueReport(payloadBase, photoBlob, { photoPath: makePhotoPath(), authToken });
       console.info(reason, queued?.id);
@@ -204,14 +211,15 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       }
 
       const photoPath = makePhotoPath();
-      const { error: upErr } = await supabase.storage.from('public-report-photos').upload(photoPath, photoBlob, { contentType: 'image/jpeg' });
+      const { error: upErr } = await client.storage.from('public-report-photos').upload(photoPath, photoBlob, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from('public-report-photos').getPublicUrl(photoPath);
+      const { data: urlData } = client.storage.from('public-report-photos').getPublicUrl(photoPath);
 
-      const { error: insErr } = await supabase.from('public_reports').insert({ ...payloadBase, photo_url: urlData.publicUrl });
+      const { error: insErr } = await client.from('public_reports').insert({ ...payloadBase, photo_url: urlData.publicUrl });
       if (insErr) throw insErr;
       setQueuedOffline(false);
       setStep('success');
+      onSubmitted?.();
     } catch (err) {
       console.error('Submit error:', err);
       if (isNetworkFailure(err, navigator.onLine)) {

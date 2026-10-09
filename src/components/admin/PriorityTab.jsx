@@ -1,10 +1,10 @@
-import { CheckIcon, MapIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
+import { RotateCwIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { computePriorityScores, computeRoadGapPriorityScores, scoreTone, rankTone, factorBarTone } from '../../lib/priorityScoring';
+import { computePriorityScores, computeRoadGapPriorityScores, GAP_WEIGHTS } from '../../lib/priorityScoring';
 import { boundsFromPoints, parsePointList } from '../../lib/mapRouteUtils';
 import { GAP_PATH_OPTIONS, gapEndcapIcon } from '../map/routeMarkerIcons';
 import { pinGlyph } from '../../lib/mapMarkerIcons';
@@ -49,7 +49,7 @@ function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
 
   if (points.length < 2) {
     return (
-      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs text-slate-500">
+      <div className="rounded-xl border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-500">
         No mapped geometry for this gap yet.
       </div>
     );
@@ -58,19 +58,16 @@ function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
   const km = Number(gap?.gap_km);
 
   return (
-    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden shadow-xs">
-      <div className="px-3.5 py-2 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 min-w-0">
-          <span className="text-red-600 shrink-0"><MapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Unpaved gap:</span>
-          <span className="text-slate-700 truncate">{gap?.source_road_name || project.project_name}</span>
-        </div>
+    <div className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
+        <span className="text-xs font-medium text-slate-500">Unpaved section</span>
         {onViewOnMap && (
           <button
             type="button"
-            onClick={() => onViewOnMap(project)}
-            className="shrink-0 text-[11px] font-semibold text-teal-700 hover:text-teal-900 underline"
+            onClick={(event) => { event.stopPropagation(); onViewOnMap(project); }}
+            className="shrink-0 text-xs font-semibold text-teal-700 hover:text-teal-900"
           >
-            View on main map
+            View on map
           </button>
         )}
       </div>
@@ -123,17 +120,31 @@ function PriorityRoadMiniMap({ project, gap, onViewOnMap }) {
   );
 }
 
-const gapLegendItems = [
-  { label: 'Gap Distance 40%', tone: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  { label: 'Connectivity 35%', tone: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
-  { label: 'Market Access 25%', tone: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-];
+// One definition per module, used by both the toolbar and each card's
+// breakdown, so labels and weights can't disagree. Gap weights come straight
+// from the scorer.
+const pct = (w) => `${Math.round(w * 100)}%`;
+const FACTORS = {
+  network_gaps: [
+    { key: 'G', label: 'Gap length', weight: pct(GAP_WEIGHTS.G) },
+    { key: 'A', label: 'Access', weight: pct(GAP_WEIGHTS.A) },
+    { key: 'C', label: 'Surface condition', weight: pct(GAP_WEIGHTS.C) },
+  ],
+  agri_production: [
+    { key: 'V', label: 'Report volume', weight: '40%' },
+    { key: 'S', label: 'Severity', weight: '35%' },
+    { key: 'C', label: 'Crop value', weight: '25%' },
+  ],
+};
+const factorsFor = (mode) => FACTORS[mode] || FACTORS.network_gaps;
 
-const agriLegendItems = [
-  { label: 'Volume 40%', tone: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
-  { label: 'Severity 35%', tone: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
-  { label: 'Crop Value 25%', tone: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-];
+// Priority tier from the score. Color appears only here and in the gap line on
+// the map; everything else on the card is neutral.
+function priorityTier(score) {
+  if (score >= 70) return { label: 'High priority', cls: 'bg-rose-50 text-rose-700 ring-rose-200' };
+  if (score >= 40) return { label: 'Medium priority', cls: 'bg-amber-50 text-amber-700 ring-amber-200' };
+  return { label: 'Low priority', cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
+}
 
 function formatTimestamp(value) {
   if (!value) return 'Not calculated yet';
@@ -224,63 +235,63 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">
-              {moduleMode === 'network_gaps' ? 'Module 1: Road Network Gaps Rankings' : 'Module 2: Agricultural Production Rankings'}
-            </h3>
-            <p className="text-sm text-slate-500 mt-1">
-              {moduleMode === 'network_gaps'
-                ? 'Edge-to-edge connectivity between barangay roads and Leon Public Market. Weighted by Gap Distance (40%), Network Connectivity (35%), and Market Access (25%).'
-                : 'Weighted by report volume (40%), severity (35%), and simulated crop value (25%).'}
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-            <button
-              type="button"
-              onClick={handleRecalculate}
-              className="px-4 py-2.5 rounded-xl bg-teal-600 text-white text-sm font-semibold hover:bg-teal-700 transition"
-            >
-              Recalculate
-            </button>
-            <span className="text-xs text-slate-400">Last calculated: {formatTimestamp(lastCalculated)}</span>
-          </div>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {moduleMode === 'network_gaps' ? (
-            <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-teal-50 border border-teal-200 text-teal-800">
-              <CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Active: Pure road network geometry & edge-to-edge market gap scoring (Disregards missing farmer data)
-            </span>
-          ) : (
-            <span className="px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-800">
-              <TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Agricultural production & farmgate price data not readily available — simulated mode
+      {/* Slim toolbar: the scoring weights as plain text, and recalculation. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-500">
+          <span className="font-medium text-slate-700">{rankings.length} ranked</span>
+          <span className="mx-2 text-slate-300">|</span>
+          {factorsFor(moduleMode).map((f) => `${f.label} ${f.weight}`).join(' · ')}
+          {moduleMode === 'agri_production' && (
+            <span className="ml-2 inline-flex items-center gap-1 text-amber-700">
+              <TriangleAlertIcon className="size-3.5" aria-hidden="true" />Simulated crop data
             </span>
           )}
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400">Updated {formatTimestamp(lastCalculated)}</span>
+          <button
+            type="button"
+            onClick={handleRecalculate}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <RotateCwIcon className="size-3.5" aria-hidden="true" />
+            Recalculate
+          </button>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {(moduleMode === 'network_gaps' ? gapLegendItems : agriLegendItems).map((item) => (
-          <span key={item.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold ${item.tone}`}>
-            <span className={`inline-block size-2 rounded-sm mr-1.5 ${item.dot}`} aria-hidden="true" />{item.label}
-          </span>
-        ))}
       </div>
 
       <div className="space-y-4">
         {rankings.slice((currentPage - 1) * itemsPerPage, (currentPage - 1) * itemsPerPage + itemsPerPage).map((entry) => {
-          const { project, gap, bySeverity, cropData, score, rank, reason, hasEscalation } = entry;
-          const hasGapDetails = moduleMode === 'network_gaps' && (entry.gapKm || entry.gapType || entry.gapReason);
-          const severityPills = [
-            { key: 'safety', label: `Safety ×${bySeverity.safety}`, tone: 'bg-red-100 text-red-700' },
-            { key: 'flood', label: `Flood ×${bySeverity.flood}`, tone: 'bg-sky-100 text-sky-700' },
-            { key: 'issue', label: `Issue ×${bySeverity.issue}`, tone: 'bg-amber-100 text-amber-700' },
-            { key: 'general', label: `General ×${bySeverity.general}`, tone: 'bg-slate-100 text-slate-600' },
+          const { project, gap, bySeverity, cropData, score, rank, hasEscalation } = entry;
+          const isGaps = moduleMode === 'network_gaps';
+          const tier = priorityTier(score);
+          const title = (isGaps && gap?.source_road_name) || project.project_name;
+          const place = [
+            project.municipality || 'Leon',
+            [gap?.barangay || project.barangay, gap?.barangay_end || project.barangay_end].filter(Boolean).join(' → '),
+          ].filter(Boolean).join(' · ');
+
+          const surfaceType = /earth/i.test(entry.gapType || '') ? 'Earth' : /gravel/i.test(entry.gapType || '') ? 'Gravel' : null;
+          const facts = isGaps
+            ? [
+                { label: 'Unpaved length', value: `${Number(entry.gapKm || 0).toFixed(2)} km` },
+                { label: 'Surface', value: [surfaceType, entry.surfaceCondition].filter(Boolean).join(' · ') || '—' },
+                { label: 'To market', value: Number.isFinite(entry.marketKm) ? `${entry.marketKm.toFixed(1)} km` : '—' },
+                { label: 'Network', value: entry.joinsTwoSegments ? 'Joins 2 FMR roads' : 'Single road' },
+              ]
+            : [
+                { label: 'Primary crop', value: cropData.primary_crop },
+                { label: 'Area', value: `${cropData.hectares.toLocaleString()} ha` },
+              ];
+          const severityChips = [
+            { key: 'safety', label: 'Safety' },
+            { key: 'flood', label: 'Flood' },
+            { key: 'issue', label: 'Issue' },
+            { key: 'general', label: 'General' },
           ].filter((item) => bySeverity[item.key] > 0);
 
           return (
-            <div
+            <article
               key={project.id}
               role="button"
               tabIndex={0}
@@ -291,95 +302,88 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
                   onViewProjectDetail(project);
                 }
               }}
-              className="rounded-2xl border border-slate-200 bg-white p-4 transition-all hover:shadow-md hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 cursor-pointer"
+              className="group cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-teal-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30"
             >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                <div className="flex items-start gap-4 lg:w-2/3">
-                  <div className={`h-14 w-14 rounded-2xl flex items-center justify-center text-2xl font-bold ${rankTone(rank)}`}>
-                    {rank}
-                  </div>
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-lg font-semibold text-slate-900">{project.project_name}</p>
-                      <p className="text-sm text-slate-500">
-                        {(project.municipality || 'Unknown municipality')} · {(project.barangay || 'Unknown barangay')}
-                      </p>
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
+                <div className="min-w-0 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-sm font-semibold tabular-nums text-white">
+                      {rank}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-semibold text-slate-900 group-hover:text-teal-800">{title}</h3>
+                      <p className="text-sm text-slate-500">{place}</p>
                     </div>
-                    <p className="text-sm text-slate-500 italic">{reason}</p>
-                    {hasGapDetails && (
-                      <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
-                        <p className="font-bold">{entry.gapKm || 0} km {entry.gapType || 'Road Network Gap'}</p>
-                        {entry.gapReason && <p className="mt-0.5 text-red-700">{entry.gapReason}</p>}
+                  </div>
+
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                    {facts.map((f) => (
+                      <div key={f.label} className="min-w-0">
+                        <dt className="text-xs text-slate-500">{f.label}</dt>
+                        <dd className="mt-0.5 truncate text-sm font-semibold text-slate-900">{f.value}</dd>
                       </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {severityPills.map((pill) => (
-                        <span key={pill.key} className={`px-2.5 py-1 rounded-full text-xs font-semibold ${pill.tone}`}>
-                          {pill.label}
+                    ))}
+                  </dl>
+
+                  {(severityChips.length > 0 || hasEscalation) && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {severityChips.map((chip) => (
+                        <span key={chip.key} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                          {chip.label} <span className="tabular-nums text-slate-900">{bySeverity[chip.key]}</span>
                         </span>
                       ))}
                       {hasEscalation && (
-                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                          <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Escalated
+                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                          <ZapIcon className="size-3" aria-hidden="true" />Escalated
                         </span>
                       )}
                     </div>
-                    {moduleMode === 'agri_production' && (
-                      <p className="text-xs text-slate-400">
-                        Simulated: {cropData.primary_crop} · {cropData.hectares.toLocaleString()} ha
-                      </p>
-                    )}
+                  )}
 
-                    {/* Embedded map: real gap geometry under Module 1 */}
-                    <PriorityRoadMiniMap project={project} gap={gap} onViewOnMap={onViewOnMap} />
-                  </div>
+                  {isGaps && <PriorityRoadMiniMap project={project} gap={gap} onViewOnMap={onViewOnMap} />}
                 </div>
 
-                <div className="lg:w-1/3 lg:pl-6 lg:border-l lg:border-slate-100 space-y-3">
-                  <div className="flex items-end justify-between">
-                    <p className={`text-3xl font-bold ${scoreTone(score)}`}>{`${score}%`}</p>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onViewReports && onViewReports(project);
-                      }}
-                      className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      View Reports
-                    </button>
+                <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-slate-500">Priority score</p>
+                      <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums text-slate-900">
+                        {score}<span className="text-base font-medium text-slate-400">/100</span>
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tier.cls}`}>{tier.label}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                    <div className={`h-full ${scoreTone(score)} bg-current`} style={{ width: `${score}%` }} />
-                  </div>
-                  <div className="space-y-2">
-                    {(moduleMode === 'network_gaps'
-                      ? [
-                          { key: 'G', label: 'Gap Distance', value: entry.G },
-                          { key: 'E', label: 'Connectivity', value: entry.E },
-                          { key: 'M', label: 'Market Access', value: entry.M },
-                        ]
-                      : [
-                          { key: 'V', label: 'Volume', value: entry.V },
-                          { key: 'S', label: 'Severity', value: entry.S },
-                          { key: 'C', label: 'Crop Value', value: entry.C },
-                        ]
-                    ).map((factor) => (
-                      <div key={factor.key} className="flex items-center gap-2">
-                        <span className="w-6 text-xs font-semibold text-slate-500" title={factor.label}>{factor.key}</span>
-                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${factorBarTone(factor.key)}`}
-                            style={{ width: `${factor.value}%` }}
-                          />
+
+                  <div className="space-y-2.5">
+                    {factorsFor(moduleMode).map((f) => {
+                      const value = Math.min(100, Math.max(0, Number(entry[f.key]) || 0));
+                      return (
+                        <div key={f.key}>
+                          <div className="flex items-baseline justify-between gap-2 text-xs">
+                            <span className="text-slate-600">{f.label} <span className="text-slate-400">{f.weight}</span></span>
+                            <span className="font-semibold tabular-nums text-slate-900">{value}</span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-teal-600" style={{ width: `${value}%` }} />
+                          </div>
                         </div>
-                        <span className="text-xs text-slate-500 w-8 text-right">{`${factor.value}%`}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onViewReports && onViewReports(project);
+                    }}
+                    className="mt-auto w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    View reports{entry.reportCount > 0 ? ` (${entry.reportCount})` : ''}
+                  </button>
                 </div>
               </div>
-            </div>
+            </article>
           );
         })}
         {/* Pagination controls */}

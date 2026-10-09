@@ -12,6 +12,10 @@ import { getCropData, computeProposalPriorityScores, scoreTone, rankTone, factor
 import { boundsFromPoints, getMunicipalityCentroid, getPendingDaysChip } from '../../lib/mapRouteUtils';
 import { formatPeso } from '../../lib/budgetEstimate';
 import { fetchProposalActivity, describeActionType, formatActivityActor } from '../../lib/proposalActivity';
+import { QUEUE_PILL } from '../../lib/reviewQueueTones';
+import ReviewQueueSummary from './ReviewQueueSummary';
+import Pagination, { usePagination } from '../ui/Pagination';
+import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
 
@@ -33,16 +37,19 @@ function proposalStatusLabel(proposal) {
   return proposal.status;
 }
 
+// Shared Review Queue tones: amber = waiting on the DA admin, slate = the
+// LGU's turn, emerald = done, rose = rejected.
+const PROPOSAL_TONE = {
+  Submitted: 'action',
+  'Under Validation': 'action',
+  'Needs Revision': 'waiting',
+  Approved: 'done',
+  Rejected: 'problem',
+};
+
 function StatusPill({ proposal }) {
-  const tones = {
-    Submitted: 'bg-sky-50 text-sky-700 border-sky-200',
-    'Under Validation': 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    'Needs Revision': 'bg-orange-50 text-orange-700 border-orange-200',
-    Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    Rejected: 'bg-red-50 text-red-700 border-red-200',
-  };
   return (
-    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${tones[proposal.status] || tones.Submitted}`}>
+    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${QUEUE_PILL[PROPOSAL_TONE[proposal.status] || 'action']}`}>
       {proposalStatusLabel(proposal)}
     </span>
   );
@@ -59,27 +66,18 @@ const PROPOSAL_STATUS_BUCKETS = [
     label: 'Submitted',
     hint: 'Newly submitted by the LGU, awaiting DA review',
     icon: FileTextIcon,
-    bar: 'bg-sky-500',
-    value: 'text-sky-700',
-    activeRing: 'ring-sky-500/40 border-sky-400 bg-sky-50/60',
   },
   {
     key: 'Under Validation',
     label: 'Under Validation',
     hint: 'DA is actively reviewing feasibility',
     icon: SearchCheckIcon,
-    bar: 'bg-indigo-500',
-    value: 'text-indigo-700',
-    activeRing: 'ring-indigo-500/40 border-indigo-400 bg-indigo-50/60',
   },
   {
     key: 'Approved',
     label: 'Approved',
     hint: 'Validated as feasible — logged as a project or awaiting creation',
     icon: CheckCircle2Icon,
-    bar: 'bg-emerald-500',
-    value: 'text-emerald-700',
-    activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60',
   },
 ];
 
@@ -89,30 +87,24 @@ const PROPOSAL_OUTCOME_BUCKETS = [
     label: 'Needs Revision',
     hint: 'Sent back to the LGU for changes, then resubmitted for validation',
     icon: RotateCcwIcon,
-    bar: 'bg-orange-500',
-    value: 'text-orange-700',
-    activeRing: 'ring-orange-500/40 border-orange-400 bg-orange-50/60',
   },
   {
     key: 'Rejected',
     label: 'Rejected',
     hint: 'Not feasible — closed without becoming a project',
     icon: XCircleIcon,
-    bar: 'bg-red-500',
-    value: 'text-red-700',
-    activeRing: 'ring-red-500/40 border-red-400 bg-red-50/60',
   },
 ];
 
 function ActivityIcon({ type }) {
   const baseClass = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border';
   const toneClass = {
-    submitted: 'border-sky-200 bg-sky-50 text-sky-700',
-    resubmitted: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-    validated: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    rejected: 'border-red-200 bg-red-50 text-red-700',
-    revision_requested: 'border-orange-200 bg-orange-50 text-orange-700',
-    published: 'border-teal-200 bg-teal-50 text-teal-700',
+    submitted: QUEUE_PILL.action,
+    resubmitted: QUEUE_PILL.action,
+    validated: QUEUE_PILL.done,
+    rejected: QUEUE_PILL.problem,
+    revision_requested: QUEUE_PILL.waiting,
+    published: QUEUE_PILL.done,
     activity: 'border-slate-200 bg-white text-slate-500',
   }[type] || 'border-slate-200 bg-white text-slate-500';
 
@@ -443,9 +435,9 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
           </div>
 
           {duplicate && (
-            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-widest text-orange-700"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Possible Duplicate</p>
-              <p className="mt-1 text-sm text-orange-900">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-widest text-amber-700"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Possible Duplicate</p>
+              <p className="mt-1 text-sm text-amber-900">
                 {duplicate.reason === 'location' &&
                   `An existing project "${duplicate.project.project_name}" is only ~${Math.round(duplicate.distanceMeters)}m away (status: ${duplicate.project.status}). Same location — likely the same road.`}
                 {duplicate.reason === 'name' &&
@@ -503,8 +495,8 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
               </div>
             </div>
           ) : proposal.status === 'Approved' && !proposal.fmr_project_id ? (
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-indigo-800">This proposal was validated but hasn't been logged as a project yet.</p>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-amber-900">This proposal was validated but hasn't been logged as a project yet.</p>
               <button
                 type="button"
                 onClick={() => { onCreateProject(proposal); onClose(); }}
@@ -544,6 +536,7 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [sortBy, setSortBy] = useState('newest');
   const [selected, setSelected] = useState(null);
+  const [viewMode, setViewMode] = useViewMode('admin-lgu-proposals-view');
 
   useEffect(() => {
     if (!focusProposalId || loading) return;
@@ -589,145 +582,107 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
     return list;
   }, [filtered, sortBy, priorityByProposalId]);
 
+  const pager = usePagination(sorted, `${statusFilter}|${municipalityFilter}|${sortBy}`);
+
   if (loading) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading LGU proposals...</div>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">LGU Project Proposals</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Farm-to-Market Road proposals submitted by municipalities, pending DA feasibility validation.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <select value={municipalityFilter} onChange={(e) => setMunicipalityFilter(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <option value="All">All Municipalities</option>
-              {getMunicipalities().map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-              <option value="newest">Sort: Newest First</option>
-              <option value="oldest_pending">Sort: Oldest Pending First</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Status cards double as the filter, laid out as the pipeline the DA
-            actually runs: Submitted -> Under Validation -> Approved, numbered
-            and chevron-connected. "Needs Revision" and "Rejected" are
-            off-ramps from Under Validation rather than later steps, so they
-            sit in their own unnumbered row instead of implying every proposal
-            passes through rejection after approval. */}
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Validation pipeline &middot; 3 steps
-            </p>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('All')}
-              aria-pressed={statusFilter === 'All'}
-              className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
-                statusFilter === 'All'
-                  ? 'border-slate-800 bg-slate-800 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              All proposals ({statusCounts.All || 0})
-            </button>
-          </div>
-
-          <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2 sm:gap-3">
-            {PROPOSAL_STATUS_BUCKETS.map((bucket, idx) => {
-              const active = statusFilter === bucket.key;
-              const count = statusCounts[bucket.key] || 0;
-              const Icon = bucket.icon;
-              return (
-                <Fragment key={bucket.key}>
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(bucket.key)}
-                    aria-pressed={active}
-                    title={bucket.hint}
-                    className={`relative min-w-0 rounded-xl border bg-white pl-3 pr-2.5 pt-5 pb-3 text-left shadow-sm transition-all ${
-                      active
-                        ? `ring-2 ${bucket.activeRing}`
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                    }`}
-                  >
-                    <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${bucket.bar}`} />
-                    <span
-                      aria-hidden="true"
-                      className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${bucket.bar}`}
-                    >
-                      {idx + 1}
-                    </span>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`block text-2xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
-                        {count}
-                      </span>
-                      <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
-                    </div>
-                    <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
-                      {bucket.label}
-                    </span>
-                  </button>
-                  {idx < PROPOSAL_STATUS_BUCKETS.length - 1 && (
-                    <span aria-hidden="true" className="flex items-center justify-center text-slate-300">
-                      <ChevronRightIcon className="size-4" aria-hidden="true" />
-                    </span>
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-
-          <div className="mt-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Other outcomes &middot; off the main path
-            </p>
-            <div className="grid grid-cols-2 gap-3 sm:max-w-md">
-              {PROPOSAL_OUTCOME_BUCKETS.map((bucket) => {
-                const active = statusFilter === bucket.key;
-                const count = statusCounts[bucket.key] || 0;
-                const Icon = bucket.icon;
-                return (
-                  <button
-                    key={bucket.key}
-                    type="button"
-                    onClick={() => setStatusFilter(active ? 'All' : bucket.key)}
-                    aria-pressed={active}
-                    title={bucket.hint}
-                    className={`relative overflow-hidden rounded-lg border bg-white pl-4 pr-3 py-2.5 text-left shadow-sm transition-colors ${
-                      active
-                        ? `ring-2 ${bucket.activeRing}`
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                    }`}
-                  >
-                    <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${bucket.bar}`} />
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={`block text-xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
-                        {count}
-                      </span>
-                      <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
-                    </div>
-                    <span className="mt-1 block text-[11px] font-medium leading-tight text-slate-600">
-                      {bucket.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <select value={municipalityFilter} onChange={(e) => setMunicipalityFilter(e.target.value)} aria-label="Municipality" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+          <option value="All">All Municipalities</option>
+          {getMunicipalities().map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+          <option value="newest">Sort: Newest First</option>
+          <option value="oldest_pending">Sort: Oldest Pending First</option>
+        </select>
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
+
+      {/* Lead card: proposals waiting on the DA. Stage cards double as the
+          filter. Shared with the other Review Queue pages. */}
+      <ReviewQueueSummary
+        lead={{
+          value: (statusCounts.Submitted || 0) + (statusCounts['Under Validation'] || 0),
+          label: `${((statusCounts.Submitted || 0) + (statusCounts['Under Validation'] || 0)) === 1 ? 'proposal' : 'proposals'} awaiting validation`,
+        }}
+        groups={[{
+          stages: [...PROPOSAL_STATUS_BUCKETS, ...PROPOSAL_OUTCOME_BUCKETS].map((b) => ({
+            key: b.key, label: b.label, count: statusCounts[b.key] || 0, tone: PROPOSAL_TONE[b.key], hint: b.hint, icon: b.icon,
+          })),
+        }]}
+        activeKey={statusFilter}
+        onSelect={setStatusFilter}
+        allKey="All"
+        allCount={statusCounts.All || 0}
+        allLabel="All proposals"
+      />
 
       {sorted.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">No LGU proposals match the current filters.</div>
+      ) : viewMode === 'table' ? (
+        <div className="space-y-3">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[48rem] text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3">Project</th>
+                  <th scope="col" className="px-4 py-3">Municipality</th>
+                  <th scope="col" className="px-4 py-3">Submitted</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pager.pageItems.map((p) => {
+                  const pendingChip = getPendingDaysChip(p.submitted_at, p.status);
+                  return (
+                    <tr key={p.id} className="align-top transition-colors hover:bg-slate-50/70">
+                      <td className="max-w-xs px-4 py-3">
+                        <p className="truncate text-sm font-semibold text-slate-900">{p.project_name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {p.barangay || 'N/A'} &middot; {p.submitted_by_name || 'LGU'}
+                          {p.revision_count > 0 ? ` · rev. ${p.revision_count}` : ''}
+                        </p>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">{p.municipality}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-slate-700">{new Date(p.submitted_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3">
+                        <StatusPill proposal={p} />
+                        {pendingChip && (
+                          <span className={`mt-1 block w-fit rounded-full px-2 py-0.5 text-[10px] font-medium ${pendingChip.className}`}>{pendingChip.text}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1.5 whitespace-nowrap">
+                          {p.status === 'Approved' && !p.fmr_project_id && (
+                            <button type="button" onClick={() => onCreateProject(p)} className={buttonClass('primary', 'sm')}>
+                              Create Project
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setSelected(p)}
+                            className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
+                          >
+                            Review
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination pager={pager} noun="proposal" />
+        </div>
       ) : (
         <div className="space-y-3">
-          {sorted.map((p) => {
+          {pager.pageItems.map((p) => {
             const pendingChip = getPendingDaysChip(p.submitted_at, p.status);
             return (
               <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -749,7 +704,7 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
                     <button
                       type="button"
                       onClick={() => onCreateProject(p)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+                      className={buttonClass('primary', 'sm')}
                     >
                       Create Project
                     </button>
@@ -765,6 +720,7 @@ export default function LguProposalsTab({ proposals, fmrProjects, loading, onVal
               </div>
             );
           })}
+          <Pagination pager={pager} noun="proposal" />
         </div>
       )}
 

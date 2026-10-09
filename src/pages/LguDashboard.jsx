@@ -18,8 +18,8 @@ import LguProjectProposalsTab from '../components/lgu/LguProjectProposalsTab';
 import BeneficiaryCsvImport from '../components/lgu/BeneficiaryCsvImport';
 import { getBarangays, getMunicipalities } from '../data/iloiloLocations';
 import { BENEFICIARY_CROPS } from '../utils/farmerBeneficiaryData';
-import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm, isOverdueProject } from '../lib/mapRouteUtils';
-import { AttentionSummary, ConnectionStatus } from '../components/ui/SidebarStatusCards';
+import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from '../lib/mapRouteUtils';
+import { ConnectionStatus } from '../components/ui/SidebarStatusCards';
 import MapSearchBox from '../components/map/MapSearchBox';
 import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
 import roadInventory from '../data/leonRoadInventory.json';
@@ -27,6 +27,7 @@ import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 import { normalizeUserProjectStatus } from '../lib/projectStatus';
+import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -1090,6 +1091,17 @@ export default function LguDashboard() {
     };
   }, [filteredReports, escalations, beneficiaries, projects]);
 
+  // Same shape FmrProjectKpis takes on the admin and farmer portals, so the
+  // hierarchy card looks identical here instead of being a separate design.
+  const fmrKpiStats = useMemo(() => {
+    const total = projects.length;
+    const completed = projects.filter((p) => normalizeUserProjectStatus(p.status) === 'Completed').length;
+    const ongoing = projects.filter((p) => normalizeUserProjectStatus(p.status) === 'On-Going').length;
+    const proposed = projects.filter((p) => normalizeUserProjectStatus(p.status) === 'Proposed').length;
+    const totalKm = projects.reduce((sum, p) => sum + (Number(p.project_length_km) || 0), 0);
+    return { total, completed, ongoing, proposed, totalKm };
+  }, [projects]);
+
   const activeFilterCount = useMemo(() => {
     return [
       barangayFilter !== 'all',
@@ -1214,30 +1226,6 @@ export default function LguDashboard() {
     setActiveTab('overview');
   };
 
-  const attentionRows = [
-    {
-      key: 'escalations',
-      label: 'Escalations to act on',
-      count: escalations.filter((e) => e.escalation_status === 'for_action').length,
-      tone: 'rose',
-      onClick: () => { setActiveTab('analytics'); setSidebarOpen(false); },
-    },
-    {
-      key: 'pending',
-      label: 'Pending citizen reports',
-      count: reports.filter((r) => r.status === 'pending').length,
-      tone: 'amber',
-      onClick: () => { setStatusFilter('pending'); setActiveTab('overview'); setSidebarOpen(false); },
-    },
-    {
-      key: 'overdue',
-      label: 'Overdue projects',
-      count: projects.filter(isOverdueProject).length,
-      tone: 'rose',
-      onClick: () => { setLguMapShowOverdueOnly(true); setActiveTab('overview'); setSidebarOpen(false); },
-    },
-  ];
-
   return (
     <div className="min-h-dvh bg-slate-50 lg:flex">
       <aside className={`fixed inset-y-0 left-0 z-40 border-r border-slate-800 bg-slate-900 text-white shadow-2xl transition-all duration-300 ${
@@ -1316,7 +1304,6 @@ export default function LguDashboard() {
               ))}
             </div>
 
-            {!sidebarCollapsed && <AttentionSummary rows={attentionRows} />}
           </nav>
 
           {/* Bottom Area */}
@@ -1417,55 +1404,27 @@ export default function LguDashboard() {
                   threshold alerts and proposal decisions, none of it displayed
                   before this. */}
               <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
-              <span className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 sm:inline">{activeTab.replace(/_/g, ' ')}</span>
             </div>
           </div>
         </header>
 
         <main className="w-full flex-1 px-4 py-5 lg:px-6">
           {activeTab === 'overview' && (
-            <section className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-              {/* Total FMR Projects */}
-              <div className="bg-white border border-slate-200/60 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow duration-300">
-                <div className="flex items-start justify-between mb-2.5">
-                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-4.5 h-4.5 text-indigo-650" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                    </svg>
-                  </div>
-                  <span className="text-[9px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md tracking-wider">PROJECTS</span>
-                </div>
-                <p className="text-2xl font-bold text-slate-900 tracking-tight">{summary.totalProjects}</p>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Total FMR Projects</p>
-              </div>
+            <section className="mb-5 space-y-4">
+              {/* Identical shared component to the admin/farmer FMR Projects KPI block. */}
+              <FmrProjectKpis stats={fmrKpiStats} scopeLabel="in this municipality" />
 
-              {/* Active Construction */}
-              <div className="bg-white border border-slate-200/60 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow duration-300">
-                <div className="flex items-start justify-between mb-2.5">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-4.5 h-4.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </div>
-                  <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md tracking-wider">ACTIVE</span>
+              <article className="flex items-center gap-4 rounded-2xl border border-slate-200/60 bg-white p-4 shadow-xs">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-100 text-blue-700">
+                  <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </span>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Farmer Profiles</p>
+                  <p className="text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">{summary.beneficiaries}</p>
                 </div>
-                <p className="text-2xl font-bold text-slate-900 tracking-tight">{summary.activeProjects}</p>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Active Constructions</p>
-              </div>
-
-              {/* Farmer Profiles */}
-              <div className="bg-white border border-slate-200/60 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow duration-300">
-                <div className="flex items-start justify-between mb-2.5">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-4.5 h-4.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </div>
-                  <span className="text-[9px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded-md tracking-wider">FARMERS</span>
-                </div>
-                <p className="text-2xl font-bold text-slate-900 tracking-tight">{summary.beneficiaries}</p>
-                <p className="text-xs text-slate-500 mt-1 font-medium">Farmer Profiles</p>
-              </div>
+              </article>
             </section>
           )}
 
@@ -1483,7 +1442,7 @@ export default function LguDashboard() {
                   </div>
 
                   {/* LGU Map Projects Filter Toolbar */}
-                  <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row gap-3">
+                  <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row gap-3.5">
                     <div className="relative flex-1">
                       <MapSearchBox
                         projects={projects}
@@ -1491,15 +1450,15 @@ export default function LguDashboard() {
                         onChange={setLguMapSearch}
                         onSelect={handleLguMapPlaceSelect}
                         placeholder="Search a barangay, road or project (e.g. Bucari)..."
-                        inputClassName="py-2.5"
+                        inputClassName="h-11 py-0 text-sm"
                       />
                     </div>
 
-                    <div className="flex flex-wrap gap-2.5 items-center">
+                    <div className="flex flex-wrap gap-3 items-center">
                       <select
                         value={lguMapYearFilter}
                         onChange={(e) => setLguMapYearFilter(e.target.value)}
-                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                        className="h-11 px-4 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
                       >
                         <option value="All">All Years</option>
                         {lguMapYearOptions.map(y => <option key={y} value={String(y)}>FY {y}</option>)}
@@ -1508,7 +1467,7 @@ export default function LguDashboard() {
                       <select
                         value={lguMapStatusFilter}
                         onChange={(e) => setLguMapStatusFilter(e.target.value)}
-                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                        className="h-11 px-4 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
                       >
                         <option value="All">All Statuses</option>
                         <option value="Proposed">Proposed</option>
@@ -1519,35 +1478,35 @@ export default function LguDashboard() {
                       <select
                         value={lguMapBarangayFilter}
                         onChange={(e) => setLguMapBarangayFilter(e.target.value)}
-                        className="px-4 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                        className="h-11 px-4 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
                       >
                         <option value="All">All Barangays</option>
                         {lguMapBarangayOptions.map(b => <option key={b} value={b}>{b}</option>)}
                       </select>
 
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <span>Date From:</span>
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <span>From:</span>
                         <input
                           type="date"
                           value={lguMapDateFrom}
                           onChange={(e) => setLguMapDateFrom(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          className="h-11 px-3.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
                         />
                       </div>
 
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                        <span>Date To:</span>
+                      <div className="flex items-center gap-2 text-sm text-slate-600">
+                        <span>To:</span>
                         <input
                           type="date"
                           value={lguMapDateTo}
                           onChange={(e) => setLguMapDateTo(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          className="h-11 px-3.5 border border-slate-200 rounded-xl text-sm bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
                         />
                       </div>
 
                       <button
                         onClick={() => setLguMapShowOverdueOnly(prev => !prev)}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                        className={`h-11 px-4 rounded-xl text-sm font-semibold border transition-all ${
                           lguMapShowOverdueOnly
                             ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'

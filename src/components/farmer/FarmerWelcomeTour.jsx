@@ -27,14 +27,14 @@ const SLIDES = [
   {
     icon: 'Wheat',
     tone: 'bg-amber-50 text-amber-700',
-    title: 'My Harvest',
+    title: 'Harvest',
     body: 'Log how much you harvested and when. You’ll see your harvests over time so you can track your own progress.',
   },
   {
     icon: 'Warning',
-    tone: 'bg-orange-50 text-orange-600',
-    title: 'Report Issue',
-    body: 'See a damaged or unsafe road? Report it here with a photo. The DA office will review it.',
+    tone: 'bg-emerald-50 text-emerald-700',
+    title: 'Report Road Issue',
+    body: 'See a damaged or unsafe road? Tap the green “Report Road Issue” button at the top of any page and send a photo. The DA office will review it.',
   },
   {
     icon: 'Document',

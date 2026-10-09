@@ -11,6 +11,15 @@
  * (assigned_engineer_*, reviewed_by, dismissed_by, rejection_reason).
  */
 
+import { QUEUE_ACTIVE_RING, QUEUE_TONES } from './reviewQueueTones';
+
+// Admin queue buckets declare a `tone`; the shared palette supplies the colors,
+// so the cards, list badges and grid view can't drift from the other pages.
+function withQueueTone(bucket) {
+  const tone = QUEUE_TONES[bucket.tone] || QUEUE_TONES.waiting;
+  return { ...bucket, bar: tone.bar, value: tone.value, activeRing: QUEUE_ACTIVE_RING };
+}
+
 // ── Severity taxonomy ───────────────────────────────────────
 // Shared by the submission form and the citizen report list so the two can
 // never drift apart.
@@ -222,19 +231,15 @@ export const REPAIR_QUEUE_BUCKETS = [
     key: 'repairs_due',
     label: 'Repairs Due',
     hint: 'Planned repairs that are overdue or due within a week',
-    bar: 'bg-rose-500',
-    value: 'text-rose-700',
-    activeRing: 'ring-rose-500/40 border-rose-400 bg-rose-50/60',
+    tone: 'problem',
   },
   {
     key: 'repairs_verify',
     label: 'Awaiting Verification',
     hint: 'Work recorded as done, not yet confirmed on site by an engineer',
-    bar: 'bg-teal-500',
-    value: 'text-teal-700',
-    activeRing: 'ring-teal-500/40 border-teal-400 bg-teal-50/60',
+    tone: 'waiting',
   },
-];
+].map(withQueueTone);
 
 export function getRepairQueueKey(action, today = new Date()) {
   if (!action) return null;
@@ -474,56 +479,44 @@ export const ADMIN_BUCKETS = [
     label: 'Needs Review',
     hint: 'New citizen reports awaiting triage',
     owner: 'admin',
-    bar: 'bg-amber-500',
-    value: 'text-amber-700',
-    activeRing: 'ring-amber-500/40 border-amber-400 bg-amber-50/60',
+    tone: 'action',
   },
   {
     key: 'needs_assignment',
     label: 'Needs Assignment',
     hint: 'Reviewed, but no engineer dispatched yet',
     owner: 'admin',
-    bar: 'bg-orange-500',
-    value: 'text-orange-700',
-    activeRing: 'ring-orange-500/40 border-orange-400 bg-orange-50/60',
+    tone: 'action',
   },
   {
     key: 'in_field',
     label: 'In the Field',
     hint: 'With the assigned engineer for inspection',
     owner: 'engineer',
-    bar: 'bg-blue-500',
-    value: 'text-blue-700',
-    activeRing: 'ring-blue-500/40 border-blue-400 bg-blue-50/60',
+    tone: 'waiting',
   },
   {
     key: 'needs_validation',
     label: 'Needs Validation',
     hint: 'Inspection submitted and waiting on your review',
     owner: 'admin',
-    bar: 'bg-violet-500',
-    value: 'text-violet-700',
-    activeRing: 'ring-violet-500/40 border-violet-400 bg-violet-50/60',
+    tone: 'action',
   },
   {
     key: 'ready_to_resolve',
     label: 'Ready to Resolve',
     hint: 'Findings validated — issue the resolution',
     owner: 'admin',
-    bar: 'bg-emerald-500',
-    value: 'text-emerald-700',
-    activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60',
+    tone: 'action',
   },
   {
     key: 'closed',
     label: 'Closed',
     hint: 'Resolved, or closed without inspection',
     owner: null,
-    bar: 'bg-slate-400',
-    value: 'text-slate-600',
-    activeRing: 'ring-slate-400/40 border-slate-400 bg-slate-50',
+    tone: 'done',
   },
-];
+].map(withQueueTone);
 
 export const ADMIN_BUCKET_BY_KEY = Object.fromEntries(ADMIN_BUCKETS.map((b) => [b.key, b]));
 
