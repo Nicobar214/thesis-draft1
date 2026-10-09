@@ -567,11 +567,18 @@ export async function fetchRoadAlignedPolyline(points) {
       })
       .filter(Boolean);
 
-    const result = snapped && snapped.length >= 2 ? snapped : points;
-    roadSnapCache.set(cacheKey, result);
-    return result;
-  } catch {
-    roadSnapCache.set(cacheKey, points);
+    // Only a genuine route is worth remembering. Caching the straight-line
+    // fallback here would turn one bad response (a slow demo server, a
+    // momentary rate limit) into a permanent failure for these coordinates
+    // for the rest of the session, since nothing would ever retry them.
+    if (snapped && snapped.length >= 2) {
+      roadSnapCache.set(cacheKey, snapped);
+      return snapped;
+    }
+    console.warn('Road snap returned no route; using a straight line.', { cacheKey });
+    return points;
+  } catch (err) {
+    console.warn('Road snap request failed; using a straight line.', err);
     return points;
   }
 }

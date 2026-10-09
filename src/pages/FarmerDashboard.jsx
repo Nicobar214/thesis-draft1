@@ -310,14 +310,17 @@ export default function FarmerDashboard() {
                         </Popup>
                       </Marker>
 
-                      {/* FMR Path (road-network-aligned, falls back to a straight line while snapping) */}
+                      {/* FMR Path: solid once genuinely snapped to road geometry (more
+                          vertices than the raw 2-point line), dashed while that hasn't
+                          happened -- so success is visible instead of looking identical
+                          to the straight-line fallback either way. */}
                       {nearestFmr.end_latitude && nearestFmr.end_longitude && (
                         <Polyline
                           positions={snappedFmrPath || [
                             [Number(nearestFmr.start_latitude), Number(nearestFmr.start_longitude)],
                             [Number(nearestFmr.end_latitude), Number(nearestFmr.end_longitude)]
                           ]}
-                          pathOptions={{ color: "#3b82f6", weight: 4, dashArray: "5, 10" }}
+                          pathOptions={{ color: "#3b82f6", weight: 4, ...(snappedFmrPath?.length > 2 ? {} : { dashArray: "5, 10" }) }}
                         >
                           <Popup>
                             <span className="text-xs font-sans font-semibold text-blue-700">{nearestFmr.project_name}</span>
@@ -349,11 +352,13 @@ export default function FarmerDashboard() {
                     </Marker>
                   ))}
 
-                  {/* Supply Chain Connection Polyline (road-network-aligned, falls back to a straight line while snapping) */}
+                  {/* Supply Chain Connection: same solid-when-snapped rule as the FMR
+                      path above -- a genuine route has more vertices than the raw
+                      farm/FMR/market waypoints it was built from. */}
                   {supplyChainPath.length > 1 && (
                     <Polyline
                       positions={snappedSupplyPath || supplyChainPath}
-                      pathOptions={{ color: "#ec4899", weight: 3, dashArray: "4, 6" }}
+                      pathOptions={{ color: "#ec4899", weight: 3, ...(snappedSupplyPath?.length > supplyChainPath.length ? {} : { dashArray: "4, 6" }) }}
                     />
                   )}
                 </MapContainer>
@@ -372,14 +377,17 @@ export default function FarmerDashboard() {
                 <span>My Farm Coordinate</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-1 border-t-2 border-dashed border-blue-500 inline-block" />
+                <span className="w-5 h-1 border-t-2 border-blue-500 inline-block" />
                 <span>Linked FMR Road Project</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-5 h-1 border-t-2 border-dashed border-pink-500 inline-block" />
+                <span className="w-5 h-1 border-t-2 border-pink-500 inline-block" />
                 <span>Supply Path Connection</span>
               </div>
             </div>
+            <p className="text-[11px] text-slate-400 px-0.5">
+              Dashed = no road match found yet for that path; solid once it's snapped to the actual road.
+            </p>
           </div>
         </section>
       </div>
