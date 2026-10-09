@@ -197,11 +197,11 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [selectedProposalForModal, setSelectedProposalForModal] = useState(null);
   const [listFilters, setListFilters] = useState(DEFAULT_PROPOSAL_FILTERS);
   const [viewMode, setViewMode] = useViewMode('lgu-proposals-view');
-  const proposalPager = usePagination(visibleProposals, `${JSON.stringify(listFilters)}|${viewMode}`, 10);
 
   const proposalSummary = useMemo(() => summarizeProposals(proposals), [proposals]);
   const filterOptions = useMemo(() => proposalFilterOptions(proposals), [proposals]);
   const visibleProposals = useMemo(() => filterProposals(proposals, listFilters), [proposals, listFilters]);
+  const proposalPager = usePagination(visibleProposals, `${JSON.stringify(listFilters)}|${viewMode}`, 10);
   const listFiltersActive = Object.keys(DEFAULT_PROPOSAL_FILTERS).some((k) => k !== 'sort' && listFilters[k] !== DEFAULT_PROPOSAL_FILTERS[k]);
   const setListFilter = (patch) => setListFilters((f) => ({ ...f, ...patch }));
 
