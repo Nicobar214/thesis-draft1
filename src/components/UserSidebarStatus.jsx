@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CloudOffIcon, CloudUploadIcon, WifiIcon } from 'lucide-react';
+import { CloudOffIcon, WifiIcon } from 'lucide-react';
 import { getCitizenStatus } from '../lib/publicReportStatus';
 import { useMyReports } from '../lib/useMyReports';
-import { getQueuedReports } from '../lib/offlineReports';
 
 /** The citizen's report counts, each linking to My Reports pre-filtered. */
 export function SidebarReportSummary() {
@@ -50,41 +49,25 @@ export function SidebarReportSummary() {
 /** Connection state plus reports saved on this device while offline. */
 export function SidebarConnectionStatus({ collapsed }) {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
-  const [queued, setQueued] = useState(0);
-
-  const refresh = useCallback(async () => {
-    try {
-      const items = await getQueuedReports();
-      setQueued(items.length);
-    } catch {
-      setQueued(0);
-    }
-  }, []);
 
   useEffect(() => {
-    refresh();
-    const goOnline = () => { setOnline(true); refresh(); };
-    const goOffline = () => { setOnline(false); refresh(); };
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
-    const timer = setInterval(refresh, 30000);
     return () => {
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
-      clearInterval(timer);
     };
-  }, [refresh]);
+  }, []);
 
-  const Icon = !online ? CloudOffIcon : queued ? CloudUploadIcon : WifiIcon;
-  const tone = !online ? 'text-amber-300' : 'text-emerald-300';
+  const Icon = !online ? CloudOffIcon : WifiIcon;
+  const tone = !online ? 'text-amber-400' : 'text-emerald-400';
 
   if (collapsed) {
     return (
-      <div className="relative flex justify-center py-2" title={`${online ? 'Online' : 'Offline'}${queued ? ` · ${queued} waiting to send` : ''}`}>
-        <Icon className={`size-5 ${tone}`} aria-hidden="true" />
-        {queued > 0 && (
-          <span className="absolute right-3 top-1 min-w-4 rounded-full bg-amber-400 px-1 text-center text-[9px] font-bold text-slate-900">{queued}</span>
-        )}
+      <div className="relative flex justify-center py-2" title={online ? 'Online' : 'Offline'}>
+        <Icon className={`size-5 ${tone} ${online ? 'animate-pulse' : ''}`} aria-hidden="true" />
       </div>
     );
   }
@@ -92,15 +75,13 @@ export function SidebarConnectionStatus({ collapsed }) {
   return (
     <div className="rounded-xl bg-slate-800/50 px-3 py-2.5" role="status">
       <div className="flex items-center gap-2">
-        <Icon className={`size-4 shrink-0 ${tone}`} aria-hidden="true" />
+        <Icon className={`size-4 shrink-0 ${tone} ${online ? 'animate-pulse' : ''}`} aria-hidden="true" />
         <p className="text-xs font-semibold text-white">{online ? 'Online' : 'Offline'}</p>
       </div>
       <p className="mt-1 text-[11px] leading-snug text-slate-400">
         {!online
           ? 'Reports you submit are saved on this device and sent when you reconnect.'
-          : queued > 0
-            ? `${queued} saved report${queued === 1 ? '' : 's'} waiting to send.`
-            : 'Everything is up to date.'}
+          : 'Everything is up to date.'}
       </p>
     </div>
   );

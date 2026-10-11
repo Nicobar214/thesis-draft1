@@ -1,4 +1,4 @@
-import { MapPinIcon, TriangleAlertIcon } from 'lucide-react';
+import { LocateFixedIcon, MapPinIcon, TriangleAlertIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
@@ -12,6 +12,7 @@ import { useBasemap } from '../lib/basemaps';
 import { norm } from '../lib/placeSearch';
 import { CITIZEN_STATUS_HEX, useMyReports } from '../lib/useMyReports';
 import { getCitizenStatus } from '../lib/publicReportStatus';
+import ReportStatusLegend from '../components/map/ReportStatusLegend';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import {
   buildRoutePoints,
@@ -179,7 +180,7 @@ export default function UserMapView({ embedded = false } = {}) {
   const [fetchError, setFetchError] = useState(null);
   const [search, setSearch] = useState('');
   const [searchTarget, setSearchTarget] = useState(null); // { coords, zoom }
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('On-Going');
   const [yearFilter, setYearFilter] = useState('All');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
@@ -203,8 +204,8 @@ export default function UserMapView({ embedded = false } = {}) {
   const [roadGaps, setRoadGaps] = useState([]);
   const [showRoadGaps, setShowRoadGaps] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
-  const [showMarketsMap, setShowMarketsMap] = useState(true);
-  const [showMyReports, setShowMyReports] = useState(true);
+  const [showMarketsMap, setShowMarketsMap] = useState(false);
+  const [showMyReports, setShowMyReports] = useState(false);
   const [basemap, setBasemap] = useBasemap();
   // Only signed-in citizens have reports; the embedded landing-page map has none.
   const { reports: myReports } = useMyReports({ enabled: !embedded });
@@ -561,26 +562,15 @@ export default function UserMapView({ embedded = false } = {}) {
   return (
     <UserLayout {...layoutProps}>
       <div className="space-y-4">
-        {/* Header */}
-        <section>
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="size-10 bg-emerald-100 rounded-xl grid place-items-center text-teal-600">
-                <Icons.MapPin />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Map View</h1>
-                <p className="text-slate-500 text-sm">FMR Project locations across Iloilo Province</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowSidebar(!showSidebar)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-slate-700 lg:hidden"
-            >
-              <Icons.List /> Projects ({filtered.length})
-            </button>
-          </div>
-        </section>
+        {/* Mobile-only project list toggle (the title lives in the top bar) */}
+        <div className="flex justify-end lg:hidden">
+          <button
+            onClick={() => setShowSidebar(!showSidebar)}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-sm font-medium bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-slate-700"
+          >
+            <Icons.List /> Projects ({filtered.length})
+          </button>
+        </div>
 
         {/* Error banner */}
         {fetchError && (
@@ -596,7 +586,7 @@ export default function UserMapView({ embedded = false } = {}) {
         {/* Filters bar */}
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
-          <div className="relative flex-1">
+          <div className="relative flex-1" data-tour="map-search">
             <MapSearchBox
               projects={projects}
               value={search}
@@ -648,7 +638,7 @@ export default function UserMapView({ embedded = false } = {}) {
           </button>
 
           {/* Status pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <div className="flex gap-1.5 overflow-x-auto pb-1" data-tour="map-status">
             {statusFilters.map(s => (
               <button
                 key={s}
@@ -668,13 +658,10 @@ export default function UserMapView({ embedded = false } = {}) {
 
         {/* GPS / Nearby banner */}
         {userLocation && nearbyProjects.size > 0 && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
-            <span className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-teal-500" />
-            </span>
+          <div className="flex items-center gap-2.5 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
+            <LocateFixedIcon className="size-4 text-teal-600 shrink-0" aria-hidden="true" />
             <span className="font-medium">
-              <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
+              {nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
             </span>
           </div>
         )}
@@ -699,7 +686,7 @@ export default function UserMapView({ embedded = false } = {}) {
         {/* Main content: Map + sidebar */}
         <div className={`flex gap-4 relative ${showSidebar ? 'z-[60]' : 'z-10'}`}>
           {/* Map */}
-          <div className="flex-1 relative bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100dvh - 320px)', minHeight: '420px' }}>
+          <div className="flex-1 relative bg-white rounded-2xl border border-slate-200/60 overflow-hidden" style={{ height: 'calc(100dvh - 320px)', minHeight: '420px' }} data-tour="map-canvas">
             {loading ? (
               <div className="h-full flex items-center justify-center bg-slate-50">
                 <div className="text-center">
@@ -1057,38 +1044,36 @@ export default function UserMapView({ embedded = false } = {}) {
               </MapContainer>
             )}
 
+            {/* Same grouping as the dashboard map: lines, point markers,
+                farmer layers, then the citizen's own pins in workflow order. */}
             <MapLegend>
               <LegendGroup label="Roads">
                 {stats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={stats.completed} />}
                 {stats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={stats.ongoing} />}
                 {stats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={stats.proposed} />}
+                {showRoadGaps && <LegendLine color="border-red-500" dashed label="Unpaved gap" count={roadGaps.length} />}
               </LegendGroup>
               <LegendGroup label="Markers">
                 {mappable.length > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
                 {mappable.length > 0 && <LegendDot color="bg-orange-500" text="E" label="Route end" />}
-                {mapEntities.some((e) => e.isApproximate) && <LegendDot color="bg-emerald-50" ring="border-2 border-emerald-700" label="Barangay geocoded" />}
-                {mapEntities.some((e) => e.isCentroidFallback) && <LegendDot color="bg-amber-50" ring="border-2 border-dashed border-amber-600" label="Centroid fallback (no GPS)" />}
+                {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
+                {mapEntities.some((e) => e.isApproximate) && <LegendDot color="bg-emerald-50" ring="border-2 border-emerald-700" label="Location from barangay" />}
+                {mapEntities.some((e) => e.isCentroidFallback) && <LegendDot color="bg-amber-50" ring="border-2 border-dashed border-amber-600" label="Approximate (no GPS)" />}
               </LegendGroup>
-              {(showRoadGaps || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
-                <LegendGroup label="Layers">
-                  {showRoadGaps && <LegendLine color="border-red-500" dashed label="Unpaved road gap" />}
-                  {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
-                  {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer (anonymous)" />}
+              {(showFarmerDots || showFarmerHeatmap) && (
+                <LegendGroup label="Farmers">
+                  {showFarmerDots && <LegendDot color="bg-teal-600" label="Farm (anonymous)" />}
                   {showFarmerHeatmap && (
-                    <div className="flex items-center gap-2">
-                      <span className="h-1.5 w-6 shrink-0 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
-                      <span>Farmer density</span>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      <span className="flex w-5 shrink-0 items-center justify-center">
+                        <span className="h-1.5 w-5 rounded" style={{ background: 'linear-gradient(90deg,#86efac,#fcd34d,#fca5a5,#ef4444)' }} />
+                      </span>
+                      <span className="text-slate-700">Farm density</span>
                     </div>
                   )}
                 </LegendGroup>
               )}
-              {!embedded && showMyReports && myReports.length > 0 && (
-                <LegendGroup label="My reports">
-                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.submitted }} label="Submitted" />
-                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.under_review }} label="In review / inspection" />
-                  <LegendDot color="" style={{ background: CITIZEN_STATUS_HEX.resolved }} label="Resolved" />
-                </LegendGroup>
-              )}
+              {!embedded && showMyReports && <ReportStatusLegend reports={myReports} />}
             </MapLegend>
 
             <MapControlPanel>
@@ -1107,6 +1092,7 @@ export default function UserMapView({ embedded = false } = {}) {
 
           {/* Sidebar project list (desktop always visible, mobile toggled) */}
           <aside
+            data-tour="map-list"
             className={`
               ${showSidebar ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
               fixed lg:static inset-y-0 right-0 z-50 w-[min(20rem,88vw)] lg:w-80

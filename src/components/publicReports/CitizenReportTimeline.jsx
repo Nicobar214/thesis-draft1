@@ -1,6 +1,14 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../../lib/supabase';
+import CopyReference from '../ui/CopyReference';
 
 import { buildCitizenTrack } from '../../lib/publicReportStatus';
+
+/** "4.01 km" / "850 m" from a location-check reason, or null. */
+function distanceFromReason(reason) {
+  const m = /([\d.,]+)\s*(km|m)\b/i.exec(String(reason || ''));
+  return m ? `${m[1]} ${m[2].toLowerCase()}` : null;
+}
 
 function fmtDateTime(value) {
   if (!value) return null;
@@ -34,6 +42,28 @@ export default function CitizenReportTimeline({
     [report, finding, resolution]
   );
 
+  /* Was this closed as a location mismatch? The view says so directly once
+     supabase_citizen_closed_reason.sql has run (citizen_closed_category).
+     Until then, fall back to the reporter's own "not credible" notification. */
+  const viewCategory = report?.citizen_closed_category;
+  const isClosed = String(report?.status || '').toLowerCase() === 'dismissed';
+  // Keyed by report id, so a stale answer for another report is never used.
+  const [notified, setNotified] = useState({ id: null, mismatch: false });
+  useEffect(() => {
+    if (!report?.id || !isClosed || viewCategory !== undefined || report?.is_current_user_report === false) return undefined;
+    let alive = true;
+    supabase
+      .from('notifications')
+      .select('id')
+      .eq('report_id', report.id)
+      .or('title.ilike.Report not credible%,title.ilike.Report declined%')
+      .limit(1)
+      .then(({ data }) => { if (alive) setNotified({ id: report.id, mismatch: Boolean(data?.length) }); });
+    return () => { alive = false; };
+  }, [report?.id, isClosed, viewCategory, report?.is_current_user_report]);
+  const locationMismatch = viewCategory === 'location_mismatch'
+    || (viewCategory === undefined && notified.id === report?.id && notified.mismatch);
+
   if (!report || !track) return null;
 
   const { current, closed, needsReinspection, steps } = track;
@@ -46,7 +76,7 @@ export default function CitizenReportTimeline({
         <div>
           <p className="text-sm font-semibold text-slate-900">Report Progress</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Reference <span className="font-mono font-semibold text-slate-700">{reference}</span>
+            Reference <CopyReference value={reference} />
           </p>
         </div>
         <span
@@ -56,7 +86,11 @@ export default function CitizenReportTimeline({
         </span>
       </div>
 
-      <p className="text-sm text-slate-600">{current.helper}</p>
+      <p className="text-sm text-slate-600">
+        {closed && locationMismatch
+          ? 'This report was declined after location verification.'
+          : current.helper}
+      </p>
 
       <ol className="space-y-0">
         {steps.map((step) => (
@@ -118,7 +152,39 @@ export default function CitizenReportTimeline({
         </div>
       )}
 
-      {closed && (
+      {closed && locationMismatch ? (
+        // Declined by location verification: a formal statement, the facts, and the next step.
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+            Report Declined
+          </p>
+          <p className="mt-1 text-sm font-semibold text-red-900">Location verification unsuccessful</p>
+          <p className="mt-1 text-sm leading-6 text-red-900">
+            You were too far from the project when you submitted this report, so it could not be verified.
+          </p>
+          <dl className="mt-3 divide-y divide-red-100 overflow-hidden rounded-lg border border-red-100 bg-white text-sm">
+            {report.project_name && (
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="text-slate-500">Project</dt>
+                <dd className="text-right font-medium text-slate-900">{report.project_name}</dd>
+              </div>
+            )}
+            {distanceFromReason(report.citizen_closed_reason) && (
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <dt className="text-slate-500">Recorded distance</dt>
+                <dd className="text-right font-medium text-slate-900">{distanceFromReason(report.citizen_closed_reason)} from the project road</dd>
+              </div>
+            )}
+            <div className="flex justify-between gap-4 px-3 py-2">
+              <dt className="text-slate-500">Allowable range</dt>
+              <dd className="text-right font-medium text-slate-900">Within 1 km of the project road</dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs leading-5 text-red-800">
+            To report again, submit from the project site.
+          </p>
+        </div>
+      ) : closed && (
         <div className="rounded-xl border border-slate-300 bg-slate-50 p-3">
           <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide">
             Report Closed
@@ -127,11 +193,14 @@ export default function CitizenReportTimeline({
             This report was reviewed and closed without a site inspection. If the problem is still
             there, you can submit a new report with current photos.
           </p>
+          {report.citizen_closed_reason && (
+            <p className="mt-2 text-sm text-slate-700"><span className="font-semibold">Reason:</span> {report.citizen_closed_reason}</p>
+          )}
         </div>
       )}
 
       <p className="text-xs text-slate-500 border-t border-slate-100 pt-3">
-        Quote reference <span className="font-mono font-semibold text-slate-700">{reference}</span>{' '}
+        Quote reference <CopyReference value={reference} />{' '}
         when following up on this report.
       </p>
     </section>

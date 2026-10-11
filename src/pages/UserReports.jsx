@@ -1,4 +1,4 @@
-import { XIcon } from 'lucide-react';
+import { XIcon, RefreshCwIcon } from 'lucide-react';
 import SeverityIcon from '../components/SeverityIcon';
 import ViewToggle, { useViewMode } from '../components/ui/ViewToggle';
 import Pagination, { usePagination } from '../components/ui/Pagination';
@@ -10,6 +10,7 @@ import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/u
 import { buttonClass } from '../components/ui/Button';
 
 import Icons from '../components/Icons';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
 import PublicReportForm from '../components/PublicReportForm';
 import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
@@ -357,67 +358,68 @@ function UserReports() {
   }, [reports]);
 
   return (
-    <UserLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-          <section>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My Reports</h1>
-            <p className="mt-1 text-slate-500">Track the status of your submitted reports</p>
-          </section>
-          <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+    <UserLayout
+      headerActions={(
+        <>
           <button
             type="button"
             onClick={() => fetchReports({ silent: true })}
             disabled={refreshing || loading}
-            className="inline-flex items-center gap-2 border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-medium hover:bg-slate-50 disabled:opacity-50 transition text-sm"
+            title="Refresh"
+            aria-label="Refresh reports"
+            className="grid size-10 place-items-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition"
           >
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            <RefreshCwIcon className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
           <button
+            type="button"
             onClick={() => setReportStep('form')}
-            className="inline-flex items-center gap-2 bg-teal-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-teal-700 transition text-sm shrink-0 self-start sm:self-auto"
+            data-tour="reports-new"
+            aria-label="Submit new report"
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-3 sm:px-4 text-sm font-semibold text-white hover:bg-teal-700 transition"
           >
             <Icons.Plus />
-            Submit New Report
+            <span className="hidden sm:inline">Submit New Report</span>
           </button>
-          </div>
-        </div>
-
-        {/* Quick stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { key: 'all', label: 'Total Reports', value: counts.total, color: 'bg-slate-100 text-slate-600' },
-            { key: 'submitted', label: 'Awaiting Review', value: counts.submitted, color: 'bg-amber-100 text-amber-600' },
-            { key: 'in_progress', label: 'In Progress', value: counts.inProgress, color: 'bg-sky-100 text-sky-600' },
-            { key: 'resolved', label: 'Resolved', value: counts.resolved, color: 'bg-emerald-100 text-teal-600' },
-          ].map((s) => {
-            const active = statusFilter === s.key;
-            return (
-              <button
-                key={s.label}
-                type="button"
-                onClick={() => setStatusFilter(active && s.key !== 'all' ? 'all' : s.key)}
-                aria-pressed={active}
-                title={active && s.key !== 'all' ? 'Click again to show all reports' : `Show: ${s.label}`}
-                className={`text-left rounded-2xl border p-5 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-                  active
-                    ? 'bg-teal-50/60 border-teal-500 ring-2 ring-teal-500/30 shadow-sm'
-                    : 'bg-white border-slate-200/60 hover:border-zinc-300 hover:shadow-sm'
-                }`}
-              >
-                <div className={`inline-flex items-center justify-center size-9 rounded-xl mb-3 ${s.color}`}>
-                  <Icons.Document />
-                </div>
-                <p className="text-2xl font-semibold tracking-tight text-slate-900">{s.value}</p>
-                <p className="text-sm text-slate-500">{s.label}</p>
-              </button>
-            );
-          })}
+        </>
+      )}
+    >
+      <div className="space-y-6">
+        {/* Same KPI hierarchy as the admin pages. The smaller cards still
+            filter the list; tapping the selected one again shows all. */}
+        <div data-tour="reports-stats">
+          <HierarchyKpis
+            ariaLabel="Report summary"
+            lead={{
+              label: 'Total Reports',
+              value: counts.total.toLocaleString(),
+              note: counts.total === 0
+                ? 'You have not sent any reports yet'
+                : <><span className="font-semibold text-emerald-700">{Math.round((counts.resolved / counts.total) * 100)}% resolved</span> of the reports you sent</>,
+              icon: <Icons.Document />,
+              segments: [
+                { label: 'Resolved', value: counts.resolved, bar: 'bg-emerald-500' },
+                { label: 'In progress', value: counts.inProgress, bar: 'bg-sky-500' },
+                { label: 'Awaiting review', value: counts.submitted, bar: 'bg-amber-500' },
+                { label: 'Closed', value: counts.closed, bar: 'bg-slate-400' },
+              ],
+            }}
+            items={[
+              { key: 'submitted', icon: <Icons.Clock />, label: 'Awaiting Review', value: counts.submitted, hint: 'Sent, not yet reviewed', chip: 'bg-amber-50 text-amber-600' },
+              { key: 'in_progress', icon: <Icons.Search />, label: 'In Progress', value: counts.inProgress, hint: 'Being reviewed or inspected', chip: 'bg-sky-50 text-sky-600' },
+              { key: 'resolved', icon: <Icons.CheckCircle />, label: 'Resolved', value: counts.resolved, hint: 'Fixed or acted on', chip: 'bg-emerald-50 text-emerald-600' },
+              { key: 'closed', icon: <Icons.X />, label: 'Closed', value: counts.closed, hint: 'Closed without action', chip: 'bg-slate-100 text-slate-600' },
+            ].map(({ key, ...item }) => ({
+              ...item,
+              value: item.value.toLocaleString(),
+              active: statusFilter === key,
+              onClick: () => setStatusFilter(statusFilter === key ? 'all' : key),
+            }))}
+          />
         </div>
 
         {/* Filters */}
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-4">
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-4" data-tour="reports-filters">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"><Icons.Search /></span>
@@ -556,7 +558,7 @@ function UserReports() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div className="flex justify-end">
+          <div className="flex justify-end" data-tour="reports-view">
             <ViewToggle mode={viewMode} onChange={setViewMode} />
           </div>
         )}

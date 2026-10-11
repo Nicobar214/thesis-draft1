@@ -144,7 +144,7 @@ export default function AdminWorkflowControls({
     setShowUnassign(false);
   };
 
-  const handleDismiss = async () => {
+  const handleDismiss = async (options = {}) => {
     const reason = dismissReason.trim();
     if (!reason) {
       if (onNotify) onNotify('A reason is required to close this report.', 'error');
@@ -152,7 +152,7 @@ export default function AdminWorkflowControls({
     }
     setDismissing(true);
     try {
-      await onDismiss(reason);
+      await onDismiss(reason, options);
       setShowDismiss(false);
       setDismissReason('');
     } finally {
@@ -435,12 +435,16 @@ export default function AdminWorkflowControls({
     const recommendReject = triage?.recommendation === TRIAGE.REJECT;
     const dismissAllowed = canDismissReport(report);
 
-    if (recommendReject && dismissAllowed) {
+    /* Not credible + location mismatch: the reported position is not on this
+     * project's road. Policy: no field engineer may be dispatched; the only
+     * action is to reject it as a location mismatch, which tells the citizen
+     * why. (Dashboard.assignEngineerToReport refuses these too.) */
+    if (recommendReject) {
       return (
         <SectionShell
           tone="border-red-300 bg-red-50"
-          eyebrow="Action required · automated check failed"
-          title="Recommended: close this report"
+          eyebrow="Not credible · location mismatch"
+          title="This report can't be dispatched"
           description={triage?.reasons?.[0]}
         >
           {triage?.reasons?.length > 1 && (
@@ -448,55 +452,28 @@ export default function AdminWorkflowControls({
               {triage.reasons.slice(1).map((r) => <li key={r}>{r}</li>)}
             </ul>
           )}
+          <p className="rounded-lg border border-red-200 bg-white/70 px-3 py-2 text-xs text-red-800">
+            Field engineers can't be assigned to a report submitted away from the project road.
+            Reject it as a location mismatch. The reporter is notified with this reason.
+          </p>
 
-          {!showDismiss ? (
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setDismissReason(triage?.suggestedDismissalReason || '');
-                  setShowDismiss(true);
-                }}
-                className={buttonClass('danger', 'md', 'w-full')}
-              >
-                Close Report as Not Credible
-              </button>
-              <details className="text-xs">
-                <summary className="cursor-pointer text-slate-600 hover:text-slate-900">
-                  Dispatch an engineer anyway
-                </summary>
-                <div className="pt-2 space-y-2">
-                  <p className="text-[11px] text-slate-600">
-                    Use this if you have reason to believe the report is genuine despite the location check.
-                  </p>
-                  <select
-                    value={selectedEngineerId}
-                    onChange={(e) => setSelectedEngineerId(e.target.value)}
-                    aria-label="Select field engineer"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white"
-                  >
-                    <option value="">Select field engineer...</option>
-                    {fieldEngineers.map((eng) => (
-                      <option key={eng.id} value={eng.id}>
-                        {eng.full_name || eng.email} ({engineerWorkloads[eng.id] || 0} active)
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={handleAssign}
-                    disabled={!selectedEngineerId || assigningEngineer}
-                    className={buttonClass('primary', 'sm', 'w-full')}
-                  >
-                    {assigningEngineer ? 'Assigning...' : 'Assign & Dispatch'}
-                  </button>
-                </div>
-              </details>
-            </div>
+          {!dismissAllowed ? (
+            <p className="text-xs text-slate-600">This report can no longer be closed from here.</p>
+          ) : !showDismiss ? (
+            <button
+              type="button"
+              onClick={() => {
+                setDismissReason(triage?.suggestedDismissalReason || '');
+                setShowDismiss(true);
+              }}
+              className={buttonClass('danger', 'md', 'w-full')}
+            >
+              Reject as Location Mismatch
+            </button>
           ) : (
             <div className="space-y-2">
               <label htmlFor="dismiss-reason" className="text-[11px] font-semibold text-slate-600 block">
-                Reason shown in the audit log <span className="text-red-600">*</span>
+                Reason (saved to the audit log) <span className="text-red-600">*</span>
               </label>
               <textarea
                 id="dismiss-reason"
@@ -516,11 +493,11 @@ export default function AdminWorkflowControls({
                 </button>
                 <button
                   type="button"
-                  onClick={handleDismiss}
+                  onClick={() => handleDismiss({ locationMismatch: true })}
                   disabled={dismissing || !dismissReason.trim()}
                   className={buttonClass('danger', 'sm')}
                 >
-                  {dismissing ? 'Closing...' : 'Confirm Close'}
+                  {dismissing ? 'Rejecting...' : 'Confirm Reject'}
                 </button>
               </div>
             </div>
@@ -595,7 +572,7 @@ export default function AdminWorkflowControls({
                 />
                 <button
                   type="button"
-                  onClick={handleDismiss}
+                  onClick={() => handleDismiss()}
                   disabled={dismissing || !dismissReason.trim()}
                   className={buttonClass('danger', 'sm', 'w-full')}
                 >

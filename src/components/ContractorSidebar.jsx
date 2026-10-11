@@ -4,13 +4,15 @@ import { supabaseContractor as supabase } from '../lib/supabase';
 import Icons from './Icons';
 import Logo from './Logo';
 import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
-import { AttentionSummary, ConnectionStatus } from './ui/SidebarStatusCards';
+import { ConnectionStatus } from './ui/SidebarStatusCards';
 import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
+import { confirmSignOut } from '../lib/confirm';
 
 const NAV_GROUPS = [
   { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', icon: Icons.Dashboard, exact: true }] },
   { label: 'Work', items: [{ to: '/contractor/projects', label: 'My Projects', icon: Icons.Road }] },
   { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', icon: Icons.Document }] },
+  { label: 'Account', items: [{ to: '/contractor/profile', label: 'My Profile', icon: Icons.UserCircle }] },
 ];
 
 export default function ContractorSidebar({ collapsed, setCollapsed, user, displayName }) {
@@ -22,6 +24,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
   const isActive = (item) => (item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to));
 
   async function handleLogout() {
+    if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
     navigate('/signin');
   }
@@ -33,22 +36,15 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
     return 0;
   };
 
-  const attentionRows = [
-    { key: 'fix', label: 'Needs correction', count: summary.needsFix.length, tone: 'rose', onClick: () => navigate('/contractor/reports') },
-    { key: 'engineer', label: 'With site engineer', count: summary.awaitingEngineer.length, tone: 'amber', onClick: () => navigate('/contractor/reports') },
-    { key: 'admin', label: 'With DA for approval', count: summary.awaitingAdmin.length, tone: 'sky', onClick: () => navigate('/contractor/reports') },
-    { key: 'noeng', label: 'No site engineer yet', count: summary.withoutEngineer.length, tone: 'rose', onClick: () => navigate('/contractor/projects') },
-  ];
-
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800 shrink-0">
+      <div className={`flex items-center justify-center border-b border-slate-800 shrink-0 ${collapsed ? 'h-18 sm:h-20 px-2' : 'h-18 sm:h-20 px-4'}`}>
         {collapsed ? (
-          <Logo variant="glyph" tone="light" className="size-9" alt="KalsaTrack" />
+          <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
         ) : (
-          <div className="flex flex-col gap-1 min-w-0">
-            <Logo tone="light" className="h-7" />
-            <span className="text-[10px] font-semibold text-teal-400 uppercase tracking-wider leading-none">Contractor Portal</span>
+          <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-0">
+            <Logo tone="light" className="h-8" />
+            <span className="text-[10px] font-semibold text-teal-400 uppercase tracking-widest leading-none">Contractor Portal</span>
           </div>
         )}
       </div>
@@ -86,7 +82,6 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
           </div>
         ))}
 
-        {!collapsed && <AttentionSummary title="Your submissions" rows={attentionRows} />}
       </nav>
 
       <div className="border-t border-slate-800 px-3 py-4 space-y-2 shrink-0">
@@ -114,7 +109,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
     <>
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3.5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
+        className="lg:hidden fixed top-4 sm:top-5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
         aria-label="Open navigation menu"
       >
         <Icons.Menu />

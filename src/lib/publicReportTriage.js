@@ -142,8 +142,8 @@ export function assessReport({ report, project, routeRecord, photoGpsMatch = fal
   /* Pre-written, specific, and auditable — this text lands in
    * public_reports.dismissal_reason and the immutable activity log. */
   const suggestedDismissalReason = measurable
-    ? `Automated location check: the reported position is ${formatTriageDistance(meters)} from the ${report?.project_name || 'project'} road alignment, outside the 1 km reporting range. Closed as not matching this project.`
-    : 'Automated location check could not verify this report against the project route.';
+    ? `Location mismatch: the report was submitted ${formatTriageDistance(meters)} from the ${report?.project_name || 'project'} road alignment, beyond the 1 km reporting range. Declined after automated location verification.`
+    : 'Location mismatch: the report could not be verified against the project route. Declined after automated location verification.';
 
   return {
     distanceMeters: meters,

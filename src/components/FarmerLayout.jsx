@@ -5,9 +5,9 @@ import { useFarmerRecord } from '../lib/useFarmerRecord';
 import { useFarmerReports } from '../lib/useFarmerReports';
 import FarmerSidebar from './FarmerSidebar';
 import FarmerWelcomeTour from './farmer/FarmerWelcomeTour';
-import FarmerProfileModal from './farmer/FarmerProfileModal';
 import FarmerReportModal from './farmer/FarmerReportModal';
 import NotificationBell from './NotificationBell';
+import ProfileAvatar from './ui/ProfileAvatar';
 import { CameraIcon, HelpCircleIcon } from 'lucide-react';
 
 function PageLoadingFallback() {
@@ -37,7 +37,6 @@ export default function FarmerLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [helpReopenCount, setHelpReopenCount] = useState(0);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { user, farmerRecord, loading, reload: reloadFarmerRecord } = useFarmerRecord();
@@ -67,6 +66,7 @@ export default function FarmerLayout() {
     '/farmer/reports': 'My Reports',
     '/farmer/fmr-projects': 'Road Projects',
     '/farmer/markets': 'Markets',
+    '/farmer/profile': 'My Profile',
   };
   const pageTitle = pageTitleMap[location.pathname] || 'Farmer Portal';
 
@@ -76,6 +76,7 @@ export default function FarmerLayout() {
     '/farmer/reports': 'Track the status of reports you’ve submitted.',
     '/farmer/fmr-projects': 'Every Farm-to-Market Road project in your area.',
     '/farmer/markets': 'Find nearby markets to sell or distribute your harvest.',
+    '/farmer/profile': 'Your photo, contact number and RSBSA record.',
   };
   const pageDescription = pageDescriptionMap[location.pathname] || '';
 
@@ -184,19 +185,21 @@ export default function FarmerLayout() {
                 onSelect={openNotification}
               />
 
-              {/* Farmer profile, top right. Clickable -- opens the profile/
-                  settings modal so an editable detail (contact number) is
-                  never more than one tap from wherever the farmer is. */}
+              {/* Farmer profile, top right. Opens My Profile (photo, contact
+                  number, RSBSA record) from wherever the farmer is. */}
               <button
                 type="button"
-                onClick={() => setShowProfileModal(true)}
+                onClick={() => navigate('/farmer/profile')}
                 aria-label="View and edit your profile"
                 title="View and edit your profile"
                 className="flex items-center gap-2.5 sm:gap-3 pl-2.5 sm:pl-4 border-l border-slate-200 rounded-xl hover:bg-slate-50 transition-colors -mr-1 py-1 pr-1"
               >
-                <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-xl bg-gradient-to-br from-emerald-700 to-teal-700 text-white font-bold text-sm sm:text-base flex items-center justify-center shadow-sm">
-                  {(farmerRecord?.first_name || farmerRecord?.full_name || 'F').charAt(0).toUpperCase()}
-                </div>
+                <ProfileAvatar
+                  client={supabase}
+                  name={farmerRecord?.full_name || farmerRecord?.first_name}
+                  fallback="F"
+                  className="size-9 sm:size-11 rounded-xl text-sm sm:text-base shadow-sm"
+                />
                 <div className="hidden sm:block min-w-0 text-left">
                   <p className="text-sm font-bold text-slate-900 truncate max-w-[160px]">{farmerRecord?.full_name || 'Farmer Account'}</p>
                   <p className="text-xs text-slate-500 truncate max-w-[160px]">RSBSA: {farmerRecord?.rsbsa_number || 'N/A'}</p>
@@ -208,7 +211,7 @@ export default function FarmerLayout() {
 
         <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
           <Suspense fallback={<PageLoadingFallback />}>
-            <Outlet context={{ openReport, reports, reportsLoading, reloadReports }} />
+            <Outlet context={{ openReport, reports, reportsLoading, reloadReports, user, farmerRecord, farmerLoading: loading, reloadFarmerRecord }} />
           </Suspense>
         </div>
       </main>
@@ -219,14 +222,6 @@ export default function FarmerLayout() {
         <FarmerReportModal
           onClose={closeReport}
           onSubmitted={reloadReports}
-        />
-      )}
-
-      {showProfileModal && (
-        <FarmerProfileModal
-          farmerRecord={farmerRecord}
-          onSaved={reloadFarmerRecord}
-          onClose={() => setShowProfileModal(false)}
         />
       )}
     </div>

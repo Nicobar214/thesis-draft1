@@ -2,7 +2,7 @@
  * Features: Collapsible left sidebar navigation, responsive PWA mobile bottom bar & drawer,
  * GIS Map Explorer, Progress Certification, Damage Reports Inspection, and Profile Management.
  */
-import { CheckIcon, CircleHelpIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleHelpIcon, TriangleAlertIcon, XIcon, ClipboardListIcon, HardHatIcon, CheckCircle2Icon, InboxIcon, BadgeCheckIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
@@ -17,9 +17,14 @@ import RepairVerifyPanel from '../components/publicReports/RepairVerifyPanel';
 import { syncRepairVerifications } from '../lib/offlineRepairVerifications';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import FieldEngineerMap from '../components/publicReports/FieldEngineerMap';
-import { SidebarSyncStatus, SidebarTodaySummary } from '../components/publicReports/FieldSidebarStatus';
+import { SidebarSyncStatus } from '../components/publicReports/FieldSidebarStatus';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
 import { startPublicReportInspection } from '../services/publicReportWorkflow';
 import { friendlyReportError } from '../lib/publicReportStatus';
+import { confirmSignOut } from '../lib/confirm';
+import StaffProfile from '../components/profile/StaffProfile';
+import ProfileAvatar from '../components/ui/ProfileAvatar';
+import { useProfileNameUpdates } from '../lib/profileName';
 
 /* ─── Status Helpers & Badges ─── */
 const engineerStatusStyles = {
@@ -86,6 +91,15 @@ function VerifyBadge({ verification }) {
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold border ${s.cls}`}>{s.icon} {verification}</span>;
 }
 
+// One line under the page title in the header.
+const PAGE_DESCRIPTIONS = {
+  overview: 'Your inspection workload at a glance',
+  'gis-map': 'Assigned sites, FMR routes and your live position',
+  certify: 'Verify contractor progress on site before it is paid',
+  reports: 'Citizen damage reports assigned to you for inspection',
+  profile: 'Your account details and profile photo',
+};
+
 export default function FieldEngineerDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -95,6 +109,7 @@ export default function FieldEngineerDashboard() {
 
   /* Navigation Views: 'overview' | 'reports' | 'certify' | 'gis-map' | 'profile' */
   const [activeNav, setActiveNav] = useState('overview');
+  useProfileNameUpdates(useCallback((name) => setProfile((p) => (p ? { ...p, full_name: name } : p)), []));
   const [activeReportTab, setActiveReportTab] = useState('assigned');
   const [certifyCount, setCertifyCount] = useState(0);
 
@@ -324,6 +339,7 @@ export default function FieldEngineerDashboard() {
   };
 
   const handleSignOut = async () => {
+    if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
     navigate('/field-engineer/login');
   };
@@ -438,18 +454,6 @@ export default function FieldEngineerDashboard() {
     needsRework: reports.filter(r => r.engineer_status === 'rejected').length,
     completed: reports.filter(r => ['inspected', 'validated'].includes(r.engineer_status)).length,
   }), [reports]);
-
-  // Coordinates list for GIS map view
-  const mapReportPoints = useMemo(() => {
-    return reports.filter(r => r.latitude && r.longitude).map(r => ({
-      id: r.id,
-      lat: Number(r.latitude),
-      lng: Number(r.longitude),
-      title: `${r.barangay}, ${r.municipality}`,
-      status: r.engineer_status,
-      description: r.description,
-    }));
-  }, [reports]);
 
   const openFieldMap = (status = 'all') => {
     setMapStatus(status);
@@ -615,12 +619,6 @@ export default function FieldEngineerDashboard() {
           </div>
           ))}
 
-          {!sidebarCollapsed && (
-            <SidebarTodaySummary
-              metrics={metrics}
-              onOpen={(tab) => { setActiveReportTab(tab); setActiveNav('reports'); }}
-            />
-          )}
         </nav>
 
         {/* Sidebar Footer: connection state + user */}
@@ -730,7 +728,7 @@ export default function FieldEngineerDashboard() {
       }`}>
         {/* Top Header Bar (Matches Admin Page) */}
         <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               {/* Mobile Hamburger Drawer Button */}
               <button
@@ -743,10 +741,11 @@ export default function FieldEngineerDashboard() {
                 </svg>
               </button>
 
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-slate-900 tracking-tight">
+              <div className="min-w-0">
+                <h1 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
                   {navItems.find((n) => n.id === activeNav)?.label || 'Field Command'}
-                </h2>
+                </h1>
+                <p className="hidden sm:block truncate text-sm text-slate-500">{PAGE_DESCRIPTIONS[activeNav]}</p>
               </div>
             </div>
 
@@ -760,13 +759,19 @@ export default function FieldEngineerDashboard() {
                 resolveTarget={resolveNotificationTarget}
                 onSelect={openNotification}
               />
-              <div className="hidden sm:block text-right">
-                <p className="text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</p>
-                <p className="text-[10px] font-semibold text-teal-700 uppercase tracking-wider">DA Region VI Inspector</p>
-              </div>
-              <div className="w-8 h-8 rounded-lg bg-teal-600 text-white font-bold text-xs flex items-center justify-center shadow-sm">
-                {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveNav('profile')}
+                title="My profile"
+                aria-label="Open your profile"
+                className="flex items-center gap-3 rounded-xl py-1 pl-2 pr-1 hover:bg-slate-50 transition-colors"
+              >
+                <span className="hidden sm:block text-right">
+                  <span className="block text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</span>
+                  <span className="block text-[10px] font-semibold text-teal-700 uppercase tracking-wider">DA Region VI Inspector</span>
+                </span>
+                <ProfileAvatar client={supabase} name={profile.full_name || profile.email} fallback="FE" className="size-9 rounded-xl text-xs shadow-sm" />
+              </button>
             </div>
           </div>
         </header>
@@ -777,99 +782,50 @@ export default function FieldEngineerDashboard() {
           {/* ── VIEW 1: OVERVIEW DASHBOARD ── */}
           {activeNav === 'overview' && (
             <div className="space-y-5 animate-fadeIn">
-              {/* Workload Header */}
-              <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-5 sm:p-6 shadow-sm">
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-                  <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-200 mb-3">
-                      DA RAED Field Command
+              {/* Workload KPIs: same hierarchy as the admin pages. Smaller cards open the matching queue. */}
+              <HierarchyKpis
+                ariaLabel="Inspection workload"
+                lead={{
+                  label: 'Assigned Damage Reports',
+                  value: metrics.total,
+                  note: (
+                    <span>
+                      <span className="font-semibold text-emerald-700">{metrics.total ? Math.round((metrics.completed / metrics.total) * 100) : 0}% inspected</span>
+                      {' '}· {metrics.assigned + metrics.inProgress + metrics.needsRework} still open
                     </span>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-950">
-                      Field Operations Overview
-                    </h1>
-                    <p className="text-xs font-medium text-teal-700 mt-1">Signed in as {profile.full_name || 'Field Engineer'}</p>
-                    <p className="text-sm text-slate-600 mt-1 max-w-2xl leading-6">
-                      Department of Agriculture Region VI Field Operations. Measure contractor progress, inspect public damage reports, and verify infrastructure quality.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => setActiveNav('reports')}
-                      className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs shadow-sm shadow-teal-600/10 transition-all flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4 text-teal-700" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25" />
-                      </svg>
-                      Inspect Reports ({metrics.assigned})
-                    </button>
-                    <button
-                      onClick={() => setActiveNav('certify')}
-                      className="px-4 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold text-xs transition-all flex items-center gap-2"
-                    >
-                      <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-                      </svg>
-                      Certify Queue ({certifyCount})
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* KPI Stat Cards (White Theme Cards matching Admin) */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">Total Workload</span>
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6z" />
-                    </svg>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-slate-950">{metrics.total}</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Assigned Cases</p>
-                </div>
-
-                <div className="bg-white rounded-xl border border-blue-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between text-blue-700 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">New</span>
-                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-blue-900">{metrics.assigned}</p>
-                  <p className="text-[11px] text-blue-600 mt-1">Awaiting Inspection</p>
-                </div>
-
-                <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between text-amber-700 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">In Progress</span>
-                    <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-amber-900">{metrics.inProgress}</p>
-                  <p className="text-[11px] text-amber-600 mt-1">On-Site Active</p>
-                </div>
-
-                <div className="bg-white rounded-xl border border-rose-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="flex items-center justify-between text-rose-700 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">Needs Rework</span>
-                    <svg className="w-4 h-4 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                    </svg>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-rose-900">{metrics.needsRework}</p>
-                  <p className="text-[11px] text-rose-600 mt-1">Returned by Admin</p>
-                </div>
-
-                <div className="bg-white rounded-xl border border-emerald-200 p-4 shadow-sm hover:shadow-md transition-shadow col-span-2 sm:col-span-1">
-                  <div className="flex items-center justify-between text-emerald-700 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider">Completed</span>
-                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                    </svg>
-                  </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-emerald-900">{metrics.completed}</p>
-                  <p className="text-[11px] text-emerald-600 mt-1">Inspected & Verified</p>
-                </div>
-              </div>
+                  ),
+                  icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
+                  iconTone: 'bg-emerald-100 text-emerald-700',
+                  segments: [
+                    { label: 'Completed', value: metrics.completed, bar: 'bg-emerald-500' },
+                    { label: 'In progress', value: metrics.inProgress, bar: 'bg-amber-400' },
+                    { label: 'New', value: metrics.assigned, bar: 'bg-sky-500' },
+                    { label: 'Needs rework', value: metrics.needsRework, bar: 'bg-rose-500' },
+                  ].filter((seg) => seg.value > 0),
+                }}
+                items={[
+                  {
+                    icon: <InboxIcon className="size-4" aria-hidden="true" />, label: 'New', value: metrics.assigned,
+                    hint: 'Awaiting inspection', chip: 'bg-sky-50 text-sky-700',
+                    onClick: () => { setActiveReportTab('assigned'); setActiveNav('reports'); },
+                  },
+                  {
+                    icon: <HardHatIcon className="size-4" aria-hidden="true" />, label: 'In Progress', value: metrics.inProgress,
+                    hint: 'On-site, not yet submitted', chip: 'bg-amber-50 text-amber-700',
+                    onClick: () => { setActiveReportTab('in-progress'); setActiveNav('reports'); },
+                  },
+                  {
+                    icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />, label: 'Needs Rework', value: metrics.needsRework,
+                    hint: 'Returned by the admin', chip: metrics.needsRework ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500',
+                    onClick: () => { setActiveReportTab('needs-rework'); setActiveNav('reports'); },
+                  },
+                  {
+                    icon: <BadgeCheckIcon className="size-4" aria-hidden="true" />, label: 'Progress to Certify', value: certifyCount,
+                    hint: 'Contractor updates to verify', chip: 'bg-teal-50 text-teal-700',
+                    onClick: () => setActiveNav('certify'),
+                  },
+                ]}
+              />
 
               {/* Field map preview: compact; the full tool is the GIS Field Map tab */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
@@ -1144,15 +1100,72 @@ export default function FieldEngineerDashboard() {
           {/* ── VIEW 2: DAMAGE REPORTS INSPECTIONS ── */}
           {activeNav === 'reports' && (
             <div className="space-y-5 animate-fadeIn">
-              {/* Header & Status Tabs */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-950">Public Damage Inspection Queue</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Assigned public reports awaiting on-site findings & geotagged evidence</p>
-                </div>
+              {/* Damage Reports Workload KPIs */}
+              <HierarchyKpis
+                ariaLabel="Inspection workload"
+                lead={{
+                  label: 'Assigned Damage Reports',
+                  value: metrics.total,
+                  note: (
+                    <span>
+                      <span className="font-semibold text-emerald-700">{metrics.total ? Math.round((metrics.completed / metrics.total) * 100) : 0}% inspected</span>
+                      {' '}· {metrics.assigned + metrics.inProgress + metrics.needsRework} still open
+                    </span>
+                  ),
+                  icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
+                  iconTone: 'bg-emerald-100 text-emerald-700',
+                  segments: [
+                    { label: 'Completed', value: metrics.completed, bar: 'bg-emerald-500' },
+                    { label: 'In progress', value: metrics.inProgress, bar: 'bg-amber-400' },
+                    { label: 'New', value: metrics.assigned, bar: 'bg-sky-500' },
+                    { label: 'Needs rework', value: metrics.needsRework, bar: 'bg-rose-500' },
+                  ].filter((seg) => seg.value > 0),
+                  onClick: () => setActiveReportTab('all'),
+                  active: activeReportTab === 'all',
+                }}
+                items={[
+                  {
+                    icon: <InboxIcon className="size-4" aria-hidden="true" />,
+                    label: 'New',
+                    value: metrics.assigned,
+                    hint: 'Awaiting inspection',
+                    chip: 'bg-sky-50 text-sky-700',
+                    onClick: () => setActiveReportTab('assigned'),
+                    active: activeReportTab === 'assigned',
+                  },
+                  {
+                    icon: <HardHatIcon className="size-4" aria-hidden="true" />,
+                    label: 'In Progress',
+                    value: metrics.inProgress,
+                    hint: 'On-site, not yet submitted',
+                    chip: 'bg-amber-50 text-amber-700',
+                    onClick: () => setActiveReportTab('in-progress'),
+                    active: activeReportTab === 'in-progress',
+                  },
+                  {
+                    icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />,
+                    label: 'Needs Rework',
+                    value: metrics.needsRework,
+                    hint: 'Returned by the admin',
+                    chip: metrics.needsRework ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500',
+                    onClick: () => setActiveReportTab('needs-rework'),
+                    active: activeReportTab === 'needs-rework',
+                  },
+                  {
+                    icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />,
+                    label: 'Completed',
+                    value: metrics.completed,
+                    hint: 'Inspected & verified',
+                    chip: 'bg-emerald-50 text-emerald-700',
+                    onClick: () => setActiveReportTab('completed'),
+                    active: activeReportTab === 'completed',
+                  },
+                ]}
+              />
 
-                {/* Status Filter Tabs */}
-                <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 rounded-xl bg-slate-100 p-1">
+              {/* Status tabs (the page title lives in the header) */}
+              <div>
+                <div className="flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-slate-100 p-1">
                   {[
                     { id: 'assigned', label: 'New', count: metrics.assigned },
                     { id: 'in-progress', label: 'In Progress', count: metrics.inProgress },
@@ -1407,35 +1420,18 @@ export default function FieldEngineerDashboard() {
           {/* ── VIEW 3: PROGRESS CERTIFICATION QUEUE ── */}
           {activeNav === 'certify' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <h2 className="text-xl font-semibold text-slate-950">Contractor Progress Certification</h2>
-                <p className="text-xs text-slate-500 mt-0.5">DA Region VI Requirement: Verify on-site accomplishment before payment recognition</p>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm text-slate-900">
-                <ProgressCertificationPanel
-                  onCountChange={setCertifyCount}
-                  showNotification={showNotification}
-                  focusUpdateId={focusUpdateId}
-                  onFocusHandled={clearFocusUpdate}
-                />
-              </div>
+              <ProgressCertificationPanel
+                onCountChange={setCertifyCount}
+                showNotification={showNotification}
+                focusUpdateId={focusUpdateId}
+                onFocusHandled={clearFocusUpdate}
+              />
             </div>
           )}
 
           {/* ── VIEW 4: GIS FIELD MAP EXPLORER ── */}
           {activeNav === 'gis-map' && (
             <div className="space-y-5 animate-fadeIn">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-950">Geospatial GIS Field Map</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Assigned report sites, FMR routes and unpaved gaps, with your live position and a suggested visit order</p>
-                </div>
-                <div className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800">
-                  <span className="w-3 h-3 rounded-full bg-teal-500 inline-block" /> {mapReportPoints.length} Geotagged Sites
-                </div>
-              </div>
-
               <FieldEngineerMap
                 key={mapStatus}
                 initialStatus={mapStatus}
@@ -1447,49 +1443,23 @@ export default function FieldEngineerDashboard() {
 
           {/* ── VIEW 5: ENGINEER PROFILE ── */}
           {activeNav === 'profile' && (
-            <div className="space-y-5 animate-fadeIn max-w-3xl mx-auto">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
-                  <div className="w-16 h-16 rounded-xl bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-md">
-                    {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-950">{profile.full_name || 'Field Engineer'}</h2>
-                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mt-0.5">DA RAED Authorized Inspector</p>
-                    <p className="text-xs text-slate-500 mt-1">{profile.email}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 uppercase font-semibold block mb-1">Role Permission</span>
-                    <span className="font-bold text-slate-800">Field Supervising Engineer</span>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 uppercase font-semibold block mb-1">Region / Jurisdiction</span>
-                    <span className="font-bold text-slate-800">DA Region VI (Western Visayas)</span>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 uppercase font-semibold block mb-1">PWA Sync Status</span>
-                    <span className={`font-bold ${isOffline ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {isOffline ? 'Offline Mode (Local Storage)' : 'Online (Direct Cloud Sync)'}
-                    </span>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <span className="text-slate-500 uppercase font-semibold block mb-1">Active Assigned Cases</span>
-                    <span className="font-bold text-teal-600">{reports.length} Reports</span>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-slate-100 flex justify-end">
-                  <button
-                    onClick={handleSignOut}
-                    className={buttonClass('secondary')}
-                  >
-                    Sign Out of Field Portal
-                  </button>
-                </div>
-              </div>
+            <div className="animate-fadeIn">
+              <StaffProfile
+                client={supabase}
+                roleLabel="Field Engineer"
+                fallbackInitial="FE"
+                stats={[
+                  { label: 'Assigned Reports', value: metrics.total, icon: ClipboardListIcon, tone: 'bg-teal-50 text-teal-700' },
+                  { label: 'In Progress', value: metrics.inProgress, icon: HardHatIcon, tone: 'bg-amber-50 text-amber-700' },
+                  { label: 'Completed', value: metrics.completed, icon: CheckCircle2Icon, tone: 'bg-emerald-50 text-emerald-700' },
+                ]}
+                details={[
+                  { label: 'Role', value: 'Field Supervising Engineer' },
+                  { label: 'Jurisdiction', value: 'DA Region VI (Western Visayas)' },
+                  { label: 'Sync status', value: isOffline ? 'Offline (saved on this device)' : 'Online', tone: isOffline ? 'text-amber-700' : 'text-emerald-700' },
+                  { label: 'Needs rework', value: metrics.needsRework, tone: metrics.needsRework ? 'text-red-700' : 'text-slate-800' },
+                ]}
+              />
             </div>
           )}
         </main>

@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import Icons from './Icons';
 import Logo from './Logo';
 import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
-import { SidebarConnectionStatus, SidebarReportSummary } from './UserSidebarStatus';
+import { SidebarConnectionStatus } from './UserSidebarStatus';
+import { confirmSignOut } from '../lib/confirm';
 
 const navItems = [
   { to: '/user', label: 'Dashboard', icon: Icons.Dashboard },
@@ -12,7 +13,7 @@ const navItems = [
   { to: '/user/map', label: 'Map View', icon: Icons.MapPin },
   { to: '/user/reports', label: 'My Reports', icon: Icons.Document },
   { to: '/user/feedback', label: 'Community Feedback', icon: Icons.Feedback },
-  { to: '/user/profile', label: 'Profile Settings', icon: Icons.Building },
+  { to: '/user/profile', label: 'Profile Settings', icon: Icons.UserCircle },
 ];
 
 const NAV_GROUPS = [
@@ -28,6 +29,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   async function handleLogout() {
+    if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
     navigate('/');
   }
@@ -40,13 +42,13 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-slate-800 shrink-0">
+      <div className={`flex items-center justify-center border-b border-slate-800 shrink-0 ${collapsed ? 'h-18 sm:h-20 px-2' : 'h-18 sm:h-20 px-4'}`}>
         {collapsed ? (
-          <Logo variant="glyph" tone="light" className="size-9" alt="KalsaTrack" />
+          <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
         ) : (
-          <div className="flex flex-col gap-1 min-w-0">
-            <Logo tone="light" className="h-7" />
-            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider leading-none">
+          <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-0">
+            <Logo tone="light" className="h-8" />
+            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest leading-none">
               Citizen Portal
             </span>
           </div>
@@ -54,7 +56,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <nav data-tour="nav" className="flex-1 px-3 py-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {NAV_GROUPS.map((group, gi) => (
         <div key={group.label} className="space-y-1">
           {collapsed ? (
@@ -86,8 +88,6 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
         })}
         </div>
         ))}
-
-        {!collapsed && <SidebarReportSummary />}
       </nav>
 
       {/* User Info & Logout */}
@@ -118,7 +118,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3.5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
+        className="lg:hidden fixed top-4 sm:top-5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
         aria-label="Open Navigation Menu"
       >
         <Icons.Menu />

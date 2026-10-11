@@ -1,30 +1,16 @@
 import { useMemo, useState } from 'react';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import {
-  BENEFICIARY_CROPS,
-  LGU_SUBMITTERS,
-} from '../../utils/farmerBeneficiaryData';
+import { UsersIcon, LandPlotIcon, WheatIcon, RouteIcon, MapPinIcon, SearchIcon, XIcon, AlertCircleIcon, RefreshCwIcon } from 'lucide-react';
+import HierarchyKpis from '../ui/HierarchyKpis';
+import BeneficiaryAnalytics from './BeneficiaryAnalytics';
+import { getMunicipalities } from '../../data/iloiloLocations';
+import { summarizeBeneficiaries, groupCommodities, formatHa, formatPct } from '../../lib/beneficiaryAnalytics';
 import { getPaginationRange } from '../../lib/paginationUtils';
 
 const rowsPerPage = 10;
-const cardClass = 'bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm';
-const chartCardClass = 'bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow';
+const filterSelectCls = 'h-10 w-full min-w-0 truncate rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10';
 
 function formatDate(dateValue) {
+  if (!dateValue) return 'N/A';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(date.getTime())) return 'N/A';
   return date.toLocaleDateString();
@@ -53,7 +39,7 @@ function EmptyBeneficiaries({ onReset }) {
   );
 }
 
-export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loading = false }) {
+export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loading = false, error = '', onRetry }) {
   const [search, setSearch] = useState('');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [barangayFilter, setBarangayFilter] = useState('All');
@@ -64,17 +50,15 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
 
   const municipalityOptions = useMemo(() => [...new Set(beneficiaries.map((item) => item.municipality).filter(Boolean))].sort(), [beneficiaries]);
   const barangayOptions = useMemo(() => {
-    return [...new Set(beneficiaries
+    const counts = new Map();
+    beneficiaries
       .filter((item) => municipalityFilter === 'All' || item.municipality === municipalityFilter)
-      .map((item) => item.barangay)
-      .filter(Boolean))]
-      .sort();
+      .forEach((item) => { if (item.barangay) counts.set(item.barangay, (counts.get(item.barangay) || 0) + 1); });
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, count]) => ({ name, count }));
   }, [beneficiaries, municipalityFilter]);
   const projectOptions = useMemo(() => [...new Set(beneficiaries.map((item) => item.linkedProject).filter(Boolean))].sort(), [beneficiaries]);
-  const lguOptions = useMemo(() => {
-    const derived = [...new Set(beneficiaries.map((item) => item.submittedByLgu).filter(Boolean))].sort();
-    return derived.length ? derived : LGU_SUBMITTERS;
-  }, [beneficiaries]);
+  const lguOptions = useMemo(() => [...new Set(beneficiaries.map((item) => item.submittedByLgu).filter(Boolean))].sort(), [beneficiaries]);
+  const cropOptions = useMemo(() => [...new Set(beneficiaries.map((item) => String(item.crop || '').trim()).filter(Boolean))].sort(), [beneficiaries]);
 
   const filteredBeneficiaries = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -107,76 +91,24 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
   const safePage = Math.min(page, totalPages);
   const paginatedBeneficiaries = filteredBeneficiaries.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
 
-  const kpis = useMemo(() => {
-    const total = filteredBeneficiaries.length;
-    const hectares = filteredBeneficiaries.reduce((sum, item) => sum + Number(item.farmAreaHa || 0), 0);
-    const activeProjects = new Set(filteredBeneficiaries.filter((item) => ['On-Going', 'Ongoing', 'Active'].includes(item.linkedProjectStatus)).map((item) => item.linkedProject)).size;
-    const cropCounts = filteredBeneficiaries.reduce((acc, item) => {
-      acc[item.crop] = (acc[item.crop] || 0) + 1;
-      return acc;
-    }, {});
-    const topCrop = Object.keys(cropCounts).sort((a, b) => cropCounts[b] - cropCounts[a])[0] || 'N/A';
-
-    return { total, hectares, topCrop, activeProjects };
-  }, [filteredBeneficiaries]);
-
-  const cropDistribution = useMemo(() => {
-    const raw = BENEFICIARY_CROPS.map((crop) => ({
-      name: crop,
-      value: filteredBeneficiaries.filter((item) => item.crop === crop).length,
-    })).filter((item) => item.value > 0);
-
-    // Sort descending by beneficiary count
-    raw.sort((a, b) => b.value - a.value);
-
-    // Group items beyond the top 5 into "Others"
-    if (raw.length > 6) {
-      const top5 = raw.slice(0, 5);
-      const remainingSum = raw.slice(5).reduce((sum, item) => sum + item.value, 0);
-      if (remainingSum > 0) {
-        top5.push({
-          name: 'Others',
-          value: remainingSum,
-        });
-      }
-      return top5;
-    }
-
-    return raw;
-  }, [filteredBeneficiaries]);
-
-  const beneficiariesPerMunicipality = useMemo(() => {
-    const counts = filteredBeneficiaries.reduce((acc, item) => {
-      acc[item.municipality] = (acc[item.municipality] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.entries(counts)
-      .map(([municipality, count]) => ({ municipality, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [filteredBeneficiaries]);
-
-  const submissionsByYear = useMemo(() => {
-    const yearly = filteredBeneficiaries.reduce((acc, item) => {
-      const year = new Date(item.submittedDate).getFullYear();
-      if (!Number.isNaN(year)) acc[year] = (acc[year] || 0) + 1;
-      return acc;
-    }, {});
-    return Object.keys(yearly)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((year) => ({ year, beneficiaries: yearly[year] }));
-  }, [filteredBeneficiaries]);
-
-  const hectaresByYear = useMemo(() => {
-    const yearly = filteredBeneficiaries.reduce((acc, item) => {
-      const year = new Date(item.submittedDate).getFullYear();
-      if (!Number.isNaN(year)) acc[year] = (acc[year] || 0) + Number(item.farmAreaHa || 0);
-      return acc;
-    }, {});
-    return Object.keys(yearly)
-      .sort((a, b) => Number(a) - Number(b))
-      .map((year) => ({ year, hectares: Number(yearly[year].toFixed(2)) }));
-  }, [filteredBeneficiaries]);
+  // Every analytics number comes from one summary (lib/beneficiaryAnalytics.js),
+  // computed from the same filtered list as the registry table.
+  const municipalityMaster = useMemo(() => getMunicipalities(), []);
+  const analytics = useMemo(
+    () => summarizeBeneficiaries(filteredBeneficiaries, { municipalityMaster }),
+    [filteredBeneficiaries, municipalityMaster],
+  );
+  const overall = useMemo(
+    () => summarizeBeneficiaries(beneficiaries, { municipalityMaster }),
+    [beneficiaries, municipalityMaster],
+  );
+  const commodityGroups = useMemo(() => groupCommodities(analytics.commodities, 6), [analytics.commodities]);
+  const activeProjects = useMemo(
+    () => new Set(filteredBeneficiaries
+      .filter((item) => ['On-Going', 'Ongoing', 'Active'].includes(item.linkedProjectStatus) && item.linkedProject)
+      .map((item) => item.linkedProject)).size,
+    [filteredBeneficiaries],
+  );
 
   const resetFilters = () => {
     setSearch('');
@@ -187,6 +119,15 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
     setLguFilter('All');
     setPage(1);
   };
+
+  const activeFilterChips = [
+    search.trim() && { key: 'search', label: `“${search.trim()}”`, clear: () => { setSearch(''); setPage(1); } },
+    municipalityFilter !== 'All' && { key: 'muni', label: municipalityFilter, clear: () => { setMunicipalityFilter('All'); setBarangayFilter('All'); setPage(1); } },
+    barangayFilter !== 'All' && { key: 'brgy', label: `Brgy. ${barangayFilter}`, clear: () => { setBarangayFilter('All'); setPage(1); } },
+    cropFilter !== 'All' && { key: 'crop', label: cropFilter, clear: () => { setCropFilter('All'); setPage(1); } },
+    projectFilter !== 'All' && { key: 'project', label: `Project: ${projectFilter}`, clear: () => { setProjectFilter('All'); setPage(1); } },
+    lguFilter !== 'All' && { key: 'lgu', label: `By ${lguFilter}`, clear: () => { setLguFilter('All'); setPage(1); } },
+  ].filter(Boolean);
 
   const handleExport = () => {
     const rows = filteredBeneficiaries.map((item) => ({
@@ -207,37 +148,175 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
     onExportCsv?.(rows, 'farmer_beneficiaries.csv');
   };
 
+  if (error) {
+    return (
+      <div role="alert" className="flex flex-col items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <AlertCircleIcon className="mt-0.5 size-5 shrink-0 text-red-600" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-red-800">Farmer beneficiaries could not be loaded</p>
+            <p className="mt-0.5 text-sm text-red-700">{error}</p>
+          </div>
+        </div>
+        {onRetry && (
+          <button type="button" onClick={onRetry} className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">
+            <RefreshCwIcon className="size-4" aria-hidden="true" />
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const isFiltered = activeFilterChips.length > 0;
+  const lead = analytics.leadingCommodity;
+  const pending = analytics.validation['For Verification'];
+  const validatedPct = analytics.total ? (analytics.validation.Validated / analytics.total) * 100 : 0;
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Total Farmers</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.total}</p>
-          <p className="mt-1 text-sm text-slate-500">LGU-submitted farmer profiles</p>
+      {/* 1. Filters — they drive the cards, the charts and the registry alike. */}
+      <section aria-label="Filter farmer beneficiaries" className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-xs">
+        <div className="flex flex-col gap-2.5 p-4 xl:flex-row xl:items-center">
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+              placeholder="Search name, beneficiary ID, RSBSA or project"
+              aria-label="Search farmers"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:flex xl:flex-nowrap">
+            <select aria-label="Municipality" value={municipalityFilter} onChange={(event) => { setMunicipalityFilter(event.target.value); setBarangayFilter('All'); setPage(1); }} className={`${filterSelectCls} xl:w-40`}>
+              <option value="All">All municipalities</option>
+              {municipalityOptions.map((municipality) => <option key={municipality} value={municipality}>{municipality}</option>)}
+            </select>
+            <select aria-label="Barangay" value={barangayFilter} onChange={(event) => { setBarangayFilter(event.target.value); setPage(1); }} className={`${filterSelectCls} xl:w-40`}>
+              <option value="All">All barangays</option>
+              {barangayOptions.map((b) => <option key={b.name} value={b.name}>{b.name} ({b.count})</option>)}
+            </select>
+            <select aria-label="Commodity" value={cropFilter} onChange={(event) => { setCropFilter(event.target.value); setPage(1); }} className={`${filterSelectCls} xl:w-40`}>
+              <option value="All">All commodities</option>
+              {cropOptions.map((crop) => <option key={crop} value={crop}>{crop}</option>)}
+            </select>
+            <select aria-label="Linked FMR project" value={projectFilter} onChange={(event) => { setProjectFilter(event.target.value); setPage(1); }} className={`${filterSelectCls} xl:w-48`}>
+              <option value="All">All FMR projects</option>
+              {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
+            </select>
+            <select aria-label="Submitted by" value={lguFilter} onChange={(event) => { setLguFilter(event.target.value); setPage(1); }} className={`${filterSelectCls} col-span-2 sm:col-span-1 xl:w-40`}>
+              <option value="All">All submitters</option>
+              {lguOptions.map((lgu) => <option key={lgu} value={lgu}>{lgu}</option>)}
+            </select>
+          </div>
         </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Farm Area Served</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.hectares.toFixed(1)} ha</p>
-          <p className="mt-1 text-sm text-slate-500">Total hectares linked to FMRs</p>
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+          <p className="mr-1 text-sm text-slate-500">
+            Showing <span className="font-semibold text-slate-900">{filteredBeneficiaries.length.toLocaleString()}</span> of {beneficiaries.length.toLocaleString()} registered farmers
+          </p>
+          {activeFilterChips.map((chip) => (
+            <span key={chip.key} className="inline-flex max-w-[16rem] items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-1 pl-3 pr-1 text-xs font-medium text-slate-700">
+              <span className="truncate">{chip.label}</span>
+              <button type="button" onClick={chip.clear} aria-label={`Remove filter ${chip.label}`} className="grid size-5 place-items-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+                <XIcon className="size-3" aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+          {isFiltered && (
+            <button type="button" onClick={resetFilters} className="ml-auto text-sm font-medium text-teal-700 hover:text-teal-800 hover:underline">
+              Clear all
+            </button>
+          )}
         </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Top Commodity</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.topCrop}</p>
-          <p className="mt-1 text-sm text-slate-500">Most common crop served</p>
-        </div>
-        <div className={cardClass}>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Active FMR Links</p>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{kpis.activeProjects}</p>
-          <p className="mt-1 text-sm text-slate-500">On-going project links</p>
-        </div>
-      </div>
+      </section>
+
+      {/* 2. Headline numbers */}
+      <HierarchyKpis
+        dense
+        loading={loading}
+        ariaLabel="Farmer registry summary"
+        lead={{
+          label: 'Registered Farmers',
+          value: analytics.total.toLocaleString(),
+          note: analytics.total === 0 ? (
+            <span>No farmers match {isFiltered ? 'these filters' : 'the registry yet'}</span>
+          ) : (
+            <span>
+              {pending === 0 && analytics.validation.Validated === analytics.total ? (
+                <span className="font-semibold text-emerald-700">All validated</span>
+              ) : (
+                <><span className="font-semibold text-emerald-700">{formatPct(validatedPct / 100)} validated</span> · {pending.toLocaleString()} waiting</>
+              )}
+              {isFiltered && overall.total > 0 && (
+                <> · {formatPct(analytics.total / overall.total)} of all {overall.total.toLocaleString()} farmers</>
+              )}
+            </span>
+          ),
+          icon: <UsersIcon className="size-6" aria-hidden="true" />,
+          iconTone: 'bg-emerald-100 text-emerald-700',
+          segments: [
+            { label: 'Validated', value: analytics.validation.Validated, bar: 'bg-emerald-500' },
+            { label: 'For Verification', value: pending, bar: 'bg-amber-500' },
+            { label: 'Needs Correction', value: analytics.validation['Needs Correction'], bar: 'bg-rose-500' },
+            { label: 'Other status', value: analytics.validation.Other, bar: 'bg-slate-400' },
+          ].filter((seg) => seg.value > 0),
+        }}
+        items={[
+          {
+            icon: <LandPlotIcon className="size-4" aria-hidden="true" />,
+            label: 'Registered Farm Area',
+            value: `${formatHa(analytics.hectares)} ha`,
+            hint: analytics.areaMissing
+              ? `${analytics.areaMissing.toLocaleString()} without area recorded`
+              : null,
+            chip: 'bg-teal-50 text-teal-700',
+          },
+          {
+            icon: <WheatIcon className="size-4" aria-hidden="true" />,
+            label: 'Leading Commodity',
+            value: !lead ? '—' : lead.names.length > 1 ? `${lead.names.length}-way tie` : lead.names[0],
+            hint: !lead
+              ? 'No commodity recorded'
+              : `${lead.count.toLocaleString()} farmer${lead.count === 1 ? '' : 's'}${lead.names.length > 1 ? ' each' : ''} · ${formatPct(lead.share)}`,
+            chip: 'bg-amber-50 text-amber-700',
+          },
+          {
+            icon: <MapPinIcon className="size-4" aria-hidden="true" />,
+            label: 'Municipal Coverage',
+            value: analytics.coverage.masterTotal
+              ? `${analytics.coverage.withFarmers} of ${analytics.coverage.masterTotal}`
+              : analytics.coverage.withFarmers,
+            hint: analytics.coverage.masterTotal ? 'Iloilo municipalities' : null,
+            chip: 'bg-sky-50 text-sky-700',
+          },
+          {
+            icon: <RouteIcon className="size-4" aria-hidden="true" />,
+            label: 'Active FMR Links',
+            value: activeProjects,
+            hint: 'On-going projects',
+            chip: 'bg-slate-100 text-slate-600',
+          },
+        ]}
+      />
+
+      {/* 3. Analytics */}
+      <BeneficiaryAnalytics
+        analytics={analytics}
+        commodityGroups={commodityGroups}
+        loading={loading}
+        isFiltered={isFiltered}
+        overall={overall}
+        selectedBarangay={barangayFilter !== 'All' ? barangayFilter : null}
+        onClearFilters={resetFilters}
+      />
 
       <div className="rounded-2xl border border-slate-200/60 bg-white shadow-sm">
         <div className="border-b border-slate-200/60 px-6 py-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900">Farmer Beneficiary Registry</h2>
-              <p className="mt-1 text-sm text-slate-500">LGU-submitted farmer beneficiaries linked to FMR project service areas.</p>
             </div>
             <button
               type="button"
@@ -246,38 +325,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
             >
               Export CSV
             </button>
-          </div>
-        </div>
-
-        <div className="px-6 py-6">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
-            <input
-              type="text"
-              value={search}
-              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-              placeholder="Search name, beneficiary ID, RSBSA, or project..."
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 lg:col-span-2"
-            />
-            <select value={municipalityFilter} onChange={(event) => { setMunicipalityFilter(event.target.value); setBarangayFilter('All'); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20">
-              <option value="All">All Municipalities</option>
-              {municipalityOptions.map((municipality) => <option key={municipality} value={municipality}>{municipality}</option>)}
-            </select>
-            <select value={barangayFilter} onChange={(event) => { setBarangayFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20">
-              <option value="All">All Barangays</option>
-              {barangayOptions.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
-            </select>
-            <select value={cropFilter} onChange={(event) => { setCropFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20">
-              <option value="All">All Commodities</option>
-              {BENEFICIARY_CROPS.map((crop) => <option key={crop} value={crop}>{crop}</option>)}
-            </select>
-            <select value={projectFilter} onChange={(event) => { setProjectFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 lg:col-span-3">
-              <option value="All">All Linked FMR Projects</option>
-              {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
-            </select>
-            <select value={lguFilter} onChange={(event) => { setLguFilter(event.target.value); setPage(1); }} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 text-sm text-slate-700 shadow-sm outline-none focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-500/20 lg:col-span-3">
-              <option value="All">All LGU Submitters</option>
-              {lguOptions.map((lgu) => <option key={lgu} value={lgu}>{lgu}</option>)}
-            </select>
           </div>
         </div>
 
@@ -370,104 +417,6 @@ export default function FarmerBeneficiariesTab({ beneficiaries, onExportCsv, loa
           </div>
         </div>
       </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className={chartCardClass}>
-          <h3 className="text-lg font-bold text-slate-900">Commodity Distribution</h3>
-          <p className="mb-4 text-sm text-slate-500">Share of beneficiaries per main commodity</p>
-          <div className="h-72">
-            {cropDistribution.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No commodity data available</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={cropDistribution} dataKey="value" nameKey="name" innerRadius={60} outerRadius={95} paddingAngle={2}>
-                    {cropDistribution.map((entry, index) => {
-                      const palette = ['#0d9488', '#22c55e', '#f59e0b', '#0ea5e9', '#a855f7', '#ef4444'];
-                      return <Cell key={`crop-${entry.name}`} fill={palette[index % palette.length]} />;
-                    })}
-                  </Pie>
-                  <Legend verticalAlign="bottom" height={36} />
-                  <RechartsTooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        <div className={chartCardClass}>
-          <h3 className="text-lg font-bold text-slate-900">Beneficiaries per Municipality</h3>
-          <p className="mb-4 text-sm text-slate-500">Top municipalities by submitted beneficiaries</p>
-          <div className="h-72">
-            {beneficiariesPerMunicipality.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No municipality data available</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={beneficiariesPerMunicipality} margin={{ top: 8, right: 8, left: -12, bottom: 32 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="municipality" tick={{ fill: '#64748b', fontSize: 11 }} angle={-20} textAnchor="end" height={60} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                  <RechartsTooltip />
-                  <Bar dataKey="count" fill="#0d9488" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        <div className={chartCardClass}>
-          <h3 className="text-lg font-bold text-slate-900">LGU Submissions by Year</h3>
-          <p className="mb-4 text-sm text-slate-500">Beneficiary registry submission trend</p>
-          <div className="h-72">
-            {submissionsByYear.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No submission history available</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={submissionsByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                  <defs>
-                    <linearGradient id="beneficiarySubmissionGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0d9488" stopOpacity={0.45} />
-                      <stop offset="95%" stopColor="#0d9488" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
-                  <RechartsTooltip />
-                  <Area type="monotone" dataKey="beneficiaries" stroke="#0d9488" fill="url(#beneficiarySubmissionGradient)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        <div className={chartCardClass}>
-          <h3 className="text-lg font-bold text-slate-900">Farm Area Served by Year</h3>
-          <p className="mb-4 text-sm text-slate-500">Hectares connected to FMR service areas</p>
-          <div className="h-72">
-            {hectaresByYear.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium">No farm area history available</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={hectaresByYear} margin={{ top: 8, right: 12, left: -12, bottom: 8 }}>
-                  <defs>
-                    <linearGradient id="beneficiaryHectareGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.06} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="year" tick={{ fill: '#64748b', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                  <RechartsTooltip formatter={(value) => [`${value} ha`, 'Farm Area Served']} />
-                  <Area type="monotone" dataKey="hectares" stroke="#0ea5e9" fill="url(#beneficiaryHectareGradient)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
-
     </div>
   );
 }

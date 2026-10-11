@@ -9,6 +9,9 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { toast } from '../lib/toast';
 import { pipelineStage, STAGES } from '../lib/contractorPipeline';
 import Pagination, { usePagination } from '../components/ui/Pagination';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
+import FilterToolbar from '../components/ui/FilterToolbar';
+import { FileTextIcon, ShieldCheckIcon, BuildingIcon, CheckCircle2Icon, MessageSquareWarningIcon } from 'lucide-react';
 
 // ── Status badge ─────────────────────────────────────────────
 function ReportStatusBadge({ status }) {
@@ -41,15 +44,6 @@ function ProgressStatusBadge({ status }) {
   );
 }
 
-function SummaryCard({ value, label, tone }) {
-  return (
-    <div className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm">
-      <p className={`text-3xl font-bold ${tone}`}>{value}</p>
-      <p className="text-sm text-slate-500 mt-1">{label}</p>
-    </div>
-  );
-}
-
 export default function ContractorReports() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -65,10 +59,13 @@ export default function ContractorReports() {
   // ── Progress history filters ────────────────────────────────
   const [progressSearch, setProgressSearch] = useState('');
   const [progressStageFilter, setProgressStageFilter] = useState('All');
+  const [progressProjectFilter, setProgressProjectFilter] = useState('All');
 
   // ── Public reports filters ──────────────────────────────────
   const [reportSearch, setReportSearch] = useState('');
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
+  const [reportProjectFilter, setReportProjectFilter] = useState('All');
+  const [reportCategoryFilter, setReportCategoryFilter] = useState('All');
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -196,25 +193,33 @@ export default function ContractorReports() {
     const q = progressSearch.trim().toLowerCase();
     return progressHistory.filter((item) => {
       if (progressStageFilter !== 'All' && pipelineStage(item).key !== progressStageFilter) return false;
+      if (progressProjectFilter !== 'All' && (item.fmr_projects?.project_name || '') !== progressProjectFilter) return false;
       if (q && !(item.fmr_projects?.project_name || '').toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [progressHistory, progressSearch, progressStageFilter]);
-  const progressPager = usePagination(filteredProgressHistory, `${progressSearch}|${progressStageFilter}`);
+  }, [progressHistory, progressSearch, progressStageFilter, progressProjectFilter]);
+  const progressPager = usePagination(filteredProgressHistory, `${progressSearch}|${progressStageFilter}|${progressProjectFilter}`);
 
   // ── Filtered + paginated public reports ─────────────────────
   const filteredPublicReports = useMemo(() => {
     const q = reportSearch.trim().toLowerCase();
     return publicReports.filter((rpt) => {
       if (reportStatusFilter !== 'All' && rpt.status !== reportStatusFilter) return false;
+      if (reportProjectFilter !== 'All' && (rpt.project_name || '') !== reportProjectFilter) return false;
+      if (reportCategoryFilter !== 'All' && (rpt.category || '') !== reportCategoryFilter) return false;
       if (q) {
         const hay = `${rpt.project_name || ''} ${rpt.description || ''} ${rpt.barangay || ''} ${rpt.municipality || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [publicReports, reportSearch, reportStatusFilter]);
-  const reportsPager = usePagination(filteredPublicReports, `${reportSearch}|${reportStatusFilter}`);
+  }, [publicReports, reportSearch, reportStatusFilter, reportProjectFilter, reportCategoryFilter]);
+  const reportsPager = usePagination(filteredPublicReports, `${reportSearch}|${reportStatusFilter}|${reportProjectFilter}|${reportCategoryFilter}`);
+
+  const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const progressProjectOptions = uniqueSorted(progressHistory.map((i) => i.fmr_projects?.project_name));
+  const reportProjectOptions = uniqueSorted(publicReports.map((r) => r.project_name));
+  const reportCategoryOptions = uniqueSorted(publicReports.map((r) => r.category));
 
   if (loading) {
     return (
@@ -229,66 +234,87 @@ export default function ContractorReports() {
   return (
     <ContractorLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Operations Reports</h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Review your submission history and public reports linked to assigned projects.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Last synced</p>
-              <p className="text-sm text-slate-600">{lastSyncedAt ? fmtDateTime(lastSyncedAt) : 'Not yet synced'}</p>
-            </div>
-            <button
-              onClick={() => fetchData(false)}
-              disabled={refreshing}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
-              </svg>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
+        {/* Sync status (the page title lives in the shared header) */}
+        <div className="-mt-2 flex items-center justify-end gap-3">
+          <span className="text-xs text-slate-400">Synced {lastSyncedAt ? fmtDateTime(lastSyncedAt) : '—'}</span>
+          <button
+            onClick={() => fetchData(false)}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+          >
+            <svg className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992V4.356m-1.336 14.292A9 9 0 1 1 21 12.75" />
+            </svg>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-          <SummaryCard value={progressHistory.length} label="Total Submissions" tone="text-slate-900" />
-          <SummaryCard value={progressHistory.filter((item) => pipelineStage(item).key === 'awaiting_engineer').length} label="With site engineer" tone="text-amber-700" />
-          <SummaryCard value={progressHistory.filter((item) => pipelineStage(item).key === 'awaiting_admin').length} label="With DA for approval" tone="text-sky-700" />
-          <SummaryCard value={progressHistory.filter((item) => item.status === 'approved').length} label="Approved" tone="text-emerald-700" />
-          <SummaryCard value={publicReports.length} label="Linked Public Reports" tone="text-sky-700" />
-        </div>
+        {/* KPI block, same as the admin pages. Stage cards filter the history below. */}
+        {(() => {
+          const stageCount = (key) => progressHistory.filter((item) => pipelineStage(item).key === key).length;
+          const approved = stageCount('approved');
+          const withEngineer = stageCount('awaiting_engineer');
+          const withDa = stageCount('awaiting_admin');
+          const needsFix = stageCount('disputed') + stageCount('returned');
+          const pendingReports = publicReports.filter((r) => r.status === 'pending').length;
+          const total = progressHistory.length;
+          const toggle = (key) => setProgressStageFilter((cur) => (cur === key ? 'All' : key));
+          return (
+            <HierarchyKpis
+              dense
+              ariaLabel="Submission summary"
+              lead={{
+                label: 'Total Submissions',
+                value: total,
+                note: total === 0 ? <span>No progress updates submitted yet</span> : (
+                  <span>
+                    <span className="font-semibold text-emerald-700">{Math.round((approved / total) * 100)}% approved</span>
+                    {needsFix > 0 ? ` · ${needsFix} need correction` : ' · none need correction'}
+                  </span>
+                ),
+                icon: <FileTextIcon className="size-6" aria-hidden="true" />,
+                iconTone: 'bg-emerald-100 text-emerald-700',
+                segments: [
+                  { label: 'Approved', value: approved, bar: 'bg-emerald-500' },
+                  { label: 'With site engineer', value: withEngineer, bar: 'bg-amber-400' },
+                  { label: 'With DA', value: withDa, bar: 'bg-sky-500' },
+                  { label: 'Needs correction', value: needsFix, bar: 'bg-rose-500' },
+                ].filter((seg) => seg.value > 0),
+              }}
+              items={[
+                { icon: <ShieldCheckIcon className="size-4" aria-hidden="true" />, label: 'With Site Engineer', value: withEngineer, hint: 'Being checked on site', chip: 'bg-amber-50 text-amber-700', onClick: () => toggle('awaiting_engineer'), active: progressStageFilter === 'awaiting_engineer' },
+                { icon: <BuildingIcon className="size-4" aria-hidden="true" />, label: 'With DA for Approval', value: withDa, hint: 'Certified, awaiting approval', chip: 'bg-sky-50 text-sky-700', onClick: () => toggle('awaiting_admin'), active: progressStageFilter === 'awaiting_admin' },
+                { icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />, label: 'Approved', value: approved, hint: 'Accepted by the DA', chip: 'bg-emerald-50 text-emerald-700', onClick: () => toggle('approved'), active: progressStageFilter === 'approved' },
+                { icon: <MessageSquareWarningIcon className="size-4" aria-hidden="true" />, label: 'Public Reports', value: publicReports.length, hint: `${pendingReports} pending on your roads`, chip: pendingReports ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500' },
+              ]}
+            />
+          );
+        })()}
 
         <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
-                <p className="text-sm text-slate-500 mt-1">Every contractor update, its review outcome, and the current project progress.</p>
-              </div>
-              <span className="text-sm font-medium text-slate-500 whitespace-nowrap">{filteredProgressHistory.length} of {progressHistory.length} record{progressHistory.length !== 1 ? 's' : ''}</span>
+          <div className="border-b border-slate-200/60">
+            <div className="px-5 pt-5">
+              <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
+              <p className="mt-0.5 text-sm text-slate-500">Every update you submitted and where it is in review.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="text"
-                value={progressSearch}
-                onChange={(e) => setProgressSearch(e.target.value)}
-                placeholder="Search by project name..."
-                className="h-10 flex-1 min-w-[12rem] px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-              />
-              <select
-                value={progressStageFilter}
-                onChange={(e) => setProgressStageFilter(e.target.value)}
-                className="h-10 px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none cursor-pointer"
-              >
-                <option value="All">All Stages</option>
-                {Object.values(STAGES).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
-            </div>
+            <FilterToolbar
+              embedded
+              ariaLabel="Filter submissions"
+              noun="submission"
+              shown={filteredProgressHistory.length}
+              total={progressHistory.length}
+              search={{ value: progressSearch, onChange: setProgressSearch, placeholder: 'Search project name', ariaLabel: 'Search submissions' }}
+              selects={[
+                {
+                  key: 'stage', label: 'Stage', value: progressStageFilter, onChange: setProgressStageFilter, allLabel: 'All stages',
+                  options: Object.values(STAGES).map((st) => ({ value: st.key, label: st.label })),
+                },
+                ...(progressProjectOptions.length > 1 ? [{
+                  key: 'project', label: 'Project', value: progressProjectFilter, onChange: setProgressProjectFilter, allLabel: 'All projects',
+                  options: progressProjectOptions.map((n) => ({ value: n, label: n })),
+                }] : []),
+              ]}
+            />
           </div>
 
           {progressHistory.length === 0 ? (
@@ -300,7 +326,7 @@ export default function ContractorReports() {
             <div className="py-14 text-center">
               <p className="text-base font-bold text-slate-900">No submissions match these filters</p>
               <button
-                onClick={() => { setProgressSearch(''); setProgressStageFilter('All'); }}
+                onClick={() => { setProgressSearch(''); setProgressStageFilter('All'); setProgressProjectFilter('All'); }}
                 className="mt-2 text-sm font-semibold text-teal-700 hover:underline"
               >
                 Clear filters
@@ -377,39 +403,39 @@ export default function ContractorReports() {
           </div>
         ) : (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-slate-50 to-white flex flex-col gap-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
-                  <p className="text-sm text-slate-500 mt-1">Citizen-submitted reports tied to your assigned projects.</p>
-                </div>
-                <span className="text-sm font-medium text-slate-500 whitespace-nowrap">{filteredPublicReports.length} of {publicReports.length} report{publicReports.length !== 1 ? 's' : ''}</span>
+            <div className="border-b border-slate-200/60">
+              <div className="px-5 pt-5">
+                <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
+                <p className="mt-0.5 text-sm text-slate-500">Citizen reports on the roads you are building.</p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={reportSearch}
-                  onChange={(e) => setReportSearch(e.target.value)}
-                  placeholder="Search reports..."
-                  className="h-10 flex-1 min-w-[12rem] px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
-                />
-                <select
-                  value={reportStatusFilter}
-                  onChange={(e) => setReportStatusFilter(e.target.value)}
-                  className="h-10 px-3.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none cursor-pointer"
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="reviewed">Reviewed</option>
-                  <option value="resolved">Resolved</option>
-                </select>
-              </div>
+              <FilterToolbar
+                embedded
+                ariaLabel="Filter public reports"
+                noun="report"
+                shown={filteredPublicReports.length}
+                total={publicReports.length}
+                search={{ value: reportSearch, onChange: setReportSearch, placeholder: 'Search project, description or barangay', ariaLabel: 'Search reports' }}
+                selects={[
+                  {
+                    key: 'status', label: 'Status', value: reportStatusFilter, onChange: setReportStatusFilter, allLabel: 'All statuses',
+                    options: [{ value: 'pending', label: 'Pending' }, { value: 'reviewed', label: 'Reviewed' }, { value: 'resolved', label: 'Resolved' }],
+                  },
+                  ...(reportCategoryOptions.length > 1 ? [{
+                    key: 'category', label: 'Category', value: reportCategoryFilter, onChange: setReportCategoryFilter, allLabel: 'All categories',
+                    options: reportCategoryOptions.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) })),
+                  }] : []),
+                  ...(reportProjectOptions.length > 1 ? [{
+                    key: 'project', label: 'Project', value: reportProjectFilter, onChange: setReportProjectFilter, allLabel: 'All projects',
+                    options: reportProjectOptions.map((n) => ({ value: n, label: n })),
+                  }] : []),
+                ]}
+              />
             </div>
             {filteredPublicReports.length === 0 ? (
               <div className="py-14 text-center">
                 <p className="text-base font-bold text-slate-900">No reports match these filters</p>
                 <button
-                  onClick={() => { setReportSearch(''); setReportStatusFilter('All'); }}
+                  onClick={() => { setReportSearch(''); setReportStatusFilter('All'); setReportProjectFilter('All'); setReportCategoryFilter('All'); }}
                   className="mt-2 text-sm font-semibold text-teal-700 hover:underline"
                 >
                   Clear filters

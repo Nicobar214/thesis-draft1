@@ -4,6 +4,7 @@ import { supabaseFarmer as supabase } from '../lib/supabase';
 import Icons from './Icons';
 import Logo from './Logo';
 import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
+import { confirmSignOut } from '../lib/confirm';
 
 // Labels kept to one or two plain words each -- no jargon ("Logistics",
 // "FMR", "Directory") a first-time farmer user would have to decode.
@@ -13,6 +14,7 @@ const navItems = [
   { to: '/farmer/reports', label: 'My Reports', icon: Icons.Document },
   { to: '/farmer/fmr-projects', label: 'Road Projects', icon: Icons.Road },
   { to: '/farmer/markets', label: 'Markets', icon: Icons.Building },
+  { to: '/farmer/profile', label: 'My Profile', icon: Icons.UserCircle },
 ];
 
 // Three groups by what the page is FOR, not just what it's called:
@@ -26,6 +28,7 @@ const NAV_GROUPS = [
   { label: 'Overview', to: ['/farmer', '/farmer/fmr-projects'] },
   { label: 'My Activity', to: ['/farmer/harvest', '/farmer/reports'] },
   { label: 'Browse', to: ['/farmer/markets'] },
+  { label: 'Account', to: ['/farmer/profile'] },
 ];
 
 export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRecord, pendingReportsCount = 0 }) {
@@ -34,6 +37,7 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
   const [mobileOpen, setMobileOpen] = useState(false);
 
   async function handleLogout() {
+    if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
     navigate('/farmer/login');
   }
@@ -49,13 +53,13 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
       {/* Logo */}
       {/* Same height as the page header (h-20 / sm:h-24) so the two bottom
           borders line up into one continuous line across the screen. */}
-      <div className={`flex items-center h-20 sm:h-24 border-b border-slate-800 shrink-0 ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
+      <div className={`flex items-center justify-center h-20 sm:h-24 border-b border-slate-800 shrink-0 ${collapsed ? 'px-2' : 'px-4'}`}>
         {collapsed ? (
           <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
         ) : (
-          <div className="flex flex-col items-start gap-1.5 min-w-0">
+          <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-0">
             <Logo tone="light" className="h-10" />
-            <span className="pl-0.5 text-[10px] font-semibold text-emerald-400 uppercase tracking-[0.2em] leading-none">
+            <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-[0.2em] leading-none">
               Farmer Portal
             </span>
           </div>

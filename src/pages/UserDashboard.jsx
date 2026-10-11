@@ -7,6 +7,8 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import CitizenOverviewMap from '../components/map/CitizenOverviewMap';
+import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
+import Pagination, { usePagination } from '../components/ui/Pagination';
 import { formatPercentage } from '../lib/percentageFormat';
 import { useMyReports, CITIZEN_STATUS_HEX } from '../lib/useMyReports';
 import { getCitizenStatus, CITIZEN_STATUS } from '../lib/publicReportStatus';
@@ -14,38 +16,6 @@ import { selectCommunityFeedback } from '../lib/communityFeedback';
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Icon Components - Clean, consistent 24x24 icons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   Stat Card - Displays a single metric with icon
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function StatCard({ icon, value, label, variant = 'default', badgeText }) {
-  const variants = {
-    default: { bg: 'bg-slate-100 text-slate-700', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-700' },
-    emerald: { bg: 'bg-emerald-100 text-emerald-800', border: 'border-emerald-200', badge: 'bg-emerald-50 text-emerald-800' },
-    amber: { bg: 'bg-amber-100 text-amber-800', border: 'border-amber-200', badge: 'bg-amber-50 text-amber-800' },
-    sky: { bg: 'bg-sky-100 text-sky-800', border: 'border-sky-200', badge: 'bg-sky-50 text-sky-800' },
-    violet: { bg: 'bg-indigo-100 text-indigo-800', border: 'border-indigo-200', badge: 'bg-indigo-50 text-indigo-800' },
-  };
-
-  const v = variants[variant] || variants.default;
-
-  return (
-    <article className={`bg-white rounded-2xl px-4 py-3.5 border ${v.border} shadow-xs hover:border-slate-300 transition-colors flex items-center gap-3`}>
-      <div className={`inline-flex shrink-0 items-center justify-center size-11 rounded-xl ${v.bg}`}>
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-2xl font-bold leading-none tracking-tight text-slate-900">{value}</p>
-        <p className="mt-1 truncate text-xs font-semibold text-slate-500">{label}</p>
-      </div>
-      {badgeText && (
-        <span className={`hidden xl:inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ${v.badge}`}>
-          {badgeText}
-        </span>
-      )}
-    </article>
-  );
-}
-
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Project Card - Displays project info with progress
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -93,16 +63,6 @@ function ProjectCard({ project, updatedLabel }) {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Loading Skeletons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-function StatSkeleton() {
-  return (
-    <div className="bg-white rounded-2xl p-6 border border-slate-200/60 animate-pulse">
-      <div className="size-10 bg-zinc-200 rounded-xl mb-4" />
-      <div className="h-8 w-12 bg-zinc-200 rounded mb-2" />
-      <div className="h-4 w-20 bg-zinc-200 rounded" />
-    </div>
-  );
-}
-
 function NearbyProjectSkeleton() {
   return (
     <div className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 animate-pulse">
@@ -288,7 +248,7 @@ export default function UserDashboard() {
   const [loading, setLoading] = useState(true);
   const [now] = useState(() => Date.now()); // fixed at mount; keeps render pure
   const { reports: myReports, loading: myReportsLoading } = useMyReports();
-  const [stats, setStats] = useState({ total: 0, completed: 0, ongoing: 0, pending: 0 });
+  const [stats, setStats] = useState({ total: 0, completed: 0, ongoing: 0, proposed: 0, totalKm: 0 });
   const [projects, setProjects] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
   const [userLabel, setUserLabel] = useState('there');
@@ -426,6 +386,7 @@ export default function UserDashboard() {
           completed: normalizedProjects.filter((p) => p.status === 'Completed').length,
           ongoing: normalizedProjects.filter((p) => p.status === 'On-Going').length,
           proposed: normalizedProjects.filter((p) => p.status === 'Proposed').length,
+          totalKm: normalizedProjects.reduce((sum, p) => sum + (Number(p.project_length_km) || 0), 0),
         });
 
         const [{ data: reportsData }, { data: feedbackData }] = await Promise.all([
@@ -535,8 +496,10 @@ export default function UserDashboard() {
         ...row,
         completionPct: row.total ? (row.completed / row.total) * 100 : 0,
       }))
-      .sort((a, b) => b.completionPct - a.completionPct);
+      .sort((a, b) => b.completionPct - a.completionPct)
+      .map((row, i) => ({ ...row, rank: i + 1 }));
   }, [allProjects]);
+  const rankingPager = usePagination(municipalityProgressRows);
 
   const areaStatusAlert = useMemo(() => {
     if (!userMunicipality || dismissedStatusAlert) return null;
@@ -581,7 +544,7 @@ export default function UserDashboard() {
                 <Icons.Sprout />
                 <span>DA Region VI Agricultural Oversight</span>
               </span>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                 Citizen Dashboard
               </h1>
               <p className="text-xs font-medium text-emerald-400">Signed in as {userLabel}</p>
@@ -593,6 +556,7 @@ export default function UserDashboard() {
             <div className="flex flex-wrap sm:flex-nowrap gap-3 w-full lg:w-auto">
               <Link
                 to="/user/reports?action=new"
+                data-tour="dash-report"
                 className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-bold text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
               >
                 <CameraIcon className="size-5" aria-hidden="true" />
@@ -624,7 +588,7 @@ export default function UserDashboard() {
         )}
 
         {/* Level 1: what the citizen has done and where it stands */}
-        <section className="space-y-3">
+        <section className="space-y-3" data-tour="dash-activity">
           <SectionLabel title="Your activity" subtitle="Your road reports and where each one stands" />
           <MyReportsTracker reports={myReports} loading={myReportsLoading} feedbackCount={submissions.feedbackSubmitted} now={now} />
         </section>
@@ -678,7 +642,7 @@ export default function UserDashboard() {
           </div>
 
           {/* Nearby Projects Card */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col" data-tour="dash-nearby">
             <header className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
                 <h2 className="font-bold text-slate-900 text-base">In Your Municipality</h2>
@@ -746,7 +710,7 @@ export default function UserDashboard() {
         </section>
 
         {/* Map: FMR roads and the citizen's own report pins */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4" data-tour="dash-map">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className="font-bold text-slate-900 text-base">FMR Roads Near You</h2>
@@ -762,19 +726,10 @@ export default function UserDashboard() {
         {/* Level 1: program-wide figures and activity */}
         <div className="space-y-4 pt-2">
           <SectionLabel title="Program overview" subtitle="Farm-to-market road progress across Region VI" />
-        {/* Stats Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
-          ) : (
-            <>
-              <StatCard icon={<Icons.Folder />} value={stats.total} label="Total FMR Projects" variant="sky" badgeText="Catalog" />
-              <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed Roads" variant="emerald" badgeText="Passed" />
-              <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="Active Construction" variant="amber" badgeText="In Progress" />
-              <StatCard icon={<Icons.Document />} value={stats.proposed} label="Proposed / Planning" variant="violet" badgeText="Approved" />
-            </>
-          )}
-        </section>
+        {/* Same KPI block as the admin and FMR Projects pages (shared component). */}
+        <div data-tour="dash-stats">
+          <FmrProjectKpis stats={stats} loading={loading} scopeLabel="across Region VI" />
+        </div>
 
         <section className="grid lg:grid-cols-2 gap-6 items-stretch">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
@@ -862,7 +817,7 @@ export default function UserDashboard() {
         </div>
 
         {/* Municipality Ranking Table */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden" data-tour="dash-rankings">
           <header className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h2 className="font-bold text-slate-900 text-base">Municipality Progress Rankings</h2>
@@ -877,10 +832,12 @@ export default function UserDashboard() {
           </header>
 
           {!municipalityTableCollapsed && (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-xs">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
+                    <th className="w-12 px-5 py-3 text-left font-semibold uppercase tracking-wider">#</th>
                     <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Municipality</th>
                     <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Total FMR Projects</th>
                     <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Completed</th>
@@ -889,10 +846,11 @@ export default function UserDashboard() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loading && Array.from({ length: 5 }).map((_, i) => <RankingRowSkeleton key={i} />)}
-                  {!loading && municipalityProgressRows.map((row) => {
+                  {!loading && rankingPager.pageItems.map((row) => {
                     const isUserMunicipality = userMunicipality && row.municipality.toLowerCase() === userMunicipality.toLowerCase();
                     return (
                       <tr key={row.municipality} className={isUserMunicipality ? 'bg-emerald-50/60 font-semibold' : 'hover:bg-slate-50/60 transition-colors'}>
+                        <td className="px-5 py-3 font-semibold text-slate-400 tabular-nums">{row.rank}</td>
                         <td className="px-5 py-3 font-semibold text-slate-900 flex items-center gap-2">
                           <span>{row.municipality}</span>
                           {isUserMunicipality && (
@@ -908,6 +866,12 @@ export default function UserDashboard() {
                 </tbody>
               </table>
             </div>
+            {!loading && (
+              <div className="border-t border-slate-100 px-5 py-3">
+                <Pagination pager={rankingPager} noun="municipality" />
+              </div>
+            )}
+            </>
           )}
         </section>
       </div>

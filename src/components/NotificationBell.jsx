@@ -360,13 +360,13 @@ export default function NotificationBell({
                         />
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline justify-between gap-2">
-                            <span className={`truncate text-xs ${n.is_read ? 'text-slate-500' : 'font-semibold text-slate-900'}`}>
+                            <span className={`truncate text-[13px] ${n.is_read ? 'font-medium text-slate-600' : 'font-semibold text-slate-900'}`}>
                               {n.title || meta.label}
                             </span>
                             <span className="shrink-0 text-[11px] text-slate-400">{relativeTime(n.created_at)}</span>
                           </span>
                           {n.message && (
-                            <span className="mt-0.5 block line-clamp-2 text-xs leading-relaxed text-slate-600">
+                            <span className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-slate-500">
                               {n.message}
                             </span>
                           )}

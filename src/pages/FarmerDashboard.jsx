@@ -10,6 +10,7 @@ import { supabaseFarmer as supabase } from "../lib/supabase";
 import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from "../lib/mapRouteUtils";
 import { storeGlyph, routeGlyph } from "../lib/mapMarkerIcons";
 import { useFarmerRecord } from "../lib/useFarmerRecord";
+import { MapLegend, LegendGroup, LegendLine, LegendDot } from "../components/map/MapPanels";
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
@@ -368,26 +369,24 @@ export default function FarmerDashboard() {
                   <p className="text-xs text-center mt-1">Please ask your LGU officer to assign coordinate positions for your farm area.</p>
                 </div>
               )}
-            </div>
 
-            {/* Path Legend */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs bg-slate-50 p-3 rounded-xl border border-slate-100 font-medium text-slate-700">
-              <div className="flex items-center gap-2">
-                <span className="w-4 h-4 rounded-full bg-emerald-500 inline-block border-2 border-white shadow-sm" />
-                <span>My Farm Coordinate</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-5 h-1 border-t-2 border-blue-500 inline-block" />
-                <span>Linked FMR Road Project</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-5 h-1 border-t-2 border-pink-500 inline-block" />
-                <span>Supply Path Connection</span>
-              </div>
+              {/* Same legend panel and grouping as the citizen maps. */}
+              {farmLat && farmLng && (
+                <MapLegend compact>
+                  <LegendGroup label="Routes">
+                    {nearestFmr && <LegendLine color="bg-blue-500" label="Your road project" />}
+                    {supplyChainPath.length > 1 && <LegendLine color="bg-pink-500" label="Farm to market" />}
+                    <LegendLine color="border-slate-400" dashed label="Not yet matched to a road" />
+                  </LegendGroup>
+                  <LegendGroup label="Markers">
+                    <LegendDot color="bg-emerald-500" label="My farm" />
+                    {nearestFmr && <LegendDot color="bg-amber-500" label="Road access point" />}
+                    {nearestMarket && <LegendDot color="bg-indigo-700" label="Nearest market" />}
+                    {markets.length > 1 && <LegendDot color="bg-slate-500" label="Other market" />}
+                  </LegendGroup>
+                </MapLegend>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400 px-0.5">
-              Dashed = no road match found yet for that path; solid once it's snapped to the actual road.
-            </p>
           </div>
         </section>
       </div>

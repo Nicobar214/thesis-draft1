@@ -3,9 +3,11 @@
  * submission. Clicking a row opens the full project detail (description,
  * schedule, submission history); the Submit Update action stays inline.
  */
-import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2Icon, ChevronRightIcon, ClipboardListIcon, HardHatIcon } from 'lucide-react';
+import { CheckCircle2Icon, ClipboardListIcon, ClockIcon, GaugeIcon, HardHatIcon } from 'lucide-react';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
+import FilterToolbar from '../components/ui/FilterToolbar';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import ContractorProgressForm from './ContractorProgressForm';
@@ -48,14 +50,6 @@ function FmrStatusBadge({ status }) {
   );
 }
 
-/* Project lifecycle, in order. These cards double as the filter for the
-   table below, mirroring the pipeline cards on the admin dashboard so a
-   contractor sees the same status language their DA counterpart does. */
-const PROJECT_STATUS_BUCKETS = [
-  { key: 'Proposed', label: 'Proposed', hint: 'Logged by the DA, not yet started', icon: ClipboardListIcon, bar: 'bg-sky-500', value: 'text-sky-700', activeRing: 'ring-sky-500/40 border-sky-400 bg-sky-50/60' },
-  { key: 'On-Going', label: 'On-Going', hint: 'Active construction — you can submit progress updates', icon: HardHatIcon, bar: 'bg-amber-500', value: 'text-amber-700', activeRing: 'ring-amber-500/40 border-amber-400 bg-amber-50/60' },
-  { key: 'Completed', label: 'Completed', hint: 'Finished and accepted', icon: CheckCircle2Icon, bar: 'bg-emerald-500', value: 'text-emerald-700', activeRing: 'ring-emerald-500/40 border-emerald-400 bg-emerald-50/60' },
-];
 
 function WorkPlanStatusBadge({ status }) {
   const normalized = status || 'none';
@@ -84,6 +78,11 @@ export default function ContractorProjects() {
   const [successMessage, setSuccessMessage] = useState('');
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('All');
+  const [search, setSearch] = useState('');
+  const [municipalityFilter, setMunicipalityFilter] = useState('All');
+  const [workPlanFilter, setWorkPlanFilter] = useState('All');
+  const [engineerFilter, setEngineerFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('name');
 
   // ── Auth ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -172,10 +171,46 @@ export default function ContractorProjects() {
     return counts;
   }, [projects]);
 
-  const filteredProjects = useMemo(
-    () => (statusFilter === 'All' ? projects : projects.filter((p) => normalizeFmrStatus(p.status) === statusFilter)),
-    [projects, statusFilter]
+  const municipalityOptions = useMemo(
+    () => [...new Set(projects.map((p) => p.municipality).filter(Boolean))].sort(),
+    [projects]
   );
+
+  const filteredProjects = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = projects.filter((p) => {
+      if (statusFilter !== 'All' && normalizeFmrStatus(p.status) !== statusFilter) return false;
+      if (municipalityFilter !== 'All' && p.municipality !== municipalityFilter) return false;
+      if (workPlanFilter !== 'All' && (p.work_plan_status || 'none') !== workPlanFilter) return false;
+      if (engineerFilter === 'assigned' && !p.site_engineer_id) return false;
+      if (engineerFilter === 'none' && p.site_engineer_id) return false;
+      if (q && !`${p.project_name || ''} ${p.municipality || ''} ${p.location || ''}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const targetTime = (p) => {
+      const t = p.target_completion_date ? new Date(p.target_completion_date).getTime() : NaN;
+      return Number.isFinite(t) ? t : Infinity;
+    };
+    const sorters = {
+      name: (a, b) => String(a.project_name || '').localeCompare(String(b.project_name || '')),
+      'progress-asc': (a, b) => Number(a.accomplishment || 0) - Number(b.accomplishment || 0),
+      'progress-desc': (a, b) => Number(b.accomplishment || 0) - Number(a.accomplishment || 0),
+      deadline: (a, b) => targetTime(a) - targetTime(b),
+    };
+    return [...list].sort(sorters[sortBy] || sorters.name);
+  }, [projects, statusFilter, municipalityFilter, workPlanFilter, engineerFilter, search, sortBy]);
+
+  // Any filter change starts the table again from page 1.
+  useEffect(() => { setPage(1); }, [search, municipalityFilter, workPlanFilter, engineerFilter, sortBy]);
+
+  const clearProjectFilters = () => {
+    setStatusFilter('All');
+    setSearch('');
+    setMunicipalityFilter('All');
+    setWorkPlanFilter('All');
+    setEngineerFilter('All');
+    setPage(1);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / ROWS_PER_PAGE));
   const safePage = Math.min(page, totalPages);
@@ -221,12 +256,6 @@ export default function ContractorProjects() {
   return (
     <ContractorLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Projects</h1>
-          <p className="text-sm text-slate-500 mt-1">{projects.length} project{projects.length !== 1 ? 's' : ''} assigned to you</p>
-        </div>
-
         {successMessage && (
           <div className="flex items-start justify-between gap-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             <span>{successMessage}</span>
@@ -234,74 +263,93 @@ export default function ContractorProjects() {
           </div>
         )}
 
-        {/* Status cards double as the filter for the table below, numbered
-            and chevron-connected in lifecycle order so "where is this
-            project" reads the same way it does on the admin dashboard. */}
-        {projects.length > 0 && (
-          <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Project lifecycle &middot; 3 steps
-              </p>
-              <button
-                type="button"
-                onClick={() => handleStatusFilterChange('All')}
-                aria-pressed={statusFilter === 'All'}
-                className={`rounded-lg border px-3 py-1 text-xs font-medium transition-colors ${
-                  statusFilter === 'All'
-                    ? 'border-slate-800 bg-slate-800 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                All projects ({statusCounts.All || 0})
-              </button>
-            </div>
+        {/* KPI block, same as the admin pages. Status cards filter the table;
+            the lead card lists what is stopping progress updates. */}
+        {projects.length > 0 && (() => {
+          const noWorkPlan = projects.filter((p) => p.work_plan_status !== 'finalized').length;
+          const noEngineer = projects.filter((p) => !p.site_engineer_id).length;
+          const ready = projects.filter((p) => p.work_plan_status === 'finalized' && p.site_engineer_id).length;
+          const avg = projects.reduce((sum, p) => sum + Number(p.accomplishment || 0), 0) / projects.length;
+          const blockers = [
+            noWorkPlan > 0 && { key: 'plan', label: 'Work plan not finalized', count: noWorkPlan },
+            noEngineer > 0 && { key: 'eng', label: 'No site engineer assigned yet', count: noEngineer },
+          ].filter(Boolean);
+          const toggle = (key) => handleStatusFilterChange(statusFilter === key ? 'All' : key);
+          return (
+            <HierarchyKpis
+              dense
+              ariaLabel="My projects summary"
+              lead={{
+                label: statusFilter === 'All' ? 'Assigned Projects' : `${statusFilter} Projects`,
+                value: statusFilter === 'All' ? projects.length : (statusCounts[statusFilter] || 0),
+                note: (
+                  <span>
+                    <span className="font-semibold text-emerald-700">{ready} ready</span> to submit progress updates
+                    {statusFilter !== 'All' && <> · <button type="button" onClick={() => handleStatusFilterChange('All')} className="font-medium text-teal-700 hover:underline">show all {projects.length}</button></>}
+                  </span>
+                ),
+                icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
+                iconTone: 'bg-emerald-100 text-emerald-700',
+                body: blockers.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Blocking progress updates</p>
+                    <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200/70">
+                      {blockers.map((b) => (
+                        <li key={b.key} className="flex items-center justify-between gap-3 px-3.5 py-2 text-sm">
+                          <span className="font-medium text-slate-800">{b.label}</span>
+                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 tabular-nums">{b.count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ),
+                segments: [
+                  { label: 'Completed', value: statusCounts.Completed || 0, bar: 'bg-emerald-500' },
+                  { label: 'On-Going', value: statusCounts['On-Going'] || 0, bar: 'bg-amber-400' },
+                  { label: 'Proposed', value: statusCounts.Proposed || 0, bar: 'bg-sky-500' },
+                ].filter((seg) => seg.value > 0),
+              }}
+              items={[
+                { icon: <HardHatIcon className="size-4" aria-hidden="true" />, label: 'On-Going', value: statusCounts['On-Going'] || 0, hint: 'Under construction now', chip: 'bg-amber-50 text-amber-700', onClick: () => toggle('On-Going'), active: statusFilter === 'On-Going' },
+                { icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />, label: 'Completed', value: statusCounts.Completed || 0, hint: 'Finished', chip: 'bg-emerald-50 text-emerald-700', onClick: () => toggle('Completed'), active: statusFilter === 'Completed' },
+                { icon: <ClockIcon className="size-4" aria-hidden="true" />, label: 'Proposed', value: statusCounts.Proposed || 0, hint: 'Not yet started', chip: 'bg-sky-50 text-sky-700', onClick: () => toggle('Proposed'), active: statusFilter === 'Proposed' },
+                { icon: <GaugeIcon className="size-4" aria-hidden="true" />, label: 'Avg. Accomplishment', value: formatPercentage(avg), hint: 'Across your projects', chip: 'bg-teal-50 text-teal-700' },
+              ]}
+            />
+          );
+        })()}
 
-            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-stretch gap-2 sm:gap-3">
-              {PROJECT_STATUS_BUCKETS.map((bucket, idx) => {
-                const active = statusFilter === bucket.key;
-                const count = statusCounts[bucket.key] || 0;
-                const Icon = bucket.icon;
-                return (
-                  <Fragment key={bucket.key}>
-                    <button
-                      type="button"
-                      onClick={() => handleStatusFilterChange(bucket.key)}
-                      aria-pressed={active}
-                      title={bucket.hint}
-                      className={`relative min-w-0 rounded-xl border bg-white pl-3 pr-2.5 pt-5 pb-3 text-left shadow-sm transition-all ${
-                        active
-                          ? `ring-2 ${bucket.activeRing}`
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
-                      }`}
-                    >
-                      <span aria-hidden="true" className={`absolute inset-x-0 top-0 h-1 rounded-t-xl ${bucket.bar}`} />
-                      <span
-                        aria-hidden="true"
-                        className={`absolute -top-2.5 left-3 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${bucket.bar}`}
-                      >
-                        {idx + 1}
-                      </span>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`block text-2xl font-semibold leading-none tabular-nums ${count === 0 ? 'text-slate-300' : bucket.value}`}>
-                          {count}
-                        </span>
-                        <Icon className={`size-4 shrink-0 ${count === 0 ? 'text-slate-300' : bucket.value}`} aria-hidden="true" />
-                      </div>
-                      <span className="mt-1.5 block truncate text-xs font-semibold leading-tight text-slate-700">
-                        {bucket.label}
-                      </span>
-                    </button>
-                    {idx < PROJECT_STATUS_BUCKETS.length - 1 && (
-                      <span aria-hidden="true" className="flex items-center justify-center text-slate-300">
-                        <ChevronRightIcon className="size-4" aria-hidden="true" />
-                      </span>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </div>
-          </div>
+        {projects.length > 0 && (
+          <FilterToolbar
+            ariaLabel="Filter projects"
+            noun="project"
+            shown={filteredProjects.length}
+            total={projects.length}
+            search={{ value: search, onChange: setSearch, placeholder: 'Search project, municipality or location', ariaLabel: 'Search projects' }}
+            selects={[
+              {
+                key: 'status', label: 'Status', value: statusFilter, onChange: handleStatusFilterChange, allLabel: 'All statuses',
+                options: ['On-Going', 'Completed', 'Proposed'].map((v) => ({ value: v, label: `${v} (${statusCounts[v] || 0})` })),
+                chipLabel: (v) => v,
+              },
+              ...(municipalityOptions.length > 1 ? [{
+                key: 'muni', label: 'Municipality', value: municipalityFilter, onChange: setMunicipalityFilter, allLabel: 'All municipalities',
+                options: municipalityOptions.map((m) => ({ value: m, label: m })),
+              }] : []),
+              {
+                key: 'plan', label: 'Work plan', value: workPlanFilter, onChange: setWorkPlanFilter, allLabel: 'Any work plan',
+                options: [{ value: 'finalized', label: 'Plan finalized' }, { value: 'draft', label: 'Plan in draft' }, { value: 'none', label: 'No plan yet' }],
+              },
+              {
+                key: 'eng', label: 'Site engineer', value: engineerFilter, onChange: setEngineerFilter, allLabel: 'Any site engineer',
+                options: [{ value: 'assigned', label: 'Engineer assigned' }, { value: 'none', label: 'No engineer yet' }],
+              },
+              {
+                key: 'sort', label: 'Sort', value: sortBy, onChange: setSortBy, allValue: 'name', allLabel: 'Name A–Z', chip: false,
+                options: [{ value: 'deadline', label: 'Nearest deadline' }, { value: 'progress-asc', label: 'Lowest progress' }, { value: 'progress-desc', label: 'Highest progress' }],
+              },
+            ]}
+          />
         )}
 
         {projects.length === 0 ? (
@@ -321,14 +369,14 @@ export default function ContractorProjects() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <p className="text-base font-bold text-slate-900">No projects at this stage</p>
-            <p className="text-sm text-slate-500 mt-1">Nothing matches the selected status card right now.</p>
+            <p className="text-base font-bold text-slate-900">No projects match these filters</p>
+            <p className="text-sm text-slate-500 mt-1">Try removing a filter above.</p>
             <button
               type="button"
-              onClick={() => handleStatusFilterChange('All')}
-              className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 transition-colors"
+              onClick={clearProjectFilters}
+              className="mt-4 inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 transition-colors"
             >
-              Show all projects
+              Clear filters
             </button>
           </div>
         ) : (

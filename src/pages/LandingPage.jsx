@@ -149,22 +149,15 @@ export default function LandingPage() {
           </p>
 
           {/* CTA Buttons */}
-          <div className="fade-up flex flex-col sm:flex-row gap-3 justify-center items-center" style={{ transitionDelay: '200ms' }}>
+          <div className="fade-up flex justify-center items-center" style={{ transitionDelay: '200ms' }}>
             <Link
               to="/signup"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-7 py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity duration-200 shadow-lg shadow-emerald-900/40 group"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-9 py-4 sm:px-11 sm:py-4.5 rounded-2xl font-bold text-base sm:text-lg hover:opacity-95 hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 shadow-xl shadow-emerald-900/50 group text-center tracking-wide"
             >
               Start Tracking Projects
-              <span className="inline-flex transition-transform duration-300 group-hover:translate-x-1">
+              <span className="inline-flex transition-transform duration-300 group-hover:translate-x-1.5">
                 <Icons.ArrowRight />
               </span>
-            </Link>
-            <Link
-              to="/report-portal"
-              className="w-full sm:w-auto inline-flex items-center justify-center border border-slate-700 text-slate-200 px-7 py-3.5 rounded-xl font-semibold text-sm hover:bg-slate-800 hover:border-slate-600 transition-colors duration-200"
-            >
-              <Icons.Warning />
-              <span className="ml-2">Report Road Issue</span>
             </Link>
           </div>
 
@@ -455,19 +448,13 @@ export default function LandingPage() {
             Join agricultural communities across Region VI in monitoring farm-to-market road progress.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-3">
+          <div className="flex justify-center items-center pt-3">
             <Link
               to="/signup"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-7 py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity duration-200 shadow-lg shadow-emerald-900/40"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-8 py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity duration-200 shadow-lg shadow-emerald-900/40 text-center"
             >
               Create Account
               <Icons.ArrowRight />
-            </Link>
-            <Link
-              to="/report-portal"
-              className="w-full sm:w-auto inline-flex items-center justify-center border border-slate-600 text-slate-200 px-7 py-3.5 rounded-xl font-semibold text-sm hover:bg-slate-800 hover:border-slate-500 transition-colors duration-200"
-            >
-              Report an Issue
             </Link>
           </div>
         </div>
@@ -499,7 +486,7 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Portals Sign In</h4>
               <ul className="space-y-2 text-xs sm:text-sm">
-                <li><Link to="/farmer/login" className="group inline-block text-emerald-400 hover:text-emerald-300 font-bold transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Farmer Sign In</span></Link></li>
+                <li><Link to="/farmer/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Farmer Sign In</span></Link></li>
                 <li><Link to="/lgu/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">LGU Officer Sign In</span></Link></li>
                 <li><Link to="/field-engineer/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Field Engineer Sign In</span></Link></li>
                 <li><Link to="/contractor/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Contractor Sign In</span></Link></li>
@@ -510,7 +497,6 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Legal & Support</h4>
               <ul className="space-y-2.5 text-xs sm:text-sm">
-                <li><Link to="/report-portal" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Public Issue Report</span></Link></li>
                 <li><a href="#" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Privacy Policy</span></a></li>
                 <li><a href="#" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Terms of Service</span></a></li>
               </ul>

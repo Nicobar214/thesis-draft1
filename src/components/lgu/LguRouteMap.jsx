@@ -190,7 +190,6 @@ export default function LguRouteMap({
   routesByProjectId,
   tranchesByProjectId = {},
   reports,
-  showHeat = false,
   farmerBeneficiaries = [],
   markets = [],
   mapCenter = null,
@@ -201,11 +200,12 @@ export default function LguRouteMap({
 }) {
   const [showFarmerDots, setShowFarmerDots] = useState(false);
   const [showFarmerHeatmap, setShowFarmerHeatmap] = useState(false);
-  const [showMarketsMap, setShowMarketsMap] = useState(true);
+  const [showMarketsMap, setShowMarketsMap] = useState(false);
   const [selectedFarmerForPath, setSelectedFarmerForPath] = useState(null);
   const [farmerCropFilter, setFarmerCropFilter] = useState('All');
-  const [showRoadGaps, setShowRoadGaps] = useState(true);
-  const [showReportPins, setShowReportPins] = useState(true);
+  const [showRoadGaps, setShowRoadGaps] = useState(false);
+  const [showReportPins, setShowReportPins] = useState(false);
+  const [showHeat, setShowHeat] = useState(false);
   const [basemap, setBasemap] = useBasemap();
   const [snappedConnectionPoints, setSnappedConnectionPoints] = useState({ key: null, points: null });
   const [snappedProjectRoutes, setSnappedProjectRoutes] = useState({});
@@ -651,6 +651,7 @@ export default function LguRouteMap({
             onChange={setShowReportPins}
             label={`Citizen reports (${reportPoints.length})${actionReportIds.size > 0 ? ` · ${actionReportIds.size} need action` : ''}`}
           />
+          <LayerToggle checked={showHeat} onChange={setShowHeat} label="Report heatmap" accent="text-amber-600 focus:ring-amber-500" />
           <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Road network gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
           <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
         </ControlGroup>

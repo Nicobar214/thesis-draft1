@@ -168,8 +168,8 @@ export default function ProjectSCurvePanel({ project, progressUpdates = [], tran
       <div className="mt-4 space-y-1.5">
         {!hasPlanned && !tasksLoading && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            No planned curve: this project&rsquo;s schedule tasks have no planned weight assigned.
-            Set a weight per task under Project Mgmt &rarr; Timeline to enable schedule comparison.
+            No planned curve: this project has no weighted schedule tasks on record, so planned
+            progress can&rsquo;t be compared yet.
           </p>
         )}
         {!hasFinancial && (

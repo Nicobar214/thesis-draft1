@@ -1,13 +1,17 @@
-import { MapPinIcon } from 'lucide-react';
+import { CircleCheckIcon, HourglassIcon, LandPlotIcon, LockIcon, MapPinIcon, UsersIcon, WheatIcon, RouteIcon, StoreIcon, SearchIcon, XIcon, DownloadIcon } from 'lucide-react';
+import StaffProfile from '../components/profile/StaffProfile';
+import { BeneficiaryKeyCards } from '../components/admin/BeneficiaryAnalytics';
+import ProfileAvatar from '../components/ui/ProfileAvatar';
+import { useProfileNameUpdates } from '../lib/profileName';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline, CircleMarker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { supabaseLgu as supabase, supabaseAdmin } from '../lib/supabase';
 import { notify } from '../lib/toast';
-import { confirm } from '../lib/confirm';
+import { confirm, confirmSignOut } from '../lib/confirm';
 import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../components/ui/Modal';
 import NotificationBell from '../components/NotificationBell';
 import LguRouteMap from '../components/lgu/LguRouteMap';
@@ -18,7 +22,7 @@ import LguProjectProposalsTab from '../components/lgu/LguProjectProposalsTab';
 import BeneficiaryCsvImport from '../components/lgu/BeneficiaryCsvImport';
 import { getBarangays, getMunicipalities } from '../data/iloiloLocations';
 import { BENEFICIARY_CROPS } from '../utils/farmerBeneficiaryData';
-import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from '../lib/mapRouteUtils';
+import { getMunicipalityCentroid, buildRoutePoints, geocodeFmrLocation, fetchRoadAlignedPolyline, calculatePolylineDistanceKm, nearestPointOnPolyline } from '../lib/mapRouteUtils';
 import { ConnectionStatus } from '../components/ui/SidebarStatusCards';
 import MapSearchBox from '../components/map/MapSearchBox';
 import { usernameToSyntheticEmail, normalizeUsername } from '../lib/farmerAuth';
@@ -28,6 +32,8 @@ import { getPaginationRange } from '../lib/paginationUtils';
 import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 import { normalizeUserProjectStatus } from '../lib/projectStatus';
 import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
+import SearchableSelect from '../components/ui/SearchableSelect';
 
 function normalizeRole(role) {
   return String(role || '')
@@ -134,13 +140,26 @@ function MapClickPicker({ onPick }) {
   return null;
 }
 
-function MapCenterController({ center }) {
+// Moves the registration map only when something that matters (the farm pin,
+// where it meets the road) is off-screen. A click to place the pin is always
+// on-screen already, so pinning never makes the map jump; a searched place or
+// a road suggestion outside the view gets one smooth fly instead.
+function FormMapCamera({ points }) {
   const map = useMap();
+  const valid = (points || []).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+  const key = valid.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join('|');
+  const pointsRef = useRef(valid);
   useEffect(() => {
-    if (center && center[0] && center[1]) {
-      map.setView(center, map.getZoom());
-    }
-  }, [center, map]);
+    pointsRef.current = valid;
+  });
+  useEffect(() => {
+    const pts = pointsRef.current;
+    if (pts.length === 0) return;
+    const bounds = L.latLngBounds(pts);
+    if (map.getBounds().pad(-0.05).contains(bounds)) return;
+    if (pts.length === 1) map.flyTo(pts[0], Math.max(map.getZoom(), 15), { duration: 0.8 });
+    else map.flyToBounds(bounds, { padding: [48, 48], maxZoom: 16, duration: 0.8 });
+  }, [map, key]);
   return null;
 }
 
@@ -198,7 +217,8 @@ function normalizeBeneficiaryRow(row) {
     adminRemarks: row.admin_remarks || '',
     supportingDocuments: Array.isArray(row.supporting_documents) ? row.supporting_documents : [],
     validationHistory: Array.isArray(row.validation_history) ? row.validation_history : [],
-    submittedDate: row.submitted_date ? new Date(row.submitted_date) : new Date(),
+    // The real registration date (or creation date) -- never "now" for a missing one.
+    submittedDate: (row.submitted_date || row.created_at) ? new Date(row.submitted_date || row.created_at) : null,
     lastUpdated: row.last_updated ? new Date(row.last_updated) : new Date(),
     gps: row.gps || { lat: farmLatitude, lng: farmLongitude }
   };
@@ -210,6 +230,7 @@ export default function LguDashboard() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  useProfileNameUpdates(useCallback((name) => setProfile((p) => (p ? { ...p, full_name: name } : p)), []));
   const [loading, setLoading] = useState(true);
   // Set by a notification click so the proposals tab can open the exact proposal.
   const [focusProposalId, setFocusProposalId] = useState(null);
@@ -244,11 +265,11 @@ export default function LguDashboard() {
     controlNo: '',
     contactNumber: '',
     birthday: '',
-    gender: 'Male',
+    gender: '',
     agency: 'DA',
     municipality: '',
     barangay: '',
-    crop: 'Rice',
+    crop: '',
     farmAreaHa: '',
     linkedProjectId: '',
     nearestMarketId: '',
@@ -265,11 +286,10 @@ export default function LguDashboard() {
   const [projectFilter, setProjectFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showHeat, setShowHeat] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [lguMapSearch, setLguMapSearch] = useState('');
   const [lguMapYearFilter, setLguMapYearFilter] = useState('All');
-  const [lguMapStatusFilter, setLguMapStatusFilter] = useState('All');
+  const [lguMapStatusFilter, setLguMapStatusFilter] = useState('On-Going');
   const [lguMapBarangayFilter, setLguMapBarangayFilter] = useState('All');
   const [lguMapDateFrom, setLguMapDateFrom] = useState('');
   const [lguMapDateTo, setLguMapDateTo] = useState('');
@@ -303,6 +323,10 @@ export default function LguDashboard() {
   }, [beneficiarySubTab, editingId, beneficiaries?.length, beneficiaryForm.rsbsaNumber, beneficiaryForm.controlNo]);
 
   const municipalityScope = profile?.municipality || user?.user_metadata?.municipality || '';
+  // A municipal LGU account can only register farmers in its own municipality,
+  // so the form's municipality is locked to it rather than left for the officer.
+  const formMunicipality = municipalityScope || beneficiaryForm.municipality;
+  const farmPinned = Boolean(Number(beneficiaryForm.farmLatitude) && Number(beneficiaryForm.farmLongitude));
   const eligibleMunicipalities = useMemo(() => {
     if (municipalityScope) return [municipalityScope];
     return getMunicipalities();
@@ -330,20 +354,35 @@ export default function LguDashboard() {
       const haystack = `${p.location || ''} ${p.project_name || ''}`.toLowerCase();
       return haystack.includes(normBarangay);
     });
+    const withCoords = muniProjects.filter((p) => Number(p.start_latitude) && Number(p.start_longitude));
+
+    // Once the farm is pinned, distance decides: a road in the next barangay
+    // can be the closest one, so every mapped road in the municipality is a
+    // candidate alongside the barangay's own (ranked and capped below).
+    if (farmPinned) {
+      const exactIds = new Set(exact.map((p) => p.id));
+      return {
+        items: [
+          ...exact.map((p) => ({ ...p, isExactMatch: true })),
+          ...withCoords.filter((p) => !exactIds.has(p.id)).map((p) => ({ ...p, isExactMatch: false })),
+        ],
+        isFallback: exact.length === 0,
+        truncatedCount: 0,
+      };
+    }
 
     if (exact.length > 0) {
       return { items: exact.map((p) => ({ ...p, isExactMatch: true })), isFallback: false, truncatedCount: 0 };
     }
 
     const FALLBACK_CAP = 8;
-    const withCoords = muniProjects.filter((p) => Number(p.start_latitude) && Number(p.start_longitude));
     const capped = withCoords.slice(0, FALLBACK_CAP);
     return {
       items: capped.map((p) => ({ ...p, isExactMatch: false })),
       isFallback: true,
       truncatedCount: Math.max(0, withCoords.length - capped.length),
     };
-  }, [projects, beneficiaryForm.municipality, beneficiaryForm.barangay, municipalityScope]);
+  }, [projects, beneficiaryForm.municipality, beneficiaryForm.barangay, municipalityScope, farmPinned]);
 
   // Coordinates for exact-match suggestions that don't already have stored
   // start/end points, resolved on demand via geocodeFmrLocation (cached).
@@ -391,18 +430,26 @@ export default function LguDashboard() {
 
   // Suggested projects with resolved points + distance from the reference
   // point, closest first, for both display order and connector-line choice.
+  // With the farm pinned, distance is to the nearest point ALONG each road
+  // (its saved route line), and `access` is where the farm meets that road.
   const rankedSuggestedProjects = useMemo(() => {
-    const [refLat, refLng] = suggestionReferencePoint || [];
-    return suggestedProjects.items
+    const ref = suggestionReferencePoint;
+    const ranked = suggestedProjects.items
       .map((p) => {
         const point = resolveProjectPoint(p, suggestedProjectCoords);
-        const distanceMeters = (point && refLat && refLng)
-          ? haversineMeters(refLat, refLng, point[0], point[1])
-          : Infinity;
-        return { ...p, point, distanceMeters };
+        const routeLine = buildRoutePoints(p, routesByProjectId[p.id]).points;
+        const line = routeLine.length > 0 ? routeLine : (point ? [point] : []);
+        const access = farmPinned && ref ? nearestPointOnPolyline(ref, line) : null;
+        const distanceMeters = access
+          ? access.distanceMeters
+          : (point && ref ? haversineMeters(ref[0], ref[1], point[0], point[1]) : Infinity);
+        return { ...p, point, line, access, distanceMeters };
       })
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [suggestedProjects, suggestedProjectCoords, suggestionReferencePoint]);
+    // Every mapped road in the municipality is a candidate once the farm is
+    // pinned; only the closest few are worth showing.
+    return farmPinned ? ranked.slice(0, 6) : ranked;
+  }, [suggestedProjects, suggestedProjectCoords, suggestionReferencePoint, routesByProjectId, farmPinned]);
 
   const nearestSuggestedMarket = useMemo(() => {
     if (!suggestionReferencePoint || markets.length === 0) return null;
@@ -431,6 +478,41 @@ export default function LguDashboard() {
     }
     return rankedSuggestedProjects.find((p) => p.point) || null;
   }, [rankedSuggestedProjects, beneficiaryForm.linkedProjectId]);
+
+  // Farm -> road link: from the farm pin to where it meets the linked (or
+  // closest) road. A straight preview shows at once; the road-following route
+  // replaces it once the pin has settled for a moment, so clicking around the
+  // map doesn't send a route request per click.
+  const farmAccess = farmPinned ? connectorProject?.access || null : null;
+  const farmPoint = farmPinned ? [Number(beneficiaryForm.farmLatitude), Number(beneficiaryForm.farmLongitude)] : null;
+  const farmLinkKey = farmAccess && farmPoint ? `${farmPoint.join(',')}>${farmAccess.point.join(',')}` : '';
+  const [farmLink, setFarmLink] = useState({ key: '', points: null, snapped: false, km: 0 });
+
+  useEffect(() => {
+    if (!farmLinkKey || !farmAccess || !farmPoint) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const straightKm = farmAccess.distanceMeters / 1000;
+      const routed = await fetchRoadAlignedPolyline([farmPoint, farmAccess.point]);
+      if (cancelled) return;
+      const snapped = Array.isArray(routed) && routed.length > 2;
+      const path = snapped ? [farmPoint, ...routed, farmAccess.point] : [farmPoint, farmAccess.point];
+      const pathKm = calculatePolylineDistanceKm(path);
+      // When no road connects them directly the route loops far around; the
+      // straight line to the road says more than that detour does.
+      const detour = snapped && pathKm > Math.max(straightKm * 3, straightKm + 1);
+      setFarmLink(detour || !snapped
+        ? { key: farmLinkKey, points: [farmPoint, farmAccess.point], snapped: false, km: straightKm }
+        : { key: farmLinkKey, points: path, snapped: true, km: pathKm });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // farmLinkKey captures every coordinate used; farmAccess/farmPoint are
+    // rebuilt each render and would restart the wait on unrelated updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farmLinkKey]);
+
+  const farmLinkReady = farmLink.key === farmLinkKey && farmLinkKey !== '';
+  const farmLinkPoints = farmLinkReady ? farmLink.points : (farmAccess && farmPoint ? [farmPoint, farmAccess.point] : null);
 
   const [connectorRoute, setConnectorRoute] = useState(null);
 
@@ -464,7 +546,7 @@ export default function LguDashboard() {
   const autoLinkedProjectIdRef = useRef(null);
 
   useEffect(() => {
-    if (!beneficiaryForm.barangay || !beneficiaryForm.municipality) return;
+    if (!beneficiaryForm.barangay || !formMunicipality) return;
 
     const top = rankedSuggestedProjects.find((p) => p.point) || null;
     const nextId = top ? String(top.id) : '';
@@ -475,12 +557,17 @@ export default function LguDashboard() {
       return { ...curr, linkedProjectId: nextId };
     });
     autoLinkedProjectIdRef.current = nextId || null;
-  }, [rankedSuggestedProjects, beneficiaryForm.barangay, beneficiaryForm.municipality]);
+  }, [rankedSuggestedProjects, beneficiaryForm.barangay, formMunicipality]);
 
   // Toast telling the officer how many roads were found for the selected
-  // barangay, so they don't have to notice the map/legend themselves.
+  // barangay, so they don't have to notice the map/legend themselves. Once per
+  // barangay choice: the ranking also changes on every pin click, and a toast
+  // per click would be noise (the bar above the map says which road is nearest).
+  const announcedBarangayRef = useRef('');
   useEffect(() => {
-    if (!beneficiaryForm.barangay || !beneficiaryForm.municipality) return undefined;
+    if (!beneficiaryForm.barangay || !formMunicipality) return undefined;
+    const announceKey = `${formMunicipality}|${beneficiaryForm.barangay}`;
+    if (announcedBarangayRef.current === announceKey) return undefined;
 
     // Don't announce a count until any exact-match geocoding has settled.
     const stillResolving = suggestedProjects.items.some((p) =>
@@ -495,33 +582,16 @@ export default function LguDashboard() {
     if (count > 0 && !suggestedProjects.isFallback) {
       text = `${count} suggested road${count === 1 ? '' : 's'} found in ${beneficiaryForm.barangay}.`;
     } else if (count > 0 && suggestedProjects.isFallback) {
-      text = `No road project directly in ${beneficiaryForm.barangay} — showing ${count} nearby road${count === 1 ? '' : 's'} in ${beneficiaryForm.municipality}.`;
+      text = `No road project directly in ${beneficiaryForm.barangay} — showing ${count} nearby road${count === 1 ? '' : 's'} in ${formMunicipality}.`;
     } else {
-      text = `No FMR road project found near ${beneficiaryForm.barangay}, ${beneficiaryForm.municipality} — link one manually if needed.`;
+      text = `No FMR road project found near ${beneficiaryForm.barangay}, ${formMunicipality} — link one manually if needed.`;
     }
 
+    announcedBarangayRef.current = announceKey;
     notify(text, count > 0 ? 'success' : 'warning');
     return undefined;
-  }, [beneficiaryForm.barangay, beneficiaryForm.municipality, suggestedProjects, suggestedProjectCoords, rankedSuggestedProjects]);
+  }, [beneficiaryForm.barangay, formMunicipality, suggestedProjects, suggestedProjectCoords, rankedSuggestedProjects]);
 
-  // Memoized so ModalMapController's bounds-fit effect (below) only re-runs
-  // when the underlying data actually changes, not on every keystroke
-  // elsewhere in this large form.
-  const beneficiaryFarmCoords = useMemo(() => {
-    const lat = Number(beneficiaryForm.farmLatitude);
-    const lng = Number(beneficiaryForm.farmLongitude);
-    return (lat && lng) ? [lat, lng] : null;
-  }, [beneficiaryForm.farmLatitude, beneficiaryForm.farmLongitude]);
-
-  const nearestSuggestedMarketCoords = useMemo(() => {
-    if (!nearestSuggestedMarket) return null;
-    return [Number(nearestSuggestedMarket.market.latitude), Number(nearestSuggestedMarket.market.longitude)];
-  }, [nearestSuggestedMarket]);
-
-  const suggestionMapPoints = useMemo(() => [
-    ...rankedSuggestedProjects.filter((p) => p.point).map((p) => p.point),
-    ...(connectorRoute?.points || []),
-  ], [rankedSuggestedProjects, connectorRoute]);
 
   const agencyOptions = useMemo(() => {
     return Array.from(new Set(beneficiaries.map((b) => b.agency).filter(Boolean))).sort();
@@ -587,7 +657,7 @@ export default function LguDashboard() {
       if (beneficiaryCropFilter !== 'all' && row.crop !== beneficiaryCropFilter) return false;
       if (beneficiaryBarangayFilter !== 'all' && row.barangay !== beneficiaryBarangayFilter) return false;
       if (!query) return true;
-      return [row.fullName, row.beneficiaryId, row.rsbsaNumber, row.municipality, row.barangay, row.linkedProject]
+      return [row.fullName, row.beneficiaryId, row.rsbsaNumber, row.controlNo, row.municipality, row.barangay, row.crop, row.linkedProject]
         .some((value) => String(value || '').toLowerCase().includes(query));
     });
 
@@ -620,13 +690,21 @@ export default function LguDashboard() {
     const total = beneficiaries.length;
     const count = (status) => beneficiaries.filter((b) => b.validationStatus === status).length;
     const validated = count('Validated');
+    const forVerification = count('For Verification');
+    const needsCorrection = count('Needs Correction');
     const areaHa = beneficiaries.reduce((sum, b) => sum + (Number(b.farmAreaHa) || 0), 0);
+    const cropCounts = {};
+    beneficiaries.forEach((b) => { if (b.crop) cropCounts[b.crop] = (cropCounts[b.crop] || 0) + 1; });
+    const topCrops = Object.entries(cropCounts).sort((a, b) => b[1] - a[1]);
     return {
       total,
       validated,
       validatedPct: total > 0 ? (validated / total) * 100 : null,
-      forVerification: count('For Verification'),
-      needsCorrection: count('Needs Correction'),
+      forVerification,
+      needsCorrection,
+      // Duplicate, rejected and archived records.
+      otherStatus: total - validated - forVerification - needsCorrection,
+      topCrops,
       barangays: new Set(beneficiaries.map((b) => b.barangay).filter(Boolean)).size,
       areaHa,
       avgAreaHa: total > 0 ? areaHa / total : null,
@@ -638,12 +716,42 @@ export default function LguDashboard() {
     const STATUS_ORDER = ['For Verification', 'Needs Correction', 'Validated', 'Duplicate Record', 'Rejected', 'Archived'];
     const present = new Set(beneficiaries.map((b) => b.validationStatus).filter(Boolean));
     const unique = (key) => [...new Set(beneficiaries.map((b) => b[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const countBy = (key) => beneficiaries.reduce((acc, b) => {
+      if (b[key]) acc[b[key]] = (acc[b[key]] || 0) + 1;
+      return acc;
+    }, {});
     return {
       statuses: STATUS_ORDER.filter((s) => present.has(s)),
       crops: unique('crop'),
       barangays: unique('barangay'),
+      counts: { status: countBy('validationStatus'), crop: countBy('crop'), barangay: countBy('barangay') },
     };
   }, [beneficiaries]);
+
+  // Export exactly what the list shows (current filters and sort).
+  const exportBeneficiariesCsv = () => {
+    const cols = [
+      ['RSBSA No.', 'rsbsaNumber'], ['Control No.', 'controlNo'], ['Full name', 'fullName'],
+      ['Barangay', 'barangay'], ['Municipality', 'municipality'], ['Crop', 'crop'],
+      ['Farm area (ha)', 'farmAreaHa'], ['Linked FMR project', 'linkedProject'],
+      ['Distance to FMR (km)', 'distanceToFmrKm'], ['Validation status', 'validationStatus'],
+    ];
+    // Prefix cells that a spreadsheet would run as a formula.
+    const cell = (v) => {
+      const text = String(v ?? '');
+      const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const csv = [cols.map(([h]) => cell(h)).join(','), ...filteredBeneficiaries.map((row) => cols.map(([, k]) => cell(row[k])).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `farmers_${(municipalityScope || 'all').toLowerCase().replace(/\s+/g, '-')}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const beneficiaryFiltersActive = Boolean(beneficiarySearch.trim())
     || beneficiaryStatusFilter !== 'all'
@@ -687,6 +795,7 @@ export default function LguDashboard() {
   };
 
   const handleSignOut = async () => {
+    if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
     navigate('/signin');
   };
@@ -943,11 +1052,11 @@ export default function LguDashboard() {
       controlNo: '',
       contactNumber: '',
       birthday: '',
-      gender: 'Male',
+      gender: '',
       agency: 'DA',
       municipality: '',
       barangay: '',
-      crop: 'Rice',
+      crop: '',
       farmAreaHa: '',
       linkedProjectId: '',
       nearestMarketId: '',
@@ -1109,9 +1218,8 @@ export default function LguDashboard() {
       projectFilter !== 'all',
       Boolean(dateFrom),
       Boolean(dateTo),
-      !showHeat,
     ].filter(Boolean).length;
-  }, [barangayFilter, statusFilter, projectFilter, dateFrom, dateTo, showHeat]);
+  }, [barangayFilter, statusFilter, projectFilter, dateFrom, dateTo]);
 
   const roadInventoryStats = useMemo(() => {
     const rows = Array.isArray(roadInventory) ? roadInventory : [];
@@ -1187,6 +1295,17 @@ export default function LguDashboard() {
         </svg>
       )
     },
+    {
+      id: 'profile',
+      label: 'My Profile',
+      description: 'Your account details',
+      headerDescription: 'Your LGU account details and profile photo.',
+      icon: (
+        <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+        </svg>
+      )
+    },
   ];
 
   const activeSection = navItems.find((item) => item.id === activeTab) || navItems[0];
@@ -1195,6 +1314,7 @@ export default function LguDashboard() {
     { label: 'Operations', ids: ['overview', 'proposals'] },
     { label: 'Community', ids: ['beneficiaries', 'markets'] },
     { label: 'Insights', ids: ['analytics'] },
+    { label: 'Account', ids: ['profile'] },
   ];
   const navGroups = NAV_GROUPS
     .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
@@ -1311,18 +1431,19 @@ export default function LguDashboard() {
             <ConnectionStatus collapsed={sidebarCollapsed} />
 
             {/* User Profile display */}
-            <div className="flex items-center gap-3">
-              <div 
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-600/30 text-teal-400 border border-teal-500/20 font-bold text-sm shadow-sm"
-                title={profile?.full_name || 'LGU User'}
-              >
-                {String(profile?.full_name || 'L').slice(0, 1).toUpperCase()}
-              </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('profile')}
+              title="My profile"
+              aria-label="Open your profile"
+              className="flex w-full items-center gap-3 rounded-xl text-left transition-colors hover:bg-white/5"
+            >
+              <ProfileAvatar client={supabase} name={profile?.full_name} fallback="L" className="size-10 rounded-xl text-sm shadow-sm" />
               <div className={`transition-all duration-300 ease-in-out origin-left whitespace-nowrap overflow-hidden text-left ${sidebarCollapsed ? 'opacity-0 w-0 scale-95 pointer-events-none' : 'opacity-100 w-full scale-100'}`}>
                 <p className="text-xs font-bold text-white truncate">{profile?.full_name || 'LGU Administrator'}</p>
                 <p className="text-[10px] text-slate-400 leading-none mt-0.5">LGU Account</p>
               </div>
-            </div>
+            </button>
 
             {/* Buttons */}
             <div className="mt-3.5 space-y-2">
@@ -1522,7 +1643,6 @@ export default function LguDashboard() {
                     routesByProjectId={routesByProjectId}
                     tranchesByProjectId={tranchesByProjectId}
                     reports={filteredReports}
-                    showHeat={showHeat}
                     farmerBeneficiaries={beneficiaries}
                     markets={markets}
                     mapCenter={lguMapCenter}
@@ -1542,118 +1662,61 @@ export default function LguDashboard() {
 
             {activeTab === 'beneficiaries' && (
               <section className="space-y-5">
-                {/* Summary Metric Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-                  {/* Card 1: Total Beneficiaries */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="p-3 bg-teal-50 text-teal-700 rounded-xl">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Beneficiaries</p>
-                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">{beneficiaryStats.total.toLocaleString()}</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Across {beneficiaryStats.barangays} barangay{beneficiaryStats.barangays === 1 ? '' : 's'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Card 2: Total Cultivated Land */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2a2.5 2.5 0 002.5-2.5V10a2 2 0 00-2-2h-1a2 2 0 00-2-2v-1a2 2 0 00-2-2H9a3 3 0 00-3 3v.152" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Cultivated Area</p>
-                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">
-                        {beneficiaryStats.areaHa.toLocaleString('en-US', { maximumFractionDigits: 2 })} ha
-                      </h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {beneficiaryStats.avgAreaHa === null ? 'No farm area recorded' : `Avg. ${beneficiaryStats.avgAreaHa.toFixed(2)} ha per farmer`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Card 3: Crop Distribution */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="p-3 bg-amber-50 text-amber-700 rounded-xl">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707-.707M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Crops</p>
-                      <div className="flex gap-x-2 gap-y-0.5 flex-wrap mt-1 text-[10px] font-semibold text-slate-650">
-                        {(() => {
-                          const crops = {};
-                          beneficiaries.forEach(b => {
-                            if (b.crop) crops[b.crop] = (crops[b.crop] || 0) + 1;
-                          });
-                          const cropEntries = Object.entries(crops).sort((a, b) => b[1] - a[1]);
-                          if (cropEntries.length === 0) return <span className="text-slate-400">No crops</span>;
-                          return cropEntries.slice(0, 3).map(([crop, count]) => {
-                            const cropTone = 
-                              crop === 'Rice' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                              crop === 'Corn' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                              crop === 'Sugarcane' ? 'bg-purple-50 text-purple-700 border-purple-100' :
-                              crop === 'Coconut' ? 'bg-sky-50 text-sky-700 border-sky-100' :
-                              crop === 'Vegetables' ? 'bg-pink-50 text-pink-700 border-pink-100' :
-                              'bg-slate-50 text-slate-700 border-slate-100';
-                            return (
-                              <span key={crop} className={`whitespace-nowrap border px-1.5 py-0.5 rounded ${cropTone}`}>{crop}: {count}</span>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 4: Validation Status */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="p-3 bg-sky-50 text-sky-700 rounded-xl">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Validated</p>
-                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">
-                        {beneficiaryStats.validatedPct === null ? '—' : `${beneficiaryStats.validatedPct.toFixed(0)}%`}
-                      </h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {beneficiaryStats.validated.toLocaleString()} of {beneficiaryStats.total.toLocaleString()} records
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Card 5: Awaiting Verification */}
-                  <button
-                    type="button"
-                    onClick={() => { setBeneficiaryStatusFilter('For Verification'); setBeneficiarySubTab('list'); }}
-                    disabled={beneficiaryStats.forVerification === 0}
-                    className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex items-center gap-4 text-left hover:shadow-md transition-shadow disabled:cursor-default disabled:hover:shadow-sm"
-                    title={beneficiaryStats.forVerification > 0 ? 'Show records awaiting verification' : undefined}
-                  >
-                    <div className="p-3 bg-orange-50 text-orange-700 rounded-xl">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Awaiting Verification</p>
-                      <h4 className="text-xl font-bold text-slate-900 mt-0.5">{beneficiaryStats.forVerification.toLocaleString()}</h4>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        {beneficiaryStats.needsCorrection > 0
-                          ? `${beneficiaryStats.needsCorrection} more need correction`
-                          : 'None need correction'}
-                      </p>
-                    </div>
-                  </button>
-                </div>
+                {/* Summary: same hierarchy as the FMR Projects KPI block */}
+                <HierarchyKpis
+                  ariaLabel="Registered farmer summary"
+                  lead={{
+                    label: 'Registered Farmers',
+                    value: beneficiaryStats.total.toLocaleString(),
+                    note: beneficiaryStats.validatedPct === null
+                      ? 'No farmers registered yet'
+                      : <><span className="font-semibold text-emerald-700">{beneficiaryStats.validatedPct.toFixed(0)}% validated</span> across {beneficiaryStats.barangays} barangay{beneficiaryStats.barangays === 1 ? '' : 's'}</>,
+                    icon: <UsersIcon className="size-6" aria-hidden="true" />,
+                    segments: [
+                      { label: 'Validated', value: beneficiaryStats.validated, bar: 'bg-emerald-500' },
+                      { label: 'For verification', value: beneficiaryStats.forVerification, bar: 'bg-amber-500' },
+                      { label: 'Needs correction', value: beneficiaryStats.needsCorrection, bar: 'bg-slate-400' },
+                      ...(beneficiaryStats.otherStatus > 0
+                        ? [{ label: 'Duplicate / rejected', value: beneficiaryStats.otherStatus, bar: 'bg-rose-500' }]
+                        : []),
+                    ],
+                  }}
+                  items={[
+                    {
+                      icon: <HourglassIcon className="size-4" aria-hidden="true" />,
+                      label: 'Awaiting Verification',
+                      value: beneficiaryStats.forVerification.toLocaleString(),
+                      hint: beneficiaryStats.forVerification > 0 ? 'Click to show these records' : 'Nothing waiting',
+                      chip: 'bg-amber-50 text-amber-600',
+                      onClick: beneficiaryStats.forVerification > 0
+                        ? () => { setBeneficiaryStatusFilter('For Verification'); setBeneficiarySubTab('list'); }
+                        : undefined,
+                    },
+                    {
+                      icon: <CircleCheckIcon className="size-4" aria-hidden="true" />,
+                      label: 'Validated',
+                      value: beneficiaryStats.validated.toLocaleString(),
+                      hint: beneficiaryStats.needsCorrection > 0 ? `${beneficiaryStats.needsCorrection} need correction` : 'None need correction',
+                      chip: 'bg-emerald-50 text-emerald-600',
+                    },
+                    {
+                      icon: <LandPlotIcon className="size-4" aria-hidden="true" />,
+                      label: 'Cultivated Area',
+                      value: `${beneficiaryStats.areaHa.toLocaleString('en-US', { maximumFractionDigits: 2 })} ha`,
+                      hint: beneficiaryStats.avgAreaHa === null ? 'No farm area recorded' : `Avg. ${beneficiaryStats.avgAreaHa.toFixed(2)} ha per farmer`,
+                      chip: 'bg-teal-50 text-teal-600',
+                    },
+                    {
+                      icon: <WheatIcon className="size-4" aria-hidden="true" />,
+                      label: 'Top Crop',
+                      value: beneficiaryStats.topCrops[0]?.[0] || '—',
+                      hint: beneficiaryStats.topCrops.length === 0
+                        ? 'No crops recorded'
+                        : `${beneficiaryStats.topCrops[0][1]} farmers${beneficiaryStats.topCrops[1] ? `, then ${beneficiaryStats.topCrops[1][0]}` : ''}`,
+                      chip: 'bg-slate-100 text-slate-600',
+                    },
+                  ]}
+                />
 
                 {/* Clickable Sub-Nav Bar */}
                 <div className="flex border-b border-slate-200">
@@ -1679,16 +1742,32 @@ export default function LguDashboard() {
                   >
                     {editingId ? 'Edit Profile' : 'Register New Farmer'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setBeneficiarySubTab('analytics')}
+                    className={`border-b-2 px-6 py-3 text-sm font-bold transition-all ${
+                      beneficiarySubTab === 'analytics'
+                        ? 'border-teal-600 text-teal-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Analytics
+                  </button>
                 </div>
 
-                <BeneficiaryCsvImport
-                  user={user}
-                  profile={profile}
-                  municipalityScope={municipalityScope}
-                  onImported={fetchBeneficiaries}
-                />
+                {beneficiarySubTab !== 'analytics' && (
+                  <BeneficiaryCsvImport
+                    user={user}
+                    profile={profile}
+                    municipalityScope={municipalityScope}
+                    onImported={fetchBeneficiaries}
+                  />
+                )}
 
-                {beneficiarySubTab === 'register' ? (
+                {beneficiarySubTab === 'analytics' ? (
+                  // Same four cards as the admin page, over all of this LGU's farmers.
+                  <BeneficiaryKeyCards beneficiaries={beneficiaries} loading={beneficiariesLoading} />
+                ) : beneficiarySubTab === 'register' ? (
                   <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-3 mb-4">
                       <div>
@@ -1722,27 +1801,68 @@ export default function LguDashboard() {
                       />
                     </div>
                     <input value={beneficiaryForm.contactNumber} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, contactNumber: e.target.value }))} placeholder="Contact number" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                    <input type="date" value={beneficiaryForm.birthday} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, birthday: e.target.value }))} placeholder="Birthday" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
-                    <select required value={beneficiaryForm.gender} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, gender: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                    </select>
+                    {/* A date field shows "mm/dd/yyyy" and ignores placeholder text, so
+                        it gets a visible label like the auto-generated fields above. */}
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase pl-1">Birthday</span>
+                      <input
+                        type="date"
+                        value={beneficiaryForm.birthday}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setBeneficiaryForm((current) => ({ ...current, birthday: e.target.value }))}
+                        className={`rounded-lg border border-slate-200 px-3 py-2 text-sm ${beneficiaryForm.birthday ? 'text-slate-800' : 'text-slate-400'}`}
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase pl-1">Sex *</span>
+                      <select
+                        required
+                        value={beneficiaryForm.gender}
+                        onChange={(e) => setBeneficiaryForm((current) => ({ ...current, gender: e.target.value }))}
+                        className={`rounded-lg border border-slate-200 px-3 py-2 text-sm ${beneficiaryForm.gender ? 'text-slate-800' : 'text-slate-400'}`}
+                      >
+                        <option value="" disabled>Select sex</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                      </select>
+                    </label>
                     <input list="agency-options" value={beneficiaryForm.agency} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, agency: e.target.value }))} placeholder="Agency (e.g. DA)" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     <datalist id="agency-options">
                       {agencyOptions.map((agency) => <option key={agency} value={agency} />)}
                     </datalist>
                     
-                    <select required value={beneficiaryForm.municipality || municipalityScope} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, municipality: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                      <option value="">Select municipality *</option>
-                      {eligibleMunicipalities.map((municipality) => <option key={municipality} value={municipality}>{municipality}</option>)}
-                    </select>
+                    {municipalityScope ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase pl-1">Municipality (your LGU)</span>
+                        <span className="relative">
+                          <input
+                            readOnly
+                            value={municipalityScope}
+                            aria-label="Municipality"
+                            title="Farmers are registered under your LGU's municipality"
+                            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-3 pr-9 text-sm text-slate-600 cursor-not-allowed"
+                          />
+                          <LockIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                        </span>
+                      </label>
+                    ) : (
+                      <select required value={beneficiaryForm.municipality} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, municipality: e.target.value, barangay: '' }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                        <option value="">Select municipality *</option>
+                        {eligibleMunicipalities.map((municipality) => <option key={municipality} value={municipality}>{municipality}</option>)}
+                      </select>
+                    )}
                     <select required value={beneficiaryForm.barangay} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, barangay: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
                       <option value="">Select barangay *</option>
-                      {getBarangays(beneficiaryForm.municipality || municipalityScope).map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
+                      {getBarangays(formMunicipality).map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
                     </select>
-                    <select required value={beneficiaryForm.crop} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, crop: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                      {BENEFICIARY_CROPS.map((crop) => <option key={crop} value={crop}>{crop}</option>)}
-                    </select>
+                    <SearchableSelect
+                      required
+                      ariaLabel="Main crop"
+                      value={beneficiaryForm.crop}
+                      onChange={(crop) => setBeneficiaryForm((current) => ({ ...current, crop }))}
+                      options={BENEFICIARY_CROPS}
+                      placeholder="Search or select main crop *"
+                    />
                     <input required type="number" step="0.01" min="0" value={beneficiaryForm.farmAreaHa} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, farmAreaHa: e.target.value }))} placeholder="Farm area (ha) *" className="rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                     
                     <select value={beneficiaryForm.linkedProjectId} onChange={(e) => setBeneficiaryForm((current) => ({ ...current, linkedProjectId: e.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -1771,16 +1891,36 @@ export default function LguDashboard() {
                       </div>
 
                       {/* Suggested FMR road / nearest market legend */}
-                      {beneficiaryForm.municipality && beneficiaryForm.barangay && (
+                      {formMunicipality && beneficiaryForm.barangay && (
                         <div className="px-4 py-2 bg-amber-50/60 border-b border-amber-100 text-[11px] font-medium text-slate-600">
                           {suggestedProjects.items.length === 0 ? (
                             <span>No FMR road projects found for this barangay or municipality yet — link one manually using the dropdown above.</span>
                           ) : (
+                            <div className="space-y-1.5">
+                            {farmAccess && connectorProject ? (
+                              <p className="text-xs text-slate-700">
+                                <span className="font-semibold text-slate-900">
+                                  {String(beneficiaryForm.linkedProjectId) === String(connectorProject.id) ? 'Linked road: ' : 'Nearest road: '}
+                                  {connectorProject.project_name}
+                                </span>
+                                {' '}— {(farmAccess.distanceMeters / 1000).toFixed(2)} km from the farm
+                                {farmLinkReady && farmLink.snapped ? ` (about ${farmLink.km.toFixed(2)} km by road)` : ''}
+                                {rankedSuggestedProjects.length > 1 && <span className="text-slate-500">. Click another road line on the map to link it instead.</span>}
+                              </p>
+                            ) : !farmPinned && (
+                              <p className="text-xs text-slate-600">Pin the farm on the map to find the road closest to it.</p>
+                            )}
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                               <span className="flex items-center gap-1.5">
                                 <span className="w-3 h-3 rounded-full bg-amber-500 inline-block border border-white shadow-sm" />
-                                {suggestedProjects.isFallback ? 'Suggested road (nearby in municipality)' : 'Suggested road (this barangay)'}
+                                {farmPinned ? 'Nearby roads' : suggestedProjects.isFallback ? 'Suggested road (nearby in municipality)' : 'Suggested road (this barangay)'}
                               </span>
+                              {farmLinkPoints && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-4 h-0.5 border-t-2 border-emerald-600 inline-block" />
+                                  Farm → road link
+                                </span>
+                              )}
                               {nearestSuggestedMarket && (
                                 <span className="flex items-center gap-1.5">
                                   <span className="w-3 h-3 rounded-full bg-indigo-700 inline-block border border-white shadow-sm" />
@@ -1796,6 +1936,7 @@ export default function LguDashboard() {
                               {suggestedProjects.truncatedCount > 0 && (
                                 <span className="text-slate-400">+{suggestedProjects.truncatedCount} more in this municipality — refine using the dropdown above</span>
                               )}
+                            </div>
                             </div>
                           )}
                         </div>
@@ -1870,13 +2011,6 @@ export default function LguDashboard() {
                               }));
                             }}
                           />
-                          <MapCenterController
-                            center={
-                              beneficiaryForm.farmLatitude && beneficiaryForm.farmLongitude
-                                ? [Number(beneficiaryForm.farmLatitude), Number(beneficiaryForm.farmLongitude)]
-                                : getMunicipalityCentroid(municipalityScope || beneficiaryForm.municipality)
-                            }
-                          />
                           {beneficiaryForm.farmLatitude && beneficiaryForm.farmLongitude && (
                             <Marker
                               position={[Number(beneficiaryForm.farmLatitude), Number(beneficiaryForm.farmLongitude)]}
@@ -1889,11 +2023,60 @@ export default function LguDashboard() {
                             />
                           )}
 
-                          <ModalMapController
-                            farmCoords={beneficiaryFarmCoords}
-                            marketCoords={nearestSuggestedMarketCoords}
-                            roadPoints={suggestionMapPoints}
+                          <FormMapCamera
+                            points={farmPoint
+                              ? [farmPoint, farmAccess?.point]
+                              : rankedSuggestedProjects.filter((p) => p.point).map((p) => p.point)}
                           />
+
+                          {/* Suggested road lines, closest/linked one emphasized. Clicking
+                              a line links that road; it doesn't move the farm pin. */}
+                          {rankedSuggestedProjects.filter((project) => project.line.length >= 2).map((project) => {
+                            const isConnector = connectorProject?.id === project.id;
+                            return (
+                              <Polyline
+                                key={`suggested-line-${project.id}-${isConnector ? 'on' : 'off'}`}
+                                positions={project.line}
+                                pathOptions={{
+                                  color: '#f59e0b',
+                                  weight: isConnector ? 6 : 4,
+                                  opacity: isConnector ? 0.95 : 0.45,
+                                  bubblingMouseEvents: false,
+                                }}
+                                eventHandlers={{
+                                  click: () => setBeneficiaryForm((current) => ({ ...current, linkedProjectId: String(project.id) })),
+                                }}
+                              >
+                                <Tooltip sticky>
+                                  <span className="text-xs font-semibold">{project.project_name}</span>
+                                  {!isConnector && <span className="block text-[11px] text-slate-500">Click to link this road</span>}
+                                </Tooltip>
+                              </Polyline>
+                            );
+                          })}
+
+                          {/* Farm -> road link: dashed preview, solid once it follows the road */}
+                          {farmLinkPoints && (
+                            <Polyline
+                              key={farmLinkReady && farmLink.snapped ? 'farm-link-road' : 'farm-link-straight'}
+                              positions={farmLinkPoints}
+                              pathOptions={{
+                                color: '#059669',
+                                weight: 4,
+                                bubblingMouseEvents: false,
+                                ...(farmLinkReady && farmLink.snapped ? {} : { dashArray: '6, 8' }),
+                              }}
+                            />
+                          )}
+                          {farmAccess && (
+                            <CircleMarker
+                              center={farmAccess.point}
+                              radius={6}
+                              pathOptions={{ color: '#059669', weight: 3, fillColor: '#ffffff', fillOpacity: 1, bubblingMouseEvents: false }}
+                            >
+                              <Tooltip direction="top">Farm meets {connectorProject?.project_name || 'the road'} here</Tooltip>
+                            </CircleMarker>
+                          )}
 
                           {/* Suggested FMR road markers -- click to link to this farmer */}
                           {rankedSuggestedProjects.filter((project) => project.point).map((project) => (
@@ -2026,11 +2209,11 @@ export default function LguDashboard() {
                               controlNo: '',
                               contactNumber: '',
                               birthday: '',
-                              gender: 'Male',
+                              gender: '',
                               agency: 'DA',
                               municipality: '',
                               barangay: '',
-                              crop: 'Rice',
+                              crop: '',
                               farmAreaHa: '',
                               linkedProjectId: '',
                               nearestMarketId: '',
@@ -2057,103 +2240,98 @@ export default function LguDashboard() {
                 ) : (
                 <div className="space-y-4">
 
-                  {/* Title & Filter/Sort Toolbar */}
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-slate-100 pb-4 mb-4">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">Submitted Beneficiaries</p>
-                        <p className="text-xs text-slate-500">Records visible to the current LGU account ({filteredBeneficiaries.length} total).</p>
+                  {/* Search + filters in one toolbar, then a results bar with what's applied. */}
+                  <section aria-label="Find farmers" className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-xs">
+                    <div className="flex flex-col gap-2.5 p-4 xl:flex-row xl:items-center">
+                      <div className="relative min-w-0 flex-1">
+                        <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                        <input
+                          type="search"
+                          value={beneficiarySearch}
+                          onChange={(e) => setBeneficiarySearch(e.target.value)}
+                          placeholder="Search name, RSBSA, control no., barangay, crop or road"
+                          aria-label="Search farmers"
+                          className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-10 pr-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+                        />
                       </div>
-                      <div className="flex items-center gap-2">
-                        {/* Search Input */}
-                        <div className="relative">
-                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-                          </svg>
-                          <input
-                            type="text"
-                            value={beneficiarySearch}
-                            onChange={(e) => setBeneficiarySearch(e.target.value)}
-                            placeholder="Search beneficiaries..."
-                            className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white w-48 sm:w-56 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3 items-end text-xs">
-                      {/* Filter by Validation Status */}
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Validation Status</span>
+                      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:flex xl:flex-nowrap">
                         <select
                           value={beneficiaryStatusFilter}
                           onChange={(e) => setBeneficiaryStatusFilter(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          aria-label="Validation status"
+                          className="h-10 w-full min-w-0 rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 xl:w-44"
                         >
-                          <option value="all">All Statuses</option>
-                          {beneficiaryFilterOptions.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+                          <option value="all">All statuses</option>
+                          {beneficiaryFilterOptions.statuses.map((s) => <option key={s} value={s}>{s} ({beneficiaryFilterOptions.counts.status[s] || 0})</option>)}
                         </select>
-                      </label>
-
-                      {/* Filter by Barangay */}
-                      {beneficiaryFilterOptions.barangays.length > 1 && (
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Barangay</span>
-                          <select
-                            value={beneficiaryBarangayFilter}
-                            onChange={(e) => setBeneficiaryBarangayFilter(e.target.value)}
-                            className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
-                          >
-                            <option value="all">All Barangays</option>
-                            {beneficiaryFilterOptions.barangays.map((b) => <option key={b} value={b}>{b}</option>)}
-                          </select>
-                        </label>
-                      )}
-
-                      {/* Filter by Crop */}
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Crop Type</span>
+                        <select
+                          value={beneficiaryBarangayFilter}
+                          onChange={(e) => setBeneficiaryBarangayFilter(e.target.value)}
+                          aria-label="Barangay"
+                          className="h-10 w-full min-w-0 rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 xl:w-44"
+                        >
+                          <option value="all">All barangays</option>
+                          {beneficiaryFilterOptions.barangays.map((b) => <option key={b} value={b}>{b} ({beneficiaryFilterOptions.counts.barangay[b] || 0})</option>)}
+                        </select>
                         <select
                           value={beneficiaryCropFilter}
                           onChange={(e) => setBeneficiaryCropFilter(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          aria-label="Crop"
+                          className="h-10 w-full min-w-0 rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 xl:w-44"
                         >
-                          <option value="all">All Crops</option>
-                          {beneficiaryFilterOptions.crops.map((c) => <option key={c} value={c}>{c}</option>)}
+                          <option value="all">All crops</option>
+                          {beneficiaryFilterOptions.crops.map((c) => <option key={c} value={c}>{c} ({beneficiaryFilterOptions.counts.crop[c] || 0})</option>)}
                         </select>
-                      </label>
-
-                      {/* Sort By Option */}
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Sort By</span>
                         <select
                           value={beneficiarySortBy}
                           onChange={(e) => setBeneficiarySortBy(e.target.value)}
-                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
+                          aria-label="Sort by"
+                          className="h-10 w-full min-w-0 rounded-xl border border-slate-200 bg-white pl-3.5 pr-8 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 xl:w-44"
                         >
-                          <option value="newest">Newest Submitted</option>
-                          <option value="oldest">Oldest Submitted</option>
-                          <option value="name-asc">Name (A-Z)</option>
-                          <option value="name-desc">Name (Z-A)</option>
-                          <option value="area-desc">Farm Area (Largest)</option>
-                          <option value="area-asc">Farm Area (Smallest)</option>
+                          <option value="newest">Newest first</option>
+                          <option value="oldest">Oldest first</option>
+                          <option value="name-asc">Name A–Z</option>
+                          <option value="name-desc">Name Z–A</option>
+                          <option value="area-desc">Largest farm</option>
+                          <option value="area-asc">Smallest farm</option>
                         </select>
                       </div>
-
-                      {beneficiaryFiltersActive && (
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+                      <p className="mr-1 text-sm text-slate-500">
+                        Showing <span className="font-semibold text-slate-900">{filteredBeneficiaries.length.toLocaleString()}</span> of {beneficiaries.length.toLocaleString()} farmers
+                      </p>
+                      {[
+                        beneficiarySearch.trim() && { key: 'q', label: `“${beneficiarySearch.trim()}”`, clear: () => setBeneficiarySearch('') },
+                        beneficiaryStatusFilter !== 'all' && { key: 'status', label: beneficiaryStatusFilter, clear: () => setBeneficiaryStatusFilter('all') },
+                        beneficiaryBarangayFilter !== 'all' && { key: 'brgy', label: `Brgy. ${beneficiaryBarangayFilter}`, clear: () => setBeneficiaryBarangayFilter('all') },
+                        beneficiaryCropFilter !== 'all' && { key: 'crop', label: beneficiaryCropFilter, clear: () => setBeneficiaryCropFilter('all') },
+                      ].filter(Boolean).map((chip) => (
+                        <span key={chip.key} className="inline-flex max-w-[16rem] items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-1 pl-3 pr-1 text-xs font-medium text-slate-700">
+                          <span className="truncate">{chip.label}</span>
+                          <button type="button" onClick={chip.clear} aria-label={`Remove filter ${chip.label}`} className="grid size-5 place-items-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+                            <XIcon className="size-3" aria-hidden="true" />
+                          </button>
+                        </span>
+                      ))}
+                      <div className="ml-auto flex items-center gap-3">
+                        {beneficiaryFiltersActive && (
+                          <button type="button" onClick={clearBeneficiaryFilters} className="text-sm font-medium text-teal-700 hover:text-teal-800 hover:underline">
+                            Clear all
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={clearBeneficiaryFilters}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition"
+                          onClick={exportBeneficiariesCsv}
+                          disabled={filteredBeneficiaries.length === 0}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         >
-                          Clear filters
+                          <DownloadIcon className="size-4" aria-hidden="true" />
+                          Export CSV
                         </button>
-                      )}
+                      </div>
                     </div>
-                    <p className="mt-3 text-[11px] text-slate-500">
-                      Showing {filteredBeneficiaries.length.toLocaleString()} of {beneficiaries.length.toLocaleString()} records
-                    </p>
-                  </div>
+                  </section>
 
                   {/* Tabular Form */}
                   {beneficiariesLoading ? (
@@ -2275,11 +2453,11 @@ export default function LguDashboard() {
                                               controlNo: row.controlNo || '',
                                               contactNumber: row.contactNumber || '',
                                               birthday: row.birthday || '',
-                                              gender: row.gender || 'Male',
+                                              gender: row.gender || '',
                                               agency: row.agency || 'DA',
                                               municipality: row.municipality || '',
                                               barangay: row.barangay || '',
-                                              crop: row.crop || 'Rice',
+                                              crop: row.crop || '',
                                               farmAreaHa: row.farmAreaHa || '',
                                               linkedProjectId: row.linkedProjectId || '',
                                               nearestMarketId: row.nearestMarketId || '',
@@ -2408,6 +2586,27 @@ export default function LguDashboard() {
 
 
 
+
+            {activeTab === 'profile' && (
+              <StaffProfile
+                client={supabase}
+                roleLabel="LGU Account"
+                location={municipalityScope ? `${municipalityScope}, Iloilo` : 'Province-wide'}
+                fallbackInitial="L"
+                statsLoading={loading || beneficiariesLoading}
+                stats={[
+                  { label: 'FMR Projects', value: projects.length, icon: RouteIcon, tone: 'bg-teal-50 text-teal-700' },
+                  { label: 'Registered Farmers', value: beneficiaries.length, icon: UsersIcon, tone: 'bg-emerald-50 text-emerald-700' },
+                  { label: 'Markets', value: markets.length, icon: StoreIcon, tone: 'bg-amber-50 text-amber-700' },
+                ]}
+                details={[
+                  { label: 'Role', value: 'LGU Account' },
+                  { label: 'Municipality', value: municipalityScope || 'All municipalities' },
+                  { label: 'Region', value: 'DA Region VI (Western Visayas)' },
+                  { label: 'Farmers validated', value: beneficiaries.filter((b) => b.validationStatus === 'Validated').length },
+                ]}
+              />
+            )}
 
             {activeTab === 'analytics' && (
               <LguAnalyticsTab

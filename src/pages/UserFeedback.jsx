@@ -436,12 +436,6 @@ export default function UserFeedback() {
   return (
     <UserLayout>
       <div className="space-y-8">
-        {/* Page Header */}
-        <section>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Community Feedback</h1>
-          <p className="mt-1 text-slate-500">Road reports and feedback from across the community, so you can see what others have raised and follow your own.</p>
-        </section>
-
         {/* Error Alert */}
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -454,7 +448,7 @@ export default function UserFeedback() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-semibold text-slate-900">Recent Feedback</h2>
-              <div role="tablist" aria-label="Whose feedback to show" className="inline-flex rounded-xl border border-slate-200 bg-slate-100/80 p-1">
+              <div role="tablist" aria-label="Whose feedback to show" data-tour="feedback-scope" className="inline-flex rounded-xl border border-slate-200 bg-slate-100/80 p-1">
                 {[
                   { id: 'community', label: 'Everyone', count: combinedItems.length },
                   { id: 'mine', label: 'My submissions', count: mineCount },
@@ -480,7 +474,7 @@ export default function UserFeedback() {
           </div>
 
           {!loading && scopedItems.length > 0 && (
-            <div className="mb-4 flex flex-col lg:flex-row gap-3">
+            <div className="mb-4 flex flex-col lg:flex-row gap-3" data-tour="feedback-filters">
               <div className="relative flex-1">
                 <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                 <input

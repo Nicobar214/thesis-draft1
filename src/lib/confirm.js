@@ -55,3 +55,13 @@ export function subscribeConfirm(listener) {
 export function getConfirmRequest() {
   return current;
 }
+
+/** The one "log out?" prompt, shared by every portal's log-out button. */
+export function confirmSignOut() {
+  return confirm({
+    title: 'Log out?',
+    message: 'You will need to sign in again to continue.',
+    confirmLabel: 'Log out',
+    tone: 'warning',
+  });
+}

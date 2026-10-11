@@ -13,7 +13,7 @@
  * submissions use certify_progress_with_quantities. Both are role-checked
  * SECURITY DEFINER RPCs, and the UI never writes progress tables directly.
  */
-import { XIcon } from 'lucide-react';
+import { XIcon, HourglassIcon, LayersIcon, BadgeCheckIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { getWorkflowMeta } from '../../lib/progressWorkflow';
@@ -273,6 +273,143 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
 
   return (
     <div className="space-y-5">
+      {/* KPI Hierarchy Layout matching the Overview dashboard:
+          One lead card (All Submissions with progress split bar) on the left,
+          and supporting cards (Awaiting Certification, Already Actioned) on the right. */}
+      {(() => {
+        const approved = rows.filter((r) => r.status === 'approved').length;
+        const certifiedWaiting = rows.filter((r) => r.status === 'pending' && r.certification_status === 'certified').length;
+        const sentBack = rows.filter((r) => r.status === 'rejected' || r.certification_status === 'disputed').length;
+
+        const segments = [
+          { label: 'Awaiting you', value: pending.length, bar: 'bg-amber-400' },
+          { label: 'With DA', value: certifiedWaiting, bar: 'bg-sky-500' },
+          { label: 'Approved', value: approved, bar: 'bg-emerald-500' },
+          { label: 'Sent back', value: sentBack, bar: 'bg-rose-500' },
+        ].filter((seg) => seg.value > 0);
+        const segmentTotal = segments.reduce((sum, s) => sum + (Number(s.value) || 0), 0);
+        const actionedCount = rows.length - pending.length;
+        const actionedPct = rows.length ? Math.round((actionedCount / rows.length) * 100) : 0;
+
+        return (
+          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4" aria-label="Certification summary">
+            {/* Lead Card: Awaiting Certification with progress split bar */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('pending')}
+              aria-pressed={activeTab === 'pending'}
+              className={`flex flex-col text-left rounded-2xl border p-6 shadow-xs transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 cursor-pointer ${
+                activeTab === 'pending'
+                  ? 'border-teal-500 bg-teal-50/40 ring-2 ring-teal-500/20 shadow-sm'
+                  : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4 w-full">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-500">Awaiting Certification</p>
+                  <p className="mt-2 tracking-tight text-slate-900 tabular-nums text-5xl font-semibold">
+                    {pending.length}
+                  </p>
+                  <p className="mt-1.5 text-sm text-slate-500">
+                    {pending.length > 0 ? (
+                      <span>
+                        <span className="font-semibold text-amber-700">Measure on site</span> before DA can approve payment · {settled.length} already actioned
+                      </span>
+                    ) : (
+                      <span>
+                        <span className="font-semibold text-emerald-700">All caught up</span> · nothing waiting on you
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className={`grid size-12 shrink-0 place-items-center rounded-xl ${pending.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  <HourglassIcon className="size-6" aria-hidden="true" />
+                </div>
+              </div>
+
+              {segments.length > 0 && (
+                <div className="mt-auto pt-6 w-full">
+                  <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+                    {segments.map((s) => (
+                      <div
+                        key={s.label}
+                        className={`h-full ${s.bar}`}
+                        style={{ width: `${segmentTotal ? ((Number(s.value) || 0) / segmentTotal) * 100 : 0}%` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                    {segments.map((s) => (
+                      <span key={s.label} className="inline-flex items-center gap-1.5">
+                        <span className={`size-2 rounded-full ${s.bar}`} />
+                        {s.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </button>
+
+            {/* Supporting Cards: Already Actioned and All Submissions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-col gap-4">
+              {/* Card 1: Already Actioned */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('settled')}
+                aria-pressed={activeTab === 'settled'}
+                className={`flex flex-1 flex-col justify-between rounded-2xl border p-5 text-left shadow-xs transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 cursor-pointer ${
+                  activeTab === 'settled'
+                    ? 'border-teal-500 bg-teal-50/50 ring-2 ring-teal-500/30 shadow-sm'
+                    : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700">
+                      <BadgeCheckIcon className="size-4" aria-hidden="true" />
+                    </span>
+                    <p className="text-sm font-medium text-slate-600">Already Actioned</p>
+                  </div>
+                  <p className="mt-2.5 truncate text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+                    {settled.length}
+                  </p>
+                </div>
+                <p className="mt-2 truncate text-xs text-slate-400">
+                  {certifiedWaiting > 0 ? `${certifiedWaiting} with DA for approval · ${approved} approved` : `${approved} approved by DA`}
+                </p>
+              </button>
+
+              {/* Card 2: All Submissions */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('all')}
+                aria-pressed={activeTab === 'all'}
+                className={`flex flex-1 flex-col justify-between rounded-2xl border p-5 text-left shadow-xs transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 cursor-pointer ${
+                  activeTab === 'all'
+                    ? 'border-teal-500 bg-teal-50/50 ring-2 ring-teal-500/30 shadow-sm'
+                    : 'border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-sm'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
+                      <LayersIcon className="size-4" aria-hidden="true" />
+                    </span>
+                    <p className="text-sm font-medium text-slate-600">All Submissions</p>
+                  </div>
+                  <p className="mt-2.5 truncate text-3xl font-bold tracking-tight text-slate-900 tabular-nums">
+                    {rows.length}
+                  </p>
+                </div>
+                <p className="mt-2 truncate text-xs text-slate-400">
+                  {actionedPct}% actioned of total contractor progress reports
+                </p>
+              </button>
+            </div>
+          </section>
+        );
+      })()}
+
       {/* Header Tabs & Filters Control Panel */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-4">
         {/* Status Tabs */}

@@ -1,61 +1,34 @@
 /* ContractorDashboard.jsx – Landing page for contractors.
- * Reading order: headline numbers first, then where submissions are in the
- * review pipeline, then history.
+ * Reading order: one KPI block (projects + what needs action + where each
+ * submission is in review), then recent history.
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { ShieldCheckIcon, BuildingIcon, CheckCircle2Icon, MessageSquareWarningIcon, ChevronRightIcon } from 'lucide-react';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
+import HierarchyKpis from '../components/ui/HierarchyKpis';
 import { formatPercentage } from '../lib/percentageFormat';
 import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
 import Icons from '../components/Icons';
 
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '');
 
-function SectionLabel({ title, subtitle, action }) {
+function SectionLabel({ title, action }) {
   return (
     <div className="flex items-end justify-between gap-3 border-b border-slate-200 pb-2">
-      <div>
-        <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
-        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
-      </div>
+      <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
       {action}
     </div>
   );
 }
 
-/** A pipeline stage: count on top, what it means underneath. */
-function PipelineStep({ n, label, hint, count, tone, to }) {
-  const tones = {
-    amber: 'text-amber-700 border-amber-200',
-    sky: 'text-sky-700 border-sky-200',
-    emerald: 'text-emerald-700 border-emerald-200',
-  };
-  return (
-    <Link to={to} className={`group flex-1 rounded-2xl border bg-white p-4 shadow-xs transition hover:shadow-md ${tones[tone]}`}>
-      <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-        <span className="grid size-5 place-items-center rounded-full bg-slate-100 text-slate-600">{n}</span>
-        {label}
-      </div>
-      <p className={`mt-2 text-3xl font-bold tracking-tight ${tones[tone].split(' ')[0]}`}>{count}</p>
-      <p className="mt-1 text-xs text-slate-500">{hint}</p>
-    </Link>
-  );
-}
-
-/** Supporting KPI card, smaller and secondary to the lead card -- same visual
- * language as FmrProjectKpis on the admin/farmer/LGU portals. */
-function KpiMini({ icon, value, label, chip }) {
-  return (
-    <article className="flex flex-col rounded-2xl border border-slate-200/60 bg-white p-4 shadow-xs">
-      <div className="flex items-center gap-2">
-        <span className={`grid size-7 shrink-0 place-items-center rounded-lg ${chip}`}>{icon}</span>
-        <p className="text-xs font-medium text-slate-500">{label}</p>
-      </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">{value}</p>
-    </article>
-  );
-}
+const statusKey = (s) => {
+  const v = String(s || '').toLowerCase();
+  if (v.includes('complete')) return 'Completed';
+  if (v.includes('going') || v.includes('progress')) return 'On-Going';
+  return 'Proposed';
+};
 
 export default function ContractorDashboard() {
   return (
@@ -96,58 +69,108 @@ function DashboardBody() {
   }, [projectKey]);
 
   if (summary.loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <div className="w-10 h-10 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin" />
-      </div>
-    );
+    return <HierarchyKpis loading lead={{}} items={[]} />;
   }
 
-  const { projects, updates, awaitingEngineer, awaitingAdmin, withoutEngineer, approvedThisMonth } = summary;
+  const { projects, updates, awaitingEngineer, awaitingAdmin, withoutEngineer, approvedThisMonth, needsFix, needingUpdate } = summary;
 
   const withEngineerCount = projects.length - withoutEngineer.length;
   const avgAccomplishment = projects.length
     ? projects.reduce((s, p) => s + Number(p.accomplishment || 0), 0) / projects.length
     : 0;
+  const byStatus = projects.reduce((acc, p) => { acc[statusKey(p.status)] += 1; return acc; }, { Completed: 0, 'On-Going': 0, Proposed: 0 });
+
+  // What the contractor should do next, most urgent first.
+  const actions = [
+    needsFix.length > 0 && { key: 'fix', label: 'Updates returned for correction', count: needsFix.length, to: '/contractor/reports', tone: 'text-rose-700 bg-rose-50' },
+    withoutEngineer.length > 0 && { key: 'eng', label: 'Projects without a site engineer', count: withoutEngineer.length, to: '/contractor/projects', tone: 'text-amber-700 bg-amber-50' },
+    needingUpdate.length > 0 && { key: 'upd', label: 'No approved update this month', count: needingUpdate.length, to: '/contractor/projects', tone: 'text-slate-700 bg-slate-100' },
+  ].filter(Boolean);
 
   return (
     <div className="space-y-8">
-      {/* 1. Headline numbers first: one lead card, same visual language as the
-          admin/farmer/LGU FMR Projects KPI block, plus three smaller
-          supporting cards below it. */}
-      <section className="space-y-4">
-        <SectionLabel title="Overview" />
-        <article className="flex flex-col rounded-2xl border border-slate-200/60 bg-white p-6 shadow-xs sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Assigned Projects</p>
-            <p className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 tabular-nums">{projects.length}</p>
-            <p className="mt-1.5 text-sm text-slate-500">
-              <span className="font-semibold text-emerald-700">{withEngineerCount}</span> with a site engineer assigned
-            </p>
-          </div>
-          <div className="mt-4 grid size-12 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 sm:mt-0">
-            <Icons.Road />
-          </div>
-        </article>
+      <HierarchyKpis
+        dense
+        ariaLabel="Contractor summary"
+        lead={{
+          label: 'Assigned Projects',
+          value: projects.length,
+          note: (
+            <span>
+              <span className="font-semibold text-emerald-700">{projects.length ? formatPercentage(avgAccomplishment) : '0%'} average progress</span>
+              {' '}· {withEngineerCount} with a site engineer
+            </span>
+          ),
+          icon: <Icons.Road />,
+          iconTone: 'bg-emerald-100 text-emerald-700',
+          body: (
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Needs your action</p>
+              {actions.length === 0 ? (
+                <p className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3.5 py-2.5 text-sm text-emerald-800">
+                  <CheckCircle2Icon className="size-4" aria-hidden="true" />
+                  Nothing waiting on you
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200/70">
+                  {actions.map((a) => (
+                    <li key={a.key}>
+                      <Link to={a.to} className="flex items-center justify-between gap-3 px-3.5 py-2 text-sm transition-colors hover:bg-slate-50">
+                        <span className="truncate font-medium text-slate-800">{a.label}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className={`rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums ${a.tone}`}>{a.count}</span>
+                          <ChevronRightIcon className="size-4 text-slate-300" aria-hidden="true" />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ),
+          segments: [
+            { label: 'Completed', value: byStatus.Completed, bar: 'bg-emerald-500' },
+            { label: 'On-Going', value: byStatus['On-Going'], bar: 'bg-amber-400' },
+            { label: 'Proposed', value: byStatus.Proposed, bar: 'bg-sky-500' },
+          ].filter((s) => s.value > 0),
+        }}
+        items={[
+          {
+            icon: <ShieldCheckIcon className="size-4" aria-hidden="true" />,
+            label: 'With Site Engineer',
+            value: awaitingEngineer.length,
+            hint: 'Step 1 · being checked on site',
+            chip: 'bg-amber-50 text-amber-700',
+            onClick: () => navigate('/contractor/reports'),
+          },
+          {
+            icon: <BuildingIcon className="size-4" aria-hidden="true" />,
+            label: 'With DA for Approval',
+            value: awaitingAdmin.length,
+            hint: 'Step 2 · certified, awaiting approval',
+            chip: 'bg-sky-50 text-sky-700',
+            onClick: () => navigate('/contractor/reports'),
+          },
+          {
+            icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />,
+            label: 'Approved This Month',
+            value: approvedThisMonth,
+            hint: 'Step 3 · done',
+            chip: 'bg-emerald-50 text-emerald-700',
+            onClick: () => navigate('/contractor/reports'),
+          },
+          {
+            icon: <MessageSquareWarningIcon className="size-4" aria-hidden="true" />,
+            label: 'Open Public Reports',
+            value: openReports ?? '—',
+            hint: 'Citizen reports on your roads',
+            chip: openReports ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500',
+            onClick: () => navigate('/contractor/reports'),
+          },
+        ]}
+      />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <KpiMini icon={<Icons.ShieldCheck />} value={withEngineerCount} label="With a Site Engineer" chip="bg-emerald-50 text-emerald-600" />
-          <KpiMini icon={<Icons.Chart />} value={projects.length ? formatPercentage(avgAccomplishment) : '-'} label="Average Accomplishment" chip="bg-teal-50 text-teal-600" />
-          <KpiMini icon={<Icons.AlertTriangle />} value={openReports ?? '-'} label="Open Public Reports" chip="bg-amber-50 text-amber-600" />
-        </div>
-      </section>
-
-      {/* 2. Where the submissions are */}
-      <section className="space-y-3">
-        <SectionLabel title="Your submissions in review" subtitle="Each update is validated by your site engineer, then approved by the DA office." />
-        <div className="flex flex-col gap-3 md:flex-row">
-          <PipelineStep n="1" label="Site engineer" count={awaitingEngineer.length} tone="amber" to="/contractor/reports" hint="Being checked against the site" />
-          <PipelineStep n="2" label="DA approval" count={awaitingAdmin.length} tone="sky" to="/contractor/reports" hint="Certified, waiting for approval" />
-          <PipelineStep n="3" label="Approved" count={approvedThisMonth} tone="emerald" to="/contractor/reports" hint="Approved this month" />
-        </div>
-      </section>
-
-      {/* 3. History */}
+      {/* Recent history */}
       <section className="space-y-3">
         <SectionLabel
           title="Recent submissions"
@@ -181,4 +204,3 @@ function DashboardBody() {
     </div>
   );
 }
-

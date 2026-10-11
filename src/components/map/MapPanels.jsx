@@ -23,7 +23,7 @@ const isWide = () => typeof window === 'undefined' || window.innerWidth >= 1024;
 export function MapLegend({ title = 'Legend', children, defaultOpen, compact = false }) {
   const [open, setOpen] = useState(() => defaultOpen ?? isWide());
   return (
-    <div className={`pointer-events-none absolute left-3 z-[500] max-w-[calc(100%-1.5rem)] ${compact ? 'bottom-2 max-h-[85%] sm:max-w-[calc(100%-11rem)]' : 'bottom-3 sm:max-w-[calc(100%-13rem)]'}`}>
+    <div data-tour="map-legend" className={`pointer-events-none absolute left-3 z-[500] max-w-[calc(100%-1.5rem)] ${compact ? 'bottom-2 max-h-[85%] sm:max-w-[calc(100%-11rem)]' : 'bottom-3 sm:max-w-[calc(100%-13rem)]'}`}>
       {open ? (
         <div className={`pointer-events-auto relative rounded-xl bg-white/90 text-slate-600 shadow-lg ring-1 ring-slate-900/10 backdrop-blur-md ${compact ? 'max-h-[calc(100%-0.5rem)] overflow-y-auto py-1.5 pl-3 pr-7 text-[10px] leading-[14px] [&_.space-y-1]:space-y-0 [&_p]:mb-0.5' : 'py-2.5 pl-4 pr-9 text-[11px] leading-4'}`}>
           <button
@@ -105,10 +105,10 @@ export function LegendDot({ color = 'bg-slate-400', ring, label, text, style, co
 
 /* ------------------------- Control panel -------------------------- */
 
-export function MapControlPanel({ title = 'Layers', children, defaultOpen, compact = false }) {
-  const [open, setOpen] = useState(() => defaultOpen ?? isWide());
+export function MapControlPanel({ title = 'Layers', children, defaultOpen = false, compact = false }) {
+  const [open, setOpen] = useState(() => defaultOpen ?? false);
   return (
-    <div className={`pointer-events-none absolute z-[500] flex flex-col items-end gap-2 ${compact ? 'right-2 top-2 bottom-2 max-w-[calc(100%-1rem)]' : 'right-4 top-4 max-w-[calc(100%-2rem)]'}`}>
+    <div data-tour="map-layers" className={`pointer-events-none absolute z-[500] flex flex-col items-end gap-2 ${compact ? 'right-2 top-2 bottom-2 max-w-[calc(100%-1rem)]' : 'right-4 top-4 max-w-[calc(100%-2rem)]'}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

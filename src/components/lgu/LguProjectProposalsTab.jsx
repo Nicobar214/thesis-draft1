@@ -15,7 +15,7 @@ import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
 import { fetchProposalActivity, describeActionType, formatActivityActor } from '../../lib/proposalActivity';
 import { PROPOSAL_SLA_DAYS } from '../../lib/mapRouteUtils';
 import { DEFAULT_PROPOSAL_FILTERS, filterProposals, proposalFilterOptions, summarizeProposals } from '../../lib/proposalStats';
-import { KpiCard } from './analyticsParts';
+import HierarchyKpis from '../ui/HierarchyKpis';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 import Pagination, { usePagination } from '../ui/Pagination';
 
@@ -193,7 +193,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [expandedHistoryId, setExpandedHistoryId] = useState(null);
   const [historyByProposalId, setHistoryByProposalId] = useState({});
   const [historyLoadingId, setHistoryLoadingId] = useState(null);
-  const [activeSubTab, setActiveSubTab] = useState('form');
+  const [activeSubTab, setActiveSubTab] = useState('list');
   const [selectedProposalForModal, setSelectedProposalForModal] = useState(null);
   const [listFilters, setListFilters] = useState(DEFAULT_PROPOSAL_FILTERS);
   const [viewMode, setViewMode] = useViewMode('lgu-proposals-view');
@@ -556,17 +556,6 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       <div className="flex border-b border-slate-200">
         <button
           type="button"
-          onClick={() => setActiveSubTab('form')}
-          className={`border-b-2 px-6 py-3 text-sm font-bold transition-all ${
-            activeSubTab === 'form'
-              ? 'border-teal-600 text-teal-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {editingId ? 'Edit Proposal' : 'Submit New Proposal'}
-        </button>
-        <button
-          type="button"
           onClick={() => setActiveSubTab('list')}
           className={`border-b-2 px-6 py-3 text-sm font-bold transition-all flex items-center gap-2 ${
             activeSubTab === 'list'
@@ -580,6 +569,17 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
           }`}>
             {proposals.length}
           </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('form')}
+          className={`border-b-2 px-6 py-3 text-sm font-bold transition-all ${
+            activeSubTab === 'form'
+              ? 'border-teal-600 text-teal-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          {editingId ? 'Edit Proposal' : 'Submit New Proposal'}
         </button>
       </div>
 
@@ -951,42 +951,55 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       ) : (
         <div className="space-y-5">
         {proposals.length > 0 && (
-          <section aria-label="Proposal summary" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <KpiCard
-              icon={FileTextIcon}
-              label="Total Proposals"
-              value={proposalSummary.total.toLocaleString()}
-              hint={`Across ${proposalSummary.barangays} barangay${proposalSummary.barangays === 1 ? '' : 's'}`}
-            />
-            <KpiCard
-              icon={HourglassIcon}
-              label="Awaiting DA Review"
-              value={proposalSummary.awaiting.toLocaleString()}
-              hint={proposalSummary.overdue > 0
-                ? `${proposalSummary.overdue} past the ${PROPOSAL_SLA_DAYS}-day review target`
-                : `None past the ${PROPOSAL_SLA_DAYS}-day review target`}
-            />
-            <KpiCard
-              icon={FilePenLineIcon}
-              label="Needs Your Revision"
-              value={proposalSummary.needsRevision.toLocaleString()}
-              hint={proposalSummary.needsRevision > 0 ? 'Returned by DA — revise and resubmit' : 'Nothing returned for revision'}
-            />
-            <KpiCard
-              icon={CircleCheckIcon}
-              label="Approved"
-              value={proposalSummary.approved.toLocaleString()}
-              hint={proposalSummary.approvalRate === null
-                ? 'No DA decisions yet'
-                : `${proposalSummary.approvalRate.toFixed(0)}% of decided proposals approved`}
-            />
-            <KpiCard
-              icon={BanknoteIcon}
-              label="Requested Budget"
-              value={formatPeso(proposalSummary.requestedBudget)}
-              hint={`${proposalSummary.requestedKm.toLocaleString('en-US', { maximumFractionDigits: 2 })} km proposed, excluding rejected`}
-            />
-          </section>
+          <HierarchyKpis
+            ariaLabel="Proposal summary"
+            lead={{
+              label: 'Total Proposals',
+              value: proposalSummary.total.toLocaleString(),
+              note: proposalSummary.approvalRate === null
+                ? `Across ${proposalSummary.barangays} barangay${proposalSummary.barangays === 1 ? '' : 's'}, no DA decisions yet`
+                : <><span className="font-semibold text-emerald-700">{proposalSummary.approvalRate.toFixed(0)}% approved</span> of decided proposals</>,
+              icon: <FileTextIcon className="size-6" aria-hidden="true" />,
+              segments: [
+                { label: 'Awaiting review', value: proposalSummary.awaiting, bar: 'bg-amber-500' },
+                { label: 'Needs revision', value: proposalSummary.needsRevision, bar: 'bg-slate-400' },
+                { label: 'Approved', value: proposalSummary.approved, bar: 'bg-emerald-500' },
+                { label: 'Rejected', value: proposalSummary.rejected, bar: 'bg-rose-500' },
+              ],
+            }}
+            items={[
+              {
+                icon: <HourglassIcon className="size-4" aria-hidden="true" />,
+                label: 'Awaiting DA Review',
+                value: proposalSummary.awaiting.toLocaleString(),
+                hint: proposalSummary.overdue > 0
+                  ? `${proposalSummary.overdue} past the ${PROPOSAL_SLA_DAYS}-day target`
+                  : `None past the ${PROPOSAL_SLA_DAYS}-day target`,
+                chip: 'bg-amber-50 text-amber-600',
+              },
+              {
+                icon: <FilePenLineIcon className="size-4" aria-hidden="true" />,
+                label: 'Needs Your Revision',
+                value: proposalSummary.needsRevision.toLocaleString(),
+                hint: proposalSummary.needsRevision > 0 ? 'Returned by DA, resubmit' : 'Nothing returned',
+                chip: 'bg-slate-100 text-slate-600',
+              },
+              {
+                icon: <CircleCheckIcon className="size-4" aria-hidden="true" />,
+                label: 'Approved',
+                value: proposalSummary.approved.toLocaleString(),
+                hint: 'Validated by the DA office',
+                chip: 'bg-emerald-50 text-emerald-600',
+              },
+              {
+                icon: <BanknoteIcon className="size-4" aria-hidden="true" />,
+                label: 'Requested Budget',
+                value: formatPeso(proposalSummary.requestedBudget),
+                hint: `${proposalSummary.requestedKm.toLocaleString('en-US', { maximumFractionDigits: 2 })} km, excluding rejected`,
+                chip: 'bg-slate-100 text-slate-600',
+              },
+            ]}
+          />
         )}
 
         {proposals.length > 0 && (

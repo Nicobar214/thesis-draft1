@@ -36,6 +36,7 @@ export function summarizeProposals(proposals, now = new Date()) {
     overdue,
     needsRevision: count('Needs Revision'),
     approved,
+    rejected,
     approvalRate: decided > 0 ? (approved / decided) * 100 : null,
     requestedBudget: live.reduce((s, p) => s + num(p.estimated_budget), 0),
     requestedKm: live.reduce((s, p) => s + num(p.estimated_length_km), 0),

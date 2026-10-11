@@ -11,7 +11,7 @@ import { getProjectBudgetSummary } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
 import { normalizeUserProjectStatus, getDaysDeltaFromToday, isProjectOverdue } from '../lib/projectStatus';
-import { StatCard, FMRProjectCard, ProjectSkeleton, FMRProjectTable } from '../components/fmrProjects/FmrProjectListParts';
+import { FmrProjectKpis, FMRProjectCard, ProjectSkeleton, FMRProjectTable } from '../components/fmrProjects/FmrProjectListParts';
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
 const statusFilters = ['On-Going', 'Proposed', 'Completed', 'Overdue'];
@@ -184,10 +184,8 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     proposed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Proposed').length,
     completed: projects.filter(p => normalizeUserProjectStatus(p.status) === 'Completed').length,
     overdue: projects.filter((p) => isProjectOverdue(p)).length,
-    totalKm: projects.reduce((sum, p) => sum + (p.project_length_km || 0), 0).toFixed(2),
+    totalKm: projects.reduce((sum, p) => sum + (Number(p.project_length_km) || 0), 0),
   };
-
-  const completionRate = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
 
   const getReportedCount = (project) => {
     const key = normalizeProjectName(project).toLowerCase().trim();
@@ -252,134 +250,15 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     safeCurrentPage * projectsPerPage
   );
 
-  const handleExportCsv = () => {
-    const rows = filtered.map((p) => {
-      const status = normalizeUserProjectStatus(p.status);
-      const reportedCount = getReportedCount(p);
-      const daysDelta = getDaysDeltaFromToday(p.target_completion_date);
-      const timeline =
-        status !== 'Completed' && typeof daysDelta === 'number'
-          ? (daysDelta < 0 ? `${Math.abs(daysDelta)} days overdue` : `${daysDelta} days remaining`)
-          : '';
-
-      return {
-        project_name: normalizeProjectName(p),
-        municipality: p.municipality || '',
-        province: p.province || '',
-        status,
-        fiscal_year: p.year_funded || '',
-        accomplishment: Number(p.accomplishment) || 0,
-        contractor: p.contractor || p.contractor_name || '',
-        target_completion_date: p.target_completion_date || '',
-        overdue: isProjectOverdue(p) ? 'Yes' : 'No',
-        countdown: timeline,
-        most_reported_count: reportedCount,
-      };
-    });
-
-    const headers = Object.keys(rows[0] || {
-      project_name: '', municipality: '', province: '', status: '', fiscal_year: '', accomplishment: '',
-      contractor: '', target_completion_date: '', overdue: '', countdown: '', most_reported_count: ''
-    });
-
-    const escapeCsv = (value) => {
-      const str = String(value ?? '');
-      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    const csv = [
-      headers.join(','),
-      ...rows.map((row) => headers.map((h) => escapeCsv(row[h])).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const ts = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `fmr-projects-${statusFilter.toLowerCase()}-${ts}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   // If a project is selected, detail view will open in a modal overlay rendered below
 
   return (
     <UserLayout {...layoutProps}>
       <div className="space-y-6">
-        {/* Header */}
-        <section>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="size-10 bg-emerald-100 rounded-xl grid place-items-center text-teal-600">
-              <Icons.Road />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">FMR Projects</h1>
-              <p className="text-slate-500 text-sm">Farm-to-Market Road Development Program - DA RAED Region VI</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Stats Grid */}
-        <section className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {loading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-2xl p-5 border border-slate-200/60 animate-pulse">
-                <div className="size-10 bg-zinc-200 rounded-xl mb-3" />
-                <div className="h-8 w-12 bg-zinc-200 rounded mb-2" />
-                <div className="h-4 w-20 bg-zinc-200 rounded" />
-              </div>
-            ))
-          ) : (
-            <>
-              <StatCard icon={<Icons.Road />} value={stats.total} label="Total Projects" variant="emerald" />
-              <StatCard icon={<Icons.Clock />} value={stats.ongoing} label="On-Going" variant="amber" />
-              <StatCard icon={<Icons.Lightbulb />} value={stats.proposed} label="Proposed" variant="violet" />
-              <StatCard icon={<Icons.CheckCircle />} value={stats.completed} label="Completed" variant="sky" />
-              <StatCard icon={<Icons.Ruler />} value={`${stats.totalKm} km`} label="Total Road Length" variant="default" />
-            </>
-          )}
-        </section>
-
-        {!loading && (
-          <section className="bg-white rounded-2xl border border-slate-200/60 p-5">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-6">
-              <div className="flex-1">
-                <div className="h-7 w-full rounded-xl overflow-hidden border border-slate-100 flex bg-slate-100">
-                  <div
-                    className="h-full bg-teal-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
-                    style={{ width: `${stats.total ? (stats.completed / stats.total) * 100 : 0}%` }}
-                  >
-                    {stats.total ? `${Math.round((stats.completed / stats.total) * 100)}%` : '0%'}
-                  </div>
-                  <div
-                    className="h-full bg-amber-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
-                    style={{ width: `${stats.total ? (stats.ongoing / stats.total) * 100 : 0}%` }}
-                  >
-                    {stats.total ? `${Math.round((stats.ongoing / stats.total) * 100)}%` : '0%'}
-                  </div>
-                  <div
-                    className="h-full bg-sky-500 text-white text-[11px] font-semibold flex items-center justify-center whitespace-nowrap"
-                    style={{ width: `${stats.total ? (stats.proposed / stats.total) * 100 : 0}%` }}
-                  >
-                    {stats.total ? `${Math.round((stats.proposed / stats.total) * 100)}%` : '0%'}
-                  </div>
-                </div>
-                <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-teal-500" />Completed</span>
-                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-amber-500" />On-Going</span>
-                  <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-sky-500" />Proposed</span>
-                </div>
-              </div>
-              <p className="text-sm font-bold text-slate-800 whitespace-nowrap">Overall Completion Rate: {completionRate}%</p>
-            </div>
-          </section>
-        )}
+        {/* Same KPI block as the admin FMR Projects page (shared component). */}
+        <div data-tour="fmr-stats">
+          <FmrProjectKpis stats={stats} loading={loading} />
+        </div>
 
         {/* Error banner */}
         {fetchError && (
@@ -398,7 +277,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
 
         {/* Search & Filters */}
         <div className="space-y-3">
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3" data-tour="fmr-filters">
           {/* Search */}
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -455,14 +334,6 @@ export default function UserFMRProjects({ embedded = false } = {}) {
             <option value="year-asc">Sort: Fiscal Year Oldest</option>
             <option value="reported-desc">Sort: Most Reported</option>
           </select>
-
-          <button
-            onClick={handleExportCsv}
-            className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white shadow-sm whitespace-nowrap"
-            title="Export currently visible list"
-          >
-            Export CSV
-          </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -493,7 +364,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           </div>
 
           {/* Status filter pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <div className="flex gap-1.5 overflow-x-auto pb-1" data-tour="fmr-status">
             {(follows.available ? [...statusFilters, 'Following'] : statusFilters).map(s => {
               const count =
                 s === 'On-Going'
@@ -549,7 +420,7 @@ export default function UserFMRProjects({ embedded = false } = {}) {
         {/* Results count + view toggle */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">{filtered.length} project{filtered.length !== 1 ? 's' : ''} found</p>
-          <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit">
+          <div className="flex gap-1.5 p-1 bg-slate-100 rounded-2xl w-fit" data-tour="fmr-view">
             {[
               { id: 'table', label: 'Table', icon: <Icons.List /> },
               { id: 'cards', label: 'Cards', icon: <Icons.Dashboard /> },

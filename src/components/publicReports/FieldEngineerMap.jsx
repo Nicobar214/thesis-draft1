@@ -376,7 +376,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
             )}
           </MapLegend>
 
-          <MapControlPanel compact={compact} defaultOpen={!compact}>
+          <MapControlPanel compact={compact} defaultOpen={false}>
             <ControlGroup label="Layers">
               <LayerToggle checked={active.reports} onChange={setLayer('reports')} label="Report sites" />
               <LayerToggle checked={active.routes} onChange={setLayer('routes')} label="FMR routes" />

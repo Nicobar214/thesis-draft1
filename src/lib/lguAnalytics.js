@@ -198,6 +198,7 @@ export function farmerRegistrationTrend(farmerRows) {
   const firstSeen = new Map();
   farmerRows.forEach(({ b }) => {
     if (b.validationStatus !== 'Validated') return;
+    if (!b.submittedDate) return; // new Date(null) would be 1970, not "unknown"
     const t = new Date(b.submittedDate).getTime();
     if (!Number.isFinite(t)) return;
     const id = farmerIdentity(b);

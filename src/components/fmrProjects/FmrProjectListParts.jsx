@@ -5,6 +5,7 @@
  * table/card markup that could silently drift apart.
  */
 import Icons from '../Icons';
+import HierarchyKpis from '../ui/HierarchyKpis';
 import { normalizeProjectName } from '../../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { formatPercentage } from '../../lib/percentageFormat';
@@ -18,76 +19,37 @@ const KPI_STATUS = {
   proposed: { bar: 'bg-sky-500', chip: 'bg-sky-50 text-sky-600' },
 };
 
-function KpiMini({ icon, value, label, hint, chip }) {
-  return (
-    <article className="flex flex-col rounded-2xl border border-slate-200/60 bg-white p-4 shadow-xs">
-      <div className="flex items-center gap-2">
-        <span className={`grid size-7 shrink-0 place-items-center rounded-lg ${chip}`}>{icon}</span>
-        <p className="text-xs font-medium text-slate-500">{label}</p>
-      </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 tabular-nums">{value}</p>
-      {hint && <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p>}
-    </article>
-  );
-}
-
 /**
  * FMR project KPI block with a visual hierarchy: one lead card (total,
  * completion rate, status split) and four compact supporting cards in a 2x2
- * beside it. Shared by the farmer and admin portals so they can't drift.
+ * beside it. Shared by the farmer, admin and LGU portals so they can't drift.
  *
  * stats: { total, completed, ongoing, proposed, totalKm }
  */
 export function FmrProjectKpis({ stats, loading = false, scopeLabel = 'across the province' }) {
-  const pct = (n) => (stats.total ? (n / stats.total) * 100 : 0);
-  const completionRate = Math.round(pct(stats.completed));
-
-  if (loading) {
-    return (
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-busy="true">
-        <div className="col-span-2 lg:row-span-2 h-56 rounded-2xl border border-slate-200/60 bg-white animate-pulse" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[6.5rem] rounded-2xl border border-slate-200/60 bg-white animate-pulse" />
-        ))}
-      </section>
-    );
-  }
-
+  const completionRate = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
   return (
-    <section className="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="FMR project summary">
-      <article className="col-span-2 lg:row-span-2 flex flex-col rounded-2xl border border-slate-200/60 bg-white p-6 shadow-xs">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Total FMR Projects</p>
-            <p className="mt-2 text-5xl font-semibold tracking-tight text-slate-900 tabular-nums">{stats.total.toLocaleString()}</p>
-            <p className="mt-1.5 text-sm text-slate-500">
-              <span className="font-semibold text-emerald-700">{completionRate}% completed</span> {scopeLabel}
-            </p>
-          </div>
-          <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
-            <Icons.Road />
-          </div>
-        </div>
-
-        <div className="mt-auto pt-6">
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-            <div className={`h-full ${KPI_STATUS.completed.bar}`} style={{ width: `${pct(stats.completed)}%` }} />
-            <div className={`h-full ${KPI_STATUS.ongoing.bar}`} style={{ width: `${pct(stats.ongoing)}%` }} />
-            <div className={`h-full ${KPI_STATUS.proposed.bar}`} style={{ width: `${pct(stats.proposed)}%` }} />
-          </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${KPI_STATUS.completed.bar}`} />Completed</span>
-            <span className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${KPI_STATUS.ongoing.bar}`} />On-Going</span>
-            <span className="inline-flex items-center gap-1.5"><span className={`size-2 rounded-full ${KPI_STATUS.proposed.bar}`} />Proposed</span>
-          </div>
-        </div>
-      </article>
-
-      <KpiMini icon={<Icons.Clock />} value={stats.ongoing.toLocaleString()} label="On-Going" hint="Under construction now" chip={KPI_STATUS.ongoing.chip} />
-      <KpiMini icon={<Icons.CheckCircle />} value={stats.completed.toLocaleString()} label="Completed" hint="Finished and in use" chip={KPI_STATUS.completed.chip} />
-      <KpiMini icon={<Icons.Lightbulb />} value={stats.proposed.toLocaleString()} label="Proposed" hint="Planned, not yet started" chip={KPI_STATUS.proposed.chip} />
-      <KpiMini icon={<Icons.Ruler />} value={`${Number(stats.totalKm).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`} label="Total Road Length" hint="Across all projects" chip="bg-slate-100 text-slate-600" />
-    </section>
+    <HierarchyKpis
+      loading={loading}
+      ariaLabel="FMR project summary"
+      lead={{
+        label: 'Total FMR Projects',
+        value: stats.total.toLocaleString(),
+        note: <><span className="font-semibold text-emerald-700">{completionRate}% completed</span> {scopeLabel}</>,
+        icon: <Icons.Road />,
+        segments: [
+          { label: 'Completed', value: stats.completed, bar: KPI_STATUS.completed.bar },
+          { label: 'On-Going', value: stats.ongoing, bar: KPI_STATUS.ongoing.bar },
+          { label: 'Proposed', value: stats.proposed, bar: KPI_STATUS.proposed.bar },
+        ],
+      }}
+      items={[
+        { icon: <Icons.Clock />, value: stats.ongoing.toLocaleString(), label: 'On-Going', hint: 'Under construction now', chip: KPI_STATUS.ongoing.chip },
+        { icon: <Icons.CheckCircle />, value: stats.completed.toLocaleString(), label: 'Completed', hint: 'Finished and in use', chip: KPI_STATUS.completed.chip },
+        { icon: <Icons.Lightbulb />, value: stats.proposed.toLocaleString(), label: 'Proposed', hint: 'Planned, not yet started', chip: KPI_STATUS.proposed.chip },
+        { icon: <Icons.Ruler />, value: `${Number(stats.totalKm).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`, label: 'Total Road Length', hint: 'Across all projects', chip: 'bg-slate-100 text-slate-600' },
+      ]}
+    />
   );
 }
 

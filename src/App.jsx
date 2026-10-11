@@ -17,13 +17,13 @@ const UserFMRProjects = lazyPage(() => import("./pages/UserFMRProjects"));
 const UserMapView = lazyPage(() => import("./pages/UserMapView"));
 const UserProfile = lazyPage(() => import("./pages/UserProfile"));
 const PublicReportsPage = lazyPage(() => import("./pages/PublicReportsPage"));
-const PublicReportPortalPage = lazyPage(() => import("./pages/PublicReportPortalPage"));
 const FieldEngineerAuth = lazyPage(() => import("./pages/FieldEngineerAuth"));
 const FieldEngineerDashboard = lazyPage(() => import("./pages/FieldEngineerDashboard"));
 const ContractorAuth = lazyPage(() => import("./pages/ContractorAuth"));
 const ContractorDashboard = lazyPage(() => import("./pages/ContractorDashboard"));
 const ContractorProjects = lazyPage(() => import("./pages/ContractorProjects"));
 const ContractorReports = lazyPage(() => import("./pages/ContractorReports"));
+const ContractorProfile = lazyPage(() => import("./pages/ContractorProfile"));
 const LguAuth = lazyPage(() => import("./pages/LguAuth"));
 const LguDashboard = lazyPage(() => import("./pages/LguDashboard"));
 const FarmerAuth = lazyPage(() => import("./pages/FarmerAuth"));
@@ -32,6 +32,7 @@ const FarmerHarvest = lazyPage(() => import("./pages/FarmerHarvest"));
 const FarmerFMRProjects = lazyPage(() => import("./pages/FarmerFMRProjects"));
 const FarmerMyReports = lazyPage(() => import("./pages/FarmerMyReports"));
 const FarmerMarkets = lazyPage(() => import("./pages/FarmerMarkets"));
+const FarmerProfile = lazyPage(() => import("./pages/FarmerProfile"));
 
 import PWAInstallBanner from "./components/PWAInstallBanner";
 import ToastViewport from "./components/ToastViewport";
@@ -84,7 +85,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/signin" element={<AuthPage mode="signin" />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
-        <Route path="/report-portal" element={<PublicReportPortalPage />} />
+        <Route path="/report-portal" element={<Navigate to="/" replace />} />
         <Route path="/reports" element={<PublicReportsPage />} />
         <Route path="/user" element={
           <ProtectedRoute requiredRole="user">
@@ -144,6 +145,11 @@ function App() {
             <ContractorReports />
           </ProtectedRoute>
         } />
+        <Route path="/contractor/profile" element={
+          <ProtectedRoute requiredRole="contractor">
+            <ContractorProfile />
+          </ProtectedRoute>
+        } />
 
         {/* ===== LGU SIDE ===== */}
         <Route path="/lgu/login" element={<LguAuth />} />
@@ -175,6 +181,7 @@ function App() {
           <Route path="reports" element={<FarmerMyReports />} />
           <Route path="fmr-projects" element={<FarmerFMRProjects />} />
           <Route path="markets" element={<FarmerMarkets />} />
+          <Route path="profile" element={<FarmerProfile />} />
         </Route>
 
         {/* ===== ADMIN SIDE (no landing page, direct login) ===== */}

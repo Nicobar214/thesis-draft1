@@ -316,6 +316,48 @@ export function haversineKm(p1, p2) {
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/**
+ * Closest point on a road line to `point`, and the distance to it in meters.
+ * Unlike measuring to the road's start, this finds where a farm actually meets
+ * the road -- a long road passing right beside the farm counts as close.
+ * Works on a flat local projection, which is accurate at farm-to-road scale.
+ *
+ * @param {[number, number]} point     [lat, lng]
+ * @param {[number, number][]} polyline [lat, lng] vertices (one vertex is fine)
+ * @returns {{ point: [number, number], distanceMeters: number } | null}
+ */
+export function nearestPointOnPolyline(point, polyline) {
+  const [lat0, lng0] = point || [];
+  if (!Number.isFinite(lat0) || !Number.isFinite(lng0)) return null;
+  const vertices = (polyline || []).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+  if (vertices.length === 0) return null;
+
+  const M_PER_DEG = 111320;
+  const kx = M_PER_DEG * Math.cos((lat0 * Math.PI) / 180);
+  // Local meters relative to `point`, which sits at the origin.
+  const toXY = ([lat, lng]) => [(lng - lng0) * kx, (lat - lat0) * M_PER_DEG];
+  const toLatLng = ([x, y]) => [lat0 + y / M_PER_DEG, lng0 + x / kx];
+
+  let best = null;
+  const consider = (xy) => {
+    const d = Math.hypot(xy[0], xy[1]);
+    if (!best || d < best.d) best = { xy, d };
+  };
+
+  if (vertices.length === 1) consider(toXY(vertices[0]));
+  for (let i = 0; i < vertices.length - 1; i += 1) {
+    const [ax, ay] = toXY(vertices[i]);
+    const [bx, by] = toXY(vertices[i + 1]);
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq === 0 ? 0 : Math.min(1, Math.max(0, -(ax * dx + ay * dy) / lenSq));
+    consider([ax + t * dx, ay + t * dy]);
+  }
+
+  return { point: toLatLng(best.xy), distanceMeters: best.d };
+}
+
 export function calculatePolylineDistanceKm(points) {
   if (!Array.isArray(points) || points.length < 2) return 0;
   let totalKm = 0;

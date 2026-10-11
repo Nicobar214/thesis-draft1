@@ -4,6 +4,7 @@ import { buttonClass } from '../ui/Button';
 import { BENEFICIARY_VALIDATION_STATUSES } from '../../utils/farmerBeneficiaryData';
 
 function formatDate(dateValue) {
+  if (!dateValue) return 'N/A';
   const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(date.getTime())) return 'N/A';
   return date.toLocaleDateString();

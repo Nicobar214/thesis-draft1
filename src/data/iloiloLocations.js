@@ -139,7 +139,19 @@ const ILOILO_LOCATIONS = {
       barangays: ['Acuit', 'Bolho', 'Cabayogan', 'Dolores', 'Poblacion', 'San Agustin', 'San Roque', 'Villa'],
     },
     'Santa Barbara': {
-      barangays: ['Bagumbayan', 'Bolong Oeste', 'Buyu-an', 'Dawis', 'Jibolo', 'Poblacion', 'San Angel', 'San Sebastian', 'Supang', 'Tugas'],
+      // All 60 barangays, per the PSGC list (verified 2026-10-11).
+      barangays: [
+        'Agusipan', 'Agutayan', 'Bagumbayan', 'Balabag', 'Balibagan Este', 'Balibagan Oeste', 'Ban-ag',
+        'Bantay', 'Barangay Zone I (Poblacion)', 'Barangay Zone II (Poblacion)',
+        'Barangay Zone III (Poblacion)', 'Barangay Zone IV (Poblacion)', 'Barangay Zone V (Poblacion)',
+        'Barangay Zone VI (Poblacion)', 'Barasan Este', 'Barasan Oeste', 'Binangkilan', 'Bitaog-Taytay',
+        'Bolong Este', 'Bolong Oeste', 'Buayahon', 'Buyo', 'Cabugao Norte', 'Cabugao Sur', 'Cadagmayan Norte',
+        'Cadagmayan Sur', 'Cafe', 'Calaboa Este', 'Calaboa Oeste', 'Camambugan', 'Canipayan', 'Conaynay',
+        'Daga', 'Dalid', 'Duyanduyan', 'Gen. Martin T. Delgado', 'Guno', 'Inangayan', 'Jibao-an', 'Lacadon',
+        'Lanag', 'Lupa', 'Magancina', 'Malawog', 'Mambuyo', 'Manhayang', 'Miraga-Guibuangan', 'Nasugban',
+        'Omambog', 'Pal-agon', 'Pungsod', 'San Sebastian', 'Sangcate', 'Tagsing', 'Talanghauan',
+        'Talongadian', 'Tigtig', 'Tuburan', 'Tugas', 'Tungay',
+      ],
     },
     Sara: {
       barangays: ['Aguirre', 'Aranjuez', 'Bagumbayan', 'Concepcion', 'Del Castillo', 'Juanico', 'Libo-on', 'Poblacion Norte', 'Poblacion Sur', 'Taminla'],

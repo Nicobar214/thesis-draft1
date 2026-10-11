@@ -15,6 +15,7 @@ import BaseTiles from './BaseTiles';
 import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from './MapPanels';
 import { getCitizenStatus } from '../../lib/publicReportStatus';
 import { CITIZEN_STATUS_HEX, useMyReports } from '../../lib/useMyReports';
+import ReportStatusLegend from './ReportStatusLegend';
 import { formatDistance, nearestPointOnRoute, toPoint } from '../publicReports/routeGeometry';
 
 const DEFAULT_CENTER = [10.89, 122.45];
@@ -72,8 +73,8 @@ export default function CitizenOverviewMap() {
   const [markets, setMarkets] = useState([]);
   const [gaps, setGaps] = useState([]);
   const [basemap, setBasemap] = useBasemap();
-  const [layers, setLayers] = useState({ roads: true, endpoints: true, reports: true, markets: true, gaps: false });
-  const [roadStatusOn, setRoadStatusOn] = useState({ Completed: true, 'On-Going': true, Proposed: true });
+  const [layers, setLayers] = useState({ roads: true, endpoints: false, reports: false, markets: false, gaps: false });
+  const [roadStatusOn, setRoadStatusOn] = useState({ Completed: false, 'On-Going': true, Proposed: false });
   const [me, setMe] = useState(null);
   const [geoError, setGeoError] = useState('');
   const [locating, setLocating] = useState(false);
@@ -116,11 +117,6 @@ export default function CitizenOverviewMap() {
     allRouteLines.forEach(({ project }) => { const k = normalizeRouteStatus(project.status); if (k in c) c[k] += 1; });
     return c;
   }, [allRouteLines]);
-  const reportStatusCounts = useMemo(() => {
-    const c = new Map();
-    reports.forEach((r) => { const st = getCitizenStatus(r); c.set(st.key, { label: st.label, n: (c.get(st.key)?.n || 0) + 1 }); });
-    return c;
-  }, [reports]);
 
   const pins = useMemo(() => reports
     .map((report) => {
@@ -213,24 +209,21 @@ export default function CitizenOverviewMap() {
             </>
           )}
         </MapContainer>
+        {/* Lines, then point markers, then the citizen's own pins in workflow order. */}
         <MapLegend compact>
           <LegendGroup label="Roads">
             {ROAD_STATUSES.filter((k) => layers.roads && roadStatusOn[k] && roadCounts[k] > 0).map((k) => (
               <LegendLine key={k} color={k === 'Completed' ? 'bg-emerald-500' : k === 'On-Going' ? 'bg-amber-500' : 'bg-blue-500'} label={k} count={roadCounts[k]} />
             ))}
-            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#16a34a' }} label="Start (S)" />}
-            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#f97316' }} label="End (E)" />}
             {layers.gaps && <LegendLine color="border-red-500" dashed label="Unpaved gap" count={gaps.length} />}
           </LegendGroup>
-          <LegendGroup label="Places">
+          <LegendGroup label="Markers">
+            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#16a34a' }} text="S" label="Route start" />}
+            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#f97316' }} text="E" label="Route end" />}
             {layers.markets && markets.length > 0 && <LegendDot style={{ background: '#4338ca' }} label="Market" count={markets.length} />}
             {me && <LegendDot style={{ background: '#0d9488' }} label="You are here" />}
           </LegendGroup>
-          <LegendGroup label="Your reports">
-            {layers.reports && [...reportStatusCounts.entries()].map(([key, v]) => (
-              <LegendDot key={key} style={{ background: CITIZEN_STATUS_HEX[key] || '#64748b' }} label={v.label} count={v.n} />
-            ))}
-          </LegendGroup>
+          {layers.reports && <ReportStatusLegend reports={reports} />}
         </MapLegend>
 
         <MapControlPanel compact defaultOpen={false}>
