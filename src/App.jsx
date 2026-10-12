@@ -16,6 +16,7 @@ const UserFeedback = lazyPage(() => import("./pages/UserFeedback"));
 const UserFMRProjects = lazyPage(() => import("./pages/UserFMRProjects"));
 const UserMapView = lazyPage(() => import("./pages/UserMapView"));
 const UserProfile = lazyPage(() => import("./pages/UserProfile"));
+const LegalPage = lazyPage(() => import("./pages/LegalPage"));
 const PublicReportsPage = lazyPage(() => import("./pages/PublicReportsPage"));
 const FieldEngineerAuth = lazyPage(() => import("./pages/FieldEngineerAuth"));
 const FieldEngineerDashboard = lazyPage(() => import("./pages/FieldEngineerDashboard"));
@@ -84,6 +85,10 @@ function App() {
         {/* ===== USER SIDE (with landing page) ===== */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/signin" element={<AuthPage mode="signin" />} />
+        {/* Legal & Support (footer links) */}
+        <Route path="/privacy" element={<LegalPage />} />
+        <Route path="/terms" element={<LegalPage />} />
+        <Route path="/support" element={<LegalPage />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
         <Route path="/report-portal" element={<Navigate to="/" replace />} />
         <Route path="/reports" element={<PublicReportsPage />} />

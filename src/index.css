@@ -134,3 +134,22 @@ a, button, [role='button'], summary, label, select, input[type='checkbox'], inpu
 .leaflet-popup-content {
   max-width: calc(100vw - 5rem);
 }
+
+/* Dark hero ambiance: drifting glow + faint grid. Used by the landing page
+   hero and the Legal & Support pages. */
+@keyframes kt-float {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.55; }
+  50% { transform: translateY(-14px) scale(1.04); opacity: 0.8; }
+}
+.kt-glow { animation: kt-float 9s ease-in-out infinite; }
+.kt-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kt-glow { animation: none; }
+}

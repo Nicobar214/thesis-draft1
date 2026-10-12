@@ -26,7 +26,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
   async function handleLogout() {
     if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
-    navigate('/signin');
+    navigate('/contractor/login');
   }
 
   // Counters on the nav items so the work waiting is visible without opening a page.

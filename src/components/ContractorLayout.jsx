@@ -30,11 +30,18 @@ export default function ContractorLayout({ children }) {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user: u } }) => {
-      if (!u) { navigate('/signin'); return; }
+      if (!u) { navigate('/contractor/login'); return; }
       setUser(u);
       supabase.from('profiles').select('full_name, email').eq('id', u.id).maybeSingle()
         .then(({ data }) => setProfile(data));
     });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        navigate('/contractor/login');
+      }
+    });
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   const summary = useContractorSummary(supabase, user?.id || null);

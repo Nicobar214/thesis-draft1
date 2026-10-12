@@ -31,7 +31,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
   async function handleLogout() {
     if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
-    navigate('/');
+    navigate('/signin');
   }
 
   const isActive = (path) => {

@@ -71,9 +71,9 @@ export default function ContractorReports() {
   useEffect(() => {
     const check = async () => {
       const { data: { user: u } } = await supabase.auth.getUser();
-      if (!u) { navigate('/signin'); return; }
+      if (!u) { navigate('/contractor/login'); return; }
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', u.id).maybeSingle();
-      if (prof?.role !== 'contractor') { navigate('/signin'); return; }
+      if (prof?.role !== 'contractor') { navigate('/contractor/login'); return; }
       setUser(u);
     };
     check();

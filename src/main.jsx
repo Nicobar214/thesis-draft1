@@ -78,3 +78,19 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// Fade out the mobile splash screen (index.html) once the app has rendered.
+// It stays up at least ~1.2 s so it reads as a launch screen, not a flicker,
+// and is shown once per browser session.
+const splash = document.getElementById('kt-splash')
+if (splash) {
+  const MIN_VISIBLE_MS = 1200
+  const wait = Math.max(0, MIN_VISIBLE_MS - performance.now())
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      splash.classList.add('kt-splash-hide')
+      try { sessionStorage.setItem('kt-splash-seen', '1') } catch { /* storage unavailable */ }
+      setTimeout(() => splash.remove(), 400)
+    }, wait)
+  })
+}

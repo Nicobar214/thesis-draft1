@@ -47,9 +47,9 @@ function DashboardBody() {
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { navigate('/signin'); return; }
+      if (!user) { navigate('/contractor/login'); return; }
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-      if (prof?.role !== 'contractor') navigate('/signin');
+      if (prof?.role !== 'contractor') navigate('/contractor/login');
     })();
   }, [navigate]);
 

@@ -44,19 +44,6 @@ export default function LandingPage() {
         @media (prefers-reduced-motion: reduce) {
           .fade-up { opacity: 1; transform: none; transition: none; }
         }
-        @keyframes kt-float {
-          0%, 100% { transform: translateY(0) scale(1); opacity: 0.55; }
-          50% { transform: translateY(-14px) scale(1.04); opacity: 0.8; }
-        }
-        .kt-glow { animation: kt-float 9s ease-in-out infinite; }
-        .kt-grid {
-          background-image:
-            linear-gradient(to right, rgba(148,163,184,0.06) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(148,163,184,0.06) 1px, transparent 1px);
-          background-size: 44px 44px;
-          -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
-          mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 40%, transparent 100%);
-        }
       `}</style>
 
       {/* Navigation */}
@@ -497,8 +484,9 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Legal & Support</h4>
               <ul className="space-y-2.5 text-xs sm:text-sm">
-                <li><a href="#" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Privacy Policy</span></a></li>
-                <li><a href="#" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Terms of Service</span></a></li>
+                <li><Link to="/privacy" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Privacy Policy</span></Link></li>
+                <li><Link to="/terms" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Terms of Use</span></Link></li>
+                <li><Link to="/support" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Help &amp; Support</span></Link></li>
               </ul>
             </div>
           </div>

@@ -797,7 +797,7 @@ export default function LguDashboard() {
   const handleSignOut = async () => {
     if (!(await confirmSignOut())) return;
     await supabase.auth.signOut();
-    navigate('/signin');
+    navigate('/lgu/login');
   };
 
   const fetchBeneficiaries = useCallback(async () => {
@@ -1132,7 +1132,7 @@ export default function LguDashboard() {
     (async () => {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) {
-        navigate('/signin');
+        navigate('/lgu/login');
         return;
       }
 
@@ -1144,7 +1144,7 @@ export default function LguDashboard() {
 
       const role = resolveEffectiveRole(prof?.role, currentUser.user_metadata?.role);
       if (role !== 'lgu') {
-        navigate('/signin');
+        navigate('/lgu/login');
         return;
       }
 
@@ -1239,9 +1239,6 @@ export default function LguDashboard() {
 
 
 
-  const exportPdf = () => {
-    window.print();
-  };
 
   const navItems = [
     {
@@ -1447,21 +1444,6 @@ export default function LguDashboard() {
 
             {/* Buttons */}
             <div className="mt-3.5 space-y-2">
-              <button
-                onClick={exportPdf}
-                className={`w-full rounded-xl border border-slate-600 bg-slate-800 py-2.5 text-xs font-semibold text-white hover:bg-slate-700 transition-all duration-300 flex items-center justify-center overflow-hidden h-9.5 ${
-                  sidebarCollapsed ? 'px-0 gap-0' : 'px-3.5 gap-2'
-                }`}
-                title="Export PDF"
-              >
-                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v12m0-12L9 6m3-3l3 3M4 17h16" />
-                </svg>
-                <span className={`transition-all duration-300 ease-in-out origin-left whitespace-nowrap ${sidebarCollapsed ? 'opacity-0 w-0 scale-95 pointer-events-none' : 'opacity-100 w-auto scale-100'}`}>
-                  Export PDF
-                </span>
-              </button>
-
               <button
                 onClick={handleSignOut}
                 className={`w-full rounded-xl border border-red-500/20 bg-red-500/10 py-2.5 text-xs font-semibold text-red-200 hover:bg-red-500/20 transition-all duration-300 flex items-center justify-center overflow-hidden h-9.5 ${
