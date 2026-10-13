@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
+import { ArrowLeftIcon } from "lucide-react";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
 import AuthField from "../components/auth/AuthField";
@@ -272,6 +273,14 @@ export default function AuthPage({ mode = "signin" }) {
       <AuthBackground accent="emerald" />
 
       <div className="relative w-full max-w-5xl">
+        {/* Back to the landing page, on every screen size (sign in and sign up). */}
+        <Link
+          to="/"
+          className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3.5 py-2 text-sm font-semibold text-emerald-50 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+        >
+          <ArrowLeftIcon className="size-4" aria-hidden="true" />
+          Back to home
+        </Link>
         {/* flex-col-reverse puts the brand strip above the form on mobile while
             keeping the form first in the DOM, so it stays first in tab order. */}
         <div className="relative flex flex-col-reverse lg:grid lg:grid-cols-2 rounded-3xl overflow-hidden shadow-2xl bg-white lg:min-h-[620px]">
@@ -462,13 +471,6 @@ export default function AuthPage({ mode = "signin" }) {
                   </li>
                 ))}
               </ul>
-
-              <Link
-                to="/"
-                className="hidden lg:inline-flex items-center gap-1.5 mt-10 text-xs font-semibold text-emerald-200 hover:text-white transition-colors"
-              >
-                ← Back to home
-              </Link>
             </div>
           </div>
         </div>

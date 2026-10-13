@@ -133,7 +133,7 @@ export function HeatModeControls({ lapse, children }) {
 export function HeatLapseBadge({ lapse, visible }) {
   if (!visible || lapse.mode !== 'timelapse' || !lapse.hasData) return null;
   return (
-    <div className="pointer-events-none absolute left-1/2 top-4 z-[500] -translate-x-1/2">
+    <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2">
       <div className="rounded-full bg-slate-900/85 px-4 py-1.5 text-center text-white shadow-lg ring-1 ring-white/10 backdrop-blur">
         <p className="text-sm font-semibold leading-tight">{fmtDay(lapse.date)}</p>
         <p className="text-[10px] leading-tight text-slate-300">

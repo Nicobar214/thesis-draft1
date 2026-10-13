@@ -35,9 +35,23 @@ export function generateAttestationCode() {
   return Array.from(bytes, (b) => ALPHABET[b % 32]).join('');
 }
 
+// A QR is scanned by a different phone, so it must point to the public site, not
+// to wherever the photo was taken (a laptop's localhost or a LAN address opens
+// nothing on the scanning phone). Set VITE_PUBLIC_SITE_URL to the deployed URL.
+const LOCAL_HOST_RE = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?)/;
+
+export function verificationOrigin(env = import.meta.env, loc = typeof window !== 'undefined' ? window.location : null) {
+  const configured = String(env?.VITE_PUBLIC_SITE_URL || '').trim().replace(/\/+$/, '');
+  if (configured) return configured;
+  const origin = loc?.origin || '';
+  if (loc && LOCAL_HOST_RE.test(loc.hostname || '')) {
+    console.warn('[photo] VITE_PUBLIC_SITE_URL is not set, so this QR points to a local address that other phones cannot open.');
+  }
+  return origin;
+}
+
 export function verificationUrl(code) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return `${origin}/verify/${code}`;
+  return `${verificationOrigin()}/verify/${code}`;
 }
 
 /** Hex SHA-256 of a Blob/File. */

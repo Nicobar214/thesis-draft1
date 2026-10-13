@@ -14,6 +14,8 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { useMyReports, CITIZEN_STATUS_HEX } from '../lib/useMyReports';
 import { getCitizenStatus, CITIZEN_STATUS } from '../lib/publicReportStatus';
 import { selectCommunityFeedback } from '../lib/communityFeedback';
+import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
+import { useProjectFollows } from '../lib/useProjectFollows';
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Icon Components - Clean, consistent 24x24 icons
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -260,6 +262,23 @@ export default function UserDashboard() {
   const [dismissedStatusAlert, setDismissedStatusAlert] = useState(false);
   const [showAllRecentProjects, setShowAllRecentProjects] = useState(false);
   const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
+  // Project details dialog (same one as the FMR Projects page).
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [selectedTranches, setSelectedTranches] = useState([]);
+  const follows = useProjectFollows();
+
+  const openProject = async (project) => {
+    const row = project._raw || project;
+    setSelectedTranches([]);
+    setSelectedProject(row);
+    // Same query and saved copy as the FMR Projects page, so it also works offline.
+    const { data } = await withOfflineCache('citizen:project_tranches', () => supabase
+      .from('project_tranches')
+      // Citizens see budget totals only - never who released a tranche or internal notes.
+      .select('id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date')
+      .order('tranche_order', { ascending: true }));
+    setSelectedTranches((data || []).filter((t) => t.project_id === row.id));
+  };
 
   const statusAlias = {
     completed: 'Completed',
@@ -368,6 +387,7 @@ export default function UserDashboard() {
         const normalizedProjects = data
           .map((project) => ({
             ...project,
+            _raw: project, // the unmodified row, for the project details dialog
             projectName: project.project_name || 'Untitled FMR Project',
             municipality: project.municipality || 'Unspecified municipality',
             province: project.province || 'Iloilo',
@@ -686,7 +706,13 @@ export default function UserDashboard() {
                       Proposed: 'bg-sky-100 text-sky-800 border-sky-200',
                     };
                     return (
-                      <article key={project.id} className="w-full rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white p-4 transition-all space-y-3">
+                      <button
+                        type="button"
+                        key={project.id}
+                        onClick={() => openProject(project)}
+                        aria-label={`View details of ${project.projectName}`}
+                        className="block w-full text-left rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all space-y-3 cursor-pointer hover:bg-white hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="font-bold text-slate-900 text-sm line-clamp-2">{project.projectName}</h3>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[status] || statusStyles.Proposed}`}>
@@ -710,7 +736,7 @@ export default function UserDashboard() {
                             <span className="text-slate-500">{formatProjectDate(project)}</span>
                           </div>
                         </div>
-                      </article>
+                      </button>
                     );
                   })}
                 </div>
@@ -776,9 +802,15 @@ export default function UserDashboard() {
                 </div>
               ) : (
                 visibleRecentProjects.map((p) => (
-                  <div key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                  <button
+                    type="button"
+                    key={p.id}
+                    onClick={() => openProject(p)}
+                    aria-label={`View details of ${p.projectName}`}
+                    className="block w-full text-left cursor-pointer transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500"
+                  >
                     <ProjectCard project={p} updatedLabel={formatProjectDate(p)} />
-                  </div>
+                  </button>
                 ))
               )}
             </div>
@@ -885,6 +917,14 @@ export default function UserDashboard() {
           )}
         </section>
       </div>
+      {selectedProject && (
+        <FmrProjectDetailDialog
+          project={selectedProject}
+          tranches={selectedTranches}
+          follow={follows.followProps(selectedProject.id)}
+          onClose={() => setSelectedProject(null)}
+        />
+      )}
     </UserLayout>
   );
 }

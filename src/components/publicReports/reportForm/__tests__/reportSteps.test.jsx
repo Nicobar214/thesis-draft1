@@ -220,6 +220,20 @@ describe('ReportingStep', () => {
     expect(screen.getByText('Submit Report').closest('button').disabled).toBe(false);
   });
 
+  it('reminds the reporter what is still missing, and hides the reminder when complete', () => {
+    const { rerender } = render(<ReportingStep {...props()} />);
+    expect(screen.getByText(/almost there/i)).toBeTruthy();
+    expect(screen.getByText(/describe the problem/i)).toBeTruthy();
+    expect(screen.getByText(/take a site photo/i)).toBeTruthy();
+
+    rerender(<ReportingStep {...props({ description: 'Big hole' })} />);
+    expect(screen.queryByText(/describe the problem/i)).toBeNull();
+    expect(screen.getByText(/take a site photo/i)).toBeTruthy();
+
+    rerender(<ReportingStep {...props({ description: 'Big hole', photoBlob: {}, photoPreview: 'blob:x' })} />);
+    expect(screen.queryByText(/almost there/i)).toBeNull();
+  });
+
   it('submits when the complete report is sent', () => {
     const p = props({ description: 'Big hole', photoBlob: {}, photoPreview: 'blob:x' });
     render(<ReportingStep {...p} />);

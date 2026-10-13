@@ -140,7 +140,7 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
       {/* Mobile hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3.5 left-4 z-50 p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
+        className="lg:hidden fixed top-3.5 left-4 z-[1200] p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
         aria-label="Open Navigation Menu"
       >
         <Icons.Menu />
@@ -149,14 +149,14 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+          className="lg:hidden fixed inset-0 z-[1150] bg-slate-950/70 backdrop-blur-xs transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Mobile sidebar */}
       <aside
-        className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ${
+        className={`lg:hidden fixed inset-y-0 left-0 z-[1200] w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

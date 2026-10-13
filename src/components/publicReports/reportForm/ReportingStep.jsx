@@ -2,6 +2,7 @@ import { MapPinIcon } from 'lucide-react';
 import SeverityIcon from '../../SeverityIcon';
 import PublicReportRouteMapPanel from '../PublicReportRouteMapPanel';
 import { SEVERITY_TAXONOMY } from '../../../lib/publicReportStatus';
+import RequiredReminder from './RequiredReminder';
 
 const inputCls =
   'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm ' +
@@ -35,6 +36,11 @@ export default function ReportingStep({
   submitting,
 }) {
   const lowAcc = gps && gps.accuracy > 100;
+  // Required fields still empty, shown as a reminder above Submit.
+  const missing = [
+    !photoBlob && { key: 'photo', label: 'Take a site photo', targetId: 'report-photo' },
+    !description.trim() && { key: 'description', label: 'Describe the problem', targetId: 'report-description' },
+  ].filter(Boolean);
 
   return (
       <div className="report-step-in space-y-5">
@@ -134,18 +140,8 @@ export default function ReportingStep({
           </div>
         )}
 
-        {/* Description */}
-        <div>
-          <label htmlFor="report-description" className="block text-sm font-medium text-slate-700 mb-1.5">
-            Description <span className="text-red-500">*</span>
-          </label>
-          <textarea id="report-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-            placeholder="Describe the current condition, issue, or observation at this project site…"
-            className={`${inputCls} resize-none`} />
-        </div>
-
         {/* Photo capture */}
-        <div>
+        <div id="report-photo" tabIndex={-1} className="scroll-mt-24 outline-none">
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
             Site Photo <span className="text-red-500">*</span>
             <span className="text-xs font-normal text-slate-500 ml-1">(live camera only)</span>
@@ -198,6 +194,16 @@ export default function ReportingStep({
           </div>
         </div>
 
+        {/* Description */}
+        <div>
+          <label htmlFor="report-description" className="block text-sm font-medium text-slate-700 mb-1.5">
+            Description <span className="text-red-500">*</span>
+          </label>
+          <textarea id="report-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+            placeholder="Describe the current condition, issue, or observation at this project site…"
+            className={`${inputCls} resize-none`} />
+        </div>
+
         {/* Optional identity */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -217,6 +223,7 @@ export default function ReportingStep({
         </div>
 
         {/* Submit */}
+        <RequiredReminder missing={missing} />
         <button type="button" onClick={handleSubmit}
           disabled={submitting || !description.trim() || !photoBlob}
           className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-8 py-3.5 rounded-xl font-semibold text-sm hover:bg-teal-700 disabled:opacity-60 transition shadow-lg shadow-teal-500/20">

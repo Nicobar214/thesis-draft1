@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateAttestationCode, sha256Hex, formatCaptureTime } from '../photoAttestation';
+import { generateAttestationCode, sha256Hex, formatCaptureTime, verificationOrigin } from '../photoAttestation';
 
 describe('photoAttestation', () => {
   it('generates 12-character Crockford codes the database accepts', () => {
@@ -19,5 +19,17 @@ describe('photoAttestation', () => {
 
   it('formats capture time in Philippine time', () => {
     expect(formatCaptureTime('2026-10-12T02:24:05Z')).toBe('Oct 12, 2026, 10:24:05 AM PHT');
+  });
+});
+
+describe('verificationOrigin', () => {
+  it('uses the configured public site so other phones can open the QR', () => {
+    expect(verificationOrigin({ VITE_PUBLIC_SITE_URL: 'https://kalsatrack.example/' }, { origin: 'http://localhost:5173', hostname: 'localhost' }))
+      .toBe('https://kalsatrack.example');
+  });
+
+  it('falls back to the current site when nothing is configured', () => {
+    expect(verificationOrigin({}, { origin: 'https://kalsatrack.example', hostname: 'kalsatrack.example' }))
+      .toBe('https://kalsatrack.example');
   });
 });

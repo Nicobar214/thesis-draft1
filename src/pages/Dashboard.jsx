@@ -4561,7 +4561,7 @@ export default function Dashboard() {
                   {/* Mini Map Container */}
                   <div className="relative bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden" style={{ height: 'clamp(420px, 55vh, 640px)' }}>
                     {/* Map Search: instant suggestions for barangays, roads and places */}
-                    <div className="absolute top-3 left-3 z-[1000] w-[min(20rem,calc(100%-1.5rem))]">
+                    <div className="absolute top-3 left-3 z-20 w-[min(20rem,calc(100%-1.5rem))]">
                       <MapSearchBox
                         projects={fmrProjects}
                         placeholder="Search barangay, road or place..."

@@ -728,7 +728,7 @@ export default function FieldEngineerDashboard() {
 
       {/* ── MOBILE SLIDE-OUT DRAWER OVERLAY ── */}
       {mobileDrawerOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm" onClick={() => setMobileDrawerOpen(false)}>
+        <div className="lg:hidden fixed inset-0 z-[1200] bg-slate-900/50 backdrop-blur-sm" onClick={() => setMobileDrawerOpen(false)}>
           <div
             className="w-72 max-w-[80vw] h-full bg-slate-900 text-white border-r border-slate-800 flex flex-col p-4 shadow-2xl animate-slideRight"
             onClick={(e) => e.stopPropagation()}

@@ -1,5 +1,6 @@
 import SeverityIcon from '../../SeverityIcon';
 import { SEVERITY_TAXONOMY } from '../../../lib/publicReportStatus';
+import RequiredReminder from './RequiredReminder';
 
 /** Pick the severity category and the specific problem so the report reaches the right team. */
 export default function ClassifyStep({
@@ -13,6 +14,10 @@ export default function ClassifyStep({
   const categoryMeta = severityCategory ? SEVERITY_TAXONOMY[severityCategory] : null;
   const problemOptions = categoryMeta?.problems || [];
   const canProceed = severityCategory && specificProblem;
+  const missing = [
+    !severityCategory && { key: 'type', label: 'Choose the type of issue', targetId: 'classify-type' },
+    !specificProblem && { key: 'problem', label: 'Select the specific problem', targetId: severityCategory ? 'classify-problem' : 'classify-type' },
+  ].filter(Boolean);
 
   return (
       <div className="report-step-in space-y-5">
@@ -32,7 +37,7 @@ export default function ClassifyStep({
           </p>
         </div>
 
-        <div>
+        <div id="classify-type" tabIndex={-1} className="scroll-mt-24 outline-none">
           <label className="block text-sm font-semibold text-slate-700 mb-2">
             What type of issue is this?
           </label>
@@ -87,6 +92,7 @@ export default function ClassifyStep({
           </div>
         )}
 
+        <RequiredReminder missing={missing} action="continue" />
         <div className="flex gap-3 pt-1">
           <button
             type="button"
