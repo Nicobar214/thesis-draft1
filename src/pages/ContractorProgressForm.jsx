@@ -6,6 +6,7 @@ import { supabaseContractor as supabase } from '../lib/supabase';
 import { formatPercentage } from '../lib/percentageFormat';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
+import { attestPhoto, registerAttestation } from '../lib/photoAttestation';
 
 const inputCls =
   'w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm ' +
@@ -67,6 +68,9 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
   const [planError, setPlanError] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoAttestation, setPhotoAttestation] = useState(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
@@ -172,16 +176,54 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
     return previewRows.reduce((sum, item) => sum + item.percent, 0) / previewRows.length;
   }, [previewRows]);
 
-  const handlePhotoChange = (event) => {
+  // Site photos are geotagged and stamped like the DA PRDP geotagging camera:
+  // GPS at the moment of attaching, a tamper-evident watermark + verification QR
+  // (lib/photoAttestation.js), and no old gallery photos.
+  const MAX_PHOTO_AGE_MS = 60 * 60 * 1000;
+  const handlePhotoChange = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoError('');
+    if (file.lastModified && Date.now() - file.lastModified > MAX_PHOTO_AGE_MS) {
+      setPhotoError('This photo was taken more than an hour ago. Take a new photo at the project site.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    if (!navigator.geolocation) {
+      setPhotoError('This device cannot share its location, so the photo cannot be geotagged.');
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, timeout: 15000, maximumAge: 0,
+      }));
+      const { blob, attestation } = await attestPhoto(file, {
+        kind: 'contractor_progress',
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        capturedAt: new Date().toISOString(),
+        label: `Progress · ${project.project_name || 'FMR project'}`,
+      });
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      const stamped = new File([blob], `progress-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setPhotoFile(stamped);
+      setPhotoAttestation(attestation);
+      setPhotoPreview(URL.createObjectURL(stamped));
+    } catch (err) {
+      setPhotoError(err?.code === 1
+        ? 'Allow location access to attach a geotagged site photo.'
+        : 'Could not geotag the photo. Check that location is on and try again.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   const clearPhoto = () => {
     setPhotoFile(null);
+    setPhotoAttestation(null);
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -247,7 +289,7 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
 
       let photoUrl = null;
       if (photoFile) {
-        const ext = photoFile.name.split('.').pop() || 'jpg';
+        const ext = 'jpg'; // stamped photos are always JPEG
         uploadedPath = `updates/${user.id}/${project.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from('progress-photos')
@@ -278,6 +320,9 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
       );
       if (rpcError) throw rpcError;
 
+      if (uploadedPath) {
+        await registerAttestation(supabase, photoAttestation, { recordId: progressUpdateId, bucket: 'progress-photos', path: uploadedPath });
+      }
       onSubmitted?.(progressUpdateId);
     } catch (submitError) {
       if (uploadedPath) {
@@ -425,7 +470,7 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Site Photo <span className="font-normal text-slate-400">(optional)</span></label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Site Photo <span className="font-normal text-slate-400">(optional · geotagged)</span></label>
                 {photoPreview ? (
                   <div className="relative max-w-md">
                     <img src={photoPreview} alt="Site evidence preview" className="w-full h-48 object-cover rounded-lg border border-slate-200" />
@@ -434,11 +479,13 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
                     </button>
                   </div>
                 ) : (
-                  <label className="flex items-center justify-center w-full max-w-md h-28 border-2 border-dashed border-slate-200 rounded-lg cursor-pointer hover:border-teal-400 hover:bg-teal-50/30">
-                    <span className="text-sm text-slate-500">Choose a JPG, PNG, or WEBP photo</span>
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                  <label className={`flex flex-col items-center justify-center gap-1 w-full max-w-md h-28 border-2 border-dashed border-slate-200 rounded-lg ${photoBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:border-teal-400 hover:bg-teal-50/30'}`}>
+                    <span className="text-sm font-medium text-slate-600">{photoBusy ? 'Getting your location and stamping the photo…' : 'Take a photo at the site'}</span>
+                    {!photoBusy && <span className="text-xs text-slate-400">Your location and time are stamped on the photo, with a verification QR.</span>}
+                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} disabled={photoBusy} className="hidden" />
                   </label>
                 )}
+                {photoError && <p className="mt-2 max-w-md text-sm text-red-600">{photoError}</p>}
               </div>
 
               <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50 cursor-pointer">

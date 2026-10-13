@@ -9,7 +9,7 @@
  *   publicReports/reportForm/  one component per step
  */
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseFarmer } from '../lib/supabase';
 import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 import {
@@ -22,6 +22,7 @@ import {
 } from '../lib/reportSubmission';
 import { useGpsLocation } from '../lib/useGpsLocation';
 import { useReportCamera } from '../lib/useReportCamera';
+import { attestPhoto, registerAttestation } from '../lib/photoAttestation';
 import SuccessStep from './publicReports/reportForm/SuccessStep';
 import LocatingStep from './publicReports/reportForm/LocatingStep';
 import PickingStep from './publicReports/reportForm/PickingStep';
@@ -194,10 +195,35 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       severityCategory, category, specificProblem, userId: currentUser?.id,
     });
 
+    // Tamper-evident photo: stamp date/time, GPS, project and a verification
+    // QR onto the photo and fingerprint it (lib/photoAttestation.js). If the
+    // browser can't stamp, the report still goes through with the plain photo.
+    let uploadBlob = photoBlob;
+    let attestation = null;
+    try {
+      const stamped = await attestPhoto(photoBlob, {
+        kind: 'citizen_report',
+        latitude: gps?.lat,
+        longitude: gps?.lng,
+        accuracy: gps?.accuracy,
+        capturedAt: photoTs || undefined,
+        label: selProject?.project_name || undefined,
+      });
+      uploadBlob = stamped.blob;
+      attestation = stamped.attestation;
+    } catch (stampErr) {
+      console.warn('[report] photo stamp failed, sending the plain photo', stampErr);
+    }
+
     const queueForLater = async (reason) => {
       const session = await client.auth.getSession();
       const authToken = session?.data?.session?.access_token || null;
-      const queued = await enqueueReport(payloadBase, photoBlob, { photoPath: makePhotoPath(), authToken });
+      const queued = await enqueueReport(payloadBase, uploadBlob, {
+        photoPath: makePhotoPath(),
+        authToken,
+        attestation,
+        portal: client === supabaseFarmer ? 'farmer' : 'citizen',
+      });
       console.info(reason, queued?.id);
       await requestBackgroundSync();
       setQueuedOffline(true);
@@ -211,12 +237,13 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       }
 
       const photoPath = makePhotoPath();
-      const { error: upErr } = await client.storage.from('public-report-photos').upload(photoPath, photoBlob, { contentType: 'image/jpeg' });
+      const { error: upErr } = await client.storage.from('public-report-photos').upload(photoPath, uploadBlob, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
       const { data: urlData } = client.storage.from('public-report-photos').getPublicUrl(photoPath);
 
       const { error: insErr } = await client.from('public_reports').insert({ ...payloadBase, photo_url: urlData.publicUrl });
       if (insErr) throw insErr;
+      await registerAttestation(client, attestation, { bucket: 'public-report-photos', path: photoPath });
       setQueuedOffline(false);
       setStep('success');
       onSubmitted?.();

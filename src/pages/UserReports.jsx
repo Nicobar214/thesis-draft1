@@ -5,6 +5,7 @@ import Pagination, { usePagination } from '../components/ui/Pagination';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { getCurrentUser, withOfflineCache, isConnectionError } from '../lib/offlineCache';
 import { notify } from '../lib/toast';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
@@ -122,21 +123,24 @@ function UserReports() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { user } = await getCurrentUser(supabase);
       if (!user) {
         setError('Not authenticated');
         return;
       }
 
-      const { data, error: err } = await supabase
+      // The last list is kept on this device, so reports still open offline.
+      const { data, error: err } = await withOfflineCache(`citizen:${user.id}:reports`, () => supabase
         .from('public_reports_citizen_view')
         .select('*')
         .eq('is_current_user_report', true)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false }));
 
       if (err) {
         console.error('Failed to load citizen reports:', err);
-        setError('We could not load your reports right now. Please try again.');
+        setError(isConnectionError(err)
+          ? "You're offline and your reports haven't been saved on this phone yet. Open this page once with signal to keep a copy."
+          : 'We could not load your reports right now. Please try again.');
       } else {
         setError(null);
         setReports(data || []);
@@ -162,9 +166,12 @@ function UserReports() {
     const onFocus = () => {
       if (document.visibilityState === 'visible') fetchReports({ silent: true });
     };
+    const onOnline = () => fetchReports({ silent: true });
     window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onFocus);
     return () => {
+      window.removeEventListener('online', onOnline);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
     };
@@ -221,35 +228,36 @@ function UserReports() {
 
       try {
         const [resolutionRes, findingRes, lguDecisionRes, repairRes] = await Promise.all([
-          supabase
+          // Each part is kept on this device so an opened report reads offline too.
+          withOfflineCache(`citizen:report:${selected.id}:resolution`, () => supabase
             .from('public_report_resolutions_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('resolved_at', { ascending: false })
             .limit(1)
-            .maybeSingle(),
-          supabase
+            .maybeSingle()),
+          withOfflineCache(`citizen:report:${selected.id}:finding`, () => supabase
             .from('public_report_field_findings_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('submitted_at', { ascending: false })
             .limit(1)
-            .maybeSingle(),
-          supabase
+            .maybeSingle()),
+          withOfflineCache(`citizen:report:${selected.id}:lgu`, () => supabase
             .from('public_report_lgu_decisions')
             .select('decision, remarks, created_at')
             .eq('report_id', selected.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .maybeSingle(),
+            .maybeSingle()),
           // Citizen-safe view: what is happening and when, never notes or who.
           // A deployment without repair tracking simply returns an error here,
           // which is ignored below.
-          supabase
+          withOfflineCache(`citizen:report:${selected.id}:repair`, () => supabase
             .from('public_report_repair_actions_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
-            .maybeSingle(),
+            .maybeSingle()),
         ]);
 
         if (!alive) return;
@@ -259,11 +267,11 @@ function UserReports() {
         // a direct id match can miss — always fall back to matching by name.
         let projectRow = null;
         if (selected.project_id) {
-          const { data } = await supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle();
+          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-id`, () => supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle());
           projectRow = data || null;
         }
         if (!projectRow && selected.project_name) {
-          const { data } = await supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name)).limit(1).maybeSingle();
+          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-name`, () => supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name)).limit(1).maybeSingle());
           projectRow = data || null;
         }
         if (!alive) return;
@@ -276,11 +284,11 @@ function UserReports() {
         setSelectedProject(projectRow);
 
         if (projectRow?.id) {
-          const { data: routeRow } = await supabase
+          const { data: routeRow } = await withOfflineCache(`citizen:route:${projectRow.id}`, () => supabase
             .from('project_routes')
             .select('*')
             .eq('project_id', projectRow.id)
-            .maybeSingle();
+            .maybeSingle());
           if (alive) setSelectedProjectRoute(routeRow || null);
         } else {
           setSelectedProjectRoute(null);

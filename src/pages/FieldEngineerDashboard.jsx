@@ -14,7 +14,9 @@ import Logo from '../components/Logo';
 import SidebarEdgeToggle from '../components/ui/SidebarEdgeToggle';
 import NotificationBell from '../components/NotificationBell';
 import RepairVerifyPanel from '../components/publicReports/RepairVerifyPanel';
-import { syncRepairVerifications } from '../lib/offlineRepairVerifications';
+import { syncRepairVerifications, listQueuedRepairVerifications, REPAIR_SYNC_EVENT } from '../lib/offlineRepairVerifications';
+import { syncQueuedInspections, listQueuedInspections, INSPECTION_QUEUE_EVENT } from '../lib/offlineInspections';
+import { cachedQuery, getCurrentUser, isConnectionError, rememberRole, rememberedRole } from '../lib/offlineCache';
 import ProgressCertificationPanel from '../components/progress/ProgressCertificationPanel';
 import FieldEngineerMap from '../components/publicReports/FieldEngineerMap';
 import { SidebarSyncStatus } from '../components/publicReports/FieldSidebarStatus';
@@ -134,6 +136,10 @@ export default function FieldEngineerDashboard() {
   const [engineerNotes, setEngineerNotes] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [showingSaved, setShowingSaved] = useState(false); // reports list is the copy saved on this device
+  const [waitingToSend, setWaitingToSend] = useState(0); // inspections + repair photos saved offline
+  // Reports whose inspection was started (or saved) on this phone with no signal.
+  const [offlineStarted, setOfflineStarted] = useState({});
   const [rejectionReason, setRejectionReason] = useState('');
 
   // Shared toast (see lib/toast.js); signature kept so call sites are unchanged.
@@ -150,16 +156,48 @@ export default function FieldEngineerDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    const recount = async () => {
+      const [insp, repairs] = await Promise.all([
+        listQueuedInspections(),
+        listQueuedRepairVerifications().catch(() => []),
+      ]);
+      setWaitingToSend(insp.filter((i) => !i.lastError).length + (Array.isArray(repairs) ? repairs.length : 0));
+      // A saved inspection keeps its form open after the app is reopened offline.
+      setOfflineStarted((prev) => {
+        const next = { ...prev };
+        insp.forEach((i) => { if (i.report?.id) next[i.report.id] = true; });
+        return next;
+      });
+    };
+    recount();
+    window.addEventListener(INSPECTION_QUEUE_EVENT, recount);
+    window.addEventListener(REPAIR_SYNC_EVENT, recount);
+    window.addEventListener('online', recount);
+    window.addEventListener('offline', recount);
+    return () => {
+      window.removeEventListener(INSPECTION_QUEUE_EVENT, recount);
+      window.removeEventListener(REPAIR_SYNC_EVENT, recount);
+      window.removeEventListener('online', recount);
+      window.removeEventListener('offline', recount);
+    };
+  }, []);
+
   // Repair-verification photos taken with no signal are queued on the device;
   // upload them on load and whenever the connection returns.
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       try {
-        const res = await syncRepairVerifications(supabase);
+        const [res, insp] = await Promise.all([
+          syncRepairVerifications(supabase),
+          syncQueuedInspections(supabase),
+        ]);
         if (cancelled) return;
         if (res.synced) notify(`${res.synced} saved repair verification${res.synced === 1 ? '' : 's'} uploaded.`);
         if (res.rejected) notify('A saved repair photo was rejected. Open the report to see why and retake it.', 'error');
+        if (insp.sent) notify(`${insp.sent} inspection${insp.sent === 1 ? '' : 's'} saved offline ${insp.sent === 1 ? 'was' : 'were'} sent.`);
+        if (insp.failed) notify('A saved inspection was not accepted. Open the report to see why.', 'error');
       } catch (err) {
         console.warn('[repair] offline sync failed:', err?.message || err);
       }
@@ -175,22 +213,43 @@ export default function FieldEngineerDashboard() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      // Offline: the session and profile saved on this device are used, so an
+      // engineer out of coverage is never signed out or sent to the login page.
+      let currentUser = null;
+      try {
+        ({ user: currentUser } = await getCurrentUser(supabase));
+      } catch (err) {
+        console.warn('Auth check failed:', err);
+      }
       if (!currentUser) { navigate('/field-engineer/login'); return; }
 
-      const { data: prof, error: profErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .maybeSingle();
+      let prof = null;
+      let fromServer = false;
+      try {
+        const res = await cachedQuery(`fe:${currentUser.id}:profile`, () => supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUser.id)
+          .maybeSingle());
+        prof = res.data;
+        fromServer = !res.fromCache;
+      } catch (profErr) {
+        console.warn('Profile query error:', profErr);
+      }
 
-      if (profErr) console.warn('Profile query error:', profErr);
-
-      const rawRole = prof?.role || currentUser.user_metadata?.role || '';
+      const rawRole = prof?.role || rememberedRole(currentUser.id) || currentUser.user_metadata?.role || '';
       const effectiveRole = String(rawRole).trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (fromServer && effectiveRole) rememberRole(currentUser.id, effectiveRole);
 
-      if (effectiveRole !== 'field_engineer') {
+      // Only a role the server actually confirmed can sign the engineer out.
+      if (effectiveRole !== 'field_engineer' && fromServer) {
         await supabase.auth.signOut();
+        navigate('/field-engineer/login');
+        return;
+      }
+
+      if (effectiveRole !== 'field_engineer' && !rememberedRole(currentUser.id)) {
+        // Offline with nothing saved from an earlier online visit: cannot confirm the role.
         navigate('/field-engineer/login');
         return;
       }
@@ -206,18 +265,17 @@ export default function FieldEngineerDashboard() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // The last list is kept on the device, so assigned reports still open offline.
+      const { data, fromCache } = await cachedQuery(`fe:${user.id}:reports`, () => supabase
         .from('public_reports')
         .select('*')
         .eq('assigned_engineer_id', user.id)
-        .order('assigned_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching assigned reports:', error);
-      }
+        .order('assigned_at', { ascending: false }));
       setReports(data || []);
+      setShowingSaved(fromCache);
     } catch (err) {
-      console.error('Error fetching assigned reports:', err.message);
+      console.error('Error fetching assigned reports:', err?.message || err);
+      if (isConnectionError(err)) setShowingSaved(true);
     } finally {
       setLoading(false);
     }
@@ -230,7 +288,12 @@ export default function FieldEngineerDashboard() {
         .channel('engineer-reports-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchReports())
         .subscribe();
-      return () => supabase.removeChannel(channel);
+      // Pull the latest list as soon as the signal returns.
+      window.addEventListener('online', fetchReports);
+      return () => {
+        supabase.removeChannel(channel);
+        window.removeEventListener('online', fetchReports);
+      };
     }
   }, [user, fetchReports]);
 
@@ -545,12 +608,15 @@ export default function FieldEngineerDashboard() {
   return (
     <div className="field-engineer-theme min-h-dvh bg-slate-50 text-slate-900 flex font-sans relative pb-16 lg:pb-0 overflow-x-hidden">
       {/* Offline Status Banner */}
-      {isOffline && (
+      {(isOffline || showingSaved) && (
         <div className="fixed top-0 left-0 right-0 z-[60] bg-amber-400 text-slate-950 px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-2 shadow-sm">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
           </svg>
-          PWA Offline Mode: Field updates will be saved locally and queued for automatic sync when online.
+          <span>
+            {isOffline ? "You're offline." : "Can't reach the server."} Showing reports saved on this phone. Inspections and repair photos are saved and sent when you're back online.
+            {waitingToSend > 0 && <strong className="ml-1">{waitingToSend} waiting to send.</strong>}
+          </span>
         </div>
       )}
 
@@ -1537,8 +1603,9 @@ export default function FieldEngineerDashboard() {
                 const inspectionOpen = engineerStatus === 'in_progress';
                 const awaitingAdmin = engineerStatus === 'inspected';
                 const finished = engineerStatus === 'validated' || reportStatus === 'resolved';
+                const startedOffline = canStart && Boolean(offlineStarted[selectedReport.id]);
 
-                if (canStart) {
+                if (canStart && !startedOffline) {
                   return (
                     <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 space-y-3">
                       <div>
@@ -1547,21 +1614,25 @@ export default function FieldEngineerDashboard() {
                           {engineerStatus === 'rejected' ? 'Conduct a re-inspection' : 'Conduct the site inspection'}
                         </p>
                         <p className="text-xs text-slate-600 mt-1">
-                          Start the inspection to open the findings form. Do this when you are on site.
+                          {isOffline
+                            ? 'No signal: you can still do the inspection. It is started and sent automatically when you are back online.'
+                            : 'Start the inspection to open the findings form. Do this when you are on site.'}
                         </p>
                       </div>
                       <button
-                        onClick={() => updateReportStatus(selectedReport.id, 'in_progress')}
+                        onClick={() => (isOffline
+                          ? setOfflineStarted((prev) => ({ ...prev, [selectedReport.id]: true }))
+                          : updateReportStatus(selectedReport.id, 'in_progress'))}
                         disabled={updatingStatus}
                         className={buttonClass('primary', 'md', 'w-full')}
                       >
-                        {updatingStatus ? 'Starting...' : 'Start On-Site Inspection'}
+                        {updatingStatus ? 'Starting...' : isOffline ? 'Start Inspection Offline' : 'Start On-Site Inspection'}
                       </button>
                     </div>
                   );
                 }
 
-                if (inspectionOpen) {
+                if (inspectionOpen || startedOffline) {
                   return (
                     <>
                       <div className="rounded-xl border-2 border-teal-300 bg-teal-50 p-4">
@@ -1574,6 +1645,7 @@ export default function FieldEngineerDashboard() {
                       <FieldEngineerWorkflowPanel
                         report={selectedReport}
                         currentUser={user}
+                        startOnSend={startedOffline}
                         onSaved={(message, type = 'success') => {
                           showNotification(message, type);
                           fetchReports();

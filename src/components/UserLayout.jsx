@@ -10,6 +10,10 @@ import { usePageTour } from '../lib/usePageTour';
 import { USER_PAGE_TOURS } from './user/userPageTours';
 import ProfileAvatar from './ui/ProfileAvatar';
 import { getAvatarUrl } from '../lib/avatar';
+import OfflineBanner from './ui/OfflineBanner';
+import { getCurrentUser, useOnlineStatus } from '../lib/offlineCache';
+import { getQueuedReports, REPORT_QUEUE_EVENT } from '../lib/offlineReports';
+import { triggerQueuedSync } from '../lib/offlineSync';
 
 /**
  * UserLayout - Shared layout wrapper for all user pages.
@@ -31,6 +35,38 @@ export default function UserLayout({
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+  const online = useOnlineStatus();
+  const [pendingReports, setPendingReports] = useState(0);
+
+  // Reports submitted with no signal wait on this phone (lib/offlineReports.js).
+  // Count them for the banner and send them when the signal returns. The service
+  // worker may send them in the background, so recount while any are waiting.
+  useEffect(() => {
+    if (!requireAuth) return undefined;
+    let alive = true;
+    const count = async () => {
+      const queued = await getQueuedReports().catch(() => []);
+      const n = (queued || []).filter((r) => r?.portal !== 'farmer' && r?.status !== 'synced').length;
+      if (alive) setPendingReports(n);
+      return n;
+    };
+    const sendAndCount = async () => {
+      if (navigator.onLine !== false) await triggerQueuedSync().catch(() => {});
+      await count();
+    };
+    count();
+    const timer = setInterval(() => { count().then((n) => { if (n > 0 && navigator.onLine !== false) triggerQueuedSync().catch(() => {}); }); }, 15000);
+    window.addEventListener('online', sendAndCount);
+    window.addEventListener('offline', count);
+    window.addEventListener(REPORT_QUEUE_EVENT, count);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      window.removeEventListener('online', sendAndCount);
+      window.removeEventListener('offline', count);
+      window.removeEventListener(REPORT_QUEUE_EVENT, count);
+    };
+  }, [requireAuth]);
   // Each page has its own guide. It opens by itself only once per account;
   // after that only the ? button opens it.
   const tourSteps = USER_PAGE_TOURS[location.pathname];
@@ -55,10 +91,14 @@ export default function UserLayout({
 
   useEffect(() => {
     if (!requireAuth) return;
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) navigate('/signin');
-      else setUser(user);
-    });
+    // Offline, the session saved on this device is used, so a signed-in citizen
+    // with no signal is not sent to the sign-in page.
+    getCurrentUser(supabase)
+      .then(({ user }) => {
+        if (!user) navigate('/signin');
+        else setUser(user);
+      })
+      .catch((err) => console.warn('Auth check failed:', err));
   }, [navigate, requireAuth]);
 
   // The citizen session lives in one localStorage slot shared by every tab of this browser
@@ -179,6 +219,14 @@ export default function UserLayout({
               </div>
             </div>
           </header>
+        )}
+        {requireAuth && (
+          <OfflineBanner
+            online={online}
+            pendingCount={pendingReports}
+            offlineText="You're offline. Showing information saved on this phone. Reports you submit are saved and sent when you reconnect."
+            className={showHeader ? 'sticky top-18 sm:top-20 z-10' : ''}
+          />
         )}
 
         <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 pb-6 ${showHeader ? 'pt-5' : 'pt-16'} lg:pt-6 ${contentClassName}`}>

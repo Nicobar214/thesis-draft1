@@ -4,6 +4,7 @@ import { buttonClass } from '../ui/Button';
 import { supabaseFieldEngineer as defaultClient } from '../../lib/supabase';
 import { haversineMeters, toPoint } from './routeGeometry';
 import { verifyPublicReportRepair } from '../../services/publicReportWorkflow';
+import { attestPhoto, registerAttestation } from '../../lib/photoAttestation';
 import {
   REPAIR_SYNC_EVENT,
   cacheRepairAction,
@@ -154,6 +155,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [shotGeo, setShotGeo] = useState(null); // position at the shutter
+  const [photoAttestation, setPhotoAttestation] = useState(null); // verification code + fingerprint
   const [note, setNote] = useState('');
   const [queued, setQueued] = useState(null); // evidence saved on this device, awaiting upload
 
@@ -201,6 +203,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   useEffect(() => {
     setPhotoFile(null);
     setShotGeo(null);
+    setPhotoAttestation(null);
     setGeo(null);
     setNote('');
     setGeoError('');
@@ -303,6 +306,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
     setCameraError('');
     setPhotoFile(null);
     setShotGeo(null);
+    setPhotoAttestation(null);
     setCameraOn(true);
   };
 
@@ -329,21 +333,29 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
       if (!ctx) throw new Error('canvas');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Stamp where and when, so a screenshot of the file carries its own evidence.
-      const stamp = [
-        `Repair verification · ${new Date(fix.capturedAt).toLocaleString('en-PH')}`,
-        `${fix.latitude.toFixed(6)}, ${fix.longitude.toFixed(6)} (±${Math.round(fix.accuracy)} m) · ${Math.round(d)} m from report`,
-      ];
-      const barH = 56;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(0, canvas.height - barH, canvas.width, barH);
-      ctx.fillStyle = '#fff';
-      ctx.font = `${Math.max(12, Math.round(canvas.width * 0.018))}px sans-serif`;
-      stamp.forEach((line, i) => ctx.fillText(line, 14, canvas.height - barH + 22 + i * 22));
+      const raw = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!raw) throw new Error('capture');
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-      if (!blob) throw new Error('capture');
-      setPhotoFile(new File([blob], `repair-verification-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      // Tamper-evident stamp: date/time, GPS, distance and a verification QR
+      // (lib/photoAttestation.js). Falls back to the plain photo if stamping fails.
+      let photo = raw;
+      let attestation = null;
+      try {
+        const stamped = await attestPhoto(raw, {
+          kind: 'repair_verification',
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          accuracy: fix.accuracy,
+          capturedAt: fix.capturedAt,
+          label: `Repair verification · ${Math.round(d)} m from the reported site`,
+        });
+        photo = stamped.blob;
+        attestation = stamped.attestation;
+      } catch (stampErr) {
+        console.warn('[repair] photo stamp failed, keeping the plain photo', stampErr);
+      }
+      setPhotoFile(new File([photo], `repair-verification-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      setPhotoAttestation(attestation);
       setShotGeo(fix);
       stopCamera();
     } catch (err) {
@@ -360,6 +372,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   const retake = () => {
     setPhotoFile(null);
     setShotGeo(null);
+    setPhotoAttestation(null);
     openCamera();
   };
 
@@ -369,6 +382,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
     const resetCapture = () => {
       setPhotoFile(null);
       setShotGeo(null);
+      setPhotoAttestation(null);
       setGeo(null);
       setNote('');
     };
@@ -384,6 +398,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
         accuracyMeters: shotGeo.accuracy ?? null,
         capturedAt: shotGeo.capturedAt,
         note: note.trim() || null,
+        attestation: photoAttestation,
       });
       resetCapture();
       await refreshQueued();
@@ -402,6 +417,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
 
       const { data: pub } = client.storage.from(PHOTO_BUCKET).getPublicUrl(path);
       if (!pub?.publicUrl) throw new Error('Photo uploaded but no public URL was returned.');
+      await registerAttestation(client, photoAttestation, { recordId: report.id, bucket: PHOTO_BUCKET, path });
 
       await verifyPublicReportRepair(client, {
         actionId: action.id,

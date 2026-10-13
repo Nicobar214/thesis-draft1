@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { supabase, supabaseFarmer } from './supabase';
+import { registerAttestation } from './photoAttestation';
 import {
   getQueuedReports,
   getQueuedEngineerUpdates,
@@ -18,16 +19,23 @@ function buildPhotoPath(id) {
   return `reports/${Date.now()}_${id}.jpg`;
 }
 
+// A queued report is sent with the live session of the portal that created it,
+// so a farmer's report keeps its owner (the citizen client has no farmer session).
+function clientFor(item) {
+  return item?.portal === 'farmer' && supabaseFarmer ? supabaseFarmer : supabase;
+}
+
 async function uploadQueuedPhoto(item) {
   const path = item.photoPath || buildPhotoPath(item.id);
-  const { error: uploadError } = await supabase
+  const client = clientFor(item);
+  const { error: uploadError } = await client
     .storage
     .from('public-report-photos')
     .upload(path, item.photoBlob, { contentType: 'image/jpeg', upsert: true });
 
   if (uploadError) throw uploadError;
 
-  const { data: urlData } = supabase.storage.from('public-report-photos').getPublicUrl(path);
+  const { data: urlData } = client.storage.from('public-report-photos').getPublicUrl(path);
   return { path, publicUrl: urlData.publicUrl };
 }
 
@@ -91,11 +99,12 @@ export async function syncQueuedReports() {
         const upload = await uploadQueuedPhoto(item);
         const payload = { ...item.payload, photo_url: upload.publicUrl };
 
-        const { error: insertError } = await supabase
+        const { error: insertError } = await clientFor(item)
           .from('public_reports')
           .insert(payload);
 
         if (insertError) throw insertError;
+        await registerAttestation(clientFor(item), item.attestation, { bucket: 'public-report-photos', path: upload.path });
 
         await updateQueuedReport(item.id, { status: 'synced', isSyncing: false, lastError: null });
         await removeQueuedReport(item.id);

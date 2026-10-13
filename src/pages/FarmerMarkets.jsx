@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabaseFarmer as supabase } from "../lib/supabase";
 import { useFarmerRecord } from "../lib/useFarmerRecord";
+import { cachedQuery } from "../lib/offlineCache";
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
@@ -24,7 +25,9 @@ export default function FarmerMarkets() {
   const farmLng = farmerRecord?.farm_longitude;
 
   useEffect(() => {
-    supabase.from("market_locations").select("*").then(({ data }) => setMarkets(data || []));
+    cachedQuery("market_locations:all", () => supabase.from("market_locations").select("*"))
+      .then(({ data }) => setMarkets(data || []))
+      .catch(() => {});
   }, []);
 
   // Same straight-line pre-filter rationale as the Overview page's nearest-FMR calc.

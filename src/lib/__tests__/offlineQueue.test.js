@@ -6,17 +6,23 @@ const mocks = vi.hoisted(() => {
   const upload = vi.fn();
   const getPublicUrl = vi.fn();
   const insert = vi.fn();
+  const farmerInsert = vi.fn();
   return {
     upload,
     getPublicUrl,
     insert,
+    farmerInsert,
     supabase: {
       storage: { from: () => ({ upload, getPublicUrl }) },
       from: () => ({ insert }),
     },
+    supabaseFarmer: {
+      storage: { from: () => ({ upload, getPublicUrl }) },
+      from: () => ({ insert: farmerInsert }),
+    },
   };
 });
-vi.mock('../supabase', () => ({ supabase: mocks.supabase }));
+vi.mock('../supabase', () => ({ supabase: mocks.supabase, supabaseFarmer: mocks.supabaseFarmer }));
 
 import {
   enqueueReport,
@@ -39,6 +45,7 @@ beforeEach(() => {
   mocks.upload.mockReset().mockResolvedValue({ error: null });
   mocks.getPublicUrl.mockReset().mockReturnValue({ data: { publicUrl: 'https://cdn.test/photo.jpg' } });
   mocks.insert.mockReset().mockResolvedValue({ error: null });
+  mocks.farmerInsert.mockReset().mockResolvedValue({ error: null });
 });
 
 afterEach(async () => {
@@ -222,5 +229,15 @@ describe('deciding when to sync', () => {
   it('reports that background sync is unavailable before a worker takes control', async () => {
     vi.stubGlobal('navigator', { serviceWorker: { controller: null } });
     expect(await requestBackgroundSync()).toBe(false);
+  });
+});
+
+describe('farmer reports saved offline', () => {
+  it('are sent with the farmer session, not the citizen one', async () => {
+    await enqueueReport({ description: 'farmer report' }, new Blob(['x']), { id: 'farmer-1', portal: 'farmer' });
+    const result = await syncQueuedReports();
+    expect(result.success).toBe(1);
+    expect(mocks.farmerInsert).toHaveBeenCalledTimes(1);
+    expect(mocks.insert).not.toHaveBeenCalled();
   });
 });

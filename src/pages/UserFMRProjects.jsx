@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { withOfflineCache } from '../lib/offlineCache';
 import { notify } from '../lib/toast';
 import { useProjectFollows } from '../lib/useProjectFollows';
 
@@ -103,7 +104,11 @@ export default function UserFMRProjects({ embedded = false } = {}) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchFMRProjects)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, fetchFMRProjects)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    window.addEventListener('online', fetchFMRProjects);
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('online', fetchFMRProjects);
+    };
   }, []);
 
   useEffect(() => {
@@ -132,19 +137,20 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     try {
       setFetchError(null);
       const [{ data, error }, { data: reportsData, error: reportsError }, { data: tranchesData }] = await Promise.all([
-        supabase
+        // Kept on this device (lib/offlineCache.js) so the list still opens offline.
+        withOfflineCache('citizen:fmr_projects:list', () => supabase
           .from('fmr_projects')
           .select('*')
           .order('status', { ascending: true })
-          .order('accomplishment', { ascending: false }),
-        supabase
+          .order('accomplishment', { ascending: false })),
+        withOfflineCache('citizen:report_project_names', () => supabase
           .from('public_reports_citizen_view')
-          .select('project_name'),
-        supabase
+          .select('project_name')),
+        withOfflineCache('citizen:project_tranches', () => supabase
           .from('project_tranches')
           // Citizens see budget totals only - never who released a tranche or internal notes.
           .select('id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date')
-          .order('tranche_order', { ascending: true }),
+          .order('tranche_order', { ascending: true })),
       ]);
 
       if (error) {

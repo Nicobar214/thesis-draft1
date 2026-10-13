@@ -17,6 +17,7 @@ const UserFMRProjects = lazyPage(() => import("./pages/UserFMRProjects"));
 const UserMapView = lazyPage(() => import("./pages/UserMapView"));
 const UserProfile = lazyPage(() => import("./pages/UserProfile"));
 const LegalPage = lazyPage(() => import("./pages/LegalPage"));
+const VerifyPhotoPage = lazyPage(() => import("./pages/VerifyPhotoPage"));
 const PublicReportsPage = lazyPage(() => import("./pages/PublicReportsPage"));
 const FieldEngineerAuth = lazyPage(() => import("./pages/FieldEngineerAuth"));
 const FieldEngineerDashboard = lazyPage(() => import("./pages/FieldEngineerDashboard"));
@@ -89,6 +90,9 @@ function App() {
         <Route path="/privacy" element={<LegalPage />} />
         <Route path="/terms" element={<LegalPage />} />
         <Route path="/support" element={<LegalPage />} />
+        {/* Opened by scanning the QR stamped on a geotagged photo */}
+        <Route path="/verify" element={<VerifyPhotoPage />} />
+        <Route path="/verify/:code" element={<VerifyPhotoPage />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
         <Route path="/report-portal" element={<Navigate to="/" replace />} />
         <Route path="/reports" element={<PublicReportsPage />} />

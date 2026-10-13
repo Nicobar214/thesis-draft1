@@ -8,7 +8,11 @@ import FarmerWelcomeTour from './farmer/FarmerWelcomeTour';
 import FarmerReportModal from './farmer/FarmerReportModal';
 import NotificationBell from './NotificationBell';
 import ProfileAvatar from './ui/ProfileAvatar';
-import { CameraIcon, HelpCircleIcon } from 'lucide-react';
+import { CameraIcon, HelpCircleIcon, WifiOffIcon, RefreshCwIcon } from 'lucide-react';
+import { useOnlineStatus } from '../lib/offlineCache';
+import { listQueuedHarvests, syncQueuedHarvests, HARVEST_QUEUE_EVENT } from '../lib/offlineHarvests';
+import { getQueuedReports } from '../lib/offlineReports';
+import { triggerQueuedSync } from '../lib/offlineSync';
 
 function PageLoadingFallback() {
   return (
@@ -41,6 +45,37 @@ export default function FarmerLayout() {
 
   const { user, farmerRecord, loading, reload: reloadFarmerRecord } = useFarmerRecord();
   const { reports, loading: reportsLoading, reload: reloadReports } = useFarmerReports();
+  const online = useOnlineStatus();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Offline-first: harvests and road reports added with no signal wait on the
+  // phone. Count them for the banner, and send them whenever the signal returns.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let alive = true;
+    const countPending = async () => {
+      const [harvests, queuedReports] = await Promise.all([
+        listQueuedHarvests(user.id),
+        getQueuedReports().catch(() => []),
+      ]);
+      const farmerReports = (queuedReports || []).filter((r) => r?.portal === 'farmer' && r?.status !== 'synced');
+      if (alive) setPendingCount(harvests.length + farmerReports.length);
+    };
+    const sendPending = async () => {
+      if (navigator.onLine === false) { countPending(); return; }
+      await Promise.allSettled([syncQueuedHarvests(supabase), triggerQueuedSync()]);
+      await countPending();
+      reloadReports();
+    };
+    sendPending();
+    window.addEventListener('online', sendPending);
+    window.addEventListener(HARVEST_QUEUE_EVENT, countPending);
+    return () => {
+      alive = false;
+      window.removeEventListener('online', sendPending);
+      window.removeEventListener(HARVEST_QUEUE_EVENT, countPending);
+    };
+  }, [user?.id, reloadReports]);
 
   // The report dialog's open state lives in the URL (?action=new), the same
   // contract as the citizen portal's /user/reports?action=new. That keeps the
@@ -208,6 +243,23 @@ export default function FarmerLayout() {
             </div>
           </div>
         </header>
+
+        {/* Offline status: what the farmer is looking at, and what is waiting to send. */}
+        {!online ? (
+          <div role="status" className="sticky top-20 sm:top-24 z-10 flex items-start gap-2.5 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 sm:px-6 lg:px-8">
+            <WifiOffIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p>
+              <span className="font-semibold">You're offline.</span> Showing information saved on this phone.
+              {' '}Reports and harvests you add are saved and sent when you're back online.
+              {pendingCount > 0 && <span className="font-semibold"> {pendingCount} waiting to send.</span>}
+            </p>
+          </div>
+        ) : pendingCount > 0 && (
+          <div role="status" className="flex items-center gap-2.5 border-b border-teal-100 bg-teal-50 px-4 py-2 text-sm text-teal-900 sm:px-6 lg:px-8">
+            <RefreshCwIcon className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+            Sending {pendingCount} item{pendingCount === 1 ? '' : 's'} saved while offline…
+          </div>
+        )}
 
         <div className="w-full px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
           <Suspense fallback={<PageLoadingFallback />}>

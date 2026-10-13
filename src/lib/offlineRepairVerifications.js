@@ -12,6 +12,7 @@
  * version of 'kalsatrack-offline' that the service worker also opens.
  */
 import { verifyPublicReportRepair } from '../services/publicReportWorkflow';
+import { registerAttestation } from './photoAttestation';
 
 const DB_NAME = 'kalsatrack-repair-evidence';
 const DB_VERSION = 1;
@@ -90,6 +91,7 @@ export async function enqueueRepairVerification(item) {
     accuracyMeters: item.accuracyMeters ?? null,
     capturedAt: item.capturedAt,
     note: item.note || null,
+    attestation: item.attestation || null, // registered when it uploads
     status: 'queued', // queued | rejected
     lastError: null,
     queuedAt: new Date().toISOString(),
@@ -166,6 +168,7 @@ async function uploadAndVerify(client, item) {
 
   const { data: pub } = client.storage.from(PHOTO_BUCKET).getPublicUrl(path);
   if (!pub?.publicUrl) throw new Error('Photo uploaded but no public URL was returned.');
+  await registerAttestation(client, item.attestation, { recordId: item.reportId, bucket: PHOTO_BUCKET, path });
 
   await verifyPublicReportRepair(client, {
     actionId: item.actionId,

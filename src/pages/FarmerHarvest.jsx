@@ -8,6 +8,8 @@ import { BENEFICIARY_CROPS } from "../utils/farmerBeneficiaryData";
 import { yieldPerHectare, formatYield, compareToPrevious } from "../lib/harvestMath";
 import Icons from "../components/Icons";
 import FarmerHarvestDetailModal from "../components/farmer/FarmerHarvestDetailModal";
+import { cachedQuery, isConnectionError } from "../lib/offlineCache";
+import { enqueueHarvest, listQueuedHarvests, HARVEST_QUEUE_EVENT } from "../lib/offlineHarvests";
 
 const PHOTO_BUCKET = "farmer-harvest-photos";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB
@@ -84,7 +86,8 @@ function SummaryCard({ label, value, sub }) {
 
 export default function FarmerHarvest() {
   const { user, farmerRecord } = useFarmerRecord();
-  const [harvestLogs, setHarvestLogs] = useState([]);
+  const [savedLogs, setSavedLogs] = useState([]);
+  const [queuedHarvests, setQueuedHarvests] = useState([]); // logged offline, waiting to send
   const [harvestLoading, setHarvestLoading] = useState(false);
   const [cropFilter, setCropFilter] = useState("All");
   const [yearFilter, setYearFilter] = useState("All");
@@ -108,29 +111,56 @@ export default function FarmerHarvest() {
     }));
   }, [farmerRecord, editingId]);
 
+  // Saved on the device (lib/offlineCache.js), so the history still shows offline.
   const fetchHarvestLogs = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from("farmer_harvest_logs")
-      .select("*")
-      .eq("farmer_id", user.id)
-      .order("harvest_date", { ascending: true });
-    if (error) {
+    try {
+      const { data } = await cachedQuery(`farmer:${user.id}:harvests`, () => supabase
+        .from("farmer_harvest_logs")
+        .select("*")
+        .eq("farmer_id", user.id)
+        .order("harvest_date", { ascending: true }));
+      setSavedLogs(data || []);
+    } catch {
       notify("We couldn't load your harvest records. Please try again.", "error");
-      return;
     }
-    setHarvestLogs(data || []);
+  }, [user]);
+
+  const loadQueued = useCallback(async () => {
+    if (!user) return;
+    setQueuedHarvests(await listQueuedHarvests(user.id));
   }, [user]);
 
   useEffect(() => {
     if (!user) return undefined;
     fetchHarvestLogs();
+    loadQueued();
     const subHarvests = supabase
       .channel("farmer-harvests")
       .on("postgres_changes", { event: "*", schema: "public", table: "farmer_harvest_logs", filter: `farmer_id=eq.${user.id}` }, fetchHarvestLogs)
       .subscribe();
-    return () => supabase.removeChannel(subHarvests);
-  }, [user, fetchHarvestLogs]);
+    // The queue is sent by FarmerLayout when the signal returns; refresh both lists then.
+    const onQueueChanged = () => { loadQueued(); fetchHarvestLogs(); };
+    window.addEventListener(HARVEST_QUEUE_EVENT, onQueueChanged);
+    window.addEventListener("online", fetchHarvestLogs);
+    return () => {
+      supabase.removeChannel(subHarvests);
+      window.removeEventListener(HARVEST_QUEUE_EVENT, onQueueChanged);
+      window.removeEventListener("online", fetchHarvestLogs);
+    };
+  }, [user, fetchHarvestLogs, loadQueued]);
+
+  // Saved and still-waiting harvests in one list (waiting ones are marked).
+  const harvestLogs = useMemo(() => [
+    ...savedLogs,
+    ...queuedHarvests.map((q) => ({
+      ...q.payload,
+      id: `queued-${q.id}`,
+      photo_path: q.photoBlob ? "pending" : null,
+      _queued: true,
+      _queueError: q.lastError,
+    })),
+  ].sort((a, b) => String(a.harvest_date).localeCompare(String(b.harvest_date))), [savedLogs, queuedHarvests]);
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -149,6 +179,14 @@ export default function FarmerHarvest() {
   };
 
   const startEdit = (entry) => {
+    if (entry?._queued) {
+      notify("This harvest is still waiting to be sent. You can edit it once it has been sent.", "warning");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      notify("You're offline. Editing a saved harvest needs a connection.", "warning");
+      return;
+    }
     setSelectedEntry(null);
     setEditingId(entry.id);
     setPhotoFile(null);
@@ -188,6 +226,38 @@ export default function FarmerHarvest() {
 
     setHarvestLoading(true);
     let photoWarning = false;
+
+    // No signal: keep a NEW harvest on this phone and send it later.
+    const saveOffline = async () => {
+      await enqueueHarvest({
+        farmerId: user.id,
+        payload: {
+          crop: harvestForm.crop || farmerRecord?.crop,
+          quantity_kg: qty,
+          area_ha: area,
+          harvest_date: harvestForm.harvestDate,
+          quality_grade: harvestForm.qualityGrade || null,
+          remarks: harvestForm.remarks.trim(),
+        },
+        photoBlob: photoFile || null,
+        photoExt: photoFile ? extensionFor(photoFile) : "jpg",
+      });
+      await loadQueued();
+      notify("No connection. Harvest saved on this phone and will be sent when you're back online.", "warning");
+      setPhotoFile(null);
+      setHarvestForm((prev) => ({ ...emptyForm(farmerRecord?.crop), areaHa: prev.areaHa }));
+    };
+    const offlineNow = typeof navigator !== "undefined" && navigator.onLine === false;
+    if (offlineNow && editingId) {
+      notify("You're offline. Editing a saved harvest needs a connection.", "warning");
+      setHarvestLoading(false);
+      return;
+    }
+    if (offlineNow) {
+      try { await saveOffline(); } finally { setHarvestLoading(false); }
+      return;
+    }
+
     try {
       let photoPath = editingId ? undefined : null; // undefined = "don't touch" on edit unless a new file was chosen
       if (photoFile) {
@@ -231,8 +301,12 @@ export default function FarmerHarvest() {
       setPhotoFile(null);
       setHarvestForm((prev) => ({ ...emptyForm(farmerRecord?.crop), areaHa: prev.areaHa }));
     } catch (err) {
-      notify("Your harvest could not be saved. Please check your information and try again.", "error");
-      console.error("[harvest] save failed:", err);
+      if (!editingId && isConnectionError(err)) {
+        await saveOffline();
+      } else {
+        notify("Your harvest could not be saved. Please check your information and try again.", "error");
+        console.error("[harvest] save failed:", err);
+      }
     } finally {
       setHarvestLoading(false);
     }
@@ -241,6 +315,14 @@ export default function FarmerHarvest() {
   // RLS (farmer_id = auth.uid()) already limits this to the farmer's own
   // entries; the realtime subscription refreshes the list automatically.
   const handleDeleteHarvest = async (id) => {
+    if (String(id).startsWith("queued-")) {
+      notify("This harvest is still waiting to be sent. You can delete it once it has been sent.", "warning");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      notify("You're offline. Deleting a harvest needs a connection.", "warning");
+      return;
+    }
     try {
       const { error } = await supabase.from("farmer_harvest_logs").delete().eq("id", id);
       if (error) throw error;
@@ -577,6 +659,11 @@ export default function FarmerHarvest() {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900">
                       {h.crop} &middot; {Number(h.quantity_kg).toLocaleString()} kg
+                      {h._queued && (
+                        <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 align-middle text-[10px] font-semibold ${h._queueError ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
+                          {h._queueError ? "Not sent" : "Waiting to send"}
+                        </span>
+                      )}
                       {h.photo_path && (
                         <span className="inline-flex align-middle ml-1.5 text-slate-400" title="Has a photo" aria-hidden="true">
                           <Icons.Photo />

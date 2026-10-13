@@ -1,6 +1,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { getSupabaseForRole } from '../lib/supabase';
+import { isConnectionError, getCurrentUser, rememberRole, rememberedRole } from '../lib/offlineCache';
 import Logo from './Logo';
 import UserPageSkeleton from './UserPageSkeleton';
 import {
@@ -65,7 +66,8 @@ export default function ProtectedRoute({ children, requiredRole }) {
     const checkAuth = async () => {
       try {
         const client = getSupabaseForRole(requiredRole);
-        const { data: { user: currentUser } } = await client.auth.getUser();
+        // With no connection, the session saved on this device is used (offline use in the field).
+        const { user: currentUser, offline } = await getCurrentUser(client);
 
         if (!currentUser) {
           setLoading(false);
@@ -73,6 +75,12 @@ export default function ProtectedRoute({ children, requiredRole }) {
         }
 
         setUser(currentUser);
+
+        if (offline) {
+          const cached = rememberedRole(currentUser.id);
+          setRole(cached ? normalizeRole(cached) : normalizeRole(requiredRole));
+          return;
+        }
 
         // Database profile roles are authoritative for protected routes.
         try {
@@ -84,14 +92,17 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
           if (profileError) {
             console.warn('Profile query error:', profileError);
-            setRole('user');
+            // A dropped connection is not a demotion: keep the last confirmed role.
+            setRole(isConnectionError(profileError) ? normalizeRole(rememberedRole(currentUser.id) || 'user') : 'user');
           } else if (profile) {
-            setRole(normalizeRole(profile.role) || 'user');
+            const confirmed = normalizeRole(profile.role) || 'user';
+            rememberRole(currentUser.id, confirmed);
+            setRole(confirmed);
           } else {
             setRole('user');
           }
-        } catch {
-          setRole('user');
+        } catch (err) {
+          setRole(isConnectionError(err) ? normalizeRole(rememberedRole(currentUser.id) || 'user') : 'user');
         }
       } catch (err) {
         console.error('Auth check error:', err);

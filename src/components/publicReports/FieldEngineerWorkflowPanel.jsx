@@ -5,9 +5,11 @@ import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { buildRoutePoints } from '../../lib/mapRouteUtils';
 import PublicReportRouteMapPanel from './PublicReportRouteMapPanel';
 import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
-import { submitPublicReportInspection } from '../../services/publicReportWorkflow';
 import { friendlyReportError } from '../../lib/publicReportStatus';
 import { buttonClass } from '../ui/Button';
+import { attestPhoto } from '../../lib/photoAttestation';
+import { cacheGet, cacheSet, isConnectionError } from '../../lib/offlineCache';
+import { sendInspection, enqueueInspection, listQueuedInspections, discardQueuedInspection, INSPECTION_QUEUE_EVENT } from '../../lib/offlineInspections';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -23,54 +25,8 @@ function fmtCountdown(deadlineIso) {
   return `Due in ${diffDays} day${diffDays === 1 ? '' : 's'}`;
 }
 
-async function createGeoOverlayImage(file, report, capturedGeo) {
-  if (!file) return null;
 
-  const imageUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const instance = new Image();
-      instance.onload = () => resolve(instance);
-      instance.onerror = reject;
-      instance.src = imageUrl;
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-
-    ctx.drawImage(img, 0, 0, img.width, img.height);
-
-    const lines = [
-      `Captured: ${new Date().toLocaleString()}`,
-      `Capture GPS: ${Number(capturedGeo?.latitude || 0).toFixed(6)}, ${Number(capturedGeo?.longitude || 0).toFixed(6)}`,
-      `Report GPS: ${Number(report?.latitude || 0).toFixed(6)}, ${Number(report?.longitude || 0).toFixed(6)}`,
-    ];
-
-    const boxHeight = 74;
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
-    ctx.fillRect(0, canvas.height - boxHeight, canvas.width, boxHeight);
-
-    ctx.font = `${Math.max(12, Math.round(canvas.width * 0.018))}px sans-serif`;
-    ctx.fillStyle = '#ffffff';
-    lines.forEach((line, idx) => {
-      ctx.fillText(line, 16, canvas.height - boxHeight + 20 + idx * 20);
-    });
-
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-    if (!blob) return file;
-
-    return new File([blob], `overlay-${Date.now()}.jpg`, { type: 'image/jpeg' });
-  } catch {
-    return file;
-  } finally {
-    URL.revokeObjectURL(imageUrl);
-  }
-}
-
-export default function FieldEngineerWorkflowPanel({ report, currentUser, onSaved }) {
+export default function FieldEngineerWorkflowPanel({ report, currentUser, onSaved, startOnSend = false }) {
   const [workflowMeta, setWorkflowMeta] = useState(null);
   const [project, setProject] = useState(null);
   const [routeRecord, setRouteRecord] = useState(null);
@@ -81,6 +37,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
   const [capturedGeo, setCapturedGeo] = useState(null);
+  const [photoAttestation, setPhotoAttestation] = useState(null);
   const [captureGeoError, setCaptureGeoError] = useState('');
   const [cameraError, setCameraError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
@@ -95,45 +52,19 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [inspectionRating, setInspectionRating] = useState(5);
   const [engineerCertified, setEngineerCertified] = useState(false);
 
-  const notifyAdmin = useCallback(async (title, message) => {
-    try {
-      const { data: admins } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('role', 'admin')
-        .limit(5);
+  // An inspection finished offline and still waiting to be sent (lib/offlineInspections.js).
+  const [queuedInspection, setQueuedInspection] = useState(null);
+  const refreshQueued = useCallback(async () => {
+    if (!report?.id) return;
+    const items = await listQueuedInspections(currentUser?.id);
+    setQueuedInspection(items.find((it) => String(it.report?.id) === String(report.id)) || null);
+  }, [report?.id, currentUser?.id]);
 
-      if (!Array.isArray(admins) || admins.length === 0) return;
-
-      const rows = admins.map((adm) => ({
-        user_id: adm.id,
-        type: 'public_report_field_finding',
-        title,
-        message,
-        is_read: false,
-      }));
-
-      await supabase.from('notifications').insert(rows);
-    } catch {
-      // Silent fallback for deployments without notifications table.
-    }
-  }, []);
-
-  const notifyCitizen = useCallback(async (reportRecord, message) => {
-    if (!reportRecord?.user_id) return;
-    try {
-      await supabase.from('notifications').insert({
-        user_id: reportRecord.user_id,
-        type: 'public_report_field_update',
-        title: 'Public report update',
-        message,
-        report_id: reportRecord.id,
-        is_read: false,
-      });
-    } catch {
-      // Silent fallback for deployments without notifications table.
-    }
-  }, []);
+  useEffect(() => {
+    refreshQueued();
+    window.addEventListener(INSPECTION_QUEUE_EVENT, refreshQueued);
+    return () => window.removeEventListener(INSPECTION_QUEUE_EVENT, refreshQueued);
+  }, [refreshQueued]);
 
   const loadSupportingData = useCallback(async () => {
     if (!report?.id) return;
@@ -155,6 +86,21 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       ];
 
       const [metaRes, findingRes] = await Promise.all(tasks);
+      // No signal: show what was saved the last time this report was opened.
+      if (isConnectionError(metaRes?.error) || isConnectionError(findingRes?.error)) {
+        const saved = await cacheGet(`fe:report:${report.id}:support`);
+        if (saved?.data) {
+          const d = saved.data;
+          setWorkflowMeta(d.meta);
+          setLatestFinding(d.finding);
+          setConditionObserved(d.finding?.condition_observed || '');
+          setRecommendedAction(d.finding?.recommended_action || '');
+          setEstimatedCostRange(d.finding?.estimated_cost_range || '');
+          setProject(d.project);
+          setRouteRecord(d.route);
+        }
+        return;
+      }
       setWorkflowMeta(metaRes?.data || null);
       setLatestFinding(findingRes?.data || null);
 
@@ -199,6 +145,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       setProject(matchedProject || null);
 
       // Fetch route for matched project
+      let routeForCache = null;
       if (matchedProject?.id) {
         const { data: route } = await supabase
           .from('project_routes')
@@ -206,9 +153,16 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           .eq('project_id', matchedProject.id)
           .maybeSingle();
         setRouteRecord(route || null);
+        routeForCache = route || null;
       } else {
         setRouteRecord(null);
       }
+      cacheSet(`fe:report:${report.id}:support`, {
+        meta: metaRes?.data || null,
+        finding: findingRes?.data || null,
+        project: matchedProject || null,
+        route: routeForCache,
+      });
     } catch (err) {
       console.warn('Failed loading supporting data:', err);
     } finally {
@@ -344,70 +298,56 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       return;
     }
 
-    setSaving(true);
-    try {
-      let uploadedPhotoUrl = '';
-      const ext = (photoFile?.name?.split('.').pop() || 'jpg').toLowerCase();
-      const path = `field-findings/${report.id}/${Date.now()}.${ext}`;
-
-      const candidateBuckets = ['public-report-photos', 'public-photos'];
-      let bucketUsed = '';
-      let lastUploadError = null;
-
-      for (const bucket of candidateBuckets) {
-        const { error: uploadErr } = await supabase.storage
-          .from(bucket)
-          .upload(path, photoFile, { upsert: false, contentType: photoFile.type || 'image/jpeg' });
-
-        if (!uploadErr) {
-          bucketUsed = bucket;
-          break;
-        }
-
-        lastUploadError = uploadErr;
-      }
-
-      if (!bucketUsed) {
-        const reason = lastUploadError?.message || 'Storage bucket not found';
-        throw new Error(`${reason}. Create bucket public-report-photos (preferred) or public-photos.`);
-      }
-
-      const { data: pub } = supabase.storage.from(bucketUsed).getPublicUrl(path);
-      uploadedPhotoUrl = pub?.publicUrl || '';
-      if (!uploadedPhotoUrl) {
-        throw new Error('Photo upload completed but public URL was not generated.');
-      }
-
-      await submitPublicReportInspection(supabase, {
-        reportId: report.id,
+    const item = {
+      engineerId: currentUser.id,
+      report: { id: report.id, user_id: report.user_id || null, project_name: report.project_name || '' },
+      findings: {
         conditionObserved: conditionObserved.trim(),
         recommendedAction: recommendedAction.trim(),
+        estimatedCostRange: estimatedCostRange.trim(),
         siteRating: inspectionRating,
-        fieldPhotoUrl: uploadedPhotoUrl || null,
         certified: engineerCertified,
-        estimatedCostRange: estimatedCostRange.trim() || null,
-        latitude: capturedGeo?.latitude ?? null,
-        longitude: capturedGeo?.longitude ?? null,
-        gpsAccuracyMeters: capturedGeo?.accuracy ?? null,
-      });
-
-      await notifyAdmin(
-        'Field findings submitted',
-        `Field findings are available for report ${String(report.id).slice(0, 8)}.`
-      );
-      await notifyCitizen(
-        report,
-        'Field inspection was completed and is now awaiting DA admin review.'
-      );
-
-      if (onSaved) onSaved('Field findings submitted');
+      },
+      photoBlob: photoFile,
+      photoExt: (photoFile?.name?.split('.').pop() || 'jpg').toLowerCase(),
+      geo: capturedGeo,
+      attestation: photoAttestation,
+      needsStart: startOnSend, // inspection was started offline (see sendInspection)
+    };
+    const clearCapture = () => {
       setPhotoFile(null);
       setCapturedGeo(null);
+      setPhotoAttestation(null);
       setEngineerCertified(false);
+    };
+    // No signal on site: keep the finished inspection on this phone and send it
+    // through the same server check once the connection returns.
+    const saveOnDevice = async () => {
+      await enqueueInspection(item);
+      clearCapture();
+      if (onSaved) onSaved('No signal. Inspection saved on this phone and will be sent automatically when you are back online.', 'warning');
+    };
+
+    setSaving(true);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        await saveOnDevice();
+        return;
+      }
+      await sendInspection(supabase, item);
+      if (onSaved) onSaved('Field findings submitted');
+      clearCapture();
       await loadSupportingData();
     } catch (err) {
-      console.error('Failed to submit inspection findings:', err);
-      if (onSaved) onSaved(friendlyReportError(err, 'Could not submit your findings. Please try again.'), 'error');
+      if (isConnectionError(err)) {
+        try { await saveOnDevice(); } catch (saveErr) {
+          console.error('Could not save inspection on device:', saveErr);
+          if (onSaved) onSaved('No signal, and the inspection could not be saved on this phone. Please try again.', 'error');
+        }
+      } else {
+        console.error('Failed to submit inspection findings:', err);
+        if (onSaved) onSaved(friendlyReportError(err, 'Could not submit your findings. Please try again.'), 'error');
+      }
     } finally {
       setSaving(false);
     }
@@ -443,10 +383,27 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
         canvas.toBlob(async (blob) => {
           if (!blob) return;
-          const capturedFile = new File([blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          const stampedFile = await createGeoOverlayImage(capturedFile, report, geo);
+          // Tamper-evident stamp: date/time, GPS, project and a verification QR
+          // (lib/photoAttestation.js). Falls back to the plain photo if stamping fails.
+          let photo = new File([blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          let attestation = null;
+          try {
+            const stamped = await attestPhoto(blob, {
+              kind: 'field_inspection',
+              latitude: geo.latitude,
+              longitude: geo.longitude,
+              accuracy: geo.accuracy,
+              capturedAt: geo.capturedAt,
+              label: `Field inspection · ${report?.project_name || `Report ${String(report?.id || '').slice(0, 8).toUpperCase()}`}`,
+            });
+            photo = new File([stamped.blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            attestation = stamped.attestation;
+          } catch (stampErr) {
+            console.warn('[inspection] photo stamp failed, keeping the plain photo', stampErr);
+          }
           setCapturedGeo(geo);
-          setPhotoFile(stampedFile);
+          setPhotoAttestation(attestation);
+          setPhotoFile(photo);
           stopCamera();
         }, 'image/jpeg', 0.9);
       },
@@ -464,6 +421,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const retakeCapture = () => {
     setPhotoFile(null);
     setCapturedGeo(null);
+    setPhotoAttestation(null);
     setCaptureGeoError('');
     setCameraError('');
   };
@@ -747,6 +705,30 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
             I certify that these inspection findings, photo, and GPS capture were collected on site.
           </span>
         </label>
+
+        {queuedInspection && (
+          <div className={`flex flex-wrap items-start gap-3 rounded-xl border p-3 text-xs ${queuedInspection.lastError ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">
+                {queuedInspection.lastError ? 'Saved inspection was not accepted' : 'Inspection saved on this phone, waiting to send'}
+              </p>
+              <p className="mt-0.5">
+                {queuedInspection.lastError
+                  ? queuedInspection.lastError
+                  : `Saved ${new Date(queuedInspection.queuedAt).toLocaleString()}. It is sent automatically when you are back online.`}
+              </p>
+            </div>
+            {queuedInspection.lastError && (
+              <button
+                type="button"
+                onClick={() => discardQueuedInspection(queuedInspection.id)}
+                className="shrink-0 rounded-lg border border-red-300 bg-white px-2.5 py-1 font-semibold text-red-700 hover:bg-red-100"
+              >
+                Discard
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-end border-t border-slate-100 pt-4">
           <button

@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
+import { withOfflineCache } from '../lib/offlineCache';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from '../components/map/MapPanels';
 import StableHeatLayer from '../components/map/StableHeatLayer';
@@ -263,17 +264,29 @@ export default function UserMapView({ embedded = false } = {}) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'market_locations' }, refetchSoon('markets', fetchMarkets))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, refetchSoon('tranches', fetchProjectTranches))
       .subscribe();
+    // Pull fresh data as soon as the signal returns.
+    const onOnline = () => {
+      fetchProjects();
+      fetchProjectRoutes();
+      fetchRoadGaps();
+      fetchProjectReportCounts();
+      fetchFarmerBeneficiaries();
+      fetchMarkets();
+      fetchProjectTranches();
+    };
+    window.addEventListener('online', onOnline);
     return () => {
       Object.values(timers).forEach(clearTimeout);
       supabase.removeChannel(channel);
+      window.removeEventListener('online', onOnline);
     };
   }, []);
 
   async function fetchFarmerBeneficiaries() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:map:farmers', () => supabase
         .from('farmer_beneficiaries')
-        .select('id, farm_latitude, farm_longitude, crop');
+        .select('id, farm_latitude, farm_longitude, crop'));
       if (error) throw error;
       setFarmerBeneficiaries(data || []);
     } catch (err) {
@@ -283,10 +296,10 @@ export default function UserMapView({ embedded = false } = {}) {
 
   async function fetchMarkets() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:map:markets', () => supabase
         .from('market_locations')
         .select('*')
-        .order('market_name', { ascending: true });
+        .order('market_name', { ascending: true }));
       if (error) throw error;
       setMarkets(data || []);
     } catch (err) {
@@ -297,10 +310,10 @@ export default function UserMapView({ embedded = false } = {}) {
   async function fetchProjects() {
     try {
       setFetchError(null);
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:map:projects', () => supabase
         .from('fmr_projects')
         .select('*')
-        .order('year_funded', { ascending: false });
+        .order('year_funded', { ascending: false }));
 
       if (error) {
         setFetchError(error.message);
@@ -316,11 +329,11 @@ export default function UserMapView({ embedded = false } = {}) {
 
   async function fetchProjectTranches() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:project_tranches', () => supabase
         .from('project_tranches')
         // Citizens see budget totals only - never who released a tranche or internal notes.
         .select('id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date')
-        .order('tranche_order', { ascending: true });
+        .order('tranche_order', { ascending: true }));
       if (error) throw error;
       const map = {};
       (data || []).forEach((t) => {
@@ -335,10 +348,10 @@ export default function UserMapView({ embedded = false } = {}) {
 
   async function fetchRoadGaps() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:map:gaps', () => supabase
         .from('road_network_gaps')
         .select('*')
-        .order('gap_km', { ascending: false });
+        .order('gap_km', { ascending: false }));
       // Keep the map usable if the table is absent in a given deployment.
       setRoadGaps(error ? [] : data || []);
     } catch {
@@ -348,7 +361,7 @@ export default function UserMapView({ embedded = false } = {}) {
 
   async function fetchProjectRoutes() {
     try {
-      const { data, error } = await supabase.from('project_routes').select('*');
+      const { data, error } = await withOfflineCache('citizen:map:routes', () => supabase.from('project_routes').select('*'));
       if (error) {
         // Keep map functional when project_routes does not exist yet in a deployment.
         setRouteByProjectId({});
@@ -368,9 +381,9 @@ export default function UserMapView({ embedded = false } = {}) {
 
   async function fetchProjectReportCounts() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await withOfflineCache('citizen:map:report_counts', () => supabase
         .from('public_reports_citizen_view')
-        .select('project_id, project_name');
+        .select('project_id, project_name'));
 
       if (error) return;
 

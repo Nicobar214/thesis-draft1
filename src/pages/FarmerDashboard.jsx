@@ -10,6 +10,7 @@ import { supabaseFarmer as supabase } from "../lib/supabase";
 import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from "../lib/mapRouteUtils";
 import { storeGlyph, routeGlyph } from "../lib/mapMarkerIcons";
 import { useFarmerRecord } from "../lib/useFarmerRecord";
+import { cachedQuery } from "../lib/offlineCache";
 import { MapLegend, LegendGroup, LegendLine, LegendDot } from "../components/map/MapPanels";
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -70,9 +71,19 @@ export default function FarmerDashboard() {
   const [snappedFmrPath, setSnappedFmrPath] = useState(null);
   const [snappedSupplyPath, setSnappedSupplyPath] = useState(null);
 
+  // Saved on the device (lib/offlineCache.js), so My Farm still works offline.
   useEffect(() => {
-    supabase.from("fmr_projects").select("*").then(({ data }) => setFmrProjects(data || []));
-    supabase.from("market_locations").select("*").then(({ data }) => setMarkets(data || []));
+    const load = () => {
+      cachedQuery("fmr_projects:all", () => supabase.from("fmr_projects").select("*"))
+        .then(({ data }) => setFmrProjects(data || []))
+        .catch(() => {});
+      cachedQuery("market_locations:all", () => supabase.from("market_locations").select("*"))
+        .then(({ data }) => setMarkets(data || []))
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("online", load);
+    return () => window.removeEventListener("online", load);
   }, []);
 
   const farmLat = farmerRecord?.farm_latitude;

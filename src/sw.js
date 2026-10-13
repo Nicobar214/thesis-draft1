@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
-import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
@@ -56,6 +56,34 @@ registerRoute(
     cacheName: 'osm-tiles-cache',
     plugins: [
       new ExpirationPlugin({ maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+    ],
+  })
+);
+
+// Other basemaps (Esri satellite/streets, OpenTopoMap, CyclOSM): tiles already
+// viewed stay available offline, like the OpenStreetMap tiles above.
+registerRoute(
+  ({ url }) => /(^|\.)arcgisonline\.com$|(^|\.)opentopomap\.org$|(^|\.)cyclosm\.openstreetmap\.fr$/i.test(url.hostname)
+    || /tile-cyclosm\.openstreetmap\.fr$/i.test(url.hostname),
+  new CacheFirst({
+    cacheName: 'basemap-tiles-cache',
+    plugins: [
+      new ExpirationPlugin({ maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+    ],
+  })
+);
+
+// Road-following lines (OSRM): try the network briefly, fall back to the last
+// route saved, so farm-to-road and farm-to-market lines still draw offline.
+registerRoute(
+  ({ url }) => url.hostname === 'router.project-osrm.org',
+  new NetworkFirst({
+    cacheName: 'osrm-routes-cache',
+    networkTimeoutSeconds: 5,
+    plugins: [
+      new ExpirationPlugin({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 }),
       new CacheableResponsePlugin({ statuses: [0, 200] }),
     ],
   })
@@ -200,6 +228,34 @@ async function insertReport(item, photoUrl) {
   }
 }
 
+// Records the photo's verification code (see lib/photoAttestation.js). Best
+// effort: a failed registration must never block or fail the report.
+async function registerAttestation(item, path) {
+  const a = item.attestation;
+  if (!a?.code) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/rpc/register_photo_attestation`, {
+      method: 'POST',
+      headers: { ...buildAuthHeaders(item.authToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        p_code: a.code,
+        p_sha256: a.sha256,
+        p_kind: a.kind,
+        p_record_id: null,
+        p_label: a.label,
+        p_storage_bucket: 'public-report-photos',
+        p_storage_path: path,
+        p_latitude: a.latitude,
+        p_longitude: a.longitude,
+        p_accuracy_m: a.accuracy,
+        p_captured_at: a.capturedAt,
+      }),
+    });
+  } catch (err) {
+    console.warn('[sw-sync] Could not register photo attestation', err);
+  }
+}
+
 async function processQueue() {
   const items = await getQueuedReports();
   if (!items || items.length === 0) return;
@@ -214,6 +270,7 @@ async function processQueue() {
       console.info(`[sw-sync] Sending report ${item.id}`);
       const upload = await uploadPhoto(item);
       await insertReport(item, upload.publicUrl);
+      await registerAttestation(item, upload.path);
       await updateQueuedReport(item.id, { status: 'synced', isSyncing: false, lastError: null });
       await removeQueuedReport(item.id);
     } catch (err) {

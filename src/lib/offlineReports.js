@@ -70,6 +70,13 @@ async function readAllFromStore(storeName) {
   });
 }
 
+export const REPORT_QUEUE_EVENT = 'kt:report-queue-changed';
+function announceQueue() {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(REPORT_QUEUE_EVENT));
+  }
+}
+
 export async function enqueueReport(payload, photoBlob, options = {}) {
   const nowIso = new Date().toISOString();
   const id = options.id || createReportId();
@@ -79,6 +86,8 @@ export async function enqueueReport(payload, photoBlob, options = {}) {
     photoBlob,
     photoPath: options.photoPath || null,
     authToken: options.authToken || null,
+    attestation: options.attestation || null, // registered once the report syncs
+    portal: options.portal || 'citizen', // which signed-in client sends it (farmer | citizen)
     createdAt: options.createdAt || nowIso,
     updatedAt: nowIso,
     status: options.status || 'pending',
@@ -90,6 +99,7 @@ export async function enqueueReport(payload, photoBlob, options = {}) {
   await withStore(REPORT_STORE, 'readwrite', (store) => store.put(record));
   const stored = await withStore(REPORT_STORE, 'readonly', (store) => store.get(id));
   console.info('[offline-report] Queue verify', { id, stored: !!stored, origin: window.location.origin });
+  announceQueue();
   return record;
 }
 
@@ -217,7 +227,9 @@ export async function updateQueuedEngineerUpdate(id, patch) {
 }
 
 export async function removeQueuedReport(id) {
-  return withStore(REPORT_STORE, 'readwrite', (store) => store.delete(id));
+  const result = await withStore(REPORT_STORE, 'readwrite', (store) => store.delete(id));
+  announceQueue();
+  return result;
 }
 
 export async function removeQueuedEngineerUpdate(id) {

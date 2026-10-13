@@ -36,8 +36,8 @@ const TABS = [
 function Section({ title, children }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold text-white">{title}</h2>
-      <div className="space-y-3 text-[15px] leading-7 text-slate-300 [&_li]:ml-5 [&_li]:list-disc [&_li]:marker:text-emerald-400 [&_strong]:font-semibold [&_strong]:text-white">
+      <h2 className="text-base font-semibold text-white sm:text-lg">{title}</h2>
+      <div className="space-y-3 break-words text-sm leading-6 text-slate-300 sm:text-[15px] sm:leading-7 [&_li]:ml-5 [&_li]:list-disc [&_li]:marker:text-emerald-400 [&_strong]:font-semibold [&_strong]:text-white">
         {children}
       </div>
     </section>
@@ -106,6 +106,10 @@ function Privacy() {
         </ul>
         <p>Report photos are stored so they can be displayed in the app; anyone with a photo&rsquo;s direct link
           can open it. Please avoid capturing faces, plate numbers or private property where you can.</p>
+        <p><strong>Photo verification:</strong> every geotagged photo is stamped with its date, time, location and a
+          verification QR code, and a fingerprint of the photo is recorded, so edited copies can be detected.
+          Anyone who scans the code sees the photo&rsquo;s type, time and location, and the original photo for public
+          road reports. No names or account details are shown. Contractor progress photos stay private.</p>
       </Section>
 
       <Section title="Service providers">
@@ -231,12 +235,12 @@ function Support() {
       <Section title="Frequently asked questions">
         <div className="divide-y divide-slate-700/60 overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-900/40">
           {FAQS.map((f) => (
-            <details key={f.q} className="group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+            <details key={f.q} className="group px-4 py-3.5 sm:px-5 sm:py-4 [&_summary::-webkit-details-marker]:hidden">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-medium text-white hover:text-emerald-300">
                 {f.q}
                 <span className="text-lg text-emerald-400 transition-transform group-open:rotate-45" aria-hidden="true">+</span>
               </summary>
-              <p className="mt-2 text-[15px] leading-7 text-slate-300">{f.a}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300 sm:text-[15px] sm:leading-7">{f.a}</p>
             </details>
           ))}
         </div>
@@ -274,40 +278,41 @@ export default function LegalPage() {
   }, [page.title]);
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-slate-900 text-slate-300">
+    <div className="relative min-h-dvh overflow-x-clip bg-slate-900 text-slate-300">
       {/* Same ambiance as the landing page hero */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0">
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="kt-grid absolute inset-0" />
-        <div className="kt-glow absolute -top-24 left-1/2 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full bg-emerald-500/20 blur-[110px]" />
-        <div className="kt-glow absolute bottom-0 right-0 h-[26rem] w-[26rem] rounded-full bg-teal-500/10 blur-[100px]" style={{ animationDelay: '2.5s' }} />
+        <div className="kt-glow absolute -top-24 left-1/2 h-[22rem] w-[22rem] -translate-x-1/2 rounded-full bg-emerald-500/20 blur-[90px] sm:h-[36rem] sm:w-[36rem] sm:blur-[110px]" />
+        <div className="kt-glow absolute bottom-0 right-0 h-[16rem] w-[16rem] rounded-full bg-teal-500/10 blur-[80px] sm:h-[26rem] sm:w-[26rem] sm:blur-[100px]" style={{ animationDelay: '2.5s' }} />
       </div>
 
       <header className="relative border-b border-slate-800/80 bg-slate-900/60 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <Link to="/" aria-label="KalsaTrack home"><Logo tone="light" className="h-8" /></Link>
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+          <Link to="/" aria-label="KalsaTrack home" className="shrink-0"><Logo tone="light" className="h-7 sm:h-8" /></Link>
           <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-400 transition-colors hover:text-white">
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
-            Back to home
+            <span className="sm:hidden">Home</span>
+            <span className="hidden sm:inline">Back to home</span>
           </Link>
         </div>
       </header>
 
-      <main className="relative mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="relative mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
         <div className="text-center">
           <span className="inline-flex items-center gap-2 rounded-full bg-emerald-900/50 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 ring-1 ring-inset ring-emerald-600/40">
             <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
             Legal &amp; Support · DA Region VI
           </span>
-          <h1 className="mt-5 text-3xl font-black tracking-tight text-white sm:text-5xl">
+          <h1 className="mt-4 text-[2rem] font-black leading-tight tracking-tight text-white sm:mt-5 sm:text-5xl">
             <span className="bg-gradient-to-r from-emerald-400 via-emerald-300 to-teal-300 bg-clip-text text-transparent">{page.title}</span>
           </h1>
-          <p className="mx-auto mt-3 max-w-xl text-slate-400">{page.intro}</p>
+          <p className="mx-auto mt-3 max-w-xl text-sm text-slate-400 sm:text-base">{page.intro}</p>
           {pathname !== '/support' && (
             <p className="mt-1 text-sm text-slate-500">Effective {EFFECTIVE_DATE}</p>
           )}
         </div>
 
-        <nav className="mx-auto mt-8 flex max-w-2xl gap-1 overflow-x-auto rounded-2xl bg-slate-800/50 p-1 ring-1 ring-slate-700/60 backdrop-blur" aria-label="Legal and support">
+        <nav className="mx-auto mt-6 grid max-w-2xl grid-cols-3 gap-1 rounded-2xl bg-slate-800/50 p-1 ring-1 ring-slate-700/60 backdrop-blur sm:mt-8" aria-label="Legal and support">
           {TABS.map((tab) => {
             const { path, label } = tab;
             const active = path === pathname;
@@ -316,20 +321,20 @@ export default function LegalPage() {
                 key={path}
                 to={path}
                 aria-current={active ? 'page' : undefined}
-                className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1.5 py-2 text-center text-[11px] font-semibold leading-tight transition-all sm:flex-row sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm ${
                   active
                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-900/40'
                     : 'text-slate-400 hover:bg-white/5 hover:text-white'
                 }`}
               >
-                <tab.icon className="size-4" aria-hidden="true" />
-                {label}
+                <tab.icon className="size-4 shrink-0" aria-hidden="true" />
+                <span>{label}</span>
               </Link>
             );
           })}
         </nav>
 
-        <div className="mt-8 space-y-10 rounded-3xl border border-slate-700/60 bg-slate-800/40 p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-10">
+        <div className="mt-6 space-y-8 rounded-2xl border border-slate-700/60 bg-slate-800/40 p-5 shadow-2xl shadow-black/20 backdrop-blur sm:mt-8 sm:space-y-10 sm:rounded-3xl sm:p-10">
           <Body />
         </div>
 

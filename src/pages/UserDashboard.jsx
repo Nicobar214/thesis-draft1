@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { CameraIcon } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { getCurrentUser, withOfflineCache } from '../lib/offlineCache';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 
 import Icons from '../components/Icons';
@@ -327,7 +328,11 @@ export default function UserDashboard() {
       .channel('dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, fetchData)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    window.addEventListener('online', fetchData);
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('online', fetchData);
+    };
   }, []);
 
   useEffect(() => {
@@ -337,26 +342,27 @@ export default function UserDashboard() {
 
   async function fetchData() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Offline: the session and data saved on this device are used (lib/offlineCache.js).
+      const { user } = await getCurrentUser(supabase);
       const label = user?.user_metadata?.full_name || user?.email?.split('@')?.[0] || 'there';
       setUserLabel(label);
 
       let municipality = String(user?.user_metadata?.municipality || '').trim();
       if (user?.id) {
-        const { data: profile } = await supabase
+        const { data: profile } = await withOfflineCache(`citizen:${user.id}:municipality`, () => supabase
           .from('profiles')
           .select('municipality')
           .eq('id', user.id)
-          .maybeSingle();
+          .maybeSingle());
 
         municipality = String(profile?.municipality || municipality).trim();
       }
       setUserMunicipality(municipality);
 
-      const { data } = await supabase
+      const { data } = await withOfflineCache('citizen:dashboard:projects', () => supabase
         .from('fmr_projects')
         .select('*')
-        .order('year_funded', { ascending: false });
+        .order('year_funded', { ascending: false }));
 
       if (data) {
         const normalizedProjects = data
@@ -390,13 +396,13 @@ export default function UserDashboard() {
         });
 
         const [{ data: reportsData }, { data: feedbackData }] = await Promise.all([
-          supabase
+          withOfflineCache('citizen:dashboard:recent_reports', () => supabase
             .from('public_reports_citizen_view')
             .select('id, created_at, project_name, municipality, status, is_current_user_report')
             .order('created_at', { ascending: false })
-            .limit(12),
+            .limit(12)),
           // Shared activity feed: read from the community view (no author id or email).
-          selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(12)),
+          withOfflineCache('citizen:dashboard:feedback', () => selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(12))),
         ]);
 
         const projectActivity = normalizedProjects
@@ -443,8 +449,12 @@ export default function UserDashboard() {
           // Count the user's own submissions directly. Filtering the shared 12-item feed
           // would undercount as soon as other people have posted more recently.
           const [{ data: ownReports }, { count: ownFeedbackCount }] = await Promise.all([
-            supabase.from('public_reports_citizen_view').select('id, status').eq('is_current_user_report', true),
-            supabase.from('feedbacks').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+            withOfflineCache(`citizen:${user.id}:own_report_status`, () => supabase.from('public_reports_citizen_view').select('id, status').eq('is_current_user_report', true)),
+            // A head request has no rows, only a count: save the count itself.
+            withOfflineCache(`citizen:${user.id}:feedback_count`, async () => {
+              const res = await supabase.from('feedbacks').select('id', { count: 'exact', head: true }).eq('user_id', user.id);
+              return { data: res.count, error: res.error };
+            }).then((res) => ({ count: res.data })),
           ]);
           const myReports = ownReports || [];
 

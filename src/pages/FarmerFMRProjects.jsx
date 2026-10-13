@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabaseFarmer as supabase } from "../lib/supabase";
 import { notify } from "../lib/toast";
+import { cachedQuery } from "../lib/offlineCache";
 import Icons from "../components/Icons";
 import FmrProjectDetailDialog from "../components/FmrProjectDetailDialog";
 import { getPaginationRange } from "../lib/paginationUtils";
@@ -47,14 +48,13 @@ export default function FarmerFMRProjects() {
   const fetchProjects = async () => {
     try {
       setFetchError(null);
-      const [{ data, error }, { data: tranchesData }] = await Promise.all([
-        supabase.from("fmr_projects").select("*").order("status", { ascending: true }).order("accomplishment", { ascending: false }),
-        supabase.from("project_tranches").select("id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date").order("tranche_order", { ascending: true }),
+      // Saved on the device (lib/offlineCache.js): offline, the last copy is shown.
+      const [{ data }, tranchesRes] = await Promise.all([
+        cachedQuery("farmer:fmr_projects:sorted", () => supabase.from("fmr_projects").select("*").order("status", { ascending: true }).order("accomplishment", { ascending: false })),
+        cachedQuery("project_tranches:all", () => supabase.from("project_tranches").select("id, project_id, tranche_order, tranche_name, percentage, amount, required_progress, status, released_amount, released_date").order("tranche_order", { ascending: true }))
+          .catch(() => ({ data: [] })),
       ]);
-      if (error) {
-        setFetchError(error.message);
-        throw error;
-      }
+      const tranchesData = tranchesRes.data;
       const tMap = {};
       (tranchesData || []).forEach((t) => {
         if (!tMap[t.project_id]) tMap[t.project_id] = [];
@@ -75,7 +75,11 @@ export default function FarmerFMRProjects() {
       .channel("farmer-fmr-projects")
       .on("postgres_changes", { event: "*", schema: "public", table: "fmr_projects" }, fetchProjects)
       .subscribe();
-    return () => supabase.removeChannel(channel);
+    window.addEventListener("online", fetchProjects);
+    return () => {
+      window.removeEventListener("online", fetchProjects);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // /farmer/fmr-projects?project=<id> opens that project once the list has loaded.
