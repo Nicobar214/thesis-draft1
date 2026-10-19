@@ -5,15 +5,16 @@ import ProfileAvatar from '../components/ui/ProfileAvatar';
 import { useProfileNameUpdates } from '../lib/profileName';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline, CircleMarker, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline, Polygon, CircleMarker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { supabaseLgu as supabase, supabaseAdmin } from '../lib/supabase';
 import { notify } from '../lib/toast';
 import { confirm, confirmSignOut } from '../lib/confirm';
-import { checkPinInBarangay, lineCrossesBarangay } from '../lib/barangayLocator';
-import { findRoadAccess } from '../lib/farmRoadAccess';
+import { barangayGeometry, checkPinInBarangay, lineCrossesBarangay, useBarangayBoundaries } from '../lib/barangayLocator';
+import { findRoadAccess, rankRoadsByAccess, snapRoadLine } from '../lib/farmRoadAccess';
+import { typicalYieldTPerHa } from '../lib/harvestPlausibility';
 import RequiredReminder from '../components/publicReports/reportForm/RequiredReminder';
 import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../components/ui/Modal';
 import NotificationBell from '../components/NotificationBell';
@@ -164,15 +165,6 @@ function FormMapCamera({ points }) {
     else map.flyToBounds(bounds, { padding: [48, 48], maxZoom: 16, duration: 0.8 });
   }, [map, key]);
   return null;
-}
-
-function cropYieldPerHectare(crop) {
-  if (crop === 'Rice') return 4.2;
-  if (crop === 'Corn') return 3.6;
-  if (crop === 'Sugarcane') return 65;
-  if (crop === 'Coconut') return 8;
-  if (crop === 'Vegetables') return 12;
-  return 9;
 }
 
 function normalizeBeneficiaryRow(row) {
@@ -344,12 +336,27 @@ export default function LguDashboard() {
   const farmPinnedRaw = Boolean(Number(beneficiaryForm.farmLatitude) && Number(beneficiaryForm.farmLongitude));
   // A pin outside the chosen barangay is flagged and NOT used to suggest roads,
   // so roads from another barangay are never suggested (lib/barangayLocator.js).
+  // Official PSA/NAMRIA boundaries for the municipality, loaded on demand;
+  // until they arrive (or where a barangay has none) the approximate check is used.
+  const boundariesReady = useBarangayBoundaries(formMunicipality);
   const pinCheck = useMemo(() => checkPinInBarangay({
     lat: beneficiaryForm.farmLatitude,
     lng: beneficiaryForm.farmLongitude,
     municipality: formMunicipality,
     barangay: beneficiaryForm.barangay,
-  }), [beneficiaryForm.farmLatitude, beneficiaryForm.farmLongitude, formMunicipality, beneficiaryForm.barangay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boundariesReady re-runs the check once the file loads
+  }), [beneficiaryForm.farmLatitude, beneficiaryForm.farmLongitude, formMunicipality, beneficiaryForm.barangay, boundariesReady]);
+  // "in Brgy. X", or "outside Leon" when the pin is beyond the municipality.
+  const pinActualPlace = pinCheck.nearest?.name
+    ? (pinCheck.nearest.name.startsWith('outside ') ? pinCheck.nearest.name : `in Brgy. ${pinCheck.nearest.name}`)
+    : 'in another barangay';
+  // Outline of the chosen barangay, drawn on the map (Leaflet wants [lat, lng]).
+  const barangayOutline = useMemo(() => {
+    const geom = boundariesReady ? barangayGeometry(formMunicipality, beneficiaryForm.barangay) : null;
+    if (!geom) return null;
+    const polys = geom.type === 'MultiPolygon' ? geom.coordinates : [geom.coordinates];
+    return polys.map((rings) => rings.map((ring) => ring.map(([lng, lat]) => [lat, lng])));
+  }, [boundariesReady, formMunicipality, beneficiaryForm.barangay]);
   const pinOutsideBarangay = farmPinnedRaw && pinCheck.status === 'outside';
   const farmPinned = farmPinnedRaw && !pinOutsideBarangay;
   const eligibleMunicipalities = useMemo(() => {
@@ -395,7 +402,9 @@ export default function LguDashboard() {
       isFallback: true,
       truncatedCount: 0,
     };
-  }, [projects, beneficiaryForm.municipality, beneficiaryForm.barangay, municipalityScope, routesByProjectId]);
+    // boundariesReady re-runs the barangay match once the official boundaries load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, beneficiaryForm.municipality, beneficiaryForm.barangay, municipalityScope, routesByProjectId, boundariesReady]);
 
   // Coordinates for exact-match suggestions that don't already have stored
   // start/end points, resolved on demand via geocodeFmrLocation (cached).
@@ -443,23 +452,69 @@ export default function LguDashboard() {
   // point, closest first, for both display order and connector-line choice.
   // With the farm pinned, distance is to the nearest point ALONG each road
   // (its saved route line), and `access` is where the farm meets that road.
-  const rankedSuggestedProjects = useMemo(() => {
+  // Roads saved with only their two ends are drawn along the real road network
+  // (a straight line can cut across a river); see snapRoadLine.
+  const [snappedRoadLines, setSnappedRoadLines] = useState({});
+  useEffect(() => {
+    const todo = suggestedProjects.items.filter((p) => !(p.id in snappedRoadLines));
+    if (todo.length === 0) return undefined;
+    let cancelled = false;
+    Promise.all(todo.map(async (p) => {
+      const line = buildRoutePoints(p, routesByProjectId[p.id]).points;
+      return [p.id, line.length >= 2 && line.length <= 3 ? await snapRoadLine(line) : null];
+    })).then((entries) => {
+      if (cancelled) return;
+      setSnappedRoadLines((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+    });
+    return () => { cancelled = true; };
+  }, [suggestedProjects, routesByProjectId, snappedRoadLines]);
+
+  // Suggested roads with their line and straight-line distance (first guess).
+  const baseRankedProjects = useMemo(() => {
     const ref = suggestionReferencePoint;
-    const ranked = suggestedProjects.items
+    return suggestedProjects.items.map((p) => {
+      const point = resolveProjectPoint(p, suggestedProjectCoords);
+      const routeLine = snappedRoadLines[p.id] || buildRoutePoints(p, routesByProjectId[p.id]).points;
+      const line = routeLine.length > 0 ? routeLine : (point ? [point] : []);
+      const access = farmPinned && ref ? nearestPointOnPolyline(ref, line) : null;
+      const distanceMeters = access
+        ? access.distanceMeters
+        : (point && ref ? haversineMeters(ref[0], ref[1], point[0], point[1]) : Infinity);
+      return { ...p, point, line, access, distanceMeters, byRoad: false };
+    });
+  }, [suggestedProjects, suggestedProjectCoords, suggestionReferencePoint, routesByProjectId, farmPinned, snappedRoadLines]);
+
+  // Once the farm is pinned, rank the roads by the real distance BY ROAD (one
+  // request): the closest road as the crow flies can be across a river.
+  const roadRankKey = farmPinned
+    ? `${beneficiaryForm.farmLatitude},${beneficiaryForm.farmLongitude}|${baseRankedProjects.map((p) => `${p.id}:${p.line.length}`).join(',')}`
+    : '';
+  const [roadRank, setRoadRank] = useState({ key: '', byId: null });
+  useEffect(() => {
+    if (!roadRankKey || baseRankedProjects.length === 0) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const farm = [Number(beneficiaryForm.farmLatitude), Number(beneficiaryForm.farmLongitude)];
+      const byId = await rankRoadsByAccess(farm, baseRankedProjects.map((p) => ({ id: p.id, line: p.line })));
+      if (!cancelled) setRoadRank({ key: roadRankKey, byId });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // roadRankKey captures the pin and every road line used.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roadRankKey]);
+  const roadRankReady = roadRank.key === roadRankKey && roadRankKey !== '' && roadRank.byId?.size > 0;
+
+  // Closest first, by road when known, for display order and the linked road.
+  const rankedSuggestedProjects = useMemo(() => {
+    const ranked = baseRankedProjects
       .map((p) => {
-        const point = resolveProjectPoint(p, suggestedProjectCoords);
-        const routeLine = buildRoutePoints(p, routesByProjectId[p.id]).points;
-        const line = routeLine.length > 0 ? routeLine : (point ? [point] : []);
-        const access = farmPinned && ref ? nearestPointOnPolyline(ref, line) : null;
-        const distanceMeters = access
-          ? access.distanceMeters
-          : (point && ref ? haversineMeters(ref[0], ref[1], point[0], point[1]) : Infinity);
-        return { ...p, point, line, access, distanceMeters };
+        const net = roadRankReady ? roadRank.byId.get(p.id) : null;
+        return net ? { ...p, distanceMeters: net.meters, byRoad: true } : (roadRankReady ? { ...p, distanceMeters: Infinity, unreachable: true } : p);
       })
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
     // A barangay without its own road falls back to the 3 nearest in the town.
     return suggestedProjects.isFallback ? ranked.slice(0, 3) : ranked;
-  }, [suggestedProjects, suggestedProjectCoords, suggestionReferencePoint, routesByProjectId, farmPinned]);
+  }, [baseRankedProjects, roadRankReady, roadRank, suggestedProjects.isFallback]);
 
   const nearestSuggestedMarket = useMemo(() => {
     if (!suggestionReferencePoint || markets.length === 0) return null;
@@ -535,7 +590,8 @@ export default function LguDashboard() {
   const farmLinkReady = farmLink.key === farmLinkKey && farmLinkKey !== '' && Boolean(farmLink.access);
   const farmAccess = farmLinkReady ? farmLink.access : null;
   const farmLinkFinding = farmLinkKey !== '' && farmLink.key !== farmLinkKey;
-  const farmLinkPoints = farmAccess ? farmAccess.path : null;
+  const carryLeg = farmAccess?.byRoad && farmAccess.carryMeters > 30 ? farmAccess.path.slice(0, 2) : null;
+  const farmLinkPoints = farmAccess ? (carryLeg ? farmAccess.path.slice(1) : farmAccess.path) : null;
 
   const [connectorRoute, setConnectorRoute] = useState(null);
 
@@ -853,14 +909,14 @@ export default function LguDashboard() {
     }
     if (pinOutsideBarangay && !(await confirm({
       title: 'Farm pin is outside the barangay',
-      message: `The pin looks like it is in Brgy. ${pinCheck.nearest?.name}, not Brgy. ${beneficiaryForm.barangay}. Move the pin onto the farm, or save anyway if you are sure.`,
+      message: `The pin looks like it is ${pinActualPlace}, not in Brgy. ${beneficiaryForm.barangay}. Move the pin onto the farm, or save anyway if you are sure.`,
       confirmLabel: 'Save anyway',
       tone: 'warning',
     }))) return;
 
     const farmAreaHa = Number(beneficiaryForm.farmAreaHa || 0);
     const selectedProject = projects.find((project) => String(project.id) === String(beneficiaryForm.linkedProjectId));
-    const estimatedYield = Number((farmAreaHa * cropYieldPerHectare(beneficiaryForm.crop)).toFixed(1));
+    const estimatedYield = Number((farmAreaHa * typicalYieldTPerHa(beneficiaryForm.crop)).toFixed(1));
 
     // Compute distance to FMR using Haversine
     let distanceToFmrKm = 0.5;
@@ -886,7 +942,7 @@ export default function LguDashboard() {
     }
     // Prefer the distance by road shown on the map: it goes around rivers
     // instead of across them (lib/farmRoadAccess.js).
-    if (farmAccess?.byRoad && selectedProject && String(connectorProject?.id) === String(selectedProject.id)) {
+    if (farmAccess?.mode === 'vehicle' && selectedProject && String(connectorProject?.id) === String(selectedProject.id)) {
       distanceToFmrKm = Number(farmAccess.km.toFixed(2));
     }
 
@@ -1134,7 +1190,8 @@ export default function LguDashboard() {
         supabase.from('market_locations').select('*').order('market_name', { ascending: true }),
         supabase.from('project_tranches').select('*').order('tranche_order', { ascending: true }),
         supabase.from('road_network_gaps').select('*').order('gap_km', { ascending: false }),
-        supabase.from('farmer_harvest_logs').select('id, farmer_id, crop, quantity_kg, harvest_date'),
+        // '*' so review_status/area_ha are included once supabase_harvest_review.sql has run, without failing before.
+        supabase.from('farmer_harvest_logs').select('*'),
       ]);
 
       if (projectsRes.error) console.error('Failed to fetch projects:', projectsRes.error.message);
@@ -1980,7 +2037,8 @@ export default function LguDashboard() {
                         {rankedSuggestedProjects.map((project) => (
                           <option key={project.id} value={project.id}>
                             {project.project_name}
-                            {Number.isFinite(project.distanceMeters) ? ` · ${(project.distanceMeters / 1000).toFixed(2)} km` : ''}
+                            {Number.isFinite(project.distanceMeters) ? ` · ${(project.distanceMeters / 1000).toFixed(2)} km${project.byRoad ? ' by road' : ''}` : ''}
+                            {project.unreachable ? ' · no road connection found' : ''}
                           </option>
                         ))}
                         {beneficiaryForm.linkedProjectId && !rankedSuggestedProjects.some((p) => String(p.id) === String(beneficiaryForm.linkedProjectId)) && (() => {
@@ -2032,7 +2090,7 @@ export default function LguDashboard() {
                           <TriangleAlertIcon className="mt-px size-4 shrink-0 text-red-600" aria-hidden="true" />
                           <span>
                             <strong className="font-semibold">The pin is outside Brgy. {beneficiaryForm.barangay}.</strong>{' '}
-                            It looks like it is in Brgy. {pinCheck.nearest?.name}. Move the pin onto the farm inside Brgy. {beneficiaryForm.barangay}.
+                            It looks like it is {pinActualPlace}{pinCheck.exact ? ' (official PSA boundary)' : ''}. Move the pin onto the farm inside Brgy. {beneficiaryForm.barangay}.
                             Roads are suggested for Brgy. {beneficiaryForm.barangay} only until then.
                           </span>
                         </div>
@@ -2051,11 +2109,11 @@ export default function LguDashboard() {
                                   {String(beneficiaryForm.linkedProjectId) === String(connectorProject.id) ? 'Linked road: ' : 'Nearest road: '}
                                   {connectorProject.project_name}
                                 </span>
-                                {farmAccess.byRoad
-                                  ? ` — ${farmAccess.km.toFixed(2)} km from the farm by road`
-                                  : ` — ${farmAccess.km.toFixed(2)} km in a straight line (road map unavailable, so this ignores rivers)`}
-                                {farmAccess.byRoad && farmAccess.offRoadMeters > 150 && (
-                                  <span className="text-slate-500"> (includes about {Math.round(farmAccess.offRoadMeters)} m across the field to the nearest mapped path)</span>
+                                {farmAccess.mode === 'vehicle' && ` — ${farmAccess.km.toFixed(2)} km by vehicle road (passable with a load)`}
+                                {farmAccess.mode === 'walking' && ` — ${farmAccess.km.toFixed(2)} km on foot only`}
+                                {farmAccess.mode === 'straight' && ` — ${farmAccess.km.toFixed(2)} km in a straight line (road map unavailable, so this ignores rivers)`}
+                                {farmAccess.mode === 'vehicle' && farmAccess.carryMeters > 150 && !farmAccess.farCarry && (
+                                  <span className="text-slate-500">, after carrying the harvest about {Math.round(farmAccess.carryMeters)} m to the nearest vehicle road</span>
                                 )}
                                 {rankedSuggestedProjects.length > 1 && <span className="text-slate-500">. Click another road line on the map to link it instead.</span>}
                               </p>
@@ -2063,6 +2121,18 @@ export default function LguDashboard() {
                               <p className="text-xs text-slate-600">Finding how the farm reaches {connectorProject?.project_name || 'the road'} by road…</p>
                             ) : !farmPinned && (
                               <p className="text-xs text-slate-600">Pin the farm on the map to find the road closest to it.</p>
+                            )}
+                            {farmAccess && (farmAccess.farCarry || farmAccess.mode === 'walking') && (
+                              <p className="text-xs font-medium text-amber-800">
+                                {farmAccess.mode === 'walking'
+                                  ? 'No vehicle road reaches this FMR road on the map: the harvest must be carried on foot or by carabao the whole way.'
+                                  : `Far from any vehicle road: the harvest must be carried about ${(farmAccess.carryMeters / 1000).toFixed(1)} km before a vehicle can take it.`}
+                              </p>
+                            )}
+                            {farmAccess?.shortcut && (
+                              <p className="text-xs text-slate-600">
+                                Footpath shortcut: {farmAccess.shortcut.km.toFixed(2)} km, on foot or carabao only (may include footbridges or steps).
+                              </p>
                             )}
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                               <span className="flex items-center gap-1.5">
@@ -2072,7 +2142,19 @@ export default function LguDashboard() {
                               {farmLinkPoints && (
                                 <span className="flex items-center gap-1.5">
                                   <span className="w-4 h-0.5 border-t-2 border-emerald-600 inline-block" />
-                                  Farm → road link
+                                  {farmAccess?.mode === 'walking' ? 'Farm → road on foot' : 'Farm → road by vehicle'}
+                                </span>
+                              )}
+                              {carryLeg && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-4 h-0.5 border-t-2 border-dotted border-amber-700 inline-block" />
+                                  Carried across the field
+                                </span>
+                              )}
+                              {farmAccess?.shortcut && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-4 h-0.5 border-t-2 border-dashed border-sky-600 inline-block" />
+                                  Footpath shortcut
                                 </span>
                               )}
                               {nearestSuggestedMarket && (
@@ -2162,6 +2244,12 @@ export default function LguDashboard() {
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                             attribution='&copy; OpenStreetMap contributors'
                           />
+                          {barangayOutline && (
+                            <Polygon
+                              positions={barangayOutline}
+                              pathOptions={{ color: '#0d9488', weight: 2, dashArray: '5, 5', fillColor: '#14b8a6', fillOpacity: 0.06, interactive: false }}
+                            />
+                          )}
                           <MapClickPicker
                             onPick={(lat, lng) => {
                               if (!canPin) return;
@@ -2228,6 +2316,16 @@ export default function LguDashboard() {
                                 ...(farmAccess?.byRoad ? {} : { dashArray: '6, 8' }),
                               }}
                             />
+                          )}
+                          {carryLeg && (
+                            <Polyline positions={carryLeg} pathOptions={{ color: '#b45309', weight: 3, dashArray: '2, 6', bubblingMouseEvents: false }}>
+                              <Tooltip sticky>Harvest carried about {Math.round(farmAccess.carryMeters)} m to the nearest vehicle road</Tooltip>
+                            </Polyline>
+                          )}
+                          {farmAccess?.shortcut && (
+                            <Polyline positions={farmAccess.shortcut.path} pathOptions={{ color: '#0284c7', weight: 3, dashArray: '8, 6', opacity: 0.85, bubblingMouseEvents: false }}>
+                              <Tooltip sticky>Footpath shortcut, {farmAccess.shortcut.km.toFixed(2)} km: on foot or carabao only (may include footbridges or steps)</Tooltip>
+                            </Polyline>
                           )}
                           {farmAccess && (
                             <CircleMarker

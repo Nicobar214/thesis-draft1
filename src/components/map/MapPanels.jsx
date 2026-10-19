@@ -85,18 +85,21 @@ export function LegendLine({ color = 'bg-slate-400', dashed = false, label, coun
   );
 }
 
-/** Round marker sample. `style` lets a caller pass a hex color for status pins. */
-export function LegendDot({ color = 'bg-slate-400', ring, label, text, style, count }) {
+/**
+ * Round marker sample. `style` lets a caller pass a hex color for status pins.
+ * `icon` (a lucide component) draws the same symbol as the map marker inside the dot.
+ */
+export function LegendDot({ color = 'bg-slate-400', ring, label, text, style, count, icon: Icon }) {
   return (
     <LegendRow
       label={label}
       count={count}
       swatch={(
         <span
-          className={`grid size-3.5 place-items-center rounded-full text-[7px] font-bold leading-none text-white ${color} ${ring || ''}`}
+          className={`grid ${Icon ? 'size-[18px]' : 'size-3.5'} place-items-center rounded-full text-[7px] font-bold leading-none text-white ${color} ${ring || ''}`}
           style={style}
         >
-          {text}
+          {Icon ? <Icon className="size-[11px]" strokeWidth={2.5} aria-hidden="true" /> : text}
         </span>
       )}
     />

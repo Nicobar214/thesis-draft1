@@ -15,6 +15,8 @@ import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus
 import ProjectProgressTimeline from './ProjectProgressTimeline';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
+import { HardHatIcon } from 'lucide-react';
+import { useProjectContractor } from '../lib/projectContractors';
 
 function DetailItem({ icon, label, value }) {
   return (
@@ -35,6 +37,8 @@ function ProjectDetailBody({ project, tranches = [] }) {
   const hasCoords = project.start_latitude && project.start_longitude;
   const budget = getProjectBudgetSummary(project, tranches);
   const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
+  // Shown only when a contractor is assigned (supabase_public_project_contractors.sql).
+  const contractorName = useProjectContractor(project.id);
 
   return (
     <div className="space-y-6 text-slate-800">
@@ -60,6 +64,9 @@ function ProjectDetailBody({ project, tranches = [] }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
           <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
+          {contractorName && (
+            <DetailItem icon={<HardHatIcon className="size-4" aria-hidden="true" />} label="Contractor" value={contractorName} />
+          )}
           <DetailItem icon={<Icons.MapPinLg />} label="Province" value={`${project.province}, ${project.region}`} />
 
           {project.year_funded && (

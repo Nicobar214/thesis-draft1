@@ -14,12 +14,14 @@ import { getPaginationRange } from "../lib/paginationUtils";
 import { normalizeUserProjectStatus, isProjectOverdue } from "../lib/projectStatus";
 import { getProjectBudgetSummary } from "../lib/budgetEstimate";
 import { FMRProjectCard, ProjectSkeleton, FMRProjectTable, FmrProjectKpis } from "../components/fmrProjects/FmrProjectListParts";
+import { useFarmerT } from '../lib/farmerI18n';
 
 const statusFilters = ["On-Going", "Proposed", "Completed", "Overdue"];
 const VIEW_MODE_STORAGE_KEY = "farmer-fmr-projects-view";
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
 export default function FarmerFMRProjects() {
+  const { t } = useFarmerT();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
@@ -56,9 +58,9 @@ export default function FarmerFMRProjects() {
       ]);
       const tranchesData = tranchesRes.data;
       const tMap = {};
-      (tranchesData || []).forEach((t) => {
-        if (!tMap[t.project_id]) tMap[t.project_id] = [];
-        tMap[t.project_id].push(t);
+      (tranchesData || []).forEach((tranche) => {
+        if (!tMap[tranche.project_id]) tMap[tranche.project_id] = [];
+        tMap[tranche.project_id].push(tranche);
       });
       setTranchesByProjectId(tMap);
       setProjects(data || []);
@@ -89,7 +91,9 @@ export default function FarmerFMRProjects() {
     if (!id) return;
     const match = projects.find((p) => String(p.id) === id);
     if (match) setSelectedProject(match);
-    else notify("That project is no longer available.", "warning");
+    else notify(t('projects.gone'), "warning");
+    // t is left out on purpose: re-running on a language change would repeat the toast.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, projects, searchParams]);
 
   useEffect(() => {
@@ -162,7 +166,7 @@ export default function FarmerFMRProjects() {
           <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
             <Icons.Warning />
             <div>
-              <p className="font-medium">Unable to load FMR projects</p>
+              <p className="font-medium">{t('projects.loadError')}</p>
               <p className="mt-0.5 text-red-600">{fetchError}</p>
             </div>
           </div>
@@ -179,31 +183,31 @@ export default function FarmerFMRProjects() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Search projects"
-                placeholder="Search by name, municipality, location..."
+                placeholder={t('projects.search')}
                 className="w-full pl-10 pr-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-shadow"
               />
             </div>
 
             <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} aria-label="Filter by year" className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[140px]">
-              <option value="All">All Years</option>
+              <option value="All">{t('projects.allYears')}</option>
               {yearOptions.map((year) => <option key={year} value={String(year)}>FY {year}</option>)}
             </select>
 
             <select value={municipalityFilter} onChange={(e) => setMunicipalityFilter(e.target.value)} aria-label="Filter by municipality" className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]">
-              <option value="All">All Municipalities</option>
+              <option value="All">{t('projects.allTowns')}</option>
               {municipalityOptions.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
 
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort projects" className="px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none min-w-[170px]">
-              <option value="latest">Sort: Latest</option>
-              <option value="name-asc">Sort: Name A-Z</option>
-              <option value="name-desc">Sort: Name Z-A</option>
-              <option value="progress-desc">Sort: Progress High to Low</option>
-              <option value="progress-asc">Sort: Progress Low to High</option>
-              <option value="budget-desc">Sort: Budget High to Low</option>
-              <option value="budget-asc">Sort: Budget Low to High</option>
-              <option value="year-desc">Sort: Fiscal Year Newest</option>
-              <option value="year-asc">Sort: Fiscal Year Oldest</option>
+              <option value="latest">{t('projects.sort.latest')}</option>
+              <option value="name-asc">{t('projects.sort.nameAsc')}</option>
+              <option value="name-desc">{t('projects.sort.nameDesc')}</option>
+              <option value="progress-desc">{t('projects.sort.progressDesc')}</option>
+              <option value="progress-asc">{t('projects.sort.progressAsc')}</option>
+              <option value="budget-desc">{t('projects.sort.budgetDesc')}</option>
+              <option value="budget-asc">{t('projects.sort.budgetAsc')}</option>
+              <option value="year-desc">{t('projects.sort.yearDesc')}</option>
+              <option value="year-asc">{t('projects.sort.yearAsc')}</option>
             </select>
           </div>
 

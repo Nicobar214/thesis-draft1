@@ -143,7 +143,19 @@ function ReadOnlyField({ label, value, hint }) {
  * @param stats        optional [{ label, value, icon, tone }] activity strip
  * @param details      [{ label, value, hint? }] read-only facts for this role
  * @param loading      shows skeletons for the name block
+ * @param labels       optional text overrides (e.g. a translated farmer portal); see DEFAULT_LABELS
+ * @param children     optional extra sections shown under the two cards (e.g. language settings)
  */
+const DEFAULT_LABELS = {
+  memberSince: 'Member since {date}',
+  personalInfo: 'Personal Info',
+  personalInfoDesc: 'How you appear to others in KalsaTrack.',
+  fullName: 'Full name',
+  email: 'Email',
+  emailHint: 'Your sign-in email can’t be changed.',
+  contact: 'Contact number',
+};
+
 export default function AccountProfile({
   client,
   name,
@@ -161,7 +173,10 @@ export default function AccountProfile({
   detailsDescription = 'Managed by DA Region VI. Contact an administrator to change these.',
   loading = false,
   fallbackInitial = 'U',
+  labels,
+  children,
 }) {
+  const L = { ...DEFAULT_LABELS, ...labels };
   const displayName = name || email?.split('@')?.[0] || 'Account';
   const memberSinceLabel = formatDate(memberSince);
 
@@ -198,7 +213,7 @@ export default function AccountProfile({
                         {location}
                       </span>
                     )}
-                    {memberSinceLabel && <span className="text-xs text-slate-400">Member since {memberSinceLabel}</span>}
+                    {memberSinceLabel && <span className="text-xs text-slate-400">{L.memberSince.replace('{date}', memberSinceLabel)}</span>}
                   </div>
                 </>
               )}
@@ -226,12 +241,12 @@ export default function AccountProfile({
       {/* 2. What they can edit, beside what only DA can change. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
-          <SectionHeading icon={UserRoundIcon} title="Personal Info" description="How you appear to others in KalsaTrack." />
+          <SectionHeading icon={UserRoundIcon} title={L.personalInfo} description={L.personalInfoDesc} />
           <div className="mt-5 space-y-4">
             {onSaveName ? (
               <EditableField
                 id="account-full-name"
-                label="Full name"
+                label={L.fullName}
                 savedValue={name}
                 confirmTitle="Change your name?"
                 confirmNote="This is the name others see on your activity."
@@ -239,13 +254,13 @@ export default function AccountProfile({
                 hint={nameHint}
               />
             ) : (
-              <ReadOnlyField label="Full name" value={displayName} hint={nameHint} />
+              <ReadOnlyField label={L.fullName} value={displayName} hint={nameHint} />
             )}
-            <ReadOnlyField label="Email" value={email} hint="Your sign-in email can't be changed." />
+            <ReadOnlyField label={L.email} value={email} hint={L.emailHint} />
             {phone && (
               <EditableField
                 id="account-phone"
-                label="Contact number"
+                label={L.contact}
                 type="tel"
                 placeholder="09XXXXXXXXX"
                 savedValue={phone.value}
@@ -270,6 +285,8 @@ export default function AccountProfile({
           </dl>
         </section>
       </div>
+
+      {children}
     </div>
   );
 }

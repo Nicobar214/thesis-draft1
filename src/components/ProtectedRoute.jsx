@@ -3,12 +3,10 @@ import { Navigate } from 'react-router-dom';
 import { getSupabaseForRole } from '../lib/supabase';
 import { isConnectionError, getCurrentUser, rememberRole, rememberedRole } from '../lib/offlineCache';
 import Logo from './Logo';
-import UserPageSkeleton from './UserPageSkeleton';
+import { PortalPageSkeleton } from './PageSkeletons';
 import {
   LguPageSkeleton,
   FieldEngineerPageSkeleton,
-  ContractorPageSkeleton,
-  FarmerPageSkeleton,
   AdminPageSkeleton,
 } from './PortalSkeletons';
 
@@ -29,12 +27,14 @@ function getLoginRouteForRequiredRole(requiredRole) {
   return '/signin';
 }
 
+// Multi-page portals get a skeleton shaped like the page being opened
+// (PageSkeletons.jsx); single-page portals keep one skeleton each.
 const ROLE_SKELETONS = {
-  user: UserPageSkeleton,
+  user: () => <PortalPageSkeleton portal="user" />,
   lgu: LguPageSkeleton,
   field_engineer: FieldEngineerPageSkeleton,
-  contractor: ContractorPageSkeleton,
-  farmer: FarmerPageSkeleton,
+  contractor: () => <PortalPageSkeleton portal="contractor" />,
+  farmer: () => <PortalPageSkeleton portal="farmer" />,
   admin: AdminPageSkeleton,
 };
 

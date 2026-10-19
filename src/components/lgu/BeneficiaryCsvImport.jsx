@@ -1,16 +1,8 @@
 import { useRef, useState } from 'react';
 import { supabaseLgu as supabase } from '../../lib/supabase';
+import { typicalYieldTPerHa } from '../../lib/harvestPlausibility';
 
 const CHUNK_SIZE = 50;
-
-function cropYieldPerHectare(crop) {
-  if (crop === 'Rice') return 4.2;
-  if (crop === 'Corn') return 3.6;
-  if (crop === 'Sugarcane') return 65;
-  if (crop === 'Coconut') return 8;
-  if (crop === 'Vegetables') return 12;
-  return 9;
-}
 
 function getField(row, ...keys) {
   const lowerMap = {};
@@ -110,7 +102,7 @@ export default function BeneficiaryCsvImport({ user, profile, municipalityScope,
         }
 
         const farmAreaHa = Number(getField(row, 'farm_area_ha') || 0) || 0;
-        const estimatedYield = Number((farmAreaHa * cropYieldPerHectare(crop)).toFixed(1));
+        const estimatedYield = Number((farmAreaHa * typicalYieldTPerHa(crop)).toFixed(1));
         const beneficiaryId = `BEN-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
 
         // Optional geocoding/recommendation columns -- present when the CSV

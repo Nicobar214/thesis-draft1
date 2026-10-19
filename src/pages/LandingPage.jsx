@@ -272,7 +272,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="fade-up flex flex-col items-center mb-14 text-center max-w-2xl mx-auto">
             <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 ring-1 ring-inset ring-emerald-200 text-emerald-800 text-xs font-bold uppercase tracking-wider mb-3">
-              Simple Workflow
+              Get Started
             </span>
             <h2 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight mb-2">
               Start Tracking in Three Easy Steps
@@ -358,13 +358,13 @@ export default function LandingPage() {
               {
                 step: 2,
                 title: 'Provide Your Farmer Details',
-                description: 'Bring a valid ID and be ready to provide your name, barangay, contact number, farm location, and the crops you produce. The LGU officer will encode your information.',
+                description: 'Bring a valid government-issued ID (e.g. PhilSys National ID, Driver’s License, Voter’s ID, Senior Citizen ID, Postal ID or Barangay ID) and be ready to provide your name, barangay, contact number, farm location, and the crops you produce. The LGU officer will encode your information.',
                 icon: <svg className="size-4 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6.75c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h.01M9 15h.01M12 12h.01M12 15h.01M15 12h.01M15 15h.01" /></svg>,
               },
               {
                 step: 3,
                 title: 'Receive Your Login Credentials',
-                description: 'The LGU officer will create your farmer account and provide you with a username and temporary password. Keep these safe.',
+                description: 'The LGU officer will create your farmer account and provide you with a username and password. Keep these safe.',
                 icon: <svg className="size-4 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" /></svg>,
               },
               {

@@ -112,6 +112,14 @@ a, button, [role='button'], summary, label, select, input[type='checkbox'], inpu
   z-index: 0;
 }
 
+/* Clicking a map line or area (e.g. the farmer's linked FMR road) focused the
+   SVG path, and the browser drew a big rectangle around its whole bounding box.
+   These shapes aren't keyboard targets, so the outline only got in the way. */
+.leaflet-container path.leaflet-interactive:focus,
+.leaflet-container path.leaflet-interactive:focus-visible {
+  outline: none;
+}
+
 .leaflet-popup-content-wrapper {
   border-radius: 12px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);

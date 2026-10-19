@@ -75,6 +75,17 @@ registerRoute(
   })
 );
 
+// Official barangay boundaries (public/data/barangay-boundaries): one small file
+// per municipality, saved the first time it is used so the "pinned outside the
+// barangay" check also works offline.
+registerRoute(
+  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/data/barangay-boundaries/'),
+  new StaleWhileRevalidate({
+    cacheName: 'barangay-boundaries-cache',
+    plugins: [new CacheableResponsePlugin({ statuses: [200] })],
+  })
+);
+
 // Road-following lines (OSRM): try the network briefly, fall back to the last
 // route saved, so farm-to-road and farm-to-market lines still draw offline.
 registerRoute(

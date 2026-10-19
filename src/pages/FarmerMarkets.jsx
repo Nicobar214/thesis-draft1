@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseFarmer as supabase } from "../lib/supabase";
 import { useFarmerRecord } from "../lib/useFarmerRecord";
 import { cachedQuery } from "../lib/offlineCache";
+import { useFarmerT } from '../lib/farmerI18n';
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
@@ -18,6 +19,7 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
 }
 
 export default function FarmerMarkets() {
+  const { t } = useFarmerT();
   const { farmerRecord } = useFarmerRecord();
   const [markets, setMarkets] = useState([]);
 
@@ -53,8 +55,8 @@ export default function FarmerMarkets() {
   return (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
         <div>
-          <h3 className="font-bold text-slate-900 text-base sm:text-lg">Agricultural Markets & Distribution Hubs</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Find nearby trading posts, public markets, and collection centers to sell or distribute your farm output.</p>
+          <h3 className="font-bold text-slate-900 text-base sm:text-lg">{t('markets.title')}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{t('markets.desc')}</p>
         </div>
 
         {markets.length === 0 ? (
@@ -68,12 +70,12 @@ export default function FarmerMarkets() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 bg-slate-50">
-                    <th className="py-3 px-4 font-semibold">Market Name</th>
-                    <th className="py-3 px-4 font-semibold">Type</th>
-                    <th className="py-3 px-4 font-semibold">Open Days/Hours</th>
-                    <th className="py-3 px-4 font-semibold">Accepted Crops</th>
-                    <th className="py-3 px-4 font-semibold">Estimated Distance</th>
-                    <th className="py-3 px-4 font-semibold">Contact Info</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.name')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.type')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.hours')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.crops')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.distance')}</th>
+                    <th className="py-3 px-4 font-semibold">{t('markets.contact')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -100,13 +102,13 @@ export default function FarmerMarkets() {
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
                             {m.commodities_accepted?.map((c) => (
                               <span key={c} className="bg-slate-100 text-[10px] px-1.5 py-0.5 rounded text-slate-600">{c}</span>
-                            )) || <span className="text-slate-400">All commodities</span>}
+                            )) || <span className="text-slate-400">{t('markets.allCrops')}</span>}
                           </div>
                         </td>
                         <td className="py-3.5 px-4 font-bold text-slate-800">
                           {dist ? `${dist} km` : "N/A"}
                           {isNearest && (
-                            <span className="ml-1 text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold uppercase tracking-wider">Nearest</span>
+                            <span className="ml-1 text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold uppercase tracking-wider">{t('markets.nearest')}</span>
                           )}
                         </td>
                         <td className="py-3.5 px-4">
@@ -136,21 +138,21 @@ export default function FarmerMarkets() {
                         <p className="text-xs text-slate-500">{m.barangay || ""}, {m.municipality}</p>
                       </div>
                       {isNearest && (
-                        <span className="text-[10px] px-2 py-0.5 bg-emerald-600 text-white rounded-full font-bold uppercase tracking-wider">Nearest</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-emerald-600 text-white rounded-full font-bold uppercase tracking-wider">{t('markets.nearest')}</span>
                       )}
                     </div>
 
                     <div className="text-xs text-slate-700 space-y-1.5 pt-2 border-t border-slate-200/60">
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Market Type:</span>
+                        <span className="text-slate-500">{t('markets.typeLabel')}</span>
                         <span className="font-semibold text-slate-800">{m.market_type}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Operating Schedule:</span>
+                        <span className="text-slate-500">{t('markets.scheduleLabel')}</span>
                         <span className="font-medium text-slate-800">{m.operating_days || "Everyday"} ({m.operating_hours || "Daytime"})</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500">Distance from Farm:</span>
+                        <span className="text-slate-500">{t('markets.distanceLabel')}</span>
                         <span className="font-bold text-slate-900">{dist ? `${dist} km` : "N/A"}</span>
                       </div>
                     </div>

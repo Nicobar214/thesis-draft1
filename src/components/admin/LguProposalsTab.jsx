@@ -1,3 +1,4 @@
+import ProposalDocumentsChecklist from '../proposals/ProposalDocumentsChecklist';
 import { CameraIcon, CheckCircle2Icon, ChevronRightIcon, FileTextIcon, RotateCcwIcon, SearchCheckIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
@@ -384,23 +385,16 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
             )}
           </div>
 
-          {(proposal.photo_url || proposal.document_url) && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Attachments</h4>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {proposal.photo_url && (
-                  <button type="button" onClick={() => openAttachment(proposal.photo_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
-                    <CameraIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />View Road Photo
-                  </button>
-                )}
-                {proposal.document_url && (
-                  <button type="button" onClick={() => openAttachment(proposal.document_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
-                    <FileTextIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{proposal.document_name || 'View Document'}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Attachments</h4>
+            {proposal.photo_url && (
+              <button type="button" onClick={() => openAttachment(proposal.photo_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
+                <CameraIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />View Road Photo
+              </button>
+            )}
+            {/* DA checklist: which required documents the LGU attached. */}
+            <ProposalDocumentsChecklist proposal={proposal} onOpen={openAttachment} />
+          </div>
 
 
 

@@ -13,13 +13,13 @@ import { useOnlineStatus } from '../lib/offlineCache';
 import { listQueuedHarvests, syncQueuedHarvests, HARVEST_QUEUE_EVENT } from '../lib/offlineHarvests';
 import { getQueuedReports } from '../lib/offlineReports';
 import { triggerQueuedSync } from '../lib/offlineSync';
+import { FarmerI18nProvider, useFarmerLanguageState } from '../lib/farmerI18n';
+import { PageBodySkeleton } from './PageSkeletons';
 
+// While a farmer page's code downloads, show that page's own skeleton
+// inside the layout (the sidebar and header are already on screen).
 function PageLoadingFallback() {
-  return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-10 h-10 border-4 border-emerald-200 border-t-emerald-700 rounded-full animate-spin" />
-    </div>
-  );
+  return <PageBodySkeleton portal="farmer" />;
 }
 
 /**
@@ -46,6 +46,9 @@ export default function FarmerLayout() {
   const { user, farmerRecord, loading, reload: reloadFarmerRecord } = useFarmerRecord();
   const { reports, loading: reportsLoading, reload: reloadReports } = useFarmerReports();
   const online = useOnlineStatus();
+  // Farmer portal language (English / Hiligaynon / Tagalog), chosen in My Profile or the welcome guide.
+  const i18n = useFarmerLanguageState();
+  const { t } = i18n;
   const [pendingCount, setPendingCount] = useState(0);
 
   // Offline-first: harvests and road reports added with no signal wait on the
@@ -96,24 +99,24 @@ export default function FarmerLayout() {
   // Matches FarmerSidebar's navItems labels exactly -- the header and the
   // sidebar should never name the current page two different ways.
   const pageTitleMap = {
-    '/farmer': 'My Farm',
-    '/farmer/harvest': 'Harvest',
-    '/farmer/reports': 'My Reports',
-    '/farmer/fmr-projects': 'Road Projects',
-    '/farmer/markets': 'Markets',
-    '/farmer/profile': 'My Profile',
+    '/farmer': 'nav.myFarm',
+    '/farmer/harvest': 'nav.harvest',
+    '/farmer/reports': 'nav.myReports',
+    '/farmer/fmr-projects': 'nav.roadProjects',
+    '/farmer/markets': 'nav.markets',
+    '/farmer/profile': 'nav.myProfile',
   };
-  const pageTitle = pageTitleMap[location.pathname] || 'Farmer Portal';
+  const pageTitle = t(pageTitleMap[location.pathname] || 'portal.name');
 
   const pageDescriptionMap = {
-    '/farmer': 'Your farm, nearest road project, and nearest market at a glance.',
-    '/farmer/harvest': 'Log your harvests and track your output over time.',
-    '/farmer/reports': 'Track the status of reports you’ve submitted.',
-    '/farmer/fmr-projects': 'Every Farm-to-Market Road project in your area.',
-    '/farmer/markets': 'Find nearby markets to sell or distribute your harvest.',
-    '/farmer/profile': 'Your photo, contact number and RSBSA record.',
+    '/farmer': 'page.myFarm.desc',
+    '/farmer/harvest': 'page.harvest.desc',
+    '/farmer/reports': 'page.myReports.desc',
+    '/farmer/fmr-projects': 'page.roadProjects.desc',
+    '/farmer/markets': 'page.markets.desc',
+    '/farmer/profile': 'page.myProfile.desc',
   };
-  const pageDescription = pageDescriptionMap[location.pathname] || '';
+  const pageDescription = pageDescriptionMap[location.pathname] ? t(pageDescriptionMap[location.pathname]) : '';
 
   // ProtectedRoute already guards every /farmer/* route; this is defense in
   // depth for the moment between that guard resolving and this layout's own
@@ -159,12 +162,13 @@ export default function FarmerLayout() {
   };
 
   return (
+    <FarmerI18nProvider value={i18n}>
     <div className="min-h-dvh bg-slate-50 font-sans text-slate-800">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[10000] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-emerald-800 focus:shadow-lg focus:ring-2 focus:ring-emerald-600"
       >
-        Skip to main content
+        {t('skipToContent')}
       </a>
 
       <FarmerSidebar
@@ -200,15 +204,15 @@ export default function FarmerLayout() {
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800 active:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
               >
                 <CameraIcon className="size-4 sm:size-5" aria-hidden="true" />
-                <span className="sm:hidden">Report</span>
-                <span className="hidden sm:inline">Report Road Issue</span>
+                <span className="sm:hidden">{t('header.report')}</span>
+                <span className="hidden sm:inline">{t('header.reportRoadIssue')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setHelpReopenCount((c) => c + 1)}
-                aria-label="Show help"
-                title="Show help"
+                aria-label={t('header.help')}
+                title={t('header.help')}
                 className="p-2 sm:p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
               >
                 <HelpCircleIcon className="size-4 sm:size-5" aria-hidden="true" />
@@ -225,8 +229,8 @@ export default function FarmerLayout() {
               <button
                 type="button"
                 onClick={() => navigate('/farmer/profile')}
-                aria-label="View and edit your profile"
-                title="View and edit your profile"
+                aria-label={t('header.profile')}
+                title={t('header.profile')}
                 className="flex items-center gap-2.5 sm:gap-3 pl-2.5 sm:pl-4 border-l border-slate-200 rounded-xl hover:bg-slate-50 transition-colors -mr-1 py-1 pr-1"
               >
                 <ProfileAvatar
@@ -236,7 +240,7 @@ export default function FarmerLayout() {
                   className="size-9 sm:size-11 rounded-xl text-sm sm:text-base shadow-sm"
                 />
                 <div className="hidden sm:block min-w-0 text-left">
-                  <p className="text-sm font-bold text-slate-900 truncate max-w-[160px]">{farmerRecord?.full_name || 'Farmer Account'}</p>
+                  <p className="text-sm font-bold text-slate-900 truncate max-w-[160px]">{farmerRecord?.full_name || t('farmerAccount')}</p>
                   <p className="text-xs text-slate-500 truncate max-w-[160px]">RSBSA: {farmerRecord?.rsbsa_number || 'N/A'}</p>
                 </div>
               </button>
@@ -249,15 +253,14 @@ export default function FarmerLayout() {
           <div role="status" className="sticky top-20 sm:top-24 z-10 flex items-start gap-2.5 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 sm:px-6 lg:px-8">
             <WifiOffIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p>
-              <span className="font-semibold">You're offline.</span> Showing information saved on this phone.
-              {' '}Reports and harvests you add are saved and sent when you're back online.
-              {pendingCount > 0 && <span className="font-semibold"> {pendingCount} waiting to send.</span>}
+              <span className="font-semibold">{t('banner.offline')}</span> {t('banner.offlineBody')}
+              {pendingCount > 0 && <span className="font-semibold"> {t('banner.waiting', { n: pendingCount })}</span>}
             </p>
           </div>
         ) : pendingCount > 0 && (
           <div role="status" className="flex items-center gap-2.5 border-b border-teal-100 bg-teal-50 px-4 py-2 text-sm text-teal-900 sm:px-6 lg:px-8">
             <RefreshCwIcon className="size-4 shrink-0 animate-spin" aria-hidden="true" />
-            Sending {pendingCount} item{pendingCount === 1 ? '' : 's'} saved while offline…
+            {t('banner.sending', { n: pendingCount })}
           </div>
         )}
 
@@ -277,5 +280,6 @@ export default function FarmerLayout() {
         />
       )}
     </div>
+    </FarmerI18nProvider>
   );
 }

@@ -6,8 +6,10 @@ import { supabaseFarmer as supabase } from "../lib/supabase";
 import Icons from "../components/Icons";
 import DAResolutionCertificate from "../components/publicReports/DAResolutionCertificate";
 import PublicReportRouteMapPanel from "../components/publicReports/PublicReportRouteMapPanel";
+import { useFarmerT } from '../lib/farmerI18n';
 
 export default function FarmerMyReports() {
+  const { t } = useFarmerT();
   // The layout owns the report list (one fetch + one realtime channel shared
   // with the sidebar badge) and the report dialog, so a submission made from
   // anywhere refreshes this page immediately.
@@ -84,8 +86,8 @@ export default function FarmerMyReports() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
-            <h3 className="font-bold text-slate-900 text-base sm:text-lg">My Submitted Road Reports</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Track the status of damage reports submitted from your account.</p>
+            <h3 className="font-bold text-slate-900 text-base sm:text-lg">{t('reports.title')}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{t('reports.desc')}</p>
           </div>
           <button
             type="button"
@@ -98,12 +100,12 @@ export default function FarmerMyReports() {
         </div>
 
         {reportsLoading && myReports.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-400">Loading your reports…</div>
+          <div className="py-12 text-center text-sm text-slate-400">{t('reports.loading')}</div>
         ) : myReports.length === 0 ? (
           <div className="py-12 text-center text-slate-400 space-y-2">
             <ClipboardListIcon className="size-9 mx-auto text-slate-300" aria-hidden="true" />
-            <p className="font-semibold text-slate-700 text-sm">No reports submitted yet</p>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">If you encounter issues on your FMR access road, submit a report to alert your LGU and DA engineers.</p>
+            <p className="font-semibold text-slate-700 text-sm">{t('reports.empty')}</p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">{t('reports.emptyBody')}</p>
             <button
               type="button"
               onClick={openReport}
@@ -143,8 +145,8 @@ export default function FarmerMyReports() {
 
                   <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/50 gap-2">
                     <span>Submitted: {new Date(rpt.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
-                    <span>Category: <strong className="text-slate-700 capitalize">{rpt.category || "Road Issue"}</strong></span>
-                    <span>Verification: <strong className="text-emerald-700 font-semibold">{rpt.verification || "Reported"}</strong></span>
+                    <span>{t('reports.category')}<strong className="text-slate-700 capitalize">{rpt.category || "Road Issue"}</strong></span>
+                    <span>{t('reports.verification')}<strong className="text-emerald-700 font-semibold">{rpt.verification || "Reported"}</strong></span>
                   </div>
 
                   <button
@@ -158,7 +160,7 @@ export default function FarmerMyReports() {
 
                   {expandedMapReportId === rpt.id && (
                     mapProjectByReportId[rpt.id] === undefined ? (
-                      <p className="text-xs text-slate-400 text-center py-3">Loading project route…</p>
+                      <p className="text-xs text-slate-400 text-center py-3">{t('reports.loadingRoute')}</p>
                     ) : (
                       <PublicReportRouteMapPanel
                         project={mapProjectByReportId[rpt.id]}
@@ -187,12 +189,12 @@ export default function FarmerMyReports() {
                       className="w-full mt-2 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
                     >
                       <Icons.Document />
-                      <span>View Official DA Resolution Certificate</span>
+                      <span>{t('reports.certificate')}</span>
                     </button>
                   ) : (
                     <div className="w-full mt-2 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-500 rounded-xl text-xs font-semibold border border-slate-200">
                       <Icons.Clock />
-                      <span>Resolution certificate is issued once the DA settles this road issue</span>
+                      <span>{t('reports.certificatePending')}</span>
                     </div>
                   )}
                 </div>

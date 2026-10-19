@@ -229,7 +229,7 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Module 2: Agri Production (Pending Data)
+              Module 2: High Value Crops (Pending Data)
             </button>
           </div>
         </div>

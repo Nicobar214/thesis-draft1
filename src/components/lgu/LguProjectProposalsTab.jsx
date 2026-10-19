@@ -19,6 +19,8 @@ import HierarchyKpis from '../ui/HierarchyKpis';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 import Pagination, { usePagination } from '../ui/Pagination';
 import { findBlockingDuplicate } from '../../lib/proposalDuplicates';
+import { mergeRequirementDocs, requirementProgress } from '../../lib/proposalRequirements';
+import ProposalDocumentsChecklist from '../proposals/ProposalDocumentsChecklist';
 
 const ROAD_TYPES = ['Concreting', 'Opening/Construction', 'Rehabilitation', 'Widening', 'Others'];
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
@@ -213,7 +215,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [searchCenter, setSearchCenter] = useState(null);
   const [searchZoom, setSearchZoom] = useState(15);
   const [photoFile, setPhotoFile] = useState(null);
-  const [documentFile, setDocumentFile] = useState(null);
+  // One file per DA requirement (lib/proposalRequirements.js): { [key]: File }.
+  const [requirementFiles, setRequirementFiles] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [signedUrls, setSignedUrls] = useState({});
   const [expandedHistoryId, setExpandedHistoryId] = useState(null);
@@ -361,7 +364,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     setForm(emptyForm);
     setEditingId(null);
     setPhotoFile(null);
-    setDocumentFile(null);
+    setRequirementFiles({});
     setPickMode('start');
     setRouteWaypoints([]);
   };
@@ -458,9 +461,14 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     setSubmitting(true);
     try {
       let photoPath = null;
-      let documentPath = null;
       if (photoFile) photoPath = await uploadAttachment(photoFile, 'photo');
-      if (documentFile) documentPath = await uploadAttachment(documentFile, 'document');
+      // Upload each newly chosen requirement file; keep the ones already saved.
+      const uploads = {};
+      for (const [key, file] of Object.entries(requirementFiles)) {
+        if (file) uploads[key] = { path: await uploadAttachment(file, key), name: file.name };
+      }
+      const editingProposal = editingId ? proposals.find((p) => p.id === editingId) : null;
+      const supportingDocuments = mergeRequirementDocs(editingProposal?.supporting_documents, uploads);
 
       const basePayload = {
         project_name: form.project_name.trim(),
@@ -485,10 +493,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
         updated_at: new Date().toISOString(),
       };
       if (photoPath) basePayload.photo_url = photoPath;
-      if (documentPath) {
-        basePayload.document_url = documentPath;
-        basePayload.document_name = documentFile?.name || null;
-      }
+      basePayload.supporting_documents = supportingDocuments;
 
       if (editingId) {
         const current = proposals.find((p) => p.id === editingId);
@@ -551,9 +556,12 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       await fetchProposals();
       setActiveSubTab('list');
     } catch (err) {
-      notify(/already exists/i.test(err?.message || '')
+      const msg = err?.message || '';
+      notify(/already exists/i.test(msg)
         ? 'This project already exists in your municipality. Duplicate proposals are not allowed.'
-        : `Error saving proposal: ${err.message}`, 'error');
+        : /supporting_documents/i.test(msg)
+          ? 'The document checklist is not set up in the database yet. Ask the administrator to run supabase_lgu_proposal_requirements.sql.'
+          : `Error saving proposal: ${msg}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -812,15 +820,18 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     className="w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-teal-50 file:text-teal-700 file:text-xs file:font-semibold"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">SB Resolution / Document (PDF)</label>
-                  <input
-                    type="file" accept="application/pdf"
-                    onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
-                    className="w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-teal-50 file:text-teal-700 file:text-xs file:font-semibold"
-                  />
-                </div>
               </div>
+
+              {/* DA checklist: one upload per required supporting document. */}
+              <ProposalDocumentsChecklist
+                proposal={editingId ? proposals.find((p) => p.id === editingId) : null}
+                files={requirementFiles}
+                onFileChange={(key, file) => setRequirementFiles((prev) => ({ ...prev, [key]: file }))}
+                onOpen={async (path) => {
+                  const url = await resolveSignedUrl(path);
+                  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                }}
+              />
             </div>
 
             {/* Right Column: Coordinates & Leaflet Map Picker */}
@@ -908,7 +919,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Place search: suggests barangays and roads, then moves the map there */}
                   <div className="border-b border-slate-100 bg-white p-3">
                     <MapSearchBox
@@ -1315,7 +1326,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 </div>
 
                 <div className="space-y-2 border-t border-slate-100 pt-3">
-                  {(p.photo_url || p.document_url) && (
+                  {(p.photo_url || requirementProgress(p).attached > 0) && (
                     <div className="flex flex-wrap gap-1.5">
                       {p.photo_url && (
                         <button
@@ -1329,16 +1340,13 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                           View Photo
                         </button>
                       )}
-                      {p.document_url && (
+                      {requirementProgress(p).attached > 0 && (
                         <button
                           type="button"
-                          onClick={async () => {
-                            const url = await resolveSignedUrl(p.document_url);
-                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                          }}
+                          onClick={() => setSelectedProposalForModal(p)}
                           className="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200"
                         >
-                          View Document
+                          {requirementProgress(p).attached} of 5 documents
                         </button>
                       )}
                     </div>
@@ -1476,7 +1484,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               {(selectedProposalForModal.start_latitude || selectedProposalForModal.end_latitude) && (
                 <div className="border-b border-slate-100 pb-5">
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2.5">Route Map & GPS Coordinates</p>
-                  
+
                   {/* Map Preview in Modal */}
                   <div className="w-full h-[240px] rounded-xl overflow-hidden border border-slate-200 shadow-inner mb-3.5 relative z-0">
                     <MapContainer
@@ -1487,14 +1495,14 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     >
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
                       <RouteAutoZoom points={modalRoutePoints} fallbackCenter={modalMapCenter} />
-                      
+
                       {selectedProposalForModal.start_latitude && selectedProposalForModal.start_longitude && (
                         <Marker
                           position={[Number(selectedProposalForModal.start_latitude), Number(selectedProposalForModal.start_longitude)]}
                           icon={L.divIcon({ className: 'modal-start', html: '<div style="width:14px;height:14px;background:#059669;border:2px solid #fff;border-radius:9999px;"></div>', iconSize: [14, 14], iconAnchor: [7, 7] })}
                         />
                       )}
-                      
+
                       {Array.isArray(selectedProposalForModal.route_waypoints) && selectedProposalForModal.route_waypoints.map((wp, idx) => {
                         const lat = Number(wp?.lat ?? wp?.[0]);
                         const lng = Number(wp?.lng ?? wp?.[1]);
@@ -1521,7 +1529,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                           pathOptions={{ color: '#0f766e', weight: 4, opacity: 0.8 }}
                         />
                       )}
-                      
+
                     </MapContainer>
                   </div>
 
@@ -1539,7 +1547,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               )}
 
               {/* Attachments */}
-              {(selectedProposalForModal.photo_url || selectedProposalForModal.document_url) && (
+              {selectedProposalForModal.photo_url && (
                 <div className="border-b border-slate-100 pb-5">
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Attached Documents</p>
                   <div className="flex gap-2">
@@ -1555,21 +1563,19 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                         View Road Photo
                       </button>
                     )}
-                    {selectedProposalForModal.document_url && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const url = await resolveSignedUrl(selectedProposalForModal.document_url);
-                          if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="text-xs px-3 py-1.5 rounded-xl bg-slate-100 text-slate-750 hover:bg-slate-200 font-semibold transition"
-                      >
-                        View Supporting PDF
-                      </button>
-                    )}
                   </div>
                 </div>
               )}
+              <div className="border-b border-slate-100 pb-5">
+                <ProposalDocumentsChecklist
+                  proposal={selectedProposalForModal}
+                  compact
+                  onOpen={async (path) => {
+                    const url = await resolveSignedUrl(path);
+                    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
+                />
+              </div>
             </div>
 
             {/* Footer */}

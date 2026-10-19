@@ -10,6 +10,9 @@ import Icons from "../components/Icons";
 import FarmerHarvestDetailModal from "../components/farmer/FarmerHarvestDetailModal";
 import { cachedQuery, isConnectionError } from "../lib/offlineCache";
 import { enqueueHarvest, listQueuedHarvests, HARVEST_QUEUE_EVENT } from "../lib/offlineHarvests";
+import { checkHarvest } from "../lib/harvestPlausibility";
+import { confirm } from "../lib/confirm";
+import { useFarmerT } from '../lib/farmerI18n';
 
 const PHOTO_BUCKET = "farmer-harvest-photos";
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB
@@ -85,6 +88,7 @@ function SummaryCard({ label, value, sub }) {
 }
 
 export default function FarmerHarvest() {
+  const { t } = useFarmerT();
   const { user, farmerRecord } = useFarmerRecord();
   const [savedLogs, setSavedLogs] = useState([]);
   const [queuedHarvests, setQueuedHarvests] = useState([]); // logged offline, waiting to send
@@ -122,9 +126,9 @@ export default function FarmerHarvest() {
         .order("harvest_date", { ascending: true }));
       setSavedLogs(data || []);
     } catch {
-      notify("We couldn't load your harvest records. Please try again.", "error");
+      notify(t('harvest.err.load'), "error");
     }
-  }, [user]);
+  }, [user, t]);
 
   const loadQueued = useCallback(async () => {
     if (!user) return;
@@ -180,11 +184,11 @@ export default function FarmerHarvest() {
 
   const startEdit = (entry) => {
     if (entry?._queued) {
-      notify("This harvest is still waiting to be sent. You can edit it once it has been sent.", "warning");
+      notify(t('harvest.queuedEdit'), "warning");
       return;
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      notify("You're offline. Editing a saved harvest needs a connection.", "warning");
+      notify(t('harvest.offlineEdit'), "warning");
       return;
     }
     setSelectedEntry(null);
@@ -215,14 +219,26 @@ export default function FarmerHarvest() {
 
     const qty = Number(harvestForm.quantityKg);
     if (!qty || qty <= 0) {
-      notify("Please enter a valid harvest quantity.", "error");
+      notify(t('harvest.err.qty'), "error");
       return;
     }
     const area = harvestForm.areaHa.trim() ? Number(harvestForm.areaHa) : null;
     if (area !== null && (!Number.isFinite(area) || area <= 0)) {
-      notify("Harvest area must be a positive number, or left blank.", "error");
+      notify(t('harvest.err.area'), "error");
       return;
     }
+
+    // Unusually high for the crop and farm size: ask before saving. Saved
+    // anyway, it is checked by the LGU (supabase_harvest_review.sql).
+    const crop = harvestForm.crop || farmerRecord?.crop;
+    const check = checkHarvest({ crop, quantityKg: qty, areaHa: area, fallbackAreaHa: farmerRecord?.farm_area_ha });
+    if (check.unusual && !(await confirm({
+      title: t('harvest.unusual.title'),
+      message: t('harvest.unusual.body', { qty: qty.toLocaleString(), crop, area: check.areaHa, max: check.expectedMaxKg.toLocaleString() }),
+      confirmLabel: t('harvest.unusual.save'),
+      cancelLabel: t('harvest.unusual.check'),
+      tone: "warning",
+    }))) return;
 
     setHarvestLoading(true);
     let photoWarning = false;
@@ -243,13 +259,13 @@ export default function FarmerHarvest() {
         photoExt: photoFile ? extensionFor(photoFile) : "jpg",
       });
       await loadQueued();
-      notify("No connection. Harvest saved on this phone and will be sent when you're back online.", "warning");
+      notify(t('harvest.offlineSaved'), "warning");
       setPhotoFile(null);
       setHarvestForm((prev) => ({ ...emptyForm(farmerRecord?.crop), areaHa: prev.areaHa }));
     };
     const offlineNow = typeof navigator !== "undefined" && navigator.onLine === false;
     if (offlineNow && editingId) {
-      notify("You're offline. Editing a saved harvest needs a connection.", "warning");
+      notify(t('harvest.offlineEdit'), "warning");
       setHarvestLoading(false);
       return;
     }
@@ -304,7 +320,7 @@ export default function FarmerHarvest() {
       if (!editingId && isConnectionError(err)) {
         await saveOffline();
       } else {
-        notify("Your harvest could not be saved. Please check your information and try again.", "error");
+        notify(t('harvest.err.save'), "error");
         console.error("[harvest] save failed:", err);
       }
     } finally {
@@ -316,18 +332,18 @@ export default function FarmerHarvest() {
   // entries; the realtime subscription refreshes the list automatically.
   const handleDeleteHarvest = async (id) => {
     if (String(id).startsWith("queued-")) {
-      notify("This harvest is still waiting to be sent. You can delete it once it has been sent.", "warning");
+      notify(t('harvest.queuedDelete'), "warning");
       return;
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      notify("You're offline. Deleting a harvest needs a connection.", "warning");
+      notify(t('harvest.offlineDelete'), "warning");
       return;
     }
     try {
       const { error } = await supabase.from("farmer_harvest_logs").delete().eq("id", id);
       if (error) throw error;
     } catch (err) {
-      notify("This harvest record could not be deleted. Please try again.", "error");
+      notify(t('harvest.err.delete'), "error");
       console.error("[harvest] delete failed:", err);
     }
   };
@@ -420,10 +436,10 @@ export default function FarmerHarvest() {
 
       {harvestLogs.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <SummaryCard label="Total Harvest" value={`${summary.totalKg.toLocaleString()} kg`} />
-          <SummaryCard label="This Year" value={`${summary.thisYearKg.toLocaleString()} kg`} />
-          <SummaryCard label="Harvest Records" value={summary.records} />
-          <SummaryCard label="Average Yield" value={formatYield(summary.avgYield)} />
+          <SummaryCard label={t('harvest.kpi.total')} value={`${summary.totalKg.toLocaleString()} kg`} />
+          <SummaryCard label={t('harvest.kpi.year')} value={`${summary.thisYearKg.toLocaleString()} kg`} />
+          <SummaryCard label={t('harvest.kpi.records')} value={summary.records} />
+          <SummaryCard label={t('harvest.kpi.yield')} value={formatYield(summary.avgYield)} />
         </div>
       )}
 
@@ -447,7 +463,7 @@ export default function FarmerHarvest() {
         <form onSubmit={handleHarvestSubmit} className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Crop</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.crop')}</label>
               <select
                 value={harvestForm.crop}
                 onChange={(e) => setHarvestForm((prev) => ({ ...prev, crop: e.target.value }))}
@@ -457,7 +473,7 @@ export default function FarmerHarvest() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Quantity (kg)</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.qty')}</label>
               <input
                 type="number"
                 min="0"
@@ -469,7 +485,7 @@ export default function FarmerHarvest() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Area (ha) <span className="font-normal text-slate-400">optional</span></label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.area')} <span className="font-normal text-slate-400">{t('harvest.optional')}</span></label>
               <input
                 type="number"
                 min="0"
@@ -481,7 +497,7 @@ export default function FarmerHarvest() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Harvest Date</label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.date')}</label>
               <input
                 type="date"
                 value={harvestForm.harvestDate}
@@ -493,18 +509,18 @@ export default function FarmerHarvest() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Quality / Grade <span className="font-normal text-slate-400">optional</span></label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.grade')} <span className="font-normal text-slate-400">{t('harvest.optional')}</span></label>
               <select
                 value={harvestForm.qualityGrade}
                 onChange={(e) => setHarvestForm((prev) => ({ ...prev, qualityGrade: e.target.value }))}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
               >
-                <option value="">Ungraded</option>
+                <option value="">{t('harvest.ungraded')}</option>
                 {QUALITY_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Photo <span className="font-normal text-slate-400">optional</span></label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.photo')} <span className="font-normal text-slate-400">{t('harvest.optional')}</span></label>
               <input
                 type="file"
                 accept="image/*"
@@ -515,18 +531,18 @@ export default function FarmerHarvest() {
               {photoFile && <p className="mt-1 text-[11px] text-emerald-700">{photoFile.name} selected</p>}
               {photoError && <p className="mt-1 text-[11px] text-red-600">{photoError}</p>}
               {editingId && !photoFile && (
-                <p className="mt-1 text-[11px] text-slate-400">Leave blank to keep the current photo.</p>
+                <p className="mt-1 text-[11px] text-slate-400">{t('harvest.keepPhoto')}</p>
               )}
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Remarks <span className="font-normal text-slate-400">optional</span></label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">{t('harvest.remarks')} <span className="font-normal text-slate-400">{t('harvest.optional')}</span></label>
             <input
               type="text"
               value={harvestForm.remarks}
               onChange={(e) => setHarvestForm((prev) => ({ ...prev, remarks: e.target.value }))}
-              placeholder="e.g. sold at Leon Public Market"
+              placeholder={t('harvest.remarksPh')}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
             />
           </div>
@@ -558,7 +574,7 @@ export default function FarmerHarvest() {
                 aria-label="Filter by crop"
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium bg-white"
               >
-                <option value="All">All Crops</option>
+                <option value="All">{t('harvest.allCrops')}</option>
                 {loggedCrops.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <select
@@ -567,7 +583,7 @@ export default function FarmerHarvest() {
                 aria-label="Filter by year"
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium bg-white"
               >
-                <option value="All">All Years</option>
+                <option value="All">{t('harvest.allYears')}</option>
                 {loggedYears.map((y) => <option key={y} value={String(y)}>{y}</option>)}
               </select>
               <select
@@ -576,7 +592,7 @@ export default function FarmerHarvest() {
                 aria-label="Filter by grade"
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium bg-white"
               >
-                <option value="All">All Grades</option>
+                <option value="All">{t('harvest.allGrades')}</option>
                 {loggedGrades.map((g) => <option key={g} value={g}>{g}</option>)}
               </select>
               <select
@@ -585,12 +601,12 @@ export default function FarmerHarvest() {
                 aria-label="Sort by"
                 className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium bg-white"
               >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="qty-desc">Highest Quantity</option>
-                <option value="qty-asc">Lowest Quantity</option>
-                <option value="yield-desc">Highest Yield</option>
-                <option value="yield-asc">Lowest Yield</option>
+                <option value="newest">{t('harvest.sort.newest')}</option>
+                <option value="oldest">{t('harvest.sort.oldest')}</option>
+                <option value="qty-desc">{t('harvest.sort.qtyDesc')}</option>
+                <option value="qty-asc">{t('harvest.sort.qtyAsc')}</option>
+                <option value="yield-desc">{t('harvest.sort.yieldDesc')}</option>
+                <option value="yield-asc">{t('harvest.sort.yieldAsc')}</option>
               </select>
             </div>
             {filtersActive && (
@@ -609,8 +625,8 @@ export default function FarmerHarvest() {
           </div>
         ) : sortedLogs.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-xs sm:text-sm space-y-2">
-            <p className="font-semibold text-slate-500">No harvests found</p>
-            <p>Try changing your filters to see other harvest records.</p>
+            <p className="font-semibold text-slate-500">{t('harvest.none')}</p>
+            <p>{t('harvest.noneBody')}</p>
             <button type="button" onClick={clearFilters} className="text-emerald-700 font-semibold hover:underline">
               Clear Filters
             </button>
@@ -621,10 +637,10 @@ export default function FarmerHarvest() {
               {filtersActive ? (
                 <>Showing {sortedLogs.length} of {harvestLogs.length} harvest record{harvestLogs.length === 1 ? "" : "s"} &middot; <span className="font-bold text-slate-800">{filteredTotalKg.toLocaleString()} kg</span></>
               ) : (
-                <>Total: <span className="font-bold text-slate-800">{filteredTotalKg.toLocaleString()} kg</span> across {filteredLogs.length} entr{filteredLogs.length === 1 ? "y" : "ies"}</>
+                <>{t('harvest.total')}<span className="font-bold text-slate-800">{filteredTotalKg.toLocaleString()} kg</span> across {filteredLogs.length} entr{filteredLogs.length === 1 ? "y" : "ies"}</>
               )}
             </p>
-            <p className="text-[11px] text-slate-400 -mt-2">Each point is one harvest record on its date — not a running total.</p>
+            <p className="text-[11px] text-slate-400 -mt-2">{t('harvest.chartNote')}</p>
             <div className="h-56 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={filteredLogs.map((h) => ({
@@ -661,11 +677,16 @@ export default function FarmerHarvest() {
                       {h.crop} &middot; {Number(h.quantity_kg).toLocaleString()} kg
                       {h._queued && (
                         <span className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 align-middle text-[10px] font-semibold ${h._queueError ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
-                          {h._queueError ? "Not sent" : "Waiting to send"}
+                          {h._queueError ? t('harvest.notSent') : t('harvest.waiting')}
+                        </span>
+                      )}
+                      {h.review_status === "flagged" && (
+                        <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 align-middle text-[10px] font-semibold text-amber-700" title={t('harvest.checkingTip')}>
+                          {t('harvest.checking')}
                         </span>
                       )}
                       {h.photo_path && (
-                        <span className="inline-flex align-middle ml-1.5 text-slate-400" title="Has a photo" aria-hidden="true">
+                        <span className="inline-flex align-middle ml-1.5 text-slate-400" title={t('harvest.hasPhoto')} aria-hidden="true">
                           <Icons.Photo />
                         </span>
                       )}

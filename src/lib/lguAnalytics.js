@@ -88,11 +88,18 @@ export function buildAnalyticsBase({ projects, beneficiaries, harvestLogs }) {
   });
 
   const harvestRows = [];
+  // Unusually high entries (supabase_harvest_review.sql) wait for the LGU's
+  // check and are left out of every total until confirmed or corrected.
+  const flaggedHarvest = [];
   let unattributedHarvest = 0;
   (harvestLogs || []).forEach((h) => {
     const farmer = farmerByUser.get(h.farmer_id);
     if (!farmer) {
       unattributedHarvest += 1;
+      return;
+    }
+    if (h.review_status === 'flagged') {
+      flaggedHarvest.push({ h, farmer: farmer.b });
       return;
     }
     harvestRows.push({ h, key: farmer.key, year: yearOf(h.harvest_date) });
@@ -104,7 +111,7 @@ export function buildAnalyticsBase({ projects, beneficiaries, harvestLogs }) {
     .map(([key, name]) => ({ key, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return { projectRows, farmerRows, harvestRows, unattributedHarvest, years, barangays, names };
+  return { projectRows, farmerRows, harvestRows, flaggedHarvest, unattributedHarvest, years, barangays, names };
 }
 
 /**

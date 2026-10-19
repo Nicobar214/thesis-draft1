@@ -4,6 +4,7 @@ import LguAnalyticsFilters from './LguAnalyticsFilters';
 import LguAnalyticsOverview from './LguAnalyticsOverview';
 import LguBarangayBreakdown from './LguBarangayBreakdown';
 import LguHarvestAnalytics from './LguHarvestAnalytics';
+import HarvestReviewPanel from './HarvestReviewPanel';
 import { AnalyticsSkeleton, PrimaryKpi, SecondaryKpi, SectionHeading, Sparkline, TrendCaption } from './analyticsParts';
 import {
   applyAnalyticsFilters,
@@ -180,6 +181,9 @@ export default function LguAnalyticsTab({
               title="Farmer Beneficiaries & Reported Harvest"
               subtitle="Harvest as reported by farmers in this municipality. Not independently verified, and not linked to a specific FMR project."
             />
+            <div className="mb-4">
+              <HarvestReviewPanel flagged={base.flaggedHarvest} onReviewed={onRetry} />
+            </div>
             <LguHarvestAnalytics summary={harvestSummary} unavailable={harvestDown} unattributedHarvest={base.unattributedHarvest} />
           </section>
         </>

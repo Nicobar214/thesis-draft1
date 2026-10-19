@@ -16,7 +16,7 @@ import { normalizeUserProjectStatus, getDaysDeltaFromToday, isProjectOverdue } f
 import { FmrProjectKpis, FMRProjectCard, ProjectSkeleton, FMRProjectTable } from '../components/fmrProjects/FmrProjectListParts';
 
 /* â”€â”€â”€ Status Filter Tabs â”€â”€â”€ */
-const statusFilters = ['On-Going', 'Proposed', 'Completed', 'Overdue'];
+const statusFilters = ['All Projects', 'On-Going', 'Proposed', 'Completed', 'Overdue'];
 
 const VIEW_MODE_STORAGE_KEY = 'fmr-projects-view';
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
@@ -210,7 +210,9 @@ export default function UserFMRProjects({ embedded = false } = {}) {
     const q = search.toLowerCase();
 
     const matchesSearch = !q || name.includes(q) || loc.includes(q) || muni.includes(q);
-    const matchesStatus = statusFilter === 'Following'
+    const matchesStatus = statusFilter === 'All Projects'
+      ? true
+      : statusFilter === 'Following'
       ? follows.isFollowing(p.id)
       : statusFilter === 'Overdue'
         ? isProjectOverdue(p)
@@ -370,7 +372,9 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <div className="flex gap-1.5 overflow-x-auto pb-1" data-tour="fmr-status">
             {(follows.available ? [...statusFilters, 'Following'] : statusFilters).map(s => {
               const count =
-                s === 'On-Going'
+                s === 'All Projects'
+                  ? stats.total
+                  : s === 'On-Going'
                   ? stats.ongoing
                   : s === 'Proposed'
                   ? stats.proposed
