@@ -754,7 +754,7 @@ export default function UserDashboard() {
             </div>
             <Link to="/user/map" className="text-xs font-semibold text-emerald-700 hover:text-emerald-800">Open the full map</Link>
           </div>
-          <CitizenOverviewMap />
+          <CitizenOverviewMap onProjectSelect={openProject} />
         </section>
 
         </div>

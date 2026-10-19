@@ -3,6 +3,7 @@
  * tested on their own: how close is "nearby", whether a GPS fix counts as on-site,
  * what makes a submission valid, and exactly what gets sent to the database.
  */
+import { SEVERITY_TAXONOMY } from './publicReportStatus';
 
 export const REGION = 'Region VI – Western Visayas';
 export const PROVINCE = 'Iloilo';
@@ -135,4 +136,19 @@ export function friendlySubmitError(err) {
     return 'The database schema is outdated. Run supabase_fix_public_reports_schema.sql in Supabase SQL Editor to update public_reports.project_id, then submit again.';
   }
   return message || 'Something went wrong. Please try again.';
+}
+
+/**
+ * The description printed on a report photo's stamp and shown on /verify/<code>:
+ * what the problem is and which road it is on, e.g.
+ * "Road report · Pothole · Brgy. Road 1, Leon". Only public project details;
+ * never the reporter's name or contact.
+ */
+export function buildReportPhotoLabel({ severityCategory, specificProblem, selProject } = {}) {
+  const category = SEVERITY_TAXONOMY[severityCategory];
+  const problem = category?.problems?.find((item) => item.value === specificProblem)?.label || category?.label || '';
+  const road = String(selProject?.project_name || '').trim();
+  const town = String(selProject?.municipality || '').trim();
+  const where = [road, town && town.toLowerCase() !== road.toLowerCase() ? town : ''].filter(Boolean).join(', ');
+  return ['Road report', problem, where].filter(Boolean).join(' · ').slice(0, 200);
 }

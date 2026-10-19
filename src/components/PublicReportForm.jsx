@@ -14,6 +14,7 @@ import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/of
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 import {
   buildReportPayload,
+  buildReportPhotoLabel,
   findNearbyProjects,
   friendlySubmitError,
   isNetworkFailure,
@@ -207,7 +208,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         longitude: gps?.lng,
         accuracy: gps?.accuracy,
         capturedAt: photoTs || undefined,
-        label: selProject?.project_name || undefined,
+        label: buildReportPhotoLabel({ severityCategory, specificProblem, selProject }),
       });
       uploadBlob = stamped.blob;
       attestation = stamped.attestation;

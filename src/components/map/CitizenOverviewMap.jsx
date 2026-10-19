@@ -66,7 +66,8 @@ function FlyTo({ target }) {
  * pins, and (on request) the nearest FMR road to where they are standing. The
  * full tool lives on the Map View page.
  */
-export default function CitizenOverviewMap() {
+// onProjectSelect(project): a road was tapped; the page shows its details dialog.
+export default function CitizenOverviewMap({ onProjectSelect }) {
   const { reports } = useMyReports();
   const [projects, setProjects] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -172,8 +173,15 @@ export default function CitizenOverviewMap() {
           <FlyTo target={flyTarget} />
           {layers.roads && routeLines.map(({ project, points, data }) => (
             <Fragment key={project.id}>
-              <Polyline positions={points} pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.85 }}>
-                <Tooltip sticky>{project.project_name}{project.status ? ` (${project.status})` : ''}</Tooltip>
+              <Polyline
+                positions={points}
+                pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.85 }}
+                eventHandlers={onProjectSelect ? { click: () => onProjectSelect(project) } : undefined}
+              >
+                <Tooltip sticky>
+                  {project.project_name}{project.status ? ` (${project.status})` : ''}
+                  {onProjectSelect && <span className="block text-[10px] text-slate-500">Tap for project details</span>}
+                </Tooltip>
               </Polyline>
               {layers.endpoints && <RouteEndpointMarkers project={project} routeData={data} lineColor={getRouteStatusTheme(project.status).line} />}
             </Fragment>

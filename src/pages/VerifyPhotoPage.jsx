@@ -61,7 +61,11 @@ function FileCheck({ sha256 }) {
         </span>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-900">Check a photo file</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Choose the photo you were given. It is checked on this device and is not uploaded.</p>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Have a copy of this photo, for example one attached to a document or sent to you? Choose it here to
+            confirm it is the exact original. Even a small edit, crop or re-save makes it fail.
+          </p>
+          <p className="mt-1 text-xs text-slate-400">Checked on this device only. Your file is not uploaded.</p>
         </div>
       </div>
       <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -72,7 +76,7 @@ function FileCheck({ sha256 }) {
       {state === 'match' && (
         <p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800">
           <BadgeCheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          This file is the original, unaltered photo.
+          Exact match. This file is the original photo, unaltered since KalsaTrack recorded it.
         </p>
       )}
       {state === 'mismatch' && (
@@ -194,7 +198,7 @@ export default function VerifyPhotoPage() {
               <dl className="divide-y divide-slate-100">
                 <Row label="Code"><span className="font-mono tracking-widest">{record.code}</span></Row>
                 <Row label="Type">{ATTESTATION_KINDS[record.kind] || record.kind}</Row>
-                {record.label && <Row label="Details">{record.label}</Row>}
+                {record.label && <Row label="What the photo shows">{record.label}</Row>}
                 <Row label={<span className="inline-flex items-center gap-1.5"><ClockIcon className="size-3.5" />Taken (phone time)</span>}>
                   {record.captured_at ? formatCaptureTime(record.captured_at) : '—'}
                 </Row>

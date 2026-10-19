@@ -8,6 +8,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PublicReportForm from '../components/PublicReportForm';
 import Logo from '../components/Logo';
+import DateFilterInput from '../components/ui/DateFilterInput';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 
 /* ─── Icons ─── */
@@ -255,28 +256,24 @@ export default function PublicReportsPage() {
             </div>
 
             {/* Date from */}
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><Icons.Calendar /></span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="pl-11 pr-3 py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition"
-                title="From date"
-              />
-            </div>
+            <DateFilterInput
+              value={dateFrom}
+              onChange={setDateFrom}
+              max={dateTo}
+              label="From date"
+              icon={<Icons.Calendar />}
+              inputClassName="py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition"
+            />
 
             {/* Date to */}
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"><Icons.Calendar /></span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="pl-11 pr-3 py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition"
-                title="To date"
-              />
-            </div>
+            <DateFilterInput
+              value={dateTo}
+              onChange={setDateTo}
+              min={dateFrom}
+              label="To date"
+              icon={<Icons.Calendar />}
+              inputClassName="py-2.5 border border-zinc-200 rounded-xl text-sm text-zinc-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition"
+            />
 
             {/* Status */}
             <div className="relative">

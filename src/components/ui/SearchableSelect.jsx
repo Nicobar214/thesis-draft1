@@ -14,6 +14,7 @@ export default function SearchableSelect({
   placeholder = 'Search or select...',
   required = false,
   ariaLabel,
+  id,
   className = '',
 }) {
   const [open, setOpen] = useState(false);
@@ -75,6 +76,7 @@ export default function SearchableSelect({
   return (
     <div className={`relative ${className}`}>
       <input
+        id={id}
         type="text"
         role="combobox"
         aria-label={ariaLabel}

@@ -1,4 +1,4 @@
-import { BanknoteIcon, CircleCheckIcon, FilePenLineIcon, FileTextIcon, HourglassIcon, LockIcon, SearchIcon, ZapIcon } from 'lucide-react';
+import { BanknoteIcon, CircleCheckIcon, FilePenLineIcon, FileTextIcon, HourglassIcon, LockIcon, SearchIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -18,6 +18,7 @@ import { DEFAULT_PROPOSAL_FILTERS, filterProposals, proposalFilterOptions, summa
 import HierarchyKpis from '../ui/HierarchyKpis';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 import Pagination, { usePagination } from '../ui/Pagination';
+import { findBlockingDuplicate } from '../../lib/proposalDuplicates';
 
 const ROAD_TYPES = ['Concreting', 'Opening/Construction', 'Rehabilitation', 'Widening', 'Others'];
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
@@ -175,6 +176,31 @@ const emptyForm = {
  * opens and that proposal's detail dialog is shown once proposals have loaded;
  * onFocusHandled lets the parent reset it.
  */
+function DuplicateProjectAlert({ duplicate }) {
+  if (!duplicate) return null;
+  const { kind, reason, row } = duplicate;
+  const what = kind === 'project'
+    ? `an existing FMR project${row.status ? ` (${row.status})` : ''}`
+    : `your proposal already ${row.status === 'Approved' ? 'approved by DA' : 'sent to DA'} (${row.status})`;
+  return (
+    <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-800">
+      <TriangleAlertIcon className="mt-0.5 size-5 shrink-0 text-red-600" aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="font-semibold">This project already exists</p>
+        <p className="mt-0.5">
+          {reason === 'name' ? 'The name matches ' : 'The start and end points match '}
+          {what}: <strong>{row.project_name}</strong>
+          {row.location || row.barangay ? ` · ${row.location || row.barangay}` : ''}.
+        </p>
+        <p className="mt-1 text-xs text-red-700">
+          To avoid duplicate projects, it cannot be proposed again.
+          {kind === 'proposal' && row.status === 'Needs Revision' ? ' Edit that proposal instead.' : ''}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function LguProjectProposalsTab({ user, profile, municipalityScope, beneficiaries = [], focusProposalId, onFocusHandled }) {
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -204,6 +230,31 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const proposalPager = usePagination(visibleProposals, `${JSON.stringify(listFilters)}|${viewMode}`, 10);
   const listFiltersActive = Object.keys(DEFAULT_PROPOSAL_FILTERS).some((k) => k !== 'sort' && listFilters[k] !== DEFAULT_PROPOSAL_FILTERS[k]);
   const setListFilter = (patch) => setListFilters((f) => ({ ...f, ...patch }));
+
+  // Existing FMR projects in this municipality, for the duplicate rule below.
+  const [existingProjects, setExistingProjects] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let query = supabase
+        .from('fmr_projects')
+        .select('id, project_name, municipality, location, status, start_latitude, start_longitude, end_latitude, end_longitude');
+      if (municipalityScope) query = query.eq('municipality', municipalityScope);
+      const { data, error } = await query;
+      if (alive && !error) setExistingProjects(data || []);
+    })();
+    return () => { alive = false; };
+  }, [municipalityScope]);
+
+  // Strict rule: a road that already exists (as a project or an open proposal)
+  // cannot be proposed again (lib/proposalDuplicates.js).
+  const duplicate = useMemo(() => findBlockingDuplicate({
+    form,
+    municipality: municipalityScope,
+    projects: existingProjects,
+    proposals,
+    editingId,
+  }), [form, municipalityScope, existingProjects, proposals, editingId]);
 
   const fetchProposals = useCallback(async () => {
     if (!user) return;
@@ -399,6 +450,10 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       notify('Project name and justification are required.', 'warning');
       return;
     }
+    if (duplicate) {
+      notify(`This project already exists: "${duplicate.row.project_name}". Duplicate proposals are not allowed.`, 'error');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -496,7 +551,9 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       await fetchProposals();
       setActiveSubTab('list');
     } catch (err) {
-      notify(`Error saving proposal: ${err.message}`);
+      notify(/already exists/i.test(err?.message || '')
+        ? 'This project already exists in your municipality. Duplicate proposals are not allowed.'
+        : `Error saving proposal: ${err.message}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -626,6 +683,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     <LockIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Name is locked to ensure proposal traceability and duplicate check integrity.
                   </p>
                 )}
+                {duplicate?.reason === 'name' && <div className="mt-2"><DuplicateProjectAlert duplicate={duplicate} /></div>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -931,10 +989,11 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 </div>
               </div>
 
+              {duplicate && <DuplicateProjectAlert duplicate={duplicate} />}
               <div className="flex gap-2 pt-4">
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || Boolean(duplicate)}
                   className={buttonClass('primary', 'md', 'flex-grow')}
                 >
                   {submitting ? 'Submitting…' : editingId ? 'Resubmit Proposal' : 'Submit Proposal to DA'}

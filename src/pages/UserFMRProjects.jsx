@@ -11,6 +11,7 @@ import { normalizeProjectName } from '../lib/projectHelpers';
 import { getProjectBudgetSummary } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import FmrProjectDetailDialog from '../components/FmrProjectDetailDialog';
+import DateFilterInput from '../components/ui/DateFilterInput';
 import { normalizeUserProjectStatus, getDaysDeltaFromToday, isProjectOverdue } from '../lib/projectStatus';
 import { FmrProjectKpis, FMRProjectCard, ProjectSkeleton, FMRProjectTable } from '../components/fmrProjects/FmrProjectListParts';
 
@@ -345,26 +346,22 @@ export default function UserFMRProjects({ embedded = false } = {}) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Start Date</label>
-              <input
-                type="date"
+              <DateFilterInput
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                max={dateTo || undefined}
-                aria-label="Start Date"
-                title="Start Date"
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                onChange={setDateFrom}
+                max={dateTo}
+                label="Start Date"
+                inputClassName="w-full py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
               />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">End Date</label>
-              <input
-                type="date"
+              <DateFilterInput
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                min={dateFrom || undefined}
-                aria-label="End Date"
-                title="End Date"
-                className="w-full px-4 py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                onChange={setDateTo}
+                min={dateFrom}
+                label="End Date"
+                inputClassName="w-full py-2.5 border border-zinc-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none"
               />
             </div>
           </div>

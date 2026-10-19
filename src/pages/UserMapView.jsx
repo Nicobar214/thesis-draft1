@@ -23,13 +23,10 @@ import {
   getProjectBarangay,
   getLocationConfidence,
   getRouteStatusTheme,
-  getTargetDateChip,
   isOverdueProject,
   normalizeRouteStatus,
   getJitteredCentroid,
 } from '../lib/mapRouteUtils';
-import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
-import { formatPercentage } from '../lib/percentageFormat';
 
 import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
@@ -52,14 +49,6 @@ function getStatusColor(status) {
   return { fill: theme.line, stroke: theme.stroke, bg: 'bg-slate-500' };
 }
 
-function getStatusBadge(status) {
-  switch (normalizeStatus(status)) {
-    case 'Completed': return 'bg-emerald-100 text-emerald-700';
-    case 'On-Going':  return 'bg-amber-100 text-amber-700';
-    case 'Proposed':  return 'bg-sky-100 text-sky-700';
-    default:          return 'bg-slate-100 text-slate-700';
-  }
-}
 /* ─── Geofencing helpers ─── */
 function haversineMeters(lat1, lng1, lat2, lng2) {
   const R = 6_371_000;
@@ -195,7 +184,7 @@ export default function UserMapView({ embedded = false } = {}) {
   const [hoveredProjectId, setHoveredProjectId] = useState(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [routeByProjectId, setRouteByProjectId] = useState({});
-  const [reportCountByProjectId, setReportCountByProjectId] = useState({});
+  const [, setReportCountByProjectId] = useState({});
   const [snappedRouteByProjectId, setSnappedRouteByProjectId] = useState({});
 
   // Farmer & Market Supply Chain layers (PII-free for citizen view)
@@ -758,16 +747,12 @@ export default function UserMapView({ embedded = false } = {}) {
                   );
                 })()}
 
-                {mappable.map(({ project, route, coordinates, isApproximate, isCentroidFallback, hasFallbackPin }) => {
+                {mappable.map(({ project, route, coordinates, isCentroidFallback, hasFallbackPin }) => {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
                   const isFocused = isSelected || hoveredProjectId === project.id;
                   const isNearby = nearbyProjects.has(project.id);
                   const normalizedStatus = normalizeStatus(project.status);
-                  const progress = Number(project.accomplishment || 0);
-                  const budget = getProjectBudgetSummary(project, tranchesByProjectId[project.id] || []);
-                  const reportsCount = reportCountByProjectId[project.id] || 0;
-                  const targetChip = getTargetDateChip(project.target_completion_date, normalizedStatus === 'Completed');
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
                   const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
                   const routeStart = routePoints[0] || route.startPoint;
@@ -802,57 +787,6 @@ export default function UserMapView({ embedded = false } = {}) {
                                 <p className="text-[11px] text-slate-600 mt-0.5">{normalizedStatus} • {project.municipality || 'N/A'}</p>
                               </div>
                             </Tooltip>
-                            <Popup maxWidth={360} className="custom-popup">
-                              <div className="space-y-3 min-w-[260px]">
-                                <div className="flex items-start justify-between gap-3">
-                                  <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
-                                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusBadge(project.status)}`}>
-                                    {normalizedStatus}
-                                  </span>
-                                </div>
-
-                                <div>
-                                  <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                                    <span>Progress</span>
-                                    <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
-                                  </div>
-                                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
-                                  </div>
-                                </div>
-
-                                <div className="text-xs text-slate-600 space-y-1">
-                                  <p>{project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
-                                  <p>FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
-                                  <p>
-                                    Budget: <strong>{formatPeso(budget.totalBudget)}</strong>
-                                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                      {budget.budgetIsEstimated ? 'Est.' : 'Official'}
-                                    </span>
-                                  </p>
-                                  {targetChip && (
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${targetChip.className}`}>
-                                      {targetChip.text}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <a
-                                    href={`/reports?search=${encodeURIComponent(project.project_name || '')}`}
-                                    className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
-                                  >
-                                    {reportsCount} public reports
-                                  </a>
-                                  <a
-                                    href={`/projects/${project.id}`}
-                                    className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white hover:bg-slate-800"
-                                  >
-                                    View Details
-                                  </a>
-                                </div>
-                              </div>
-                            </Popup>
                           </Polyline>
 
                           {/* Labelled S/E pins plus a mid-route direction arrow. Previously a
@@ -893,63 +827,6 @@ export default function UserMapView({ embedded = false } = {}) {
                               </span>
                             </div>
                           </Tooltip>
-                          <Popup maxWidth={360} className="custom-popup">
-                            <div className="space-y-3 min-w-[260px]">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <h3 className="font-semibold text-slate-900 text-sm leading-snug">{project.project_name}</h3>
-                                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                    {isCentroidFallback ? 'MUNICIPAL CENTROID PIN' : 'BARANGAY CENTER GEOTAG'}
-                                  </p>
-                                </div>
-                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${getStatusBadge(project.status)}`}>
-                                  {normalizedStatus}
-                                </span>
-                              </div>
-
-                              <div>
-                                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                                  <span>Progress</span>
-                                  <span className="font-semibold text-slate-700">{formatPercentage(progress)}</span>
-                                </div>
-                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                  <div className="h-2 rounded-full bg-teal-500" style={{ width: `${Math.min(progress, 100)}%` }} />
-                                </div>
-                              </div>
-
-                              <div className="text-xs text-slate-600 space-y-1.5 p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                <p><strong>Location:</strong> {project.municipality || 'N/A'}, {getProjectBarangay(project)}</p>
-                                <p><strong>Funding:</strong> FY {project.year_funded || 'N/A'} • {project.project_length_km || 0} km</p>
-                                <p>
-                                  <strong>Budget:</strong> {formatPeso(budget.totalBudget)}
-                                  <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                    {budget.budgetIsEstimated ? 'Est.' : 'Official'}
-                                  </span>
-                                </p>
-                                {isCentroidFallback && (
-                                  <p className="text-[10px] text-amber-700 font-medium"><TriangleAlertIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No exact coordinates. Placed at municipal center centroid.</p>
-                                )}
-                                {isApproximate && (
-                                  <p className="text-[10px] text-orange-700 font-medium"><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Coordinates auto-geocoded to Barangay center.</p>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-100">
-                                <a
-                                  href={`/reports?search=${encodeURIComponent(project.project_name || '')}`}
-                                  className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-sky-100 text-sky-700 hover:bg-sky-200"
-                                >
-                                  {reportsCount} reports
-                                </a>
-                                <a
-                                  href={`/projects/${project.id}`}
-                                  className="inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-medium bg-slate-900 text-white hover:bg-slate-800"
-                                >
-                                  View Details
-                                </a>
-                              </div>
-                            </div>
-                          </Popup>
                         </CircleMarker>
                       )}
                     </div>

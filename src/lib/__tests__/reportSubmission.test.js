@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildReportPayload,
+  buildReportPhotoLabel,
   computeVerification,
   distToProject,
   findNearbyProjects,
@@ -13,6 +14,7 @@ import {
   sortProjectsByDistance,
   validateReportInput,
 } from '../reportSubmission';
+import { SEVERITY_TAXONOMY } from '../publicReportStatus';
 
 // 0.001 degrees of latitude is about 111 m.
 const project = (id, lat, lng, extra = {}) => ({
@@ -209,5 +211,20 @@ describe('friendlySubmitError', () => {
   it('passes other messages through and has a fallback', () => {
     expect(friendlySubmitError({ message: 'row violates policy' })).toBe('row violates policy');
     expect(friendlySubmitError({})).toMatch(/try again/i);
+  });
+});
+
+describe('buildReportPhotoLabel', () => {
+  const [cat, meta] = Object.entries(SEVERITY_TAXONOMY)[0];
+  const problem = meta.problems[0];
+
+  it('names the problem, the road and the town', () => {
+    expect(buildReportPhotoLabel({ severityCategory: cat, specificProblem: problem.value, selProject: { project_name: 'Brgy. Road 1', municipality: 'Leon' } }))
+      .toBe(`Road report · ${problem.label} · Brgy. Road 1, Leon`);
+  });
+
+  it('still reads well with details missing', () => {
+    expect(buildReportPhotoLabel({})).toBe('Road report');
+    expect(buildReportPhotoLabel({ selProject: { project_name: 'Leon', municipality: 'Leon' } })).toBe('Road report · Leon');
   });
 });
