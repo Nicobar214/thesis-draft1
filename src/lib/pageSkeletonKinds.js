@@ -5,6 +5,7 @@ const ROUTE_KINDS = {
     '/farmer': 'map',
     '/farmer/harvest': 'kpiForm',
     '/farmer/reports': 'list',
+    '/farmer/community': 'list',
     '/farmer/fmr-projects': 'cards',
     '/farmer/markets': 'table',
     '/farmer/profile': 'profile',

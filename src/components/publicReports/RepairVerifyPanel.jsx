@@ -3,6 +3,7 @@ import { buttonClass } from '../ui/Button';
 
 import { supabaseFieldEngineer as defaultClient } from '../../lib/supabase';
 import { haversineMeters, toPoint } from './routeGeometry';
+import { MAX_ACCURACY_M, MAX_DISTANCE_M, geoErrorMessage, readBestPosition, readPosition } from '../../lib/onSiteLocation';
 import { verifyPublicReportRepair } from '../../services/publicReportWorkflow';
 import { attestPhoto, registerAttestation } from '../../lib/photoAttestation';
 import {
@@ -19,20 +20,8 @@ import {
   repairStatusInfo,
   responsiblePartyLabel,
 } from '../../lib/publicReportStatus';
+import ZoomablePhoto from '../ui/ZoomablePhoto';
 
-// Mirrors the server limit in verify_public_report_repair. The server is the
-// authority; this only stops the engineer before they waste a trip.
-const MAX_DISTANCE_M = 500;
-// A fix this loose could put the engineer anywhere within a few blocks.
-const MAX_ACCURACY_M = 100;
-// A single getCurrentPosition() call often returns the device's first, worst
-// fix (cold GPS, stale cell/Wi-Fi positioning) even when a much better one
-// arrives a few seconds later. Rather than judge the engineer on that first
-// read, sample for up to this long and keep the most accurate fix seen.
-const POSITION_POLL_MS = 9000;
-// Stop polling early once a fix this good arrives -- no reason to make the
-// engineer wait out the full window if GPS has already locked on well.
-const ACCURACY_GOOD_ENOUGH_M = 25;
 const PHOTO_BUCKET = 'public-report-photos';
 
 function fmtDate(value) {
@@ -40,88 +29,6 @@ function fmtDate(value) {
   const d = new Date(String(value).length === 10 ? `${value}T00:00:00` : value);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function readPosition() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('unsupported'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-        capturedAt: new Date().toISOString(),
-      }),
-      reject,
-      // maximumAge 0: never accept a cached position.
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  });
-}
-
-function geoErrorMessage(err) {
-  if (err?.message === 'unsupported') return 'This device cannot provide a location.';
-  if (err?.code === 1) return 'Location permission was denied. Allow location for this site and try again.';
-  return 'Could not read your location. Move to open sky and try again.';
-}
-
-/**
- * Sample position fixes for up to `durationMs` and resolve with the most
- * accurate one seen, instead of trusting whatever getCurrentPosition()
- * happens to return first. Resolves early once a fix is already good enough.
- * `onSample` fires on every improved fix, so the UI can show live progress.
- */
-function readBestPosition({ durationMs = POSITION_POLL_MS, goodEnoughM = ACCURACY_GOOD_ENOUGH_M, onSample } = {}) {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error('unsupported'));
-      return;
-    }
-    let best = null;
-    let watchId = null;
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      clearTimeout(timer);
-      if (best) resolve(best);
-      else reject(new Error('timeout'));
-    };
-
-    const timer = setTimeout(finish, durationMs);
-
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const sample = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          capturedAt: new Date().toISOString(),
-        };
-        if (!best || sample.accuracy < best.accuracy) {
-          best = sample;
-          onSample?.(sample);
-        }
-        if (sample.accuracy <= goodEnoughM) finish();
-      },
-      (err) => {
-        // A fix already in hand survives a later error (e.g. a transient
-        // signal drop); only reject outright if nothing has come in yet.
-        if (!best) {
-          settled = true;
-          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-          clearTimeout(timer);
-          reject(err);
-        }
-      },
-      { enableHighAccuracy: true, timeout: durationMs, maximumAge: 0 }
-    );
-  });
 }
 
 /**
@@ -169,7 +76,7 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
     try {
       const { data, error } = await client
         .from('public_report_repair_actions')
-        .select('id, status, kind, responsible_party, target_date, completed_at, verified_at, verification_photo_url, verification_distance_m')
+        .select('*')
         .eq('report_id', report.id)
         .maybeSingle();
       if (error) throw error;
@@ -458,6 +365,11 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
   if (loading || !action || action.status === 'cancelled') return null;
 
   const info = repairStatusInfo(action.status);
+  // Work the LGU or contractor sent is reviewed by the DA from their photo; the
+  // engineer only goes back when the DA asks. Older follow-ups recorded done by
+  // the admin always need the engineer.
+  const handlerSent = Boolean(action.work_submitted_by);
+  const needsCheck = action.status === 'completed' && (!handlerSent || Boolean(action.engineer_check_requested_at));
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
@@ -472,9 +384,16 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
 
       {action.status === 'planned' && (
         <p className="text-sm text-slate-700">
-          Follow-up work is scheduled with {responsiblePartyLabel(action.responsible_party) || 'the responsible office'}
-          {action.target_date ? `, target ${fmtDate(action.target_date)}` : ''}. You&rsquo;ll be asked to confirm it on
-          site once it&rsquo;s recorded as done.
+          The repair is with the {responsiblePartyLabel(action.responsible_party)?.toLowerCase() || 'responsible office'}
+          {action.target_date ? `, target ${fmtDate(action.target_date)}` : ''}. The DA may ask you to check it on site
+          once they send their after-photo.
+        </p>
+      )}
+
+      {action.status === 'completed' && !needsCheck && (
+        <p className="text-sm text-slate-700">
+          The {responsiblePartyLabel(action.responsible_party)?.toLowerCase() || 'responsible office'} sent an after-photo
+          on {fmtDate(action.work_submitted_at)}. The DA is reviewing it; nothing is needed from you unless they ask.
         </p>
       )}
 
@@ -487,16 +406,18 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
               : ''}.
           </p>
           {action.verification_photo_url && (
-            <img
+            <ZoomablePhoto
               src={action.verification_photo_url}
               alt="After-photo taken during on-site verification"
+              label="Your verification photo"
+              wrapperClassName="w-full"
               className="h-32 w-full rounded-lg border border-slate-200 object-cover"
             />
           )}
         </div>
       )}
 
-      {action.status === 'completed' && queued && (
+      {needsCheck && queued && (
         <div
           className={`rounded-lg border p-3 ${
             queued.status === 'rejected' ? 'border-red-200 bg-red-50' : 'border-sky-200 bg-sky-50'
@@ -528,11 +449,23 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
         </div>
       )}
 
-      {action.status === 'completed' && !queued && (
+      {needsCheck && !queued && (
         <div className="space-y-3">
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Action required</p>
             <p className="mt-1 text-sm font-semibold text-slate-900">Confirm the repair on site</p>
+            {action.work_photo_url && (
+              <div className="mt-2">
+                <span className="text-[11px] font-semibold text-slate-600">Contractor&rsquo;s after-photo</span>
+                <ZoomablePhoto
+                  src={action.work_photo_url}
+                  alt="After-photo sent by the contractor"
+                  label="Contractor's after-photo"
+                  wrapperClassName="mt-1 w-full"
+                  className="h-32 w-full rounded-lg border border-slate-200 object-cover"
+                />
+              </div>
+            )}
             <p className="mt-1 text-xs text-slate-600">
               The work was recorded as done on {fmtDate(action.completed_at)}. Go to the location, confirm your
               position, then take the after-photo with the camera. You can only verify work someone else recorded.

@@ -10,6 +10,7 @@ import { buttonClass } from '../ui/Button';
 import { attestPhoto } from '../../lib/photoAttestation';
 import { cacheGet, cacheSet, isConnectionError } from '../../lib/offlineCache';
 import { sendInspection, enqueueInspection, listQueuedInspections, discardQueuedInspection, INSPECTION_QUEUE_EVENT } from '../../lib/offlineInspections';
+import ZoomablePhoto from '../ui/ZoomablePhoto';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -592,13 +593,14 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
         </div>
 
         <div>
-          <label className="text-xs text-slate-500 font-semibold uppercase">Estimated Cost Range</label>
+          <label className="text-xs text-slate-500 font-semibold uppercase">Estimated Repair Cost <span className="normal-case font-normal text-slate-400">(optional)</span></label>
           <input
             value={estimatedCostRange}
             onChange={(e) => setEstimatedCostRange(e.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
             placeholder="e.g. PHP 150,000 - PHP 220,000"
           />
+          <p className="mt-1 text-[11px] text-slate-400">A rough estimate to help the DA plan the repair. It is not the project budget or a payment.</p>
         </div>
 
         <div>
@@ -689,7 +691,13 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           <div className="grid grid-cols-1 gap-3">
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Previously Submitted Photo</p>
-              <img src={latestFinding.field_photo_url} alt="Previously submitted field capture" className="w-full h-40 object-cover rounded-lg border border-slate-200" />
+              <ZoomablePhoto
+                src={latestFinding.field_photo_url}
+                alt="Previously submitted field capture"
+                label="Your earlier inspection photo"
+                wrapperClassName="w-full"
+                className="w-full h-40 object-cover rounded-lg border border-slate-200"
+              />
             </div>
           </div>
         )}

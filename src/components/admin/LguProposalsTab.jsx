@@ -17,6 +17,7 @@ import { QUEUE_PILL } from '../../lib/reviewQueueTones';
 import ReviewQueueSummary from './ReviewQueueSummary';
 import Pagination, { usePagination } from '../ui/Pagination';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
+import { PhotoViewButton } from '../ui/ZoomablePhoto';
 
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
 
@@ -275,6 +276,15 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
 
   const mapCenter = routePoints[0] || getMunicipalityCentroid(proposal.municipality);
 
+  // Private file -> short-lived link (cached), for the photo viewer.
+  const resolveSignedUrl = async (path) => {
+    if (!path) return null;
+    if (signedUrls[path]) return signedUrls[path];
+    const { data } = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(path, 3600);
+    if (data?.signedUrl) setSignedUrls((prev) => ({ ...prev, [path]: data.signedUrl }));
+    return data?.signedUrl || null;
+  };
+
   const openAttachment = async (path) => {
     if (!path) return;
     if (signedUrls[path]) {
@@ -388,9 +398,14 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
             <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">Attachments</h4>
             {proposal.photo_url && (
-              <button type="button" onClick={() => openAttachment(proposal.photo_url)} className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
+              <PhotoViewButton
+                src={proposal.photo_url}
+                resolveSrc={resolveSignedUrl}
+                label="Road photo"
+                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
+              >
                 <CameraIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />View Road Photo
-              </button>
+              </PhotoViewButton>
             )}
             {/* DA checklist: which required documents the LGU attached. */}
             <ProposalDocumentsChecklist proposal={proposal} onOpen={openAttachment} />

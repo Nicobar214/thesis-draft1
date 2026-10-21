@@ -6,6 +6,7 @@ import {
   cancelPublicReportRepair,
   completePublicReportRepair,
   planPublicReportRepair,
+  reopenPublicReportRepair,
 } from '../../services/publicReportWorkflow';
 import {
   RESPONSIBLE_PARTY_LABELS,
@@ -15,6 +16,7 @@ import {
   resolutionAllowsRepairFollowUp,
   responsiblePartyLabel,
 } from '../../lib/publicReportStatus';
+import ZoomablePhoto from '../ui/ZoomablePhoto';
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -37,12 +39,17 @@ function defaultTargetDate(days = 14) {
  * finished until a different person (normally the assigned engineer) verifies
  * it on site. That separation is enforced in the database, not just here.
  */
-export default function RepairActionPanel({ report, resolution, client = defaultClient, onNotify, onChanged }) {
+// Who the admin can hand a follow-up to. DA stays valid for older rows only.
+const HANDLER_PARTIES = ['contractor', 'lgu'];
+
+export default function RepairActionPanel({ report, resolution, client = defaultClient, onNotify, onChanged, handler = 'contractor' }) {
   const [action, setAction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const [party, setParty] = useState('da');
+  const [party, setParty] = useState(handler);
+  const [showReopen, setShowReopen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
   const [targetDate, setTargetDate] = useState(defaultTargetDate());
   const [planNote, setPlanNote] = useState('');
   const [completeNote, setCompleteNote] = useState('');
@@ -80,12 +87,14 @@ export default function RepairActionPanel({ report, resolution, client = default
     setCompleteNote('');
     setCancelReason('');
     setPlanNote('');
+    setShowReopen(false);
+    setReopenReason('');
     load();
   }, [load]);
 
   useEffect(() => {
-    setParty(mustUseContractor ? 'contractor' : 'da');
-  }, [mustUseContractor, report?.id]);
+    setParty(mustUseContractor ? 'contractor' : handler);
+  }, [mustUseContractor, handler, report?.id]);
 
   const run = async (fn, successMessage) => {
     setBusy(true);
@@ -146,10 +155,17 @@ export default function RepairActionPanel({ report, resolution, client = default
             disabled={mustUseContractor}
             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs disabled:bg-slate-50"
           >
-            {Object.entries(RESPONSIBLE_PARTY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+            {HANDLER_PARTIES.map((value) => (
+              <option key={value} value={value}>{RESPONSIBLE_PARTY_LABELS[value]}</option>
             ))}
           </select>
+          {!mustUseContractor && (
+            <p className="text-[11px] text-slate-500">
+              {party === 'lgu'
+                ? 'The LGU is notified, fixes it and sends an on-site after-photo. Their photo closes the job.'
+                : 'The contractor is notified, repairs it and sends an on-site after-photo. The assigned engineer then confirms it.'}
+            </p>
+          )}
           {mustUseContractor && (
             <p className="text-[11px] text-slate-500">A report referred to a contractor is assigned to the contractor.</p>
           )}
@@ -247,20 +263,92 @@ export default function RepairActionPanel({ report, resolution, client = default
             </p>
           )}
 
-          {action.verification_photo_url && (
-            <a href={action.verification_photo_url} target="_blank" rel="noopener noreferrer">
-              <img
-                src={action.verification_photo_url}
-                alt="After-photo taken during on-site verification"
+          {action.status === 'planned' && HANDLER_PARTIES.includes(action.responsible_party) && (
+            <p className="rounded-md border border-sky-200 bg-sky-50 p-2 text-sky-900">
+              Waiting for the {action.responsible_party === 'lgu' ? 'LGU' : 'contractor'}&rsquo;s on-site after-photo.
+              They see this job in their portal and were notified.
+            </p>
+          )}
+
+          {action.work_photo_url && action.work_photo_url !== action.verification_photo_url && (
+            <div className="space-y-1">
+              <span className="block text-[11px] font-semibold text-slate-600">
+                {action.responsible_party === 'lgu' ? 'LGU' : 'Contractor'} after-photo · {fmtDate(action.work_submitted_at)}
+              </span>
+              <ZoomablePhoto
+                src={action.work_photo_url}
+                alt="After-photo sent by the party who did the work"
+                label="After-photo"
+                wrapperClassName="w-full"
                 className="h-32 w-full rounded-md border border-slate-200 object-cover"
               />
-            </a>
+            </div>
+          )}
+
+          {action.verification_photo_url && (
+            <ZoomablePhoto
+              src={action.verification_photo_url}
+              alt="After-photo taken during on-site verification"
+              label="On-site verification photo"
+              wrapperClassName="w-full"
+              className="h-32 w-full rounded-md border border-slate-200 object-cover"
+            />
           )}
 
           {action.status === 'completed' && (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
               Waiting for the assigned engineer to confirm this on site. It is not counted as repaired until they do.
             </p>
+          )}
+
+          {action.status === 'verified' && action.work_submitted_by && action.responsible_party === 'lgu' && (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 p-2 text-emerald-900">
+              Closed by the LGU&rsquo;s on-site after-photo. Reopen it if the photo does not show the work done.
+            </p>
+          )}
+
+          {/* Send the handler's work back (LGU close or unverified contractor work). */}
+          {action.work_submitted_by && ['completed', 'verified'].includes(action.status) && !showReopen && !showCancel && (
+            <button
+              type="button"
+              onClick={() => setShowReopen(true)}
+              className={buttonClass('secondary', 'sm', 'w-full')}
+            >
+              Reopen &mdash; send it back
+            </button>
+          )}
+          {showReopen && (
+            <div className="space-y-2">
+              <label htmlFor="repair-reopen" className="block text-[11px] font-semibold text-slate-600">
+                What still needs to be done? <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                id="repair-reopen"
+                rows={2}
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                placeholder="e.g. Photo shows branches still on the road shoulder"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setShowReopen(false)} disabled={busy} className={buttonClass('secondary', 'sm')}>
+                  Keep it closed
+                </button>
+                <button
+                  type="button"
+                  disabled={busy || !reopenReason.trim()}
+                  onClick={() =>
+                    run(
+                      () => reopenPublicReportRepair(client, { actionId: action.id, reason: reopenReason.trim() }),
+                      'Sent back. They were notified.'
+                    ).then((ok) => { if (ok) { setShowReopen(false); setReopenReason(''); } })
+                  }
+                  className={buttonClass('warning', 'sm')}
+                >
+                  {busy ? 'Saving...' : 'Reopen'}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Mark complete (planned only) */}
@@ -270,7 +358,7 @@ export default function RepairActionPanel({ report, resolution, client = default
               onClick={() => setShowComplete(true)}
               className={buttonClass('primary', 'sm', 'w-full')}
             >
-              Record the work as done
+              {HANDLER_PARTIES.includes(action.responsible_party) ? 'Record it as done yourself' : 'Record the work as done'}
             </button>
           )}
           {action.status === 'planned' && showComplete && (

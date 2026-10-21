@@ -1,8 +1,20 @@
-import { MapPinIcon } from 'lucide-react';
+import { useMemo } from 'react';
+import { Building2Icon, LocateFixedIcon, MapPinIcon, RouteIcon, TriangleAlertIcon } from 'lucide-react';
+import { buildRoutePoints } from '../../../lib/mapRouteUtils';
+import { distToProject } from '../../../lib/reportSubmission';
+import { nearestPointOnRoute } from '../routeGeometry';
 import SeverityIcon from '../../SeverityIcon';
 import PublicReportRouteMapPanel from '../PublicReportRouteMapPanel';
 import { SEVERITY_TAXONOMY } from '../../../lib/publicReportStatus';
 import RequiredReminder from './RequiredReminder';
+
+// A friendly "are you at the right road?" nudge, never a block. Lenient for
+// now (testing); tighten it later, e.g. to 300 m, once reporting is live.
+const FAR_FROM_PROJECT_M = 1000;
+
+function fmtMeters(m) {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
 
 const inputCls =
   'w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm ' +
@@ -36,6 +48,23 @@ export default function ReportingStep({
   submitting,
 }) {
   const lowAcc = gps && gps.accuracy > 100;
+
+  // How far the reporter is from the project road: the mapped route line when
+  // there is one, else the project's mid/start point.
+  const distanceToProject = useMemo(() => {
+    if (!gps || !selProject) return null;
+    const route = buildRoutePoints(selProject, selProjectRoute).points || [];
+    if (route.length >= 2) {
+      const nearest = nearestPointOnRoute(route, [gps.lat, gps.lng]);
+      if (Number.isFinite(nearest?.distanceMeters)) return nearest.distanceMeters;
+    }
+    const d = distToProject(gps.lat, gps.lng, selProject);
+    return Number.isFinite(d) ? d : null;
+  }, [gps, selProject, selProjectRoute]);
+  // Give a rough fix the benefit of the doubt: only warn when even the near
+  // edge of the GPS circle is far from the road.
+  const farFromProject = distanceToProject != null
+    && distanceToProject - (gps?.accuracy || 0) > FAR_FROM_PROJECT_M;
   // Required fields still empty, shown as a reminder above Submit.
   const missing = [
     !photoBlob && { key: 'photo', label: 'Take a site photo', targetId: 'report-photo' },
@@ -59,32 +88,25 @@ export default function ReportingStep({
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Auto-filled from GPS</p>
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl max-w-full">
-              <svg className="w-3.5 h-3.5 text-teal-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
+              <RouteIcon className="size-3.5 shrink-0 text-teal-600" aria-hidden="true" />
               <span className="text-xs font-medium text-slate-700 truncate">{selProject?.project_name}</span>
             </div>
             {selProject?.municipality && (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl">
-                <svg className="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21" />
-                </svg>
+                <Building2Icon className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
                 <span className="text-xs text-slate-600">{selProject.municipality}</span>
               </div>
             )}
             {selProject?.location && (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl">
-                <svg className="w-3.5 h-3.5 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                </svg>
+                <MapPinIcon className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
                 <span className="text-xs text-slate-600">{selProject.location}</span>
               </div>
             )}
             {gps && (
               <div className="flex items-center gap-1.5 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">
                 <span className="text-xs text-teal-700 font-mono font-medium">
-                  <MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}
+                  <LocateFixedIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{gps.lat.toFixed(6)}, {gps.lng.toFixed(6)}
                 </span>
               </div>
             )}
@@ -100,7 +122,20 @@ export default function ReportingStep({
             reportLongitude={gps.lng}
             heightClass="h-56 sm:h-64"
             title="Your Report Pin & Project Route"
+            gpsAccuracy={gps.accuracy}
           />
+        )}
+
+        {/* Friendly distance check: never blocks submitting */}
+        {farFromProject && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+            <span>
+              You seem to be about <strong>{fmtMeters(distanceToProject)}</strong> from <strong>{selProject?.project_name}</strong>.
+              Reports are checked against where you are, so please make sure you picked the right road, or send the report
+              from the site itself. You can still submit.
+            </span>
+          </div>
         )}
 
         {/* Low-accuracy warning */}
@@ -109,7 +144,10 @@ export default function ReportingStep({
             <svg className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
             </svg>
-            <span>Low GPS accuracy (±{Math.round(gps.accuracy)}m) — move to open sky for better results. You can still submit.</span>
+            <span>
+              Rough location (±{Math.round(gps.accuracy)} m). Your device is estimating from Wi-Fi or cell signal. Step outside
+              or turn on GPS; the pin sharpens on its own within a few seconds. You can still submit.
+            </span>
           </div>
         )}
 

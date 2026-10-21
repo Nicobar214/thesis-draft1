@@ -4,7 +4,7 @@
  * schedule, submission history); the Submit Update action stays inline.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2Icon, ClipboardListIcon, ClockIcon, GaugeIcon, HardHatIcon } from 'lucide-react';
 import HierarchyKpis from '../components/ui/HierarchyKpis';
 import FilterToolbar from '../components/ui/FilterToolbar';
@@ -12,6 +12,7 @@ import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import ContractorProgressForm from './ContractorProgressForm';
 import ContractorProjectDetailModal from '../components/contractor/ContractorProjectDetailModal';
+import ProgressSubmissionHistory from '../components/contractor/ProgressSubmissionHistory';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta } from '../lib/progressWorkflow';
@@ -66,6 +67,15 @@ function WorkPlanStatusBadge({ status }) {
   );
 }
 
+/* Past its target date and not finished. */
+function isOverdueProject(project) {
+  if (normalizeFmrStatus(project.status) === 'Completed' || !project.target_completion_date) return false;
+  const target = new Date(`${String(project.target_completion_date).slice(0, 10)}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(target.getTime()) && target < today;
+}
+
 export default function ContractorProjects() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -75,9 +85,26 @@ export default function ContractorProjects() {
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null); // project for the progress form
   const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
+  // ?project=<id> (e.g. from a citizen report) opens that project's details.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedProjectId = searchParams.get('project');
+  const shownProject = detailProject
+    || (linkedProjectId ? projects.find((p) => String(p.id) === String(linkedProjectId)) || null : null);
+  const closeDetail = () => {
+    setDetailProject(null);
+    if (linkedProjectId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('project');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [successMessage, setSuccessMessage] = useState('');
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('All');
+  // ?status=Overdue (e.g. from the dashboard) starts the list on that status.
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const fromLink = searchParams.get('status');
+    return ['On-Going', 'Completed', 'Proposed', 'Overdue'].includes(fromLink) ? fromLink : 'All';
+  });
   const [search, setSearch] = useState('');
   const [municipalityFilter, setMunicipalityFilter] = useState('All');
   const [workPlanFilter, setWorkPlanFilter] = useState('All');
@@ -163,10 +190,11 @@ export default function ContractorProjects() {
   }, [user, fetchData]);
 
   const statusCounts = useMemo(() => {
-    const counts = { All: projects.length };
+    const counts = { All: projects.length, Overdue: 0 };
     projects.forEach((p) => {
       const status = normalizeFmrStatus(p.status);
       counts[status] = (counts[status] || 0) + 1;
+      if (isOverdueProject(p)) counts.Overdue += 1;
     });
     return counts;
   }, [projects]);
@@ -179,7 +207,9 @@ export default function ContractorProjects() {
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = projects.filter((p) => {
-      if (statusFilter !== 'All' && normalizeFmrStatus(p.status) !== statusFilter) return false;
+      if (statusFilter === 'Overdue') {
+        if (!isOverdueProject(p)) return false;
+      } else if (statusFilter !== 'All' && normalizeFmrStatus(p.status) !== statusFilter) return false;
       if (municipalityFilter !== 'All' && p.municipality !== municipalityFilter) return false;
       if (workPlanFilter !== 'All' && (p.work_plan_status || 'none') !== workPlanFilter) return false;
       if (engineerFilter === 'assigned' && !p.site_engineer_id) return false;
@@ -233,7 +263,7 @@ export default function ContractorProjects() {
      first so the two dialogs never stack. */
   const handleSubmitFromDetail = (project) => {
     if (project.work_plan_status !== 'finalized' || !project.site_engineer_id) return;
-    setDetailProject(null);
+    closeDetail();
     setSelectedProject(project);
   };
 
@@ -289,7 +319,7 @@ export default function ContractorProjects() {
                   </span>
                 ),
                 icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
-                iconTone: 'bg-emerald-100 text-emerald-700',
+                iconTone: 'bg-slate-100 text-slate-600',
                 body: blockers.length > 0 && (
                   <div>
                     <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Blocking progress updates</p>
@@ -310,10 +340,10 @@ export default function ContractorProjects() {
                 ].filter((seg) => seg.value > 0),
               }}
               items={[
-                { icon: <HardHatIcon className="size-4" aria-hidden="true" />, label: 'On-Going', value: statusCounts['On-Going'] || 0, hint: 'Under construction now', chip: 'bg-amber-50 text-amber-700', onClick: () => toggle('On-Going'), active: statusFilter === 'On-Going' },
-                { icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />, label: 'Completed', value: statusCounts.Completed || 0, hint: 'Finished', chip: 'bg-emerald-50 text-emerald-700', onClick: () => toggle('Completed'), active: statusFilter === 'Completed' },
-                { icon: <ClockIcon className="size-4" aria-hidden="true" />, label: 'Proposed', value: statusCounts.Proposed || 0, hint: 'Not yet started', chip: 'bg-sky-50 text-sky-700', onClick: () => toggle('Proposed'), active: statusFilter === 'Proposed' },
-                { icon: <GaugeIcon className="size-4" aria-hidden="true" />, label: 'Avg. Accomplishment', value: formatPercentage(avg), hint: 'Across your projects', chip: 'bg-teal-50 text-teal-700' },
+                { icon: <HardHatIcon className="size-4" aria-hidden="true" />, label: 'On-Going', value: statusCounts['On-Going'] || 0, hint: 'Under construction now', chip: 'bg-slate-100 text-slate-600', onClick: () => toggle('On-Going'), active: statusFilter === 'On-Going' },
+                { icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />, label: 'Completed', value: statusCounts.Completed || 0, hint: 'Finished', chip: 'bg-slate-100 text-slate-600', onClick: () => toggle('Completed'), active: statusFilter === 'Completed' },
+                { icon: <ClockIcon className="size-4" aria-hidden="true" />, label: 'Proposed', value: statusCounts.Proposed || 0, hint: 'Not yet started', chip: 'bg-slate-100 text-slate-600', onClick: () => toggle('Proposed'), active: statusFilter === 'Proposed' },
+                { icon: <GaugeIcon className="size-4" aria-hidden="true" />, label: 'Avg. Accomplishment', value: formatPercentage(avg), hint: 'Across your projects', chip: 'bg-slate-100 text-slate-600' },
               ]}
             />
           );
@@ -329,7 +359,7 @@ export default function ContractorProjects() {
             selects={[
               {
                 key: 'status', label: 'Status', value: statusFilter, onChange: handleStatusFilterChange, allLabel: 'All statuses',
-                options: ['On-Going', 'Completed', 'Proposed'].map((v) => ({ value: v, label: `${v} (${statusCounts[v] || 0})` })),
+                options: ['On-Going', 'Completed', 'Proposed', 'Overdue'].map((v) => ({ value: v, label: `${v} (${statusCounts[v] || 0})` })),
                 chipLabel: (v) => v,
               },
               ...(municipalityOptions.length > 1 ? [{
@@ -576,14 +606,17 @@ export default function ContractorProjects() {
             </div>
           </div>
         )}
+        {/* Progress history: collapsed by default (opens from a notification
+            or ?history=1), so this page stays on the projects. */}
+        <ProgressSubmissionHistory client={supabase} userId={user?.id} />
       </div>
 
       {/* Project detail (opened by clicking a row) */}
-      {detailProject && (
+      {shownProject && (
         <ContractorProjectDetailModal
-          project={detailProject}
-          tranches={tranchesByProjectId[detailProject.id] || []}
-          onClose={() => setDetailProject(null)}
+          project={shownProject}
+          tranches={tranchesByProjectId[shownProject.id] || []}
+          onClose={closeDetail}
           onSubmitUpdate={handleSubmitFromDetail}
         />
       )}

@@ -1,4 +1,4 @@
-import { XIcon, RefreshCwIcon } from 'lucide-react';
+import { XIcon, RefreshCwIcon, HardHatIcon } from 'lucide-react';
 import SeverityIcon from '../components/SeverityIcon';
 import ViewToggle, { useViewMode } from '../components/ui/ViewToggle';
 import Pagination, { usePagination } from '../components/ui/Pagination';
@@ -15,6 +15,8 @@ import HierarchyKpis from '../components/ui/HierarchyKpis';
 import PublicReportForm from '../components/PublicReportForm';
 import UserLayout from '../components/UserLayout';
 import CitizenReportTimeline from '../components/publicReports/CitizenReportTimeline';
+import useReportResponders from '../lib/useReportResponders';
+import PhotoLightbox from '../components/ui/PhotoLightbox';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
 import FixConfirmationCard from '../components/publicReports/FixConfirmationCard';
@@ -24,7 +26,10 @@ import {
   getCitizenStatus,
   resolveCategory,
   resolveSpecificProblem,
+  repairCitizenLine,
   repairStatusInfo,
+  handlerFor,
+  handlerLabel,
   resolutionTypeLabel,
   resolutionTypeMeaning,
   responsiblePartyLabel,
@@ -59,7 +64,21 @@ function SeverityBadge({ category }) {
   );
 }
 
-function UserReports() {
+/* Inside another portal (the farmer's My Reports): no citizen layout, the
+ * header buttons sit above the list, and "new report" can open that portal's
+ * own report form. */
+function EmbeddedShell({ headerActions, children }) {
+  return (
+    <>
+      {headerActions && <div className="mb-4 flex items-center justify-end gap-2">{headerActions}</div>}
+      {children}
+    </>
+  );
+}
+
+function UserReports({ client = supabase, embedded = false, onNewReport = null }) {
+  const Shell = embedded ? EmbeddedShell : UserLayout;
+  const startNewReport = () => (onNewReport ? onNewReport() : setReportStep('form'));
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,6 +91,13 @@ function UserReports() {
   const [selectedFieldFinding, setSelectedFieldFinding] = useState(null);
   const [selectedLguDecision, setSelectedLguDecision] = useState(null);
   const [selectedRepair, setSelectedRepair] = useState(null);
+  // Names of the engineer and the contractor/LGU, for the open report.
+  const responders = useReportResponders(client, selected?.id);
+  // Full-size photo viewer: { reportId, photos, index }. Tied to the report so
+  // it never reopens on another one.
+  const [viewer, setViewer] = useState(null);
+  const openPhotos = (photos, index = 0) => setViewer({ reportId: selected?.id, photos, index });
+  const viewerOpen = Boolean(viewer && viewer.reportId === selected?.id);
   const [selectedProject, setSelectedProject] = useState(null);
   const [selectedProjectRoute, setSelectedProjectRoute] = useState(null);
   const [showCertModal, setShowCertModal] = useState(false);
@@ -86,7 +112,7 @@ function UserReports() {
   // in the app) opens the report form immediately instead of landing on the list.
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
-      setReportStep('form');
+      startNewReport();
       const next = new URLSearchParams(searchParams);
       next.delete('action');
       setSearchParams(next, { replace: true });
@@ -123,14 +149,14 @@ function UserReports() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const { user } = await getCurrentUser(supabase);
+      const { user } = await getCurrentUser(client);
       if (!user) {
         setError('Not authenticated');
         return;
       }
 
       // The last list is kept on this device, so reports still open offline.
-      const { data, error: err } = await withOfflineCache(`citizen:${user.id}:reports`, () => supabase
+      const { data, error: err } = await withOfflineCache(`citizen:${user.id}:reports`, () => client
         .from('public_reports_citizen_view')
         .select('*')
         .eq('is_current_user_report', true)
@@ -152,7 +178,7 @@ function UserReports() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     fetchReports();
@@ -229,21 +255,21 @@ function UserReports() {
       try {
         const [resolutionRes, findingRes, lguDecisionRes, repairRes] = await Promise.all([
           // Each part is kept on this device so an opened report reads offline too.
-          withOfflineCache(`citizen:report:${selected.id}:resolution`, () => supabase
+          withOfflineCache(`citizen:report:${selected.id}:resolution`, () => client
             .from('public_report_resolutions_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('resolved_at', { ascending: false })
             .limit(1)
             .maybeSingle()),
-          withOfflineCache(`citizen:report:${selected.id}:finding`, () => supabase
+          withOfflineCache(`citizen:report:${selected.id}:finding`, () => client
             .from('public_report_field_findings_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
             .order('submitted_at', { ascending: false })
             .limit(1)
             .maybeSingle()),
-          withOfflineCache(`citizen:report:${selected.id}:lgu`, () => supabase
+          withOfflineCache(`citizen:report:${selected.id}:lgu`, () => client
             .from('public_report_lgu_decisions')
             .select('decision, remarks, created_at')
             .eq('report_id', selected.id)
@@ -253,7 +279,7 @@ function UserReports() {
           // Citizen-safe view: what is happening and when, never notes or who.
           // A deployment without repair tracking simply returns an error here,
           // which is ignored below.
-          withOfflineCache(`citizen:report:${selected.id}:repair`, () => supabase
+          withOfflineCache(`citizen:report:${selected.id}:repair`, () => client
             .from('public_report_repair_actions_citizen_view')
             .select('*')
             .eq('report_id', selected.id)
@@ -267,11 +293,11 @@ function UserReports() {
         // a direct id match can miss — always fall back to matching by name.
         let projectRow = null;
         if (selected.project_id) {
-          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-id`, () => supabase.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle());
+          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-id`, () => client.from('fmr_projects').select('*').eq('id', selected.project_id).maybeSingle());
           projectRow = data || null;
         }
         if (!projectRow && selected.project_name) {
-          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-name`, () => supabase.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name)).limit(1).maybeSingle());
+          const { data } = await withOfflineCache(`citizen:report:${selected.id}:project-name`, () => client.from('fmr_projects').select('*').ilike('project_name', String(selected.project_name)).limit(1).maybeSingle());
           projectRow = data || null;
         }
         if (!alive) return;
@@ -284,7 +310,7 @@ function UserReports() {
         setSelectedProject(projectRow);
 
         if (projectRow?.id) {
-          const { data: routeRow } = await withOfflineCache(`citizen:route:${projectRow.id}`, () => supabase
+          const { data: routeRow } = await withOfflineCache(`citizen:route:${projectRow.id}`, () => client
             .from('project_routes')
             .select('*')
             .eq('project_id', projectRow.id)
@@ -310,7 +336,7 @@ function UserReports() {
     return () => {
       alive = false;
     };
-  }, [selected]);
+  }, [selected, client]);
 
   /* â”€â”€ Filter + Sort â”€â”€ */
   const filtered = useMemo(() => {
@@ -366,7 +392,7 @@ function UserReports() {
   }, [reports]);
 
   return (
-    <UserLayout
+    <Shell
       headerActions={(
         <>
           <button
@@ -381,7 +407,7 @@ function UserReports() {
           </button>
           <button
             type="button"
-            onClick={() => setReportStep('form')}
+            onClick={startNewReport}
             data-tour="reports-new"
             aria-label="Submit new report"
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-3 sm:px-4 text-sm font-semibold text-white hover:bg-teal-700 transition"
@@ -703,6 +729,7 @@ function UserReports() {
             <div className="p-6 space-y-5">
               {/* 1. Where the report stands right now */}
               <CitizenReportTimeline
+                client={client}
                 report={selected}
                 finding={selectedFieldFinding}
                 resolution={selectedResolution}
@@ -720,15 +747,12 @@ function UserReports() {
                     { label: 'Location', value: `${selected.barangay}, ${selected.municipality}${selected.street ? ` - ${selected.street}` : ''}` },
                     selected.project_name && { label: 'Project', value: selected.project_name },
                     { label: 'Date Reported', value: fmtDate(selected.created_at) },
-                    selected.severity_category && {
-                      label: 'Issue Type',
-                      value: SEVERITY_TAXONOMY[selected.severity_category]?.label,
-                    },
+                    { label: 'Issue Type', value: SEVERITY_TAXONOMY[resolveCategory(selected)]?.label },
                     selected.specific_problem && {
                       label: 'Problem',
-                      value: SEVERITY_TAXONOMY[selected.severity_category]?.problems
-                        .find((p) => p.value === selected.specific_problem)?.label || selected.specific_problem,
+                      value: resolveSpecificProblem(selected)?.label || selected.specific_problem,
                     },
+                    { label: 'Handled by', value: `${handlerLabel(handlerFor(selected))} (after the DA check)` },
                     selected.verification && { label: 'Location Check', value: selected.verification },
                   ].filter(Boolean).map((item) => (
                     <div key={item.label} className="flex items-start gap-3 text-sm">
@@ -743,7 +767,15 @@ function UserReports() {
                     <figcaption className="text-xs text-slate-500 font-medium uppercase tracking-wider">
                       Photo you submitted
                     </figcaption>
-                    <img src={selected.photo_url} alt="The site condition you reported" className="w-full rounded-xl border border-slate-200" />
+                    <button
+                      type="button"
+                      onClick={() => openPhotos([{ src: selected.photo_url, label: 'Photo you submitted' }])}
+                      className="group relative block w-full overflow-hidden rounded-xl"
+                      aria-label="View the photo you submitted full size"
+                    >
+                      <img src={selected.photo_url} alt="The site condition you reported" className="w-full rounded-xl border border-slate-200 transition group-hover:opacity-95" />
+                      <span className="absolute bottom-2 right-2 rounded-md bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white">Tap to view</span>
+                    </button>
                   </figure>
                 )}
               </section>
@@ -776,6 +808,12 @@ function UserReports() {
                       </span>
                     )}
                   </div>
+                  {responders?.engineer_name && (
+                    <p className="flex items-center gap-1.5 text-sm text-emerald-900">
+                      <HardHatIcon className="size-4 shrink-0" aria-hidden="true" />
+                      Inspected by <strong>{responders.engineer_name}</strong>, DA field engineer
+                    </p>
+                  )}
                   <p className="text-xs text-emerald-800">
                     Conducted on site by a government field engineer.
                     {selectedFieldFinding.validated_at
@@ -803,8 +841,8 @@ function UserReports() {
                     </div>
                     {selectedFieldFinding.estimated_cost_range && (
                       <div>
-                        <dt className="text-xs font-semibold text-slate-600">Estimated Cost</dt>
-                        <dd className="mt-0.5">{selectedFieldFinding.estimated_cost_range}</dd>
+                        <dt className="text-xs font-semibold text-slate-600">Engineer&rsquo;s estimated repair cost</dt>
+                        <dd className="mt-0.5">{selectedFieldFinding.estimated_cost_range} <span className="text-xs text-slate-400">(estimate only, not a payment)</span></dd>
                       </div>
                     )}
                   </dl>
@@ -814,14 +852,115 @@ function UserReports() {
                       <figcaption className="text-xs text-slate-600 font-semibold">
                         Engineer&rsquo;s on-site photo
                       </figcaption>
-                      <img src={selectedFieldFinding.field_photo_url} alt="Photo taken during the official field inspection" className="w-full h-40 object-cover rounded-lg border border-emerald-200" />
+                      <button
+                        type="button"
+                        onClick={() => openPhotos([{ src: selectedFieldFinding.field_photo_url, label: 'Engineer’s on-site photo' }])}
+                        className="group relative block w-full overflow-hidden rounded-lg"
+                        aria-label="View the engineer's on-site photo full size"
+                      >
+                        <img src={selectedFieldFinding.field_photo_url} alt="Photo taken during the official field inspection" className="w-full h-40 object-cover rounded-lg border border-emerald-200 transition group-hover:scale-105" />
+                        <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white">Tap to view</span>
+                      </button>
                     </figure>
                   )}
                 </section>
               )}
 
-              {/* 5. Final outcome — the certificate button appears only once
-                   there is something to certify. */}
+              {/* 5. The repair / work by the contractor or LGU, which now happens
+                   before the report is resolved. */}
+              {selectedRepair && repairStatusInfo(selectedRepair.status) && (
+                <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {/* LGU jobs (clearing, signs) are work, not repairs. */}
+                      {selectedRepair.kind === 'monitoring' ? 'Monitoring' : selectedRepair.responsible_party === 'lgu' ? 'Work' : 'Repair'} progress
+                    </h3>
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${repairStatusInfo(selectedRepair.status).tone}`}>
+                      {repairStatusInfo(selectedRepair.status).staff}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-slate-700">{repairCitizenLine(selectedRepair)}</p>
+
+                  <dl className="space-y-1.5 text-sm">
+                    {responsiblePartyLabel(selectedRepair.responsible_party) && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Handled by</dt>
+                        <dd className="font-semibold text-slate-900">
+                          {responders?.handler_name || responsiblePartyLabel(selectedRepair.responsible_party)}
+                        </dd>
+                      </div>
+                    )}
+                    {selectedRepair.target_date && selectedRepair.status === 'planned' && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Target date</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.target_date)}</dd>
+                      </div>
+                    )}
+                    {selectedRepair.completed_at && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Recorded done</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.completed_at)}</dd>
+                      </div>
+                    )}
+                    {selectedRepair.verified_at && (
+                      <div className="flex gap-3">
+                        <dt className="w-28 shrink-0 font-medium text-slate-500">Confirmed</dt>
+                        <dd className="text-slate-800">{fmtDate(selectedRepair.verified_at)}</dd>
+                      </div>
+                    )}
+                  </dl>
+
+                  {/* Before / after: tap either photo to view it full size and flip
+                      between the two. The after-photo shows as soon as it is sent. */}
+                  {(() => {
+                    const after = selectedRepair.verification_photo_url || selectedRepair.work_photo_url;
+                    if (!after || !selected.photo_url) return null;
+                    const who = selectedRepair.responsible_party === 'lgu' ? 'LGU' : 'contractor';
+                    const photos = [
+                      { src: selected.photo_url, label: 'Before (your photo)' },
+                      { src: after, label: `After (${who} photo on site)` },
+                    ];
+                    return (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          {photos.map((p, i) => (
+                            <button
+                              key={p.src}
+                              type="button"
+                              onClick={() => openPhotos(photos, i)}
+                              className="group space-y-1 text-left"
+                              aria-label={`View ${p.label} full size`}
+                            >
+                              <span className={`block text-xs font-semibold ${i === 0 ? 'text-slate-600' : 'text-emerald-800'}`}>{p.label}</span>
+                              <span className="relative block overflow-hidden rounded-lg">
+                                <img
+                                  src={p.src}
+                                  alt={i === 0 ? 'The condition you reported' : 'The same location after the work'}
+                                  className={`h-32 w-full rounded-lg border object-cover transition group-hover:scale-105 ${i === 0 ? 'border-slate-200' : 'border-emerald-200'}`}
+                                />
+                                <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white">Tap to view</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </section>
+              )}
+
+              {viewerOpen && (
+                <PhotoLightbox
+                  photos={viewer.photos}
+                  index={viewer.index}
+                  onIndex={(i) => setViewer((v) => ({ ...v, index: i }))}
+                  onClose={() => setViewer(null)}
+                />
+              )}
+
+              {/* 6. Final outcome after the work, then the reporter's own check
+                   ("Is it actually fixed?") as the last word. */}
               {selected.status === 'resolved' && (
                 <section className="space-y-2.5">
                   <h3 className="text-sm font-semibold text-slate-900">Outcome</h3>
@@ -867,74 +1006,7 @@ function UserReports() {
                     <span>View Resolution Certificate</span>
                   </button>
 
-                  <FixConfirmationCard key={selected.id} reportId={selected.id} />
-                </section>
-              )}
-
-              {/* 6. Repair follow-up. "Resolved" records a decision; this shows
-                   whether the work was actually done, and confirmed on site. */}
-              {selectedRepair && repairStatusInfo(selectedRepair.status) && (
-                <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      {selectedRepair.kind === 'monitoring' ? 'Monitoring' : 'Repair'} progress
-                    </h3>
-                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${repairStatusInfo(selectedRepair.status).tone}`}>
-                      {repairStatusInfo(selectedRepair.status).staff}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-slate-700">{repairStatusInfo(selectedRepair.status).citizen}</p>
-
-                  <dl className="space-y-1.5 text-sm">
-                    {responsiblePartyLabel(selectedRepair.responsible_party) && (
-                      <div className="flex gap-3">
-                        <dt className="w-28 shrink-0 font-medium text-slate-500">Handled by</dt>
-                        <dd className="text-slate-800">{responsiblePartyLabel(selectedRepair.responsible_party)}</dd>
-                      </div>
-                    )}
-                    {selectedRepair.target_date && selectedRepair.status === 'planned' && (
-                      <div className="flex gap-3">
-                        <dt className="w-28 shrink-0 font-medium text-slate-500">Target date</dt>
-                        <dd className="text-slate-800">{fmtDate(selectedRepair.target_date)}</dd>
-                      </div>
-                    )}
-                    {selectedRepair.completed_at && (
-                      <div className="flex gap-3">
-                        <dt className="w-28 shrink-0 font-medium text-slate-500">Recorded done</dt>
-                        <dd className="text-slate-800">{fmtDate(selectedRepair.completed_at)}</dd>
-                      </div>
-                    )}
-                    {selectedRepair.verified_at && (
-                      <div className="flex gap-3">
-                        <dt className="w-28 shrink-0 font-medium text-slate-500">Confirmed</dt>
-                        <dd className="text-slate-800">{fmtDate(selectedRepair.verified_at)}</dd>
-                      </div>
-                    )}
-                  </dl>
-
-                  {selectedRepair.status === 'verified'
-                    && selectedRepair.verification_photo_url
-                    && selected.photo_url && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <figure className="space-y-1">
-                        <figcaption className="text-xs font-semibold text-slate-600">Before (your photo)</figcaption>
-                        <img
-                          src={selected.photo_url}
-                          alt="The condition you reported"
-                          className="h-32 w-full rounded-lg border border-slate-200 object-cover"
-                        />
-                      </figure>
-                      <figure className="space-y-1">
-                        <figcaption className="text-xs font-semibold text-emerald-800">After (confirmed on site)</figcaption>
-                        <img
-                          src={selectedRepair.verification_photo_url}
-                          alt="The same location after the follow-up work"
-                          className="h-32 w-full rounded-lg border border-emerald-200 object-cover"
-                        />
-                      </figure>
-                    </div>
-                  )}
+                  <FixConfirmationCard key={selected.id} reportId={selected.id} client={client} />
                 </section>
               )}
             </div>
@@ -979,7 +1051,7 @@ function UserReports() {
           onClose={() => setShowCertModal(false)}
         />
       )}
-    </UserLayout>
+    </Shell>
   );
 }
 

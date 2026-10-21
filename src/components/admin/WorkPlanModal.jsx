@@ -19,11 +19,21 @@ import {
   validateWorkPlanItems,
 } from '../../lib/workPlanPresets';
 import {
+  budgetHeadroom,
   calculatePlannedCost,
   formatPesoAmount,
   getProjectCostBasis,
+  maxQuantityFor,
+  maxUnitCostFor,
   summarizeWorkPlanCosts,
 } from '../../lib/workPlanCost';
+
+/* A database refusal for going over the budget, in plain words. */
+function workPlanErrorMessage(error, fallback) {
+  const message = error?.message || '';
+  if (/exceeds the project cost basis/i.test(message)) return 'This Work Plan is over the project budget. Reduce it before saving.';
+  return `${fallback}: ${message}`;
+}
 
 const statusStyles = {
   none: 'border-slate-200 bg-slate-50 text-slate-600',
@@ -64,6 +74,13 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
     () => summarizeWorkPlanCosts(items, costBasis, { historical: isFinalized }),
     [items, costBasis, isFinalized]
   );
+  // The plan may never go over its budget: drafts and finalizing are blocked
+  // while it does (the database refuses it too; supabase_work_plan_budget_guard.sql).
+  const headroom = useMemo(() => budgetHeadroom(items, costBasis), [items, costBasis]);
+  const overBudget = !isFinalized && headroom.overBy > 0;
+  const overBudgetReason = overBudget
+    ? `Over budget by ${formatPesoAmount(headroom.overBy)}. Reduce it to save.`
+    : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +144,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
   const saveDraft = async () => {
     const validationError = validateWorkPlanItems(items);
     if (validationError) return showNotification?.(validationError, 'error');
+    if (overBudget) return showNotification?.(overBudgetReason, 'error');
     setSaving(true);
     try {
       const { error } = await supabase.rpc('save_work_plan_draft', {
@@ -144,7 +162,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
       setItems(normalizeItems(data));
     } catch (error) {
       console.error('Failed to save Work Plan draft', error);
-      showNotification?.(`Failed to save Work Plan: ${error.message}`, 'error');
+      showNotification?.(workPlanErrorMessage(error, 'Failed to save Work Plan'), 'error');
     } finally {
       setSaving(false);
     }
@@ -180,7 +198,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
       await onChanged?.();
     } catch (error) {
       console.error('Failed to finalize Work Plan', error);
-      showNotification?.(`Failed to finalize Work Plan: ${error.message}`, 'error');
+      showNotification?.(workPlanErrorMessage(error, 'Failed to finalize Work Plan'), 'error');
     } finally {
       setSaving(false);
     }
@@ -219,6 +237,19 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
               <span className={`w-fit rounded-lg border px-3 py-1.5 text-xs font-bold ${costStateStyles[costSummary.state]}`}>{costStateLabels[costSummary.state]}</span>
               <p className="text-xs text-slate-500">Work Plan adoption baseline: {adoptionBaseline == null ? 'captured at finalization' : formatPercentage(adoptionBaseline)}</p>
             </div>
+            {overBudget && (
+              <div role="alert" className="mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+                <p className="font-bold">Over budget by {formatPesoAmount(headroom.overBy)}</p>
+                <p className="mt-0.5 text-xs">
+                  Lower a quantity or unit cost, or remove an activity. Saving and finalizing are blocked until the plan fits the {formatPesoAmount(costBasis.amount)} {costBasis.label.toLowerCase()}.
+                </p>
+              </div>
+            )}
+            {!isFinalized && costBasis.amount === null && (
+              <p className="mt-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs text-slate-600">
+                Set the contract amount or budget to check the plan against it.
+              </p>
+            )}
           </section>
 
           {loading ? <LoadingState /> : items.length === 0 ? (
@@ -235,8 +266,8 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
                     <Field label="Order">{isFinalized ? <ReadValue value={item.sort_order || index + 1} /> : <input type="number" value={item.sort_order} onChange={(event) => updateItem(item.clientKey, 'sort_order', event.target.value)} className={inputClass} aria-label={`Sort order for activity ${index + 1}`} />}</Field>
                     <Field label="Activity">{isFinalized ? <ReadValue value={item.activity_name} strong /> : <><select value={item.activity_selection} onChange={(event) => selectActivity(item.clientKey, event.target.value)} className={inputClass} aria-label={`Activity ${index + 1}`}><option value="">Select activity</option>{WORK_PLAN_ACTIVITY_PRESETS.map((activity) => <option key={activity} value={activity} disabled={items.some((other) => other.clientKey !== item.clientKey && other.activity_selection === activity)}>{activity}</option>)}<option value={OTHER_ACTIVITY}>{OTHER_ACTIVITY}</option></select>{item.activity_selection === OTHER_ACTIVITY && <input type="text" value={item.activity_name} onChange={(event) => updateItem(item.clientKey, 'activity_name', event.target.value)} className={`${inputClass} mt-2`} placeholder="Specify activity" aria-label={`Custom activity ${index + 1}`} />}</>}</Field>
                     <Field label="Unit of Measure">{isFinalized ? <ReadValue value={item.unit || '—'} /> : isUnitLockedForActivity(item.activity_selection) ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><p className="text-sm font-semibold text-slate-900">{item.unit}</p><p className="mt-1 text-[11px] text-slate-500">Locked standard unit</p></div> : <><select value={item.unit_selection} onChange={(event) => selectUnit(item.clientKey, event.target.value)} className={inputClass} aria-label={`Unit for activity ${index + 1}`}><option value="">Select unit</option>{WORK_PLAN_UNIT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}<option value={OTHER_UNIT}>Other Unit</option></select>{item.unit_selection === OTHER_UNIT && <input type="text" value={item.unit} onChange={(event) => updateItem(item.clientKey, 'unit', event.target.value)} className={`${inputClass} mt-2`} maxLength={50} placeholder="Specify unit" aria-label={`Custom unit ${index + 1}`} />}</>}</Field>
-                    <Field label="Planned Quantity">{isFinalized ? <ReadValue value={formatPlannedQuantity(item.planned_quantity)} strong /> : <input type="number" min="0.0001" step="0.0001" value={item.planned_quantity} onChange={(event) => updateItem(item.clientKey, 'planned_quantity', event.target.value)} className={inputClass} placeholder={getPlannedQuantityPlaceholder(item.activity_selection)} aria-label={`Planned quantity ${index + 1}`} />}</Field>
-                    <Field label="Approved Unit Cost">{isFinalized ? <ReadValue value={item.unit_cost === '' ? 'Cost not recorded' : `${formatPesoAmount(item.unit_cost)} / ${item.unit}`} strong /> : <><input type="number" min="0.01" step="0.01" value={item.unit_cost} onChange={(event) => updateItem(item.clientKey, 'unit_cost', event.target.value)} className={inputClass} placeholder="0.00" aria-label={`Approved unit cost ${index + 1}`} /><p className="mt-1 text-[11px] text-slate-500">Per {item.unit || 'unit'}</p></>}</Field>
+                    <Field label="Planned Quantity">{isFinalized ? <ReadValue value={formatPlannedQuantity(item.planned_quantity)} strong /> : <><input type="number" min="0.0001" step="0.0001" value={item.planned_quantity} onChange={(event) => updateItem(item.clientKey, 'planned_quantity', event.target.value)} className={inputClass} placeholder={getPlannedQuantityPlaceholder(item.activity_selection)} aria-label={`Planned quantity ${index + 1}`} /><LimitHint limit={maxQuantityFor(items, item.clientKey, costBasis)} value={item.planned_quantity} format={(v) => `${formatPlannedQuantity(v)} ${item.unit || ''}`.trim()} /></>}</Field>
+                    <Field label="Approved Unit Cost">{isFinalized ? <ReadValue value={item.unit_cost === '' ? 'Cost not recorded' : `${formatPesoAmount(item.unit_cost)} / ${item.unit}`} strong /> : <><input type="number" min="0.01" step="0.01" value={item.unit_cost} onChange={(event) => updateItem(item.clientKey, 'unit_cost', event.target.value)} className={inputClass} placeholder="0.00" aria-label={`Approved unit cost ${index + 1}`} /><p className="mt-1 text-[11px] text-slate-500">Per {item.unit || 'unit'}</p><LimitHint limit={maxUnitCostFor(items, item.clientKey, costBasis)} value={item.unit_cost} format={(v) => `${formatPesoAmount(v)} / ${item.unit || 'unit'}`} /></>}</Field>
                     <Field label="Planned Cost"><ReadValue value={calculatePlannedCost(item) === null ? 'Cost not recorded' : formatPesoAmount(calculatePlannedCost(item))} strong /></Field>
                   </div>
                   <div className="mt-4"><Field label="Remarks">{isFinalized ? <ReadValue value={item.remarks || '—'} /> : <input type="text" value={item.remarks} onChange={(event) => updateItem(item.clientKey, 'remarks', event.target.value)} className={inputClass} placeholder="Optional" aria-label={`Remarks ${index + 1}`} />}</Field></div>
@@ -249,10 +280,21 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
 
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>{!isFinalized && <button type="button" onClick={() => setItems((current) => [...current, blankItem(nextWorkPlanSortOrder(current))])} className={buttonClass('secondary')}>+ Add Activity</button>}</div>
-          <div className="flex flex-col gap-3 sm:flex-row"><button type="button" onClick={onClose} className={buttonClass('secondary')}>Close</button>{!isFinalized && <><button type="button" onClick={saveDraft} disabled={saving || loading} className={buttonClass('secondary')}>{saving ? 'Saving...' : 'Save Draft'}</button><button type="button" onClick={finalize} disabled={saving || loading} className={buttonClass('primary')}>Finalize</button></>}</div>
+          <div className="flex flex-col gap-3 sm:flex-row"><button type="button" onClick={onClose} className={buttonClass('secondary')}>Close</button>{!isFinalized && <><button type="button" onClick={saveDraft} disabled={saving || loading || overBudget} title={overBudgetReason} className={buttonClass('secondary')}>{saving ? 'Saving...' : 'Save Draft'}</button><button type="button" onClick={finalize} disabled={saving || loading || overBudget} title={overBudgetReason} className={buttonClass('primary')}>Finalize</button></>}</div>
         </div>
       </div>
     </div>
+  );
+}
+
+/* "Max … to stay within budget" under an input; red when the value is past it. */
+function LimitHint({ limit, value, format }) {
+  if (limit === null || limit === undefined) return null;
+  const over = Number(value) > limit + 1e-9;
+  return (
+    <p className={`mt-1 text-[11px] ${over ? 'font-semibold text-red-700' : 'text-slate-400'}`}>
+      {over ? 'Over budget: max ' : 'Max '}{format(limit)}{over ? '' : ' to stay within budget'}
+    </p>
   );
 }
 

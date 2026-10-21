@@ -19,6 +19,7 @@ import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { getWorkflowMeta } from '../../lib/progressWorkflow';
 import { formatPercentage } from '../../lib/percentageFormat';
 import QuantityCertificationReview from './QuantityCertificationReview';
+import ZoomablePhoto from '../ui/ZoomablePhoto';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-xl text-sm ' +
@@ -702,7 +703,13 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                 )}
 
                 {row.photo_url && (
-                  <img src={row.photo_url} alt="Site" className="w-full max-h-56 object-cover rounded-xl border border-slate-200" />
+                  <ZoomablePhoto
+                    src={row.photo_url}
+                    alt="Site"
+                    label="Contractor's progress photo"
+                    wrapperClassName="w-full rounded-xl"
+                    className="w-full max-h-56 object-cover rounded-xl border border-slate-200"
+                  />
                 )}
 
                 {row.status !== 'pending' ? (

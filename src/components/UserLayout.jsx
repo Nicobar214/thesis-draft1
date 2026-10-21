@@ -10,6 +10,7 @@ import { usePageTour } from '../lib/usePageTour';
 import { USER_PAGE_TOURS } from './user/userPageTours';
 import ProfileAvatar from './ui/ProfileAvatar';
 import { getAvatarUrl } from '../lib/avatar';
+import PortalHeader from './ui/PortalHeader';
 import OfflineBanner from './ui/OfflineBanner';
 import { getCurrentUser, useOnlineStatus } from '../lib/offlineCache';
 import { getQueuedReports, REPORT_QUEUE_EVENT } from '../lib/offlineReports';
@@ -86,7 +87,6 @@ export default function UserLayout({
   };
 
   const page = pageMeta[location.pathname] || { title: 'User Portal', description: '', icon: null };
-  const PageIcon = page.icon;
   const userLabel = user?.user_metadata?.full_name || user?.email?.split('@')?.[0] || 'there';
 
   useEffect(() => {
@@ -156,33 +156,15 @@ export default function UserLayout({
       <main
         id="main-content"
         tabIndex={-1}
-        className={`transition-all duration-300 ${showSidebar ? (collapsed ? 'lg:ml-[72px]' : 'lg:ml-64') : ''} ${mainClassName}`}
+        className={`transition-all duration-300 ${showSidebar ? (collapsed ? 'lg:ml-20' : 'lg:ml-80') : ''} ${mainClassName}`}
       >
         {showHeader && (
-          <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-            <div className={`${showSidebar ? 'w-full' : 'mx-auto max-w-7xl'} px-4 sm:px-6 lg:px-8 h-18 sm:h-20 flex items-center justify-between gap-4`}>
-              <div className="flex min-w-0 items-center gap-3.5 pl-12 lg:pl-0">
-                {PageIcon && (
-                  <span className="hidden sm:grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-teal-700" aria-hidden="true">
-                    <PageIcon />
-                  </span>
-                )}
-                <div className="min-w-0">
-                  <h1 className="truncate text-lg sm:text-2xl font-bold tracking-tight text-slate-900 leading-tight">{page.title}</h1>
-                  {page.description && (
-                    <p className="hidden sm:block truncate text-sm text-slate-500">{page.description}</p>
-                  )}
-                </div>
-                <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  <Icons.ShieldCheck />
-                  DA Region VI Citizen Portal
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {headerActions && (
-                  <div className="flex items-center gap-2 border-r border-slate-200 pr-3">{headerActions}</div>
-                )}
+          <PortalHeader
+            title={page.title}
+            description={page.description}
+            actions={(
+              <>
+                {headerActions && <div className="flex items-center gap-2">{headerActions}</div>}
                 {tourSteps && (
                   <button
                     type="button"
@@ -190,42 +172,32 @@ export default function UserLayout({
                     data-tour="help"
                     aria-label="Show a guide to this page"
                     title="Show a guide to this page"
-                    className="p-2 sm:p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                    className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
                   >
-                    <HelpCircleIcon className="size-4 sm:size-5" aria-hidden="true" />
+                    <HelpCircleIcon className="size-5" aria-hidden="true" />
                   </button>
                 )}
-
-                {/* Closes the citizen feedback loop: status changes were already
-                    being written to notifications, but never displayed. */}
-                <span data-tour="notifications" className="inline-flex">
-                  <NotificationBell
-                    client={supabase}
-                    resolveTarget={resolveNotificationTarget}
-                    onSelect={openNotification}
-                  />
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => navigate('/user/profile')}
-                  aria-label="Open your profile"
-                  title="Profile settings"
-                  className="flex items-center gap-2 pl-3 border-l border-slate-200 rounded-r-xl py-1 pr-1 hover:bg-slate-50 transition-colors"
-                >
-                  <ProfileAvatar src={getAvatarUrl(user)} name={userLabel} className="size-9 rounded-xl text-xs shadow-xs" />
-                  <span className="hidden sm:block max-w-[140px] truncate text-xs font-semibold text-slate-700">{userLabel}</span>
-                </button>
-              </div>
-            </div>
-          </header>
+              </>
+            )}
+            bell={(
+              <span data-tour="notifications" className="inline-flex">
+                <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
+              </span>
+            )}
+            account={{
+              to: '/user/profile',
+              avatar: <ProfileAvatar src={getAvatarUrl(user)} name={userLabel} className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+              name: userLabel,
+              detail: user?.email,
+            }}
+          />
         )}
         {requireAuth && (
           <OfflineBanner
             online={online}
             pendingCount={pendingReports}
             offlineText="You're offline. Showing information saved on this phone. Reports you submit are saved and sent when you reconnect."
-            className={showHeader ? 'sticky top-18 sm:top-20 z-10' : ''}
+            className={showHeader ? 'sticky top-20 sm:top-24 z-10' : ''}
           />
         )}
 

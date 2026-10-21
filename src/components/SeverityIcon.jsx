@@ -1,6 +1,11 @@
-import { ShieldAlert, Waves, Wrench, MessageSquare } from 'lucide-react';
+import { Construction, Landmark, TreePine, Signpost, ShieldAlert, Waves, Wrench, MessageSquare } from 'lucide-react';
 
 const ICONS = {
+  road_damage: Construction,
+  structural: Landmark,
+  obstruction: TreePine,
+  roadside: Signpost,
+  // Old type keys, for anything still passing them.
   safety: ShieldAlert,
   flood: Waves,
   issue: Wrench,

@@ -12,6 +12,10 @@ import { useCallback, useState } from 'react';
  * Esri's tile services are free for development and non-commercial use with
  * attribution; a public production deployment should review Esri's terms.
  * Each map shows the credit line Leaflet builds from `attribution`.
+ *
+ * maxZoom is each theme's LAST REAL zoom level for rural Iloilo (measured in Leon,
+ * Oct 2026). Past it Esri sends a gray "Map data not yet available" tile, so the
+ * map instead enlarges the last real tiles (BaseTiles sets maxNativeZoom to this).
  */
 
 const OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
@@ -34,7 +38,7 @@ export const BASEMAPS = {
     hint: 'Esri street map with shaded relief; clean and different from the default',
     url: `${ESRI_SERVICE}/World_Street_Map/MapServer/tile/{z}/{y}/{x}`,
     attribution: `${ESRI} &mdash; Esri, HERE, Garmin, OpenStreetMap contributors`,
-    maxZoom: 19,
+    maxZoom: 17,
     swatch: 'linear-gradient(135deg,#f1ead6 55%,#a5c8e1 55%)',
   },
   light: {
@@ -78,7 +82,7 @@ export const BASEMAPS = {
     hint: 'Aerial imagery',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: ESRI,
-    maxZoom: 19,
+    maxZoom: 18,
     swatch: 'linear-gradient(135deg,#46603f 55%,#1f3c52 55%)',
   },
   hybrid: {
@@ -86,10 +90,10 @@ export const BASEMAPS = {
     hint: 'Aerial imagery with place names and boundaries',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: ESRI,
-    maxZoom: 19,
+    maxZoom: 18,
     overlay: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-      maxZoom: 19,
+      maxZoom: 17, // blank from 18 up; enlarging 17 keeps the labels visible
     },
     swatch: 'linear-gradient(135deg,#46603f 55%,#1f3c52 55%)',
   },

@@ -37,7 +37,7 @@ describe('useGpsLocation', () => {
 
     const { result } = renderHook(() => useGpsLocation());
 
-    expect(result.current.gps).toEqual({ lat: 10, lng: 122, accuracy: 8 });
+    expect(result.current.gps).toMatchObject({ lat: 10, lng: 122, accuracy: 8 });
     expect(result.current.gpsLoading).toBe(false);
     expect(result.current.gpsError).toBeNull();
     expect(geo.watchPosition).toHaveBeenCalledTimes(1);
@@ -51,7 +51,7 @@ describe('useGpsLocation', () => {
 
     act(() => onDrift(position(10.001, 122.001, 5)));
 
-    expect(result.current.gps).toEqual({ lat: 10.001, lng: 122.001, accuracy: 5 });
+    expect(result.current.gps).toMatchObject({ lat: 10.001, lng: 122.001, accuracy: 5 });
   });
 
   it('stops watching when the form goes away', () => {
@@ -84,7 +84,7 @@ describe('useGpsLocation', () => {
     geo.getCurrentPosition.mockImplementation((ok) => ok(position(10, 122, 9)));
     act(() => result.current.acquireGps());
 
-    expect(result.current.gps).toEqual({ lat: 10, lng: 122, accuracy: 9 });
+    expect(result.current.gps).toMatchObject({ lat: 10, lng: 122, accuracy: 9 });
     expect(result.current.gpsError).toBeNull();
   });
 

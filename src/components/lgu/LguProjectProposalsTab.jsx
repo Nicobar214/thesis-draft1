@@ -21,6 +21,9 @@ import Pagination, { usePagination } from '../ui/Pagination';
 import { findBlockingDuplicate } from '../../lib/proposalDuplicates';
 import { mergeRequirementDocs, requirementProgress } from '../../lib/proposalRequirements';
 import ProposalDocumentsChecklist from '../proposals/ProposalDocumentsChecklist';
+import { missingRequiredDocs, proposalWarnings } from '../../lib/proposalSubmitChecks';
+import { confirm } from '../../lib/confirm';
+import { PhotoViewButton } from '../ui/ZoomablePhoto';
 
 const ROAD_TYPES = ['Concreting', 'Opening/Construction', 'Rehabilitation', 'Widening', 'Others'];
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
@@ -458,6 +461,27 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       return;
     }
 
+    // All 5 DA checklist documents are required (lib/proposalSubmitChecks.js).
+    const editingProposal = editingId ? proposals.find((p) => p.id === editingId) : null;
+    const missingDocs = missingRequiredDocs(editingProposal, requirementFiles);
+    if (missingDocs.length > 0) {
+      notify(`Attach all required documents first. Missing: ${missingDocs.map((r) => r.label).join('; ')}.`, 'error');
+      return;
+    }
+
+    // Small faults don't block, but the LGU sees them before sending.
+    const warnings = proposalWarnings({ form, hasPhoto: Boolean(photoFile || editingProposal?.photo_url), daEstimate });
+    const ok = await confirm({
+      title: editingId ? 'Resubmit this proposal to DA?' : 'Submit this proposal to DA?',
+      message: warnings.length
+        ? ['Please check these before submitting:', '', ...warnings.map((w) => `• ${w}`), '', 'You can go back and fix them, or submit anyway. DA may ask for a revision.'].join('\n')
+        : 'All required documents are attached and the details look complete. DA will review it next.',
+      confirmLabel: warnings.length ? 'Submit anyway' : (editingId ? 'Resubmit proposal' : 'Submit proposal'),
+      cancelLabel: warnings.length ? 'Go back and fix' : 'Cancel',
+      tone: warnings.length ? 'warning' : 'primary',
+    });
+    if (!ok) return;
+
     setSubmitting(true);
     try {
       let photoPath = null;
@@ -467,7 +491,6 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       for (const [key, file] of Object.entries(requirementFiles)) {
         if (file) uploads[key] = { path: await uploadAttachment(file, key), name: file.name };
       }
-      const editingProposal = editingId ? proposals.find((p) => p.id === editingId) : null;
       const supportingDocuments = mergeRequirementDocs(editingProposal?.supporting_documents, uploads);
 
       const basePayload = {
@@ -567,6 +590,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     }
   };
 
+  const missingDocCount = missingRequiredDocs(editingId ? proposals.find((p) => p.id === editingId) : null, requirementFiles).length;
+
   const daEstimate = useMemo(() => {
     const km = Number(form.estimated_length_km);
     if (!Number.isFinite(km) || km <= 0) return null;
@@ -618,7 +643,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   return (
     <div className="space-y-6">
       {/* Clickable Sub-Nav Bar */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200" data-tour="lgu-proposal-tabs">
         <button
           type="button"
           onClick={() => setActiveSubTab('list')}
@@ -637,6 +662,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
         </button>
         <button
           type="button"
+          data-tour="lgu-proposal-new"
           onClick={() => setActiveSubTab('form')}
           className={`border-b-2 px-6 py-3 text-sm font-bold transition-all ${
             activeSubTab === 'form'
@@ -1001,10 +1027,15 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               </div>
 
               {duplicate && <DuplicateProjectAlert duplicate={duplicate} />}
+              {missingDocCount > 0 && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  Attach all 5 required supporting documents to submit ({missingDocCount} still missing).
+                </p>
+              )}
               <div className="flex gap-2 pt-4">
                 <button
                   type="submit"
-                  disabled={submitting || Boolean(duplicate)}
+                  disabled={submitting || Boolean(duplicate) || missingDocCount > 0}
                   className={buttonClass('primary', 'md', 'flex-grow')}
                 >
                   {submitting ? 'Submitting…' : editingId ? 'Resubmit Proposal' : 'Submit Proposal to DA'}
@@ -1329,16 +1360,14 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                   {(p.photo_url || requirementProgress(p).attached > 0) && (
                     <div className="flex flex-wrap gap-1.5">
                       {p.photo_url && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const url = await resolveSignedUrl(p.photo_url);
-                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                          }}
+                        <PhotoViewButton
+                          src={p.photo_url}
+                          resolveSrc={resolveSignedUrl}
+                          label="Road photo"
                           className="text-[10px] font-bold px-2 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200"
                         >
                           View Photo
-                        </button>
+                        </PhotoViewButton>
                       )}
                       {requirementProgress(p).attached > 0 && (
                         <button
@@ -1552,16 +1581,14 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Attached Documents</p>
                   <div className="flex gap-2">
                     {selectedProposalForModal.photo_url && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const url = await resolveSignedUrl(selectedProposalForModal.photo_url);
-                          if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                        }}
+                      <PhotoViewButton
+                        src={selectedProposalForModal.photo_url}
+                        resolveSrc={resolveSignedUrl}
+                        label="Road photo"
                         className="text-xs px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold transition"
                       >
                         View Road Photo
-                      </button>
+                      </PhotoViewButton>
                     )}
                   </div>
                 </div>

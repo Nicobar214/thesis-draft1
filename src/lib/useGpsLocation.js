@@ -10,6 +10,20 @@ export function describeGpsError(err) {
 }
 
 const SLOW_FIX_MS = 5000;
+// A newer fix replaces the current one only if it is about as accurate or
+// better, or the current one is this old (the person may have moved).
+const STALE_FIX_MS = 30000;
+
+/* Keep the better of two fixes. Phones and laptops often report a rough
+ * Wi-Fi/cell estimate first and then sharper GPS fixes; a later rough fix must
+ * not throw a good one away. */
+export function pickBetterFix(current, next, now = Date.now()) {
+  if (!current) return next;
+  if (!next) return current;
+  if (next.accuracy <= current.accuracy * 1.1) return next;
+  if (now - (current.at || 0) > STALE_FIX_MS) return next;
+  return current;
+}
 
 /**
  * The user's GPS position for the report form.
@@ -19,7 +33,7 @@ const SLOW_FIX_MS = 5000;
  * always cleared on unmount and on reset.
  *
  *   const { gps, gpsError, gpsLoading, gpsSlow, acquireGps, resetGps } = useGpsLocation();
- *   gps = { lat, lng, accuracy } | null
+ *   gps = { lat, lng, accuracy, at } | null  (the most accurate recent fix)
  */
 export function useGpsLocation() {
   const [gps, setGps] = useState(null);
@@ -46,14 +60,14 @@ export function useGpsLocation() {
     setGpsError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, at: Date.now() });
         setGpsLoading(false);
-        // Keep correcting drift after the first fix.
+        // Keep listening: GPS usually sharpens over the next few seconds.
         clearWatch();
         watchRef.current = navigator.geolocation.watchPosition(
-          (p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+          (p) => setGps((cur) => pickBetterFix(cur, { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, at: Date.now() })),
           () => {},
-          { enableHighAccuracy: true, maximumAge: 5000 },
+          { enableHighAccuracy: true, maximumAge: 0 },
         );
       },
       (err) => {

@@ -217,7 +217,7 @@ export default function FarmerDashboard() {
       // instead of leaving an empty band at the bottom of the screen.
       <div className="flex flex-col lg:flex-row gap-5 lg:min-h-[calc(100dvh-9rem)]">
         {/* Left Side: Summary Card */}
-        <aside className="w-full lg:w-80 shrink-0 space-y-4 sm:space-y-6">
+        <aside className="w-full lg:w-80 shrink-0 space-y-4 sm:space-y-6" data-tour="farm-summary">
           {/* Profile Details */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4 sm:space-y-5">
             <div className="flex items-center gap-3 pb-3 sm:pb-4 border-b border-slate-100">
@@ -274,7 +274,7 @@ export default function FarmerDashboard() {
 
         {/* Right Side: Map */}
         <section className="flex-1 flex flex-col gap-5 min-w-0">
-          <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 gap-4">
+          <div className="flex-1 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 gap-4" data-tour="farm-map">
             <div>
               <h3 className="font-bold text-slate-900 text-base sm:text-lg">{t('farm.mapTitle')}</h3>
               <p className="text-xs text-slate-500 mt-0.5">{t('farm.mapDesc')}</p>
@@ -363,8 +363,7 @@ export default function FarmerDashboard() {
                           eventHandlers={{ click: () => openRoadDetails(nearestFmr) }}
                         >
                           <Tooltip sticky direction="top" opacity={0.95}>
-                            <span className="block text-xs font-semibold text-blue-700">{nearestFmr.project_name}</span>
-                            <span className="block text-[10px] text-slate-500">{t('farm.tapForDetails')}</span>
+                            <span className="text-xs font-semibold text-blue-700">{nearestFmr.project_name}</span>
                           </Tooltip>
                         </Polyline>
                       )}

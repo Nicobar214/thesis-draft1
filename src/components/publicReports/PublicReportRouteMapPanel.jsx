@@ -1,6 +1,6 @@
 import { SearchIcon } from 'lucide-react';
 import { useMemo, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, CircleMarker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -56,6 +56,9 @@ export default function PublicReportRouteMapPanel({
   showLegend = true,
   focusTarget = null,
   onResetFocus = null,
+  // Report form only: the GPS fix's accuracy (metres), drawn as a circle so the
+  // reporter sees how sure the position is. The pin itself cannot be moved.
+  gpsAccuracy = null,
 }) {
   const reportPoint = useMemo(() => toPoint(reportLatitude, reportLongitude), [reportLatitude, reportLongitude]);
 
@@ -165,6 +168,14 @@ export default function PublicReportRouteMapPanel({
             <Marker position={routeEnd} icon={endIcon}>
               <Popup>Project End Point</Popup>
             </Marker>
+          )}
+
+          {reportPoint && Number(gpsAccuracy) > 0 && (
+            <Circle
+              center={reportPoint}
+              radius={Number(gpsAccuracy)}
+              pathOptions={{ color: '#0d9488', weight: 1, fillColor: '#14b8a6', fillOpacity: 0.08, dashArray: '4 4' }}
+            />
           )}
 
           {reportPoint && (

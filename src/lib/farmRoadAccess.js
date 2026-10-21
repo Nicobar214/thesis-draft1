@@ -106,23 +106,28 @@ async function routeOnFoot(from, to) {
   return (json?.routes?.[0]?.geometry?.coordinates || []).map(([lng, lat]) => [lat, lng]);
 }
 
-async function bestLeg(network, farm, candidates) {
-  const coords = [farm, ...candidates].map((p) => `${p[1]},${p[0]}`).join(';');
+// `attach` (lib/farmAttach.js) is where the farm joins the road network without
+// crossing water; routing starts there instead of at the farm pin, so the router
+// can't attach the farm to a road across a river.
+async function bestLeg(network, farm, candidates, attach = null) {
+  const origin = attach?.point || farm;
+  const coords = [origin, ...candidates].map((p) => `${p[1]},${p[0]}`).join(';');
   const res = await fetch(`${NETWORKS[network].table}/${coords}?sources=0&annotations=distance`);
   if (!res.ok) throw new Error(`${network} table ${res.status}`);
   const best = pickShortestByRoad(await res.json(), candidates);
   if (!best) return null;
   const routed = network === 'vehicle'
-    ? await fetchRoadAlignedPolyline([farm, best.point])
-    : await routeOnFoot(farm, best.point);
+    ? await fetchRoadAlignedPolyline([origin, best.point])
+    : await routeOnFoot(origin, best.point);
   if (!Array.isArray(routed) || routed.length <= 2) return null;
-  const path = [farm, ...routed, best.point];
-  return { point: best.point, path, km: lineKm(path), offRoadMeters: best.offRoadMeters };
+  const path = attach ? [farm, origin, ...routed, best.point] : [farm, ...routed, best.point];
+  const offRoadMeters = attach ? attach.meters + best.offRoadMeters : best.offRoadMeters;
+  return { point: best.point, path, km: lineKm(path), offRoadMeters };
 }
 
 const cache = new Map();
 
-export async function findRoadAccess(farm, roadLine) {
+export async function findRoadAccess(farm, roadLine, attach = null) {
   const line = (roadLine || []).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
   if (!farm || line.length === 0) return null;
 
@@ -133,12 +138,13 @@ export async function findRoadAccess(farm, roadLine) {
 
   const candidates = sampleAlongLine(line);
   if (nearest) candidates.push(nearest.point);
-  const key = `${farm.map((v) => v.toFixed(5)).join(',')}|${candidates.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';')}`;
+  const start = attach?.point || farm;
+  const key = `${farm.map((v) => v.toFixed(5)).join(',')}>${start.map((v) => v.toFixed(5)).join(',')}|${candidates.map((p) => `${p[0].toFixed(5)},${p[1].toFixed(5)}`).join(';')}`;
   if (cache.has(key)) return cache.get(key);
 
   const [vehicleRes, walkingRes] = await Promise.allSettled([
-    bestLeg('vehicle', farm, candidates),
-    bestLeg('walking', farm, candidates),
+    bestLeg('vehicle', farm, candidates, attach),
+    bestLeg('walking', farm, candidates, attach),
   ]);
   const vehicle = vehicleRes.status === 'fulfilled' ? vehicleRes.value : null;
   const walking = walkingRes.status === 'fulfilled' ? walkingRes.value : null;
@@ -146,7 +152,7 @@ export async function findRoadAccess(farm, roadLine) {
     console.warn('[farm-access] road networks unavailable, using a straight line', vehicleRes.reason?.message || vehicleRes.reason);
   }
 
-  const result = chooseHaulRoute({ vehicle, walking, straight });
+  const result = { ...chooseHaulRoute({ vehicle, walking, straight }), crossesWater: Boolean(attach?.crossesWater) };
   if (vehicle || walking) cache.set(key, result); // never cache the offline fallback
   return result;
 }
@@ -183,7 +189,7 @@ const rankCache = new Map();
  * one request. roads: [{ id, line }]. Returns Map(id -> { meters, point, offRoadMeters })
  * — empty when the road network can't be reached (callers keep straight-line order).
  */
-export async function rankRoadsByAccess(farm, roads) {
+export async function rankRoadsByAccess(farm, roads, attach = null) {
   const usable = (roads || []).filter((r) => Array.isArray(r.line) && r.line.length > 0);
   if (!farm || usable.length === 0) return new Map();
   const perRoad = Math.max(2, Math.min(8, Math.floor(OSRM_TABLE_MAX / usable.length)));
@@ -197,13 +203,16 @@ export async function rankRoadsByAccess(farm, roads) {
   });
   if (candidates.length > OSRM_TABLE_MAX) candidates.length = owners.length = OSRM_TABLE_MAX;
 
-  const key = `${farm.map((v) => v.toFixed(5)).join(',')}|${usable.map((r) => r.id).join(',')}|${candidates.length}`;
+  const origin = attach?.point || farm;
+  const key = `${origin.map((v) => v.toFixed(5)).join(',')}|${usable.map((r) => r.id).join(',')}|${candidates.length}`;
   if (rankCache.has(key)) return rankCache.get(key);
   try {
-    const coords = [farm, ...candidates].map((p) => `${p[1]},${p[0]}`).join(';');
+    const coords = [origin, ...candidates].map((p) => `${p[1]},${p[0]}`).join(';');
     const res = await fetch(`${NETWORKS.vehicle.table}/${coords}?sources=0&annotations=distance`);
     if (!res.ok) throw new Error(`table ${res.status}`);
     const ranked = bestPerRoad(await res.json(), owners, candidates);
+    // Count the walk from the farm to where it joins the road network.
+    if (attach) ranked.forEach((v) => { v.meters += attach.meters; v.offRoadMeters += attach.meters; });
     rankCache.set(key, ranked);
     return ranked;
   } catch (err) {

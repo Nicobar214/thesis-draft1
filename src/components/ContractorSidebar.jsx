@@ -1,18 +1,19 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import Icons from './Icons';
-import Logo from './Logo';
 import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
 import { ConnectionStatus } from './ui/SidebarStatusCards';
 import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
 import { confirmSignOut } from '../lib/confirm';
+import ProfileAvatar from './ui/ProfileAvatar';
+import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, SidebarNav, SidebarNavItem, SidebarSignOut } from './ui/SidebarParts';
 
 const NAV_GROUPS = [
-  { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', icon: Icons.Dashboard, exact: true }] },
-  { label: 'Work', items: [{ to: '/contractor/projects', label: 'My Projects', icon: Icons.Road }] },
-  { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', icon: Icons.Document }] },
-  { label: 'Account', items: [{ to: '/contractor/profile', label: 'My Profile', icon: Icons.UserCircle }] },
+  { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', description: 'Your projects at a glance', icon: Icons.Dashboard, exact: true }] },
+  { label: 'Work', items: [{ to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road }] },
+  { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', description: 'Citizen reports and repairs', icon: Icons.Document }] },
+  { label: 'Account', items: [{ to: '/contractor/profile', label: 'My Profile', description: 'Your account details', icon: Icons.UserCircle }] },
 ];
 
 export default function ContractorSidebar({ collapsed, setCollapsed, user, displayName }) {
@@ -31,77 +32,57 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
 
   // Counters on the nav items so the work waiting is visible without opening a page.
   const badgeFor = (to) => {
-    if (to === '/contractor/projects') return summary.withoutEngineer.length;
-    if (to === '/contractor/reports') return summary.needsFix.length;
+    // Returned updates are fixed from the history on My Projects.
+    if (to === '/contractor/projects') return summary.withoutEngineer.length + summary.needsFix.length;
+    if (to === '/contractor/reports') return summary.repairsToDo || 0;
     return 0;
   };
 
-  const sidebarContent = (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-300 border-r border-slate-800 select-none">
-      <div className={`flex items-center justify-center border-b border-slate-800 shrink-0 ${collapsed ? 'h-18 sm:h-20 px-2' : 'h-18 sm:h-20 px-4'}`}>
-        {collapsed ? (
-          <Logo variant="glyph" tone="light" className="size-10" alt="KalsaTrack" />
-        ) : (
-          <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-0">
-            <Logo tone="light" className="h-8" />
-            <span className="text-[10px] font-semibold text-teal-400 uppercase tracking-widest leading-none">Contractor Portal</span>
-          </div>
-        )}
-      </div>
+  // `isCollapsed` is false in the phone drawer, which always shows labels.
+  const sidebarContent = (isCollapsed) => (
+    <div className="flex h-full select-none flex-col bg-slate-900 text-white">
+      <SidebarBrand collapsed={isCollapsed} portalLabel="Contractor Portal" />
 
-      <nav className="flex-1 px-3 py-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <SidebarNav>
         {NAV_GROUPS.map((group, gi) => (
-          <div key={group.label} className="space-y-1">
-            {collapsed ? (
-              gi > 0 && <div className="mx-2 my-2 border-t border-slate-800" />
-            ) : (
-              <p className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${gi > 0 ? 'pt-4' : 'pt-1'}`}>{group.label}</p>
-            )}
+          <div key={group.label} className="space-y-1.5">
+            <SidebarGroupLabel label={group.label} first={gi === 0} collapsed={isCollapsed} />
             {group.items.map((item) => {
-              const active = isActive(item);
               const Icon = item.icon;
-              const badge = badgeFor(item.to);
               return (
-                <Link
+                <SidebarNavItem
                   key={item.to}
                   to={item.to}
                   onClick={() => setMobileOpen(false)}
-                  title={collapsed ? item.label : undefined}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors group ${
-                    active ? 'bg-teal-700 text-white font-semibold' : 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
-                  } ${collapsed ? 'justify-center' : ''}`}
-                >
-                  <span className={active ? 'text-white' : 'text-slate-400 group-hover:text-teal-400'}><Icon /></span>
-                  {!collapsed && <span className="flex-1">{item.label}</span>}
-                  {!collapsed && badge > 0 && (
-                    <span className="min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] font-bold leading-5 text-white">{badge}</span>
-                  )}
-                </Link>
+                  icon={<Icon />}
+                  label={item.label}
+                  description={item.description}
+                  active={isActive(item)}
+                  collapsed={isCollapsed}
+                  badge={badgeFor(item.to)}
+                />
               );
             })}
           </div>
         ))}
+      </SidebarNav>
 
-      </nav>
-
-      <div className="border-t border-slate-800 px-3 py-4 space-y-2 shrink-0">
-        <ConnectionStatus collapsed={collapsed} />
-        {!collapsed && user && (
-          <div className="px-3 py-2 rounded-xl bg-slate-800/50">
-            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-0.5">Signed In</p>
-            <p className="text-xs text-slate-200 font-medium truncate">{displayName}</p>
-            <p className="text-[11px] text-slate-500 truncate">{user.email}</p>
+      <SidebarFooter>
+        <ConnectionStatus collapsed={isCollapsed} />
+        {user && (
+          <div className="mt-3">
+            <SidebarAccount
+              collapsed={isCollapsed}
+              to="/contractor/profile"
+              onClick={() => setMobileOpen(false)}
+              avatar={<ProfileAvatar client={supabase} name={displayName} fallback="C" className="size-10 rounded-xl text-sm shadow-sm" />}
+              name={displayName || user.email}
+              subtitle="Contractor Account"
+            />
           </div>
         )}
-        <button
-          onClick={handleLogout}
-          title={collapsed ? 'Sign out' : undefined}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 transition-colors w-full ${collapsed ? 'justify-center' : ''}`}
-        >
-          <Icons.Logout />
-          {!collapsed && <span>Sign Out</span>}
-        </button>
-      </div>
+        <SidebarSignOut collapsed={isCollapsed} onClick={handleLogout} />
+      </SidebarFooter>
     </div>
   );
 
@@ -120,20 +101,20 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
       )}
 
       <aside
-        className={`lg:hidden fixed inset-y-0 left-0 z-[1200] w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ${
+        className={`lg:hidden fixed inset-y-0 left-0 z-[1200] w-80 max-w-[85vw] bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <button onClick={() => setMobileOpen(false)} aria-label="Close navigation menu" className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white">
+        <button onClick={() => setMobileOpen(false)} aria-label="Close navigation menu" className="absolute top-4 right-4 z-10 p-1 text-slate-400 hover:text-white">
           <Icons.X />
         </button>
-        {sidebarContent}
+        {sidebarContent(false)}
       </aside>
 
       <aside
-        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 z-30 bg-slate-900 border-r border-slate-800 transition-all duration-300 ${collapsed ? 'w-[72px]' : 'w-64'}`}
+        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 z-30 bg-slate-900 border-r border-slate-800 shadow-2xl transition-all duration-300 ${collapsed ? 'w-20' : 'w-80'}`}
       >
-        {sidebarContent}
+        {sidebarContent(collapsed)}
         <SidebarEdgeToggle collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       </aside>
     </>

@@ -83,6 +83,7 @@ export default function LguAnalyticsTab({
 
   return (
     <div className="space-y-6">
+      <div data-tour="lgu-analytics-filters">
       <LguAnalyticsFilters
         years={base.years}
         barangays={base.barangays}
@@ -90,6 +91,7 @@ export default function LguAnalyticsTab({
         onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
         onClear={() => setFilters({ year: 'all', barangay: 'all' })}
       />
+      </div>
 
       {failedSources.length > 0 && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
@@ -171,7 +173,9 @@ export default function LguAnalyticsTab({
               title="Project Implementation"
               subtitle="Status and location of FMR projects. Accomplishment uses engineer-certified figures only."
             />
-            <LguAnalyticsOverview summary={projectSummary} barangayRows={barangayRows} unavailable={projectsDown} />
+            <div data-tour="lgu-analytics-projects">
+              <LguAnalyticsOverview summary={projectSummary} barangayRows={barangayRows} unavailable={projectsDown} />
+            </div>
           </section>
 
           <LguBarangayBreakdown rows={barangayRows} unavailable={projectsDown || farmersDown || harvestDown} />
@@ -184,7 +188,9 @@ export default function LguAnalyticsTab({
             <div className="mb-4">
               <HarvestReviewPanel flagged={base.flaggedHarvest} onReviewed={onRetry} />
             </div>
-            <LguHarvestAnalytics summary={harvestSummary} unavailable={harvestDown} unattributedHarvest={base.unattributedHarvest} />
+            <div data-tour="lgu-analytics-harvest">
+              <LguHarvestAnalytics summary={harvestSummary} unavailable={harvestDown} unattributedHarvest={base.unattributedHarvest} />
+            </div>
           </section>
         </>
       )}

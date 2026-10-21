@@ -160,7 +160,9 @@ export default function FarmerFMRProjects() {
   return (
     <>
       <div className="space-y-6">
-        <FmrProjectKpis stats={stats} loading={loading} />
+        <div data-tour="projects-stats">
+          <FmrProjectKpis stats={stats} loading={loading} />
+        </div>
 
         {fetchError && (
           <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -277,7 +279,7 @@ export default function FarmerFMRProjects() {
         ) : viewMode === "table" ? (
           <FMRProjectTable projects={paginatedProjects} loading={loading} onSelect={setSelectedProject} tranchesByProjectId={tranchesByProjectId} sortBy={sortBy} onSortChange={setSortBy} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5" data-tour="projects-list">
             {loading
               ? Array.from({ length: 6 }).map((_, i) => <ProjectSkeleton key={i} />)
               : paginatedProjects.map((p) => <FMRProjectCard key={p.id} project={p} onClick={() => setSelectedProject(p)} tranches={tranchesByProjectId[p.id] || []} />)}

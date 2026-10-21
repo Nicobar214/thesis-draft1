@@ -25,8 +25,11 @@ import { startPublicReportInspection } from '../services/publicReportWorkflow';
 import { friendlyReportError } from '../lib/publicReportStatus';
 import { confirmSignOut } from '../lib/confirm';
 import StaffProfile from '../components/profile/StaffProfile';
+import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, SidebarNav, SidebarNavItem, SidebarSignOut } from '../components/ui/SidebarParts';
 import ProfileAvatar from '../components/ui/ProfileAvatar';
+import PortalHeader from '../components/ui/PortalHeader';
 import { useProfileNameUpdates } from '../lib/profileName';
+import ZoomablePhoto from '../components/ui/ZoomablePhoto';
 
 /* ─── Status Helpers & Badges ─── */
 const engineerStatusStyles = {
@@ -503,7 +506,7 @@ export default function FieldEngineerDashboard() {
 
   // Pagination bounds & slice
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedReports.length / pageSize));
-  
+
   const paginatedReports = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredAndSortedReports.slice(start, start + pageSize);
@@ -589,11 +592,11 @@ export default function FieldEngineerDashboard() {
   };
 
   const navItems = [
-    { id: 'overview', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
-    { id: 'gis-map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
-    { id: 'certify', label: 'Certify Progress', count: certifyCount, icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
-    { id: 'reports', label: 'Damage Reports', count: metrics.total, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
-    { id: 'profile', label: 'Engineer Profile', icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0zM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
+    { id: 'overview', description: 'Your assignments at a glance', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
+    { id: 'gis-map', description: 'Assigned reports on the map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
+    { id: 'certify', description: 'Check contractor progress', label: 'Certify Progress', count: certifyCount, icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
+    { id: 'reports', description: 'Inspect reported road damage', label: 'Damage Reports', count: metrics.total, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
+    { id: 'profile', description: 'Your account details', label: 'Engineer Profile', icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0zM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
   ];
 
   const NAV_GROUPS = [
@@ -622,107 +625,48 @@ export default function FieldEngineerDashboard() {
 
       {/* ── DESKTOP COLLAPSIBLE LEFT SIDEBAR ── */}
       <aside className={`hidden lg:flex flex-col fixed top-0 bottom-0 left-0 z-40 bg-slate-900 text-white border-r border-slate-800 shadow-2xl transition-all duration-300 ease-in-out ${
-        sidebarCollapsed ? 'w-20' : 'w-64'
+        sidebarCollapsed ? 'w-20' : 'w-80'
       }`}>
-        {/* Sidebar Header & Toggle */}
-        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-700/60 shrink-0">
-          {!sidebarCollapsed ? (
-            <div className="flex items-center gap-3 overflow-hidden">
-              <Logo tone="light" className="h-7" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300 bg-slate-800/80 border border-slate-700 px-2 py-0.5 rounded-md whitespace-nowrap">
-                Field
-              </span>
-            </div>
-          ) : (
-            <div className="mx-auto w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 flex items-center justify-center text-teal-300 font-black text-xs shadow-sm">
-              FE
-            </div>
-          )}
-        </div>
+        {/* Shared sidebar look (components/ui/SidebarParts.jsx) */}
+        <SidebarBrand collapsed={sidebarCollapsed} portalLabel="Field Engineer Portal" />
 
-        {/* Navigation Items */}
-        <nav className="flex-1 py-3 px-3 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <SidebarNav>
           {navGroups.map((group, gi) => (
-          <div key={group.label} className="space-y-1">
-            {sidebarCollapsed ? (
-              gi > 0 && <div className="mx-2 my-2 border-t border-slate-700/60" />
-            ) : (
-              <p className={`px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500 ${gi > 0 ? 'pt-4' : 'pt-1'}`}>{group.label}</p>
-            )}
-          {group.items.map((item) => {
-            const active = activeNav === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveNav(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all group relative ${
-                  active
-                    ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/25'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-                } ${sidebarCollapsed ? 'justify-center' : ''}`}
-                title={sidebarCollapsed ? `${item.label}${item.count ? ` (${item.count})` : ''}` : undefined}
-              >
-                <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                </svg>
-
-                {!sidebarCollapsed && (
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                )}
-
-                {item.count > 0 && (
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    active
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-800 text-slate-300 border border-slate-700'
-                  } ${sidebarCollapsed ? 'absolute top-1 right-1 px-1 py-0 text-[9px] min-w-[16px] text-center' : ''}`}>
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          </div>
-          ))}
-
-        </nav>
-
-        {/* Sidebar Footer: connection state + user */}
-        <div className="p-3 border-t border-slate-700/60 bg-slate-900/60">
-          <SidebarSyncStatus isOffline={isOffline} collapsed={sidebarCollapsed} />
-          {!sidebarCollapsed ? (
-            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-800/70 border border-slate-700">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 text-teal-300 font-bold text-xs flex items-center justify-center shrink-0">
-                  {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-white truncate">{profile.full_name || profile.email}</p>
-                <p className="text-[10px] text-slate-400 font-semibold">Field Inspector</p>
-                </div>
-              </div>
-              <button
-                onClick={handleSignOut}
-                className="p-1.5 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl transition-colors"
-                title="Sign Out"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-                </svg>
-              </button>
+            <div key={group.label} className="space-y-1.5">
+              <SidebarGroupLabel label={group.label} first={gi === 0} collapsed={sidebarCollapsed} />
+              {group.items.map((item) => (
+                <SidebarNavItem
+                  key={item.id}
+                  onClick={() => { setActiveNav(item.id); setMobileDrawerOpen(false); }}
+                  icon={(
+                    <svg fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                    </svg>
+                  )}
+                  label={item.label}
+                  description={item.description}
+                  active={activeNav === item.id}
+                  collapsed={sidebarCollapsed}
+                  badge={item.count || 0}
+                />
+              ))}
             </div>
-          ) : (
-            <button
-              onClick={handleSignOut}
-              className="w-full py-2 flex items-center justify-center text-slate-400 hover:text-rose-300 hover:bg-slate-800 rounded-xl transition-colors"
-              title="Sign Out"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-              </svg>
-            </button>
-          )}
-        </div>
+          ))}
+        </SidebarNav>
+
+        <SidebarFooter>
+          <SidebarSyncStatus isOffline={isOffline} collapsed={sidebarCollapsed} />
+          <div className="mt-3">
+            <SidebarAccount
+              collapsed={sidebarCollapsed}
+              onClick={() => setActiveNav('profile')}
+              avatar={<ProfileAvatar client={supabase} name={profile.full_name || profile.email} fallback="FE" className="size-10 rounded-xl text-sm shadow-sm" />}
+              name={profile.full_name || profile.email}
+              subtitle="Field Engineer Account"
+            />
+          </div>
+          <SidebarSignOut collapsed={sidebarCollapsed} onClick={handleSignOut} />
+        </SidebarFooter>
         <SidebarEdgeToggle collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       </aside>
 
@@ -730,117 +674,77 @@ export default function FieldEngineerDashboard() {
       {mobileDrawerOpen && (
         <div className="lg:hidden fixed inset-0 z-[1200] bg-slate-900/50 backdrop-blur-sm" onClick={() => setMobileDrawerOpen(false)}>
           <div
-            className="w-72 max-w-[80vw] h-full bg-slate-900 text-white border-r border-slate-800 flex flex-col p-4 shadow-2xl animate-slideRight"
+            className="relative w-80 max-w-[85vw] h-full bg-slate-900 text-white border-r border-slate-800 flex flex-col shadow-2xl animate-slideRight"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-4 border-b border-slate-700/60 mb-4">
-              <Logo tone="light" className="h-7" />
-              <button
-                onClick={() => setMobileDrawerOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800"
-              >
-                <XIcon className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <nav className="flex-1 space-y-2">
-              {navItems.map((item) => {
-                const active = activeNav === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveNav(item.id);
-                      setMobileDrawerOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all ${
-                      active ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/25' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                      </svg>
-                      <span>{item.label}</span>
-                    </div>
-                    {item.count > 0 && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                        {item.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="pt-4 border-t border-slate-700/60 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-teal-600/30 border border-teal-500/20 text-teal-300 font-bold text-xs flex items-center justify-center">
-                  {(profile.full_name || profile.email || 'FE').charAt(0).toUpperCase()}
+            <button
+              onClick={() => setMobileDrawerOpen(false)}
+              aria-label="Close menu"
+              className="absolute right-3 top-3 z-10 p-1.5 text-slate-400 hover:text-white rounded-lg bg-slate-800"
+            >
+              <XIcon className="size-4" aria-hidden="true" />
+            </button>
+            {/* Same shared look as the desktop sidebar, always expanded. */}
+            <SidebarBrand collapsed={false} portalLabel="Field Engineer Portal" />
+            <SidebarNav>
+              {navGroups.map((group, gi) => (
+                <div key={group.label} className="space-y-1.5">
+                  <SidebarGroupLabel label={group.label} first={gi === 0} collapsed={false} />
+                  {group.items.map((item) => (
+                    <SidebarNavItem
+                      key={item.id}
+                      onClick={() => { setActiveNav(item.id); setMobileDrawerOpen(false); }}
+                      icon={(
+                        <svg fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                        </svg>
+                      )}
+                      label={item.label}
+                      description={item.description}
+                      active={activeNav === item.id}
+                      badge={item.count || 0}
+                    />
+                  ))}
                 </div>
-                <p className="text-xs font-bold text-white">{profile.full_name || 'Engineer'}</p>
-              </div>
-              <button onClick={handleSignOut} className="text-xs text-rose-600 font-bold hover:underline">
-                Sign Out
-              </button>
-            </div>
+              ))}
+            </SidebarNav>
+            <SidebarFooter>
+              <SidebarAccount
+                onClick={() => { setActiveNav('profile'); setMobileDrawerOpen(false); }}
+                avatar={<ProfileAvatar client={supabase} name={profile.full_name || profile.email} fallback="FE" className="size-10 rounded-xl text-sm shadow-sm" />}
+                name={profile.full_name || profile.email}
+                subtitle="Field Engineer Account"
+              />
+              <SidebarSignOut onClick={handleSignOut} />
+            </SidebarFooter>
           </div>
         </div>
       )}
 
       {/* ── MAIN CONTENT AREA ── */}
       <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ease-in-out ${
-        sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
+        sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-80'
       }`}>
         {/* Top Header Bar (Matches Admin Page) */}
-        <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30">
-          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {/* Mobile Hamburger Drawer Button */}
-              <button
-                onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 bg-slate-100 border border-slate-200"
-                title="Open Menu"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                </svg>
-              </button>
-
-              <div className="min-w-0">
-                <h1 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                  {navItems.find((n) => n.id === activeNav)?.label || 'Field Command'}
-                </h1>
-                <p className="hidden sm:block truncate text-sm text-slate-500">{PAGE_DESCRIPTIONS[activeNav]}</p>
-              </div>
-            </div>
-
-            {/* Top Right Quick Profile */}
-            <div className="flex items-center gap-3">
-              {/* Assignment and re-inspection requests are pushed here; before
-                  this they were written to the notifications table and never
-                  shown to the engineer. */}
-              <NotificationBell
-                client={supabase}
-                resolveTarget={resolveNotificationTarget}
-                onSelect={openNotification}
-              />
-              <button
-                type="button"
-                onClick={() => setActiveNav('profile')}
-                title="My profile"
-                aria-label="Open your profile"
-                className="flex items-center gap-3 rounded-xl py-1 pl-2 pr-1 hover:bg-slate-50 transition-colors"
-              >
-                <span className="hidden sm:block text-right">
-                  <span className="block text-xs font-bold text-slate-800 leading-tight">{profile.full_name || profile.email}</span>
-                  <span className="block text-[10px] font-semibold text-teal-700 uppercase tracking-wider">DA Region VI Inspector</span>
-                </span>
-                <ProfileAvatar client={supabase} name={profile.full_name || profile.email} fallback="FE" className="size-9 rounded-xl text-xs shadow-sm" />
-              </button>
-            </div>
-          </div>
-        </header>
+        <PortalHeader
+          className="z-30"
+          leading={(
+            <button onClick={() => setMobileDrawerOpen(true)} className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 lg:hidden" title="Open Menu" aria-label="Open menu">
+              <svg className="size-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
+          )}
+          title={navItems.find((n) => n.id === activeNav)?.label || 'Field Command'}
+          description={PAGE_DESCRIPTIONS[activeNav]}
+          bell={<NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />}
+          account={{
+            onClick: () => setActiveNav('profile'),
+            avatar: <ProfileAvatar client={supabase} name={profile.full_name || profile.email} fallback="FE" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+            name: profile.full_name || profile.email,
+            detail: profile.email,
+          }}
+        />
 
         {/* Main Section Body */}
         <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-5">
@@ -861,7 +765,7 @@ export default function FieldEngineerDashboard() {
                     </span>
                   ),
                   icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
-                  iconTone: 'bg-emerald-100 text-emerald-700',
+                  iconTone: 'bg-slate-100 text-slate-600',
                   segments: [
                     { label: 'Completed', value: metrics.completed, bar: 'bg-emerald-500' },
                     { label: 'In progress', value: metrics.inProgress, bar: 'bg-amber-400' },
@@ -872,22 +776,22 @@ export default function FieldEngineerDashboard() {
                 items={[
                   {
                     icon: <InboxIcon className="size-4" aria-hidden="true" />, label: 'New', value: metrics.assigned,
-                    hint: 'Awaiting inspection', chip: 'bg-sky-50 text-sky-700',
+                    hint: 'Awaiting inspection', chip: 'bg-slate-100 text-slate-600',
                     onClick: () => { setActiveReportTab('assigned'); setActiveNav('reports'); },
                   },
                   {
                     icon: <HardHatIcon className="size-4" aria-hidden="true" />, label: 'In Progress', value: metrics.inProgress,
-                    hint: 'On-site, not yet submitted', chip: 'bg-amber-50 text-amber-700',
+                    hint: 'On-site, not yet submitted', chip: 'bg-slate-100 text-slate-600',
                     onClick: () => { setActiveReportTab('in-progress'); setActiveNav('reports'); },
                   },
                   {
                     icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />, label: 'Needs Rework', value: metrics.needsRework,
-                    hint: 'Returned by the admin', chip: metrics.needsRework ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500',
+                    hint: 'Returned by the admin', chip: 'bg-slate-100 text-slate-600',
                     onClick: () => { setActiveReportTab('needs-rework'); setActiveNav('reports'); },
                   },
                   {
                     icon: <BadgeCheckIcon className="size-4" aria-hidden="true" />, label: 'Progress to Certify', value: certifyCount,
-                    hint: 'Contractor updates to verify', chip: 'bg-teal-50 text-teal-700',
+                    hint: 'Contractor updates to verify', chip: 'bg-slate-100 text-slate-600',
                     onClick: () => setActiveNav('certify'),
                   },
                 ]}
@@ -1179,7 +1083,7 @@ export default function FieldEngineerDashboard() {
                     </span>
                   ),
                   icon: <ClipboardListIcon className="size-6" aria-hidden="true" />,
-                  iconTone: 'bg-emerald-100 text-emerald-700',
+                  iconTone: 'bg-slate-100 text-slate-600',
                   segments: [
                     { label: 'Completed', value: metrics.completed, bar: 'bg-emerald-500' },
                     { label: 'In progress', value: metrics.inProgress, bar: 'bg-amber-400' },
@@ -1195,7 +1099,7 @@ export default function FieldEngineerDashboard() {
                     label: 'New',
                     value: metrics.assigned,
                     hint: 'Awaiting inspection',
-                    chip: 'bg-sky-50 text-sky-700',
+                    chip: 'bg-slate-100 text-slate-600',
                     onClick: () => setActiveReportTab('assigned'),
                     active: activeReportTab === 'assigned',
                   },
@@ -1204,7 +1108,7 @@ export default function FieldEngineerDashboard() {
                     label: 'In Progress',
                     value: metrics.inProgress,
                     hint: 'On-site, not yet submitted',
-                    chip: 'bg-amber-50 text-amber-700',
+                    chip: 'bg-slate-100 text-slate-600',
                     onClick: () => setActiveReportTab('in-progress'),
                     active: activeReportTab === 'in-progress',
                   },
@@ -1213,7 +1117,7 @@ export default function FieldEngineerDashboard() {
                     label: 'Needs Rework',
                     value: metrics.needsRework,
                     hint: 'Returned by the admin',
-                    chip: metrics.needsRework ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500',
+                    chip: 'bg-slate-100 text-slate-600',
                     onClick: () => setActiveReportTab('needs-rework'),
                     active: activeReportTab === 'needs-rework',
                   },
@@ -1222,7 +1126,7 @@ export default function FieldEngineerDashboard() {
                     label: 'Completed',
                     value: metrics.completed,
                     hint: 'Inspected & verified',
-                    chip: 'bg-emerald-50 text-emerald-700',
+                    chip: 'bg-slate-100 text-slate-600',
                     onClick: () => setActiveReportTab('completed'),
                     active: activeReportTab === 'completed',
                   },
@@ -1515,9 +1419,9 @@ export default function FieldEngineerDashboard() {
                 roleLabel="Field Engineer"
                 fallbackInitial="FE"
                 stats={[
-                  { label: 'Assigned Reports', value: metrics.total, icon: ClipboardListIcon, tone: 'bg-teal-50 text-teal-700' },
-                  { label: 'In Progress', value: metrics.inProgress, icon: HardHatIcon, tone: 'bg-amber-50 text-amber-700' },
-                  { label: 'Completed', value: metrics.completed, icon: CheckCircle2Icon, tone: 'bg-emerald-50 text-emerald-700' },
+                  { label: 'Assigned Reports', value: metrics.total, icon: ClipboardListIcon, tone: 'bg-slate-100 text-slate-600' },
+                  { label: 'In Progress', value: metrics.inProgress, icon: HardHatIcon, tone: 'bg-slate-100 text-slate-600' },
+                  { label: 'Completed', value: metrics.completed, icon: CheckCircle2Icon, tone: 'bg-slate-100 text-slate-600' },
                 ]}
                 details={[
                   { label: 'Role', value: 'Field Supervising Engineer' },
@@ -1584,9 +1488,13 @@ export default function FieldEngineerDashboard() {
               {selectedReport.photo_url && (
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Citizen On-Site Photo Evidence</p>
-                  <a href={selectedReport.photo_url} target="_blank" rel="noopener noreferrer">
-                    <img src={selectedReport.photo_url} alt="Site reported by the citizen" className="w-full max-h-60 object-cover rounded-lg border border-slate-200 hover:opacity-90 transition" />
-                  </a>
+                  <ZoomablePhoto
+                    src={selectedReport.photo_url}
+                    alt="Site reported by the citizen"
+                    label="Citizen's on-site photo"
+                    wrapperClassName="w-full"
+                    className="w-full max-h-60 object-cover rounded-lg border border-slate-200"
+                  />
                 </div>
               )}
 

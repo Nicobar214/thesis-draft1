@@ -1,5 +1,6 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
 import { ArchiveIcon, CheckCircle2Icon, CheckIcon, CircleHelpIcon, ClipboardListIcon, HardHatIcon, MapPinIcon, RotateCcwIcon, SearchIcon, ShieldCheckIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, UserPlusIcon, WrenchIcon, XCircleIcon, XIcon, ZapIcon } from 'lucide-react';
+import SeverityIcon from '../components/SeverityIcon';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import L from 'leaflet';
@@ -11,6 +12,9 @@ import ConfirmModal from '../components/ui/ConfirmModal';
 import { buttonClass } from '../components/ui/Button';
 import { getMunicipalities, getBarangays } from '../data/iloiloLocations';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { ExistingRoutesLayer, RouteEditorMapPanels, RouteOverlapNotice } from '../components/map/RouteOverlapParts';
+import useRouteEditorLayers from '../lib/useRouteEditorLayers';
+import { findRouteOverlaps } from '../lib/routeOverlap';
 import 'leaflet.heat';
 import {
   buildRoutePoints,
@@ -30,6 +34,7 @@ import {
   buildDisbursementTranches,
   summarizeTranches,
   realTranchesToScheduleShape,
+  DA_FMR_RATE_PER_KM,
 } from '../lib/budgetEstimate';
 import ProjectTrancheTimeline from '../components/budget/ProjectTrancheTimeline';
 import ProjectSCurvePanel from '../components/budget/ProjectSCurvePanel';
@@ -63,9 +68,11 @@ import { computeRoadGapPriorityScores } from '../lib/priorityScoring';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import ProjectProgressReport from '../components/admin/ProjectProgressReport';
 import { PROJECT_FILTERS } from '../lib/projectSchedule';
-import { FileTextIcon, RouteIcon, SlidersHorizontalIcon, ClockIcon, GaugeIcon, MessageSquareWarningIcon } from 'lucide-react';
+import { FileTextIcon, HammerIcon, ImageIcon, Trash2Icon, RouteIcon, SlidersHorizontalIcon, ClockIcon, GaugeIcon, MessageSquareWarningIcon } from 'lucide-react';
 import StaffProfile from '../components/profile/StaffProfile';
 import ProfileAvatar from '../components/ui/ProfileAvatar';
+import PortalHeader from '../components/ui/PortalHeader';
+import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, SidebarNav, SidebarNavItem, SidebarSignOut } from '../components/ui/SidebarParts';
 import { useProfileNameUpdates } from '../lib/profileName';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import Icons from '../components/Icons';
@@ -75,6 +82,7 @@ import HierarchyKpis from '../components/ui/HierarchyKpis';
 import { reportReference, matchReportsByReference } from '../lib/reportReference';
 import CopyReference from '../components/ui/CopyReference';
 import Pagination, { usePagination } from '../components/ui/Pagination';
+import AccountDirectory from '../components/admin/AccountDirectory';
 import Logo from '../components/Logo';
 import StableHeatLayer from '../components/map/StableHeatLayer';
 import { useHeatLapse } from '../lib/useHeatLapse';
@@ -107,11 +115,16 @@ import {
   getRepairQueueKey,
   friendlyReportError,
   getAdminBucket,
+  handlerFor,
+  resolveCategory,
+  resolveSpecificProblem,
+  SEVERITY_TAXONOMY,
 } from '../lib/publicReportStatus';
 import { assessReport } from '../lib/publicReportTriage';
 import NotificationBell from '../components/NotificationBell';
 import { storeGlyph } from '../lib/mapMarkerIcons';
 import { confirm as confirmDialog, confirmSignOut } from '../lib/confirm';
+import ZoomablePhoto, { PhotoViewButton } from '../components/ui/ZoomablePhoto';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -515,10 +528,11 @@ const PUBLIC_REPORTS_PER_PAGE = 12;
    admin-only workflow framing layered on top of the same six keys. */
 const ADMIN_BUCKET_ICONS = {
   needs_review: ClipboardListIcon,
-  needs_assignment: UserPlusIcon,
   in_field: HardHatIcon,
   needs_validation: ShieldCheckIcon,
   ready_to_resolve: CheckCircle2Icon,
+  with_handler: HammerIcon,
+  work_done: ImageIcon,
   closed: ArchiveIcon,
 };
 
@@ -800,9 +814,13 @@ export default function Dashboard() {
   const [publicReportsLoading, setPublicReportsLoading] = useState(false);
   // report_id -> repair action; feeds the "Repair follow-up" queue cards.
   const [repairActions, setRepairActions] = useState({});
+  // Reports whose reporter answered "still not fixed" (citizen confirmations).
+  const [notFixedReportIds, setNotFixedReportIds] = useState(() => new Set());
   const [publicReportFilter, setPublicReportFilter] = useState('needs_review');
   const [publicReportCategoryFilter, setPublicReportCategoryFilter] = useState('all'); // now used for verification filter
   const [publicReportAssignedFilter, setPublicReportAssignedFilter] = useState('all');
+  // Who fixes it after the DA check: 'contractor' | 'lgu'.
+  const [publicReportHandlerFilter, setPublicReportHandlerFilter] = useState('all');
   const [publicReportViewMode, setPublicReportViewMode] = useState('grid');
   const [publicReportSearch, setPublicReportSearch] = useState('');
   const [publicReportDateFrom, setPublicReportDateFrom] = useState('');
@@ -841,6 +859,7 @@ export default function Dashboard() {
     publicReportFilter,
     publicReportCategoryFilter,
     publicReportAssignedFilter,
+    publicReportHandlerFilter,
     publicReportSearch,
     publicReportDateFrom,
     publicReportDateTo,
@@ -1204,17 +1223,50 @@ export default function Dashboard() {
     try {
       const { data, error: fetchErr } = await supabase
         .from('public_report_repair_actions')
-        .select('id, report_id, status, target_date')
-        .in('status', ['planned', 'completed']);
+        .select('*')
+        .in('status', ['planned', 'completed', 'verified']);
       if (fetchErr) throw fetchErr;
       setRepairActions(Object.fromEntries((data || []).map((a) => [a.report_id, a])));
     } catch (err) {
       console.warn('[repair] could not load follow-up queue:', err?.message || err);
       setRepairActions({});
     }
+    // "Still not fixed" answers feed the Reported Not Fixed chip; optional table.
+    const { data: answers, error: answerErr } = await supabase
+      .from('public_report_citizen_confirmations')
+      .select('report_id')
+      .eq('is_fixed', false);
+    setNotFixedReportIds(new Set(answerErr ? [] : (answers || []).map((a) => a.report_id)));
   }, []);
 
   // Fetch public reports from Supabase
+  // TEMPORARY (test-data cleanup before the defense): permanently delete a
+  // report. Needs supabase_admin_delete_public_report.sql; remove both after.
+  const deletePublicReport = async (report) => {
+    if (!report?.id) return;
+    const ok = await confirmDialog({
+      title: 'Delete this report permanently?',
+      message: `${report.project_name || 'This report'} (ref ${String(report.id).slice(0, 8).toUpperCase()}) and everything attached to it (inspection, resolution, LGU/contractor job, notes) will be removed. This cannot be undone.`,
+      confirmLabel: 'Delete report',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const { error: deleteErr } = await supabase.rpc('admin_delete_public_report', { p_report_id: report.id });
+    if (deleteErr) {
+      showNotification(
+        /could not find the function/i.test(deleteErr.message || '')
+          ? 'Run supabase_admin_delete_public_report.sql in Supabase first.'
+          : `Could not delete: ${deleteErr.message}`,
+        'error',
+      );
+      return;
+    }
+    setSelectedPublicReport(null);
+    setPublicReports((rows) => rows.filter((r) => r.id !== report.id));
+    showNotification('Report deleted.');
+    fetchRepairActions();
+  };
+
   const fetchPublicReports = useCallback(async () => {
     fetchRepairActions();
     setPublicReportsLoading(true);
@@ -2746,6 +2798,8 @@ export default function Dashboard() {
     const publicReportsChannel = supabase
       .channel('admin-public-reports-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => { fetchPublicReports(); fetchMapReportData(); })
+      // LGU / contractor job steps (accept, start, after-photo).
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_repair_actions' }, () => fetchRepairActions())
       .subscribe();
 
     const escalationsChannel = supabase
@@ -2801,7 +2855,7 @@ export default function Dashboard() {
       supabase.removeChannel(progressUpdatesChannel);
       supabase.removeChannel(lguProposalsChannel);
     };
-  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectTranches, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchRoadGaps, fetchMapReportData, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
+  }, [fetchProjects, fetchPublicReports, fetchEscalations, fetchFmrProjects, fetchProjectTranches, fetchFarmerBeneficiaries, fetchMarkets, fetchProjectRoutes, fetchRoadGaps, fetchMapReportData, fetchRepairActions, fetchFieldEngineers, fetchContractors, fetchLgus, fetchProgressUpdates, fetchLguProposals, ensureAdminProfile, fetchAdminIdentity]);
 
   useEffect(() => {
     fetchMapReportData();
@@ -2921,8 +2975,8 @@ export default function Dashboard() {
   // Sidebar badge: everything the admin personally owes an action on, not just
   // untriaged reports. A submitted inspection waiting on validation is work too.
   const actionNeededPublicReportsCount = useMemo(
-    () => countAdminBuckets(publicReports).actionNeeded,
-    [publicReports]
+    () => countAdminBuckets(publicReports, repairActions).actionNeeded,
+    [publicReports, repairActions]
   );
   // Module 1 (road network gaps) is the active module -- PriorityTab labels it so --
   // but these headline cards used to call computePriorityScores, the agri module,
@@ -3127,7 +3181,7 @@ export default function Dashboard() {
         ) {
           const computedKm = calculateRoadLengthKm(startLat, startLng, endLat, endLng);
           next.roadLength = computedKm.toFixed(2);
-          next.totalBudget = String(Math.round(computedKm * 15000000));
+          next.totalBudget = String(Math.round(computedKm * DA_FMR_RATE_PER_KM));
         } else {
           next.roadLength = '';
           next.totalBudget = '';
@@ -3137,7 +3191,7 @@ export default function Dashboard() {
       if (name === 'roadLength') {
         const lengthKm = Number(value || 0);
         if (lengthKm > 0) {
-          next.totalBudget = String(Math.round(lengthKm * 15000000));
+          next.totalBudget = String(Math.round(lengthKm * DA_FMR_RATE_PER_KM));
         } else {
           next.totalBudget = '';
         }
@@ -3160,16 +3214,12 @@ export default function Dashboard() {
       return;
     }
 
+    if (!(await confirmRouteOverlap(newRouteOverlap))) return;
+
+    // The FMR code is system-assigned (the field is locked): if it is missing or
+    // was taken meanwhile, assign the next free one instead of blocking.
     let enteredCode = (formData.projectCode || '').trim();
-    if (!enteredCode) {
-      showNotification('FMR code is required.', 'error');
-      return;
-    }
-    if (getExistingFmrCodes().has(enteredCode.toUpperCase())) {
-      if (!pendingProposalLink) {
-        showNotification('FMR code already exists. Generate a new code before publishing.', 'error');
-        return;
-      }
+    if (!enteredCode || getExistingFmrCodes().has(enteredCode.toUpperCase())) {
       enteredCode = generateNextProjectCode();
       setFormData((prev) => ({ ...prev, projectCode: enteredCode }));
     }
@@ -3207,7 +3257,7 @@ export default function Dashboard() {
       target_completion_date: formData.expectedEndDate || null,
       location: formData.barangay,
       contractor_id: newProjectContractorId,
-      total_budget: formData.totalBudget ? parseFloat(formData.totalBudget) : null,
+      total_budget: autoProjectBudget,
       funds_released: formData.disbursedAmount ? parseFloat(formData.disbursedAmount) : null,
       funding_source: 'DA',
       remarks: [
@@ -3286,7 +3336,7 @@ export default function Dashboard() {
       roadLength: parseFloat(formData.roadLength) || 0,
       roadWidth: parseFloat(formData.roadWidth) || 0,
       roadType: formData.roadType,
-      totalBudget: parseFloat(formData.totalBudget) || 0,
+      totalBudget: autoProjectBudget || 0,
       budgetSource: formData.budgetSource,
       disbursedAmount: parseFloat(formData.disbursedAmount) || 0,
       contractor: formData.contractor,
@@ -3560,6 +3610,7 @@ export default function Dashboard() {
 
   const handleEditFmrProject = async (e) => {
     e.preventDefault();
+    if (!(await confirmRouteOverlap(editRouteOverlap))) return;
     const payload = {
       project_name: fmrFormData.project_name,
       status: fmrFormData.status,
@@ -3631,6 +3682,13 @@ export default function Dashboard() {
     return `₱${amount.toLocaleString()}`;
   };
 
+  // Budget follows the road length at the DA-BAFE indicative rate
+  // (lib/budgetEstimate.js), so it updates however the route is drawn.
+  const autoProjectBudget = useMemo(() => {
+    const km = Number(formData.roadLength);
+    return Number.isFinite(km) && km > 0 ? Math.round(km * DA_FMR_RATE_PER_KM) : null;
+  }, [formData.roadLength]);
+
   const newProjectRoutePreview = useMemo(() => {
     const points = [];
     const sLat = parseCoordinate(formData.startLatitude);
@@ -3663,6 +3721,47 @@ export default function Dashboard() {
     return points;
   }, [fmrFormData.start_latitude, fmrFormData.start_longitude, fmrFormData.end_latitude, fmrFormData.end_longitude, fmrRouteWaypoints]);
 
+  // Existing FMR roads, drawn on the route editors so a new route is not laid
+  // on top of one, plus the overlap of the route being drawn.
+  const existingRouteLines = useMemo(() => (fmrProjects || []).map((p) => {
+    const route = buildRoutePoints(p, routeByProjectId[p.id]);
+    return { id: p.id, name: p.project_name || `FMR ${p.id}`, status: p.status, project: p, route, line: route.points || [] };
+  }), [fmrProjects, routeByProjectId]);
+  // Layers / legend / basemap of each route editor map.
+  const addRouteLayers = useRouteEditorLayers();
+  const editRouteLayers = useRouteEditorLayers();
+  const newRouteOverlap = useMemo(
+    () => findRouteOverlaps(newProjectRoutePreview, existingRouteLines),
+    [newProjectRoutePreview, existingRouteLines],
+  );
+  const editRouteLines = useMemo(
+    () => existingRouteLines.filter((p) => String(p.id) !== String(selectedFmrProject?.id)),
+    [existingRouteLines, selectedFmrProject],
+  );
+  const editRouteOverlap = useMemo(
+    () => findRouteOverlaps(fmrRoutePreview, editRouteLines),
+    [fmrRoutePreview, editRouteLines],
+  );
+
+  /* Ask before saving a route that runs on an existing project's road. */
+  const confirmRouteOverlap = async (overlap) => {
+    const list = overlap?.overlaps || [];
+    if (!list.length) return true;
+    const top = list[0];
+    const shared = (o) => (o.overlapMeters < 1000 ? `${Math.round(o.overlapMeters)} m` : `${(o.overlapMeters / 1000).toFixed(2)} km`);
+    return confirmDialog({
+      title: top.share >= 0.5 ? 'This route repeats an existing project' : 'This route overlaps an existing project',
+      message: [
+        ...list.map((o) => `${o.name}: ${shared(o)} shared (${Math.round(o.share * 100)}% of the route)`),
+        '',
+        'Two projects on the same stretch of road can double-count funds and road length. Save anyway?',
+      ].join('\n'),
+      confirmLabel: 'Save anyway',
+      cancelLabel: 'Go back and adjust',
+      tone: top.share >= 0.5 ? 'danger' : 'warning',
+    });
+  };
+
   const navItems = [
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
@@ -3676,9 +3775,9 @@ export default function Dashboard() {
   ];
 
   const NAV_GROUPS = [
-    { label: 'Monitoring', ids: ['projects', 'analytics', 'priorities'] },
+    { label: 'Monitoring', ids: ['projects', 'priorities', 'project-mgmt', 'analytics'] },
     { label: 'Review queue', ids: ['public-reports', 'progress-updates', 'lgu-proposals'] },
-    { label: 'Programs', ids: ['project-mgmt', 'farmers', 'reports'] },
+    { label: 'Programs', ids: ['farmers', 'reports'] },
   ];
   const navGroups = NAV_GROUPS
     .map((g) => ({ label: g.label, items: g.ids.map((id) => navItems.find((n) => n.id === id)).filter(Boolean) }))
@@ -3781,149 +3880,62 @@ export default function Dashboard() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-72'} bg-gradient-to-b from-slate-950 to-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      <aside className={`fixed inset-y-0 left-0 z-40 ${sidebarCollapsed ? 'w-20' : 'w-80'} bg-slate-900 text-white flex flex-col transition-all duration-300 ease-in-out ${showSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } border-r border-slate-800/60 shadow-xl`}>
-        {/* Logo -- same height as the page header (h-20 / sm:h-24) so the two
-            bottom borders line up into one line across the screen. */}
-        <div className={`flex h-20 sm:h-24 shrink-0 items-center justify-center border-b border-slate-800/60 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
-          {sidebarCollapsed ? (
-            <Logo variant="glyph" tone="light" className="size-11" alt="KalsaTrack" />
-          ) : (
-            <div className="flex flex-col items-center justify-center text-center gap-1.5 overflow-hidden">
-              <Logo tone="light" className="h-10" />
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-teal-400">Admin Portal</p>
-            </div>
-          )}
-        </div>
+        {/* Shared sidebar look (components/ui/SidebarParts.jsx) */}
+        <SidebarBrand collapsed={sidebarCollapsed} portalLabel="Admin Portal" />
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
-            }`}>
-            {navGroups[0]?.label}
-          </p>
-          <div className="space-y-1.5">
-            {navGroups.map((group, gi) => (
+        <SidebarNav>
+          {[...navGroups, { label: 'System', items: [{ id: 'settings', label: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z' }] }].map((group, gi) => (
             <div key={group.label} className="space-y-1.5">
-              {gi > 0 && (
-                sidebarCollapsed ? (
-                  <div className="my-3 border-t border-slate-800/60 mx-2" />
-                ) : (
-                  <p className="px-4 pt-4 pb-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none">{group.label}</p>
-                )
-              )}
-            {group.items.map(item => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
+              <SidebarGroupLabel label={group.label} first={gi === 0} collapsed={sidebarCollapsed} />
+              {group.items.map((item) => (
+                <SidebarNavItem
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  title={sidebarCollapsed ? item.label : undefined}
-                  className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${isActive
-                      ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
-                      : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
-                    }`}
-                >
-                  {/* Left Indicator Stripe */}
-                  <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${isActive ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
-                    }`} />
-
-                  <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={isActive ? 2.25 : 1.75} d={item.icon} />
-                  </svg>
-
-                  <span className={`text-[13.5px] font-medium flex-grow flex items-center justify-between transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
-                    }`}>
-                    <span className="truncate">{item.label}</span>
-                    {item.badgeCount > 0 && (
-                      <span className={`min-w-[18px] h-4.5 px-1.5 flex items-center justify-center text-[9px] font-extrabold rounded-full transition-all duration-200 ${isActive ? 'bg-white text-teal-600' : 'bg-red-500 text-white'
-                        }`}>
-                        {item.badgeCount}
-                      </span>
-                    )}
-                  </span>
-
-                  {sidebarCollapsed && item.badgeCount > 0 && (
-                    <span className="absolute top-1.5 right-1.5 min-w-[15px] h-4 flex items-center justify-center text-[8px] font-black bg-red-500 text-white rounded-full shadow border border-slate-950 animate-pulse">
-                      {item.badgeCount}
-                    </span>
+                  onClick={() => { setActiveTab(item.id); if (window.innerWidth < 1024) setShowSidebar(false); }}
+                  icon={(
+                    <svg fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                    </svg>
                   )}
-                </button>
-              );
-            })}
+                  label={item.label}
+                  active={activeTab === item.id}
+                  collapsed={sidebarCollapsed}
+                  badge={item.badgeCount || 0}
+                />
+              ))}
             </div>
-            ))}
+          ))}
+        </SidebarNav>
 
-            <div className="my-5 border-t border-slate-800/60 mx-2"></div>
-            <p className={`px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest select-none transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'h-0 mb-0 opacity-0 overflow-hidden' : 'h-auto mb-3 opacity-100'
-              }`}>
-              System
-            </p>
-
-            <button
-              onClick={() => setActiveTab('settings')}
-              title={sidebarCollapsed ? 'Settings' : undefined}
-              className={`relative w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-3 mt-1.5' : 'gap-4.5 px-4 py-3'} rounded-xl text-left transition-all duration-250 group ${activeTab === 'settings'
-                  ? 'bg-gradient-to-r from-teal-600 to-teal-500 text-white shadow-md shadow-teal-500/15 font-semibold'
-                  : 'text-slate-400 hover:bg-slate-800/65 hover:text-white'
-                }`}
-            >
-              <span className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-300 ${activeTab === 'settings' ? 'top-2.5 bottom-2.5 opacity-100 scale-100' : 'top-1/2 bottom-1/2 opacity-0 scale-50'
-                }`} />
-
-              <svg className={`${sidebarCollapsed ? 'w-6 h-6' : 'w-5.5 h-5.5'} flex-shrink-0 transition-transform duration-200 group-hover:scale-105`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={activeTab === 'settings' ? 2.25 : 1.75} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span className={`text-[13.5px] font-medium transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 max-w-0 overflow-hidden' : 'w-auto opacity-100 max-w-[200px]'
-                }`}>
-                Settings
-              </span>
-            </button>
-          </div>
-
-        </nav>
-
-        {/* Footer: connection status and sign out. The signed-in identity
-            moved to the top-right of the header. */}
-        <div className={`${sidebarCollapsed ? 'p-2.5' : 'p-5'} border-t border-slate-800/60 bg-slate-900/60`}>
+        <SidebarFooter>
           <ConnectionStatus collapsed={sidebarCollapsed} />
-          <button
-            onClick={handleSignOut}
-            title={sidebarCollapsed ? 'Sign Out' : undefined}
-            className={`w-full mt-3 bg-slate-800 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-xl transition-all duration-300 text-xs font-bold border border-slate-700/50 hover:border-red-500/20 flex items-center justify-center ${sidebarCollapsed ? 'px-2 py-3 gap-0' : 'px-4 py-2.5 gap-2'
-              }`}
-          >
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <span className={`transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-0 opacity-0 overflow-hidden max-w-0' : 'w-auto opacity-100 max-w-[200px]'
-              }`}>
-              Sign Out
-            </span>
-          </button>
-        </div>
+          <div className="mt-3">
+            <SidebarAccount
+              collapsed={sidebarCollapsed}
+              onClick={() => setActiveTab('settings')}
+              avatar={<ProfileAvatar client={supabase} name={adminIdentity.full_name} fallback="A" className="size-10 rounded-xl text-sm shadow-sm" />}
+              name={adminIdentity.full_name || 'DA Administrator'}
+              subtitle="Admin Account"
+            />
+          </div>
+          <SidebarSignOut collapsed={sidebarCollapsed} onClick={handleSignOut} />
+        </SidebarFooter>
 
         <SidebarEdgeToggle collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((c) => !c)} />
       </aside>
 
       {/* Main Content */}
-      <div className={`flex-1 min-h-dvh transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-72'} ml-0`}>
+      <div className={`flex-1 min-h-dvh transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-80'} ml-0`}>
         {/* Header */}
         {/* One fixed height on every tab (matching the sidebar's logo strip so
             the two bottom borders meet), one-line title and description, and
             the same actions on the right: page action, bell, profile. */}
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex h-20 sm:h-24 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-            <div className="min-w-0 pl-12 lg:pl-0">
-              <h1 className="truncate text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                {(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).title}
-              </h1>
-              <p className="mt-0.5 hidden truncate text-sm text-slate-500 sm:block">
-                {(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).description}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <PortalHeader
+          title={(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).title}
+          description={(ADMIN_PAGE_META[activeTab] || ADMIN_PAGE_META.projects).description}
+          actions={(
+            <>
               {activeTab === 'projects' && (
                 <button
                   onClick={() => {
@@ -3947,31 +3959,16 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">New Project</span>
                 </button>
               )}
-
-              <NotificationBell
-                client={supabase}
-                resolveTarget={resolveNotificationTarget}
-                onSelect={openNotification}
-              />
-
-              {/* Signed-in admin, top right (moved from the sidebar footer).
-                  Opens Settings, where the account details live. */}
-              <button
-                type="button"
-                onClick={() => setActiveTab('settings')}
-                title="Account settings"
-                aria-label="Account settings"
-                className="flex items-center gap-3 rounded-xl border-l border-slate-200 py-1 pl-3 pr-1 transition-colors hover:bg-slate-50 sm:pl-4"
-              >
-                <ProfileAvatar client={supabase} name={adminIdentity.full_name} fallback="A" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />
-                <span className="hidden min-w-0 text-left md:block">
-                  <span className="block max-w-[11rem] truncate text-sm font-bold text-slate-900">{adminIdentity.full_name}</span>
-                  <span className="block max-w-[11rem] truncate text-xs text-slate-500">{adminIdentity.email}</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </header>
+            </>
+          )}
+          bell={<NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />}
+          account={{
+            onClick: () => setActiveTab('settings'),
+            avatar: <ProfileAvatar client={supabase} name={adminIdentity.full_name} fallback="A" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+            name: adminIdentity.full_name,
+            detail: adminIdentity.email,
+          }}
+        />
 
         {/* Content Area */}
         <div className="p-4 sm:p-6 lg:p-8">
@@ -4620,20 +4617,13 @@ export default function Dashboard() {
                           <div key={project.id}>
                             {route.hasPolyline && !isCentroidFallback && (
                               <>
-                                {isFocused && (
-                                  <Polyline
-                                    positions={displayRoutePoints}
-                                    pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
-                                    eventHandlers={{
-                                      mouseover: () => setAdminMapHoveredProjectId(project.id),
-                                      mouseout: () => setAdminMapHoveredProjectId(null),
-                                      click: () => {
-                                        setAdminMapSelectedProject(project);
-                                        openProjectDetailModal(project);
-                                      },
-                                    }}
-                                  />
-                                )}
+                                {/* Hover glow: always mounted and non-interactive, so it never takes the
+                                    pointer from the road under it (adding it on hover caused flicker). */}
+                                <Polyline
+                                  positions={displayRoutePoints}
+                                  pathOptions={{ color: '#ffffff', weight: 8, opacity: isFocused ? 0.9 : 0 }}
+                                  interactive={false}
+                                />
                                 <Polyline
                                   positions={displayRoutePoints}
                                   pathOptions={{
@@ -5540,6 +5530,17 @@ export default function Dashboard() {
               return matchesSearch && matchesMuni && matchesMode && matchesStatus;
             });
 
+            // KPI cards count every status in the search + municipality scope,
+            // so picking one status never zeroes the others; only the lists
+            // below follow the status filter.
+            const pmScopeProjects = fmrProjects.filter((p) => {
+              const q = pmSearch.toLowerCase();
+              const matchesSearch = !q || [p.project_name, p.municipality, p.barangay, p.location]
+                .some((field) => String(field || '').toLowerCase().includes(q));
+              return matchesSearch && (pmMunicipalityFilter === 'All' || p.municipality === pmMunicipalityFilter);
+            });
+            const pmScopeByStatus = (status) => pmScopeProjects.filter((p) => normalizeFmrStatus(p.status) === status);
+
             // ── Kanban groups from filtered list ───────────────────────
             const kanbanGroups = {
               proposed: filteredFmrProjects.filter(p => normalizeFmrStatus(p.status) === 'Proposed'),
@@ -5563,7 +5564,7 @@ export default function Dashboard() {
                 type: 'report',
                 text: `Public report filed for`,
                 project: r.project_name || 'a project',
-                detail: r.category || r.report_type || 'General report',
+                detail: resolveSpecificProblem(r)?.label || SEVERITY_TAXONOMY[resolveCategory(r)]?.label || 'General report',
                 time: r.created_at,
                 color: 'blue',
               })),
@@ -5585,77 +5586,7 @@ export default function Dashboard() {
 
             return (
               <div className="space-y-6">
-                {/* 1. Headline: the projects in view, with what needs attention
-                    (overdue) given its own card. Status cards also filter. */}
-                {(() => {
-                  const todayPm = new Date(); todayPm.setHours(0, 0, 0, 0);
-                  const total = filteredFmrProjects.length;
-                  const completed = kanbanGroups.completed.length;
-                  const ongoing = kanbanGroups.ongoing.length;
-                  const proposed = kanbanGroups.proposed.length;
-                  const overdue = kanbanGroups.ongoing.filter((p) => isPastDate(p.target_completion_date, todayPm)).length;
-                  const toggleStatus = (status) => { setPmStatusFilter((cur) => (cur === status ? 'All' : status)); setPmBudgetPage(1); };
-                  return (
-                    <HierarchyKpis
-                      ariaLabel="Project management summary"
-                      lead={{
-                        label: pmStatusFilter === 'All' ? 'FMR Projects' : `${pmStatusFilter} Projects`,
-                        value: total.toLocaleString(),
-                        note: (
-                          <span>
-                            <span className="font-semibold text-emerald-700">{total ? Math.round((completed / total) * 100) : 0}% completed</span>
-                            {pmMunicipalityFilter !== 'All' ? ` in ${pmMunicipalityFilter}` : ' across the province'}
-                          </span>
-                        ),
-                        icon: <RouteIcon className="size-6" aria-hidden="true" />,
-                        iconTone: 'bg-emerald-100 text-emerald-700',
-                        segments: [
-                          { label: 'Completed', value: completed, bar: 'bg-emerald-500' },
-                          { label: 'On-Going', value: ongoing, bar: 'bg-amber-400' },
-                          { label: 'Proposed', value: proposed, bar: 'bg-sky-500' },
-                        ].filter((s) => s.value > 0),
-                      }}
-                      items={[
-                        {
-                          icon: <HardHatIcon className="size-4" aria-hidden="true" />,
-                          label: 'On-Going',
-                          value: ongoing,
-                          hint: 'Under construction now',
-                          chip: 'bg-amber-50 text-amber-700',
-                          onClick: () => toggleStatus('On-Going'),
-                          active: pmStatusFilter === 'On-Going',
-                        },
-                        {
-                          icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />,
-                          label: 'Overdue',
-                          value: overdue,
-                          hint: overdue ? 'On-going, past target date' : 'All on schedule',
-                          chip: overdue ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-500',
-                        },
-                        {
-                          icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />,
-                          label: 'Completed',
-                          value: completed,
-                          hint: 'Finished and in use',
-                          chip: 'bg-emerald-50 text-emerald-700',
-                          onClick: () => toggleStatus('Completed'),
-                          active: pmStatusFilter === 'Completed',
-                        },
-                        {
-                          icon: <ClockIcon className="size-4" aria-hidden="true" />,
-                          label: 'Proposed',
-                          value: proposed,
-                          hint: 'Planned, not yet started',
-                          chip: 'bg-sky-50 text-sky-700',
-                          onClick: () => toggleStatus('Proposed'),
-                          active: pmStatusFilter === 'Proposed',
-                        },
-                      ]}
-                    />
-                  );
-                })()}
-
-                {/* 2. One toolbar: which view (left), which projects (right). */}
+                {/* 1. Filters first: which view (left), which projects (right). The cards below follow them. */}
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/60 bg-white p-3 shadow-xs xl:flex-row xl:items-center xl:justify-between">
                   <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Project management views">
                     {pmSubTabs.map(tab => (
@@ -5720,6 +5651,77 @@ export default function Dashboard() {
                     </select>
                   </div>
                 </div>
+
+                {/* 2. Headline: the projects in view, with what needs attention
+                    (overdue) given its own card. Status cards also filter. */}
+                {(() => {
+                  const todayPm = new Date(); todayPm.setHours(0, 0, 0, 0);
+                  const total = pmScopeProjects.length;
+                  const completed = pmScopeByStatus('Completed').length;
+                  const ongoingList = pmScopeByStatus('On-Going');
+                  const ongoing = ongoingList.length;
+                  const proposed = pmScopeByStatus('Proposed').length;
+                  const overdue = ongoingList.filter((p) => isPastDate(p.target_completion_date, todayPm)).length;
+                  const toggleStatus = (status) => { setPmStatusFilter((cur) => (cur === status ? 'All' : status)); setPmBudgetPage(1); };
+                  return (
+                    <HierarchyKpis
+                      ariaLabel="Project management summary"
+                      lead={{
+                        label: 'FMR Projects',
+                        value: total.toLocaleString(),
+                        note: (
+                          <span>
+                            <span className="font-semibold text-emerald-700">{total ? Math.round((completed / total) * 100) : 0}% completed</span>
+                            {pmMunicipalityFilter !== 'All' ? ` in ${pmMunicipalityFilter}` : ' across the province'}
+                          </span>
+                        ),
+                        icon: <RouteIcon className="size-6" aria-hidden="true" />,
+                        iconTone: 'bg-emerald-100 text-emerald-700',
+                        segments: [
+                          { label: 'Completed', value: completed, bar: 'bg-emerald-500' },
+                          { label: 'On-Going', value: ongoing, bar: 'bg-amber-400' },
+                          { label: 'Proposed', value: proposed, bar: 'bg-sky-500' },
+                        ].filter((s) => s.value > 0),
+                      }}
+                      items={[
+                        {
+                          icon: <HardHatIcon className="size-4" aria-hidden="true" />,
+                          label: 'On-Going',
+                          value: ongoing,
+                          hint: 'Under construction now',
+                          chip: 'bg-amber-50 text-amber-700',
+                          onClick: () => toggleStatus('On-Going'),
+                          active: pmStatusFilter === 'On-Going',
+                        },
+                        {
+                          icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />,
+                          label: 'Overdue',
+                          value: overdue,
+                          hint: overdue ? 'On-going, past target date' : 'All on schedule',
+                          chip: overdue ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-500',
+                        },
+                        {
+                          icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />,
+                          label: 'Completed',
+                          value: completed,
+                          hint: 'Finished and in use',
+                          chip: 'bg-emerald-50 text-emerald-700',
+                          onClick: () => toggleStatus('Completed'),
+                          active: pmStatusFilter === 'Completed',
+                        },
+                        {
+                          icon: <ClockIcon className="size-4" aria-hidden="true" />,
+                          label: 'Proposed',
+                          value: proposed,
+                          hint: 'Planned, not yet started',
+                          chip: 'bg-sky-50 text-sky-700',
+                          onClick: () => toggleStatus('Proposed'),
+                          active: pmStatusFilter === 'Proposed',
+                        },
+                      ]}
+                    />
+                  );
+                })()}
 
                 {/* ════════════════════════════════════════════════════ */}
                 {/* BOARD VIEW                                           */}
@@ -6595,13 +6597,16 @@ export default function Dashboard() {
             const searchingByReference = referenceMatches.length > 0;
             const filteredPublicReports = searchingByReference ? referenceMatches : publicReports.filter(rpt => {
               const matchesStatus = publicReportFilter === 'all'
-                || (publicReportFilter.startsWith('repairs_')
-                  ? getRepairQueueKey(repairActions[rpt.id]) === publicReportFilter
-                  : getAdminBucket(rpt) === publicReportFilter);
+                || (publicReportFilter === 'reported_not_fixed'
+                  ? rpt.status === 'resolved' && notFixedReportIds.has(rpt.id)
+                  : publicReportFilter.startsWith('repairs_')
+                    ? getRepairQueueKey(repairActions[rpt.id]) === publicReportFilter
+                    : getAdminBucket(rpt, repairActions[rpt.id]) === publicReportFilter);
               const matchesVerification = publicReportCategoryFilter === 'all' || rpt.verification === publicReportCategoryFilter;
               const matchesAssigned = publicReportAssignedFilter === 'all' ||
                 (publicReportAssignedFilter === 'unassigned' && !rpt.assigned_engineer_id) ||
                 (publicReportAssignedFilter === 'assigned' && rpt.assigned_engineer_id);
+              const matchesHandler = publicReportHandlerFilter === 'all' || handlerFor(rpt) === publicReportHandlerFilter;
               const matchesDate = inDateRange(rpt.created_at, publicReportDateFrom, publicReportDateTo);
               const matchesMunicipality = publicReportMunicipalityFilter === 'all' || rpt.municipality === publicReportMunicipalityFilter;
               const matchesBarangay = publicReportBarangayFilter === 'all' || rpt.barangay === publicReportBarangayFilter;
@@ -6616,7 +6621,7 @@ export default function Dashboard() {
                 (rpt.street || '').toLowerCase().includes(q) ||
                 (rpt.project_name || '').toLowerCase().includes(q) ||
                 (rpt.description || '').toLowerCase().includes(q);
-              return matchesStatus && matchesVerification && matchesAssigned && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesProject && matchesSearch;
+              return matchesStatus && matchesVerification && matchesAssigned && matchesHandler && matchesDate && matchesMunicipality && matchesBarangay && matchesStreet && matchesProject && matchesSearch;
             });
             const sortedFilteredPublicReports = [...filteredPublicReports].sort((a, b) => {
               const aTime = new Date(a.updated_at || a.created_at || 0).getTime() || 0;
@@ -6631,7 +6636,11 @@ export default function Dashboard() {
             );
             // Workload buckets split 'reviewed' by engineer_status so the admin
             // can see what is actually waiting on them.
-            const bucketCounts = { ...countAdminBuckets(publicReports), ...countRepairQueue(repairActions) };
+            const bucketCounts = {
+              ...countAdminBuckets(publicReports, repairActions),
+              ...countRepairQueue(repairActions),
+              reported_not_fixed: publicReports.filter((r) => r.status === 'resolved' && notFixedReportIds.has(r.id)).length,
+            };
             const verifiedCount = publicReports.filter(r => r.verification === 'Verified On-Site').length;
 
             const startOfDay = (value) => {
@@ -6951,7 +6960,7 @@ export default function Dashboard() {
                           {(() => {
                             // Same workflow bucket the filter tabs use, so a row
                             // never shows a label the tabs cannot explain.
-                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt)];
+                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt, repairActions[rpt.id])];
                             return (
                               <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
                                 bucket?.owner === 'admin'
@@ -7012,9 +7021,19 @@ export default function Dashboard() {
                     },
                     {
                       label: 'Repair follow-up',
-                      stages: REPAIR_QUEUE_BUCKETS.map((b) => ({
-                        key: b.key, label: b.label, count: bucketCounts[b.key] || 0, tone: b.tone, hint: b.hint, icon: WrenchIcon,
-                      })),
+                      stages: [
+                        ...REPAIR_QUEUE_BUCKETS.map((b) => ({
+                          key: b.key, label: b.label, count: bucketCounts[b.key] || 0, tone: b.tone, hint: b.hint, icon: WrenchIcon,
+                        })),
+                        {
+                          key: 'reported_not_fixed',
+                          label: 'Reported Not Fixed',
+                          count: bucketCounts.reported_not_fixed || 0,
+                          tone: 'problem',
+                          hint: 'Resolved, but the reporter says it is still a problem: open and reopen it',
+                          icon: RotateCcwIcon,
+                        },
+                      ],
                     },
                   ]}
                   activeKey={publicReportFilter}
@@ -7022,6 +7041,7 @@ export default function Dashboard() {
                   allKey="all"
                   allCount={bucketCounts.all}
                   allLabel="All reports"
+                  showActionList={false}
                 />
 
                 {(() => {
@@ -7038,7 +7058,9 @@ export default function Dashboard() {
                     publicReportMunicipalityFilter !== 'all', publicReportBarangayFilter !== 'all', publicReportStreetFilter !== 'all',
                   ].filter(Boolean).length;
 
-                  const stageLabel = [...ADMIN_BUCKETS, ...REPAIR_QUEUE_BUCKETS].find((b) => b.key === publicReportFilter)?.label;
+                  const stageLabel = publicReportFilter === 'reported_not_fixed'
+                    ? 'Reported Not Fixed'
+                    : [...ADMIN_BUCKETS, ...REPAIR_QUEUE_BUCKETS].find((b) => b.key === publicReportFilter)?.label;
                   const activeChips = [
                     publicReportFilter !== 'all' && { key: 'stage', label: `Stage: ${stageLabel || publicReportFilter}`, clear: () => setPublicReportFilter('all') },
                     publicReportSearch && {
@@ -7048,6 +7070,7 @@ export default function Dashboard() {
                     },
                     publicReportCategoryFilter !== 'all' && { key: 'verify', label: publicReportCategoryFilter, clear: () => setPublicReportCategoryFilter('all') },
                     publicReportAssignedFilter !== 'all' && { key: 'assign', label: publicReportAssignedFilter === 'unassigned' ? 'Unassigned' : 'Assigned', clear: () => setPublicReportAssignedFilter('all') },
+                    publicReportHandlerFilter !== 'all' && { key: 'handler', label: `Handled by ${publicReportHandlerFilter === 'lgu' ? 'LGU' : 'contractor'}`, clear: () => setPublicReportHandlerFilter('all') },
                     publicReportDateFrom && { key: 'from', label: `From ${fmtShort(publicReportDateFrom)}`, clear: () => setPublicReportDateFrom('') },
                     publicReportDateTo && { key: 'to', label: `Until ${fmtShort(publicReportDateTo)}`, clear: () => setPublicReportDateTo('') },
                     publicReportMunicipalityFilter !== 'all' && { key: 'muni', label: publicReportMunicipalityFilter, clear: () => { setPublicReportMunicipalityFilter('all'); setPublicReportBarangayFilter('all'); setPublicReportStreetFilter('all'); } },
@@ -7061,6 +7084,7 @@ export default function Dashboard() {
                     setPublicReportFilter('all');
                     setPublicReportCategoryFilter('all');
                     setPublicReportAssignedFilter('all');
+                    setPublicReportHandlerFilter('all');
                     setPublicReportDateFrom('');
                     setPublicReportDateTo('');
                     setPublicReportMunicipalityFilter('all');
@@ -7100,6 +7124,11 @@ export default function Dashboard() {
                             <option value="all">Any assignment</option>
                             <option value="unassigned">Unassigned</option>
                             <option value="assigned">Assigned</option>
+                          </select>
+                          <select value={publicReportHandlerFilter} onChange={(e) => setPublicReportHandlerFilter(e.target.value)} aria-label="Handled by" className={selectCls}>
+                            <option value="all">Any handler</option>
+                            <option value="contractor">Handled by contractor</option>
+                            <option value="lgu">Handled by LGU</option>
                           </select>
                           <button
                             type="button"
@@ -7269,11 +7298,16 @@ export default function Dashboard() {
                     photoGpsMatch: photoGpsMatchesReport,
                   });
                   const credibility = triage.credibility;
+                  // Issue type, specific problem and who fixes it (LGU = minor, contractor = major).
+                  const reportCategory = resolveCategory(selectedPublicReport);
+                  const reportType = SEVERITY_TAXONOMY[reportCategory];
+                  const reportProblem = resolveSpecificProblem(selectedPublicReport)?.label;
+                  const reportHandler = handlerFor(selectedPublicReport);
 
                   return (
                     <div className={MODAL_OVERLAY} onClick={() => setSelectedPublicReport(null)}>
                       <ModalEffects onClose={() => setSelectedPublicReport(null)} />
-                      <div className={`${MODAL_PANEL} max-w-7xl`} role="dialog" aria-modal="true" aria-label="Public road damage case file" onClick={e => e.stopPropagation()}>
+                      <div className={`${MODAL_PANEL} max-w-7xl`} role="dialog" aria-modal="true" aria-label="Citizen report case file" onClick={e => e.stopPropagation()}>
 
                         {/* Top Government Case Header */}
                         <div className="px-6 py-4 bg-white text-slate-900 flex items-center justify-between shrink-0 border-b border-slate-200">
@@ -7283,12 +7317,15 @@ export default function Dashboard() {
                             </div>
                             <div>
                               <div className="flex items-center gap-2.5 flex-wrap">
-                                <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Public Road Damage Case File</h3>
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Citizen Report Case File</h3>
                                 <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 pl-2 text-[11px] font-bold text-slate-500">
                                   REF
                                   <CopyReference value={reportReference(selectedPublicReport.id)} className="text-[11px]" />
                                 </span>
                                 {statusBadge(selectedPublicReport.status)}
+                                <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold ${reportType?.color || ''}`}>
+                                  <SeverityIcon category={reportCategory} /> {reportType?.label}
+                                </span>
                                 {verifyBadge(selectedPublicReport.verification)}
                               </div>
                               <p className="text-xs text-slate-500 font-medium mt-0.5">
@@ -7296,9 +7333,19 @@ export default function Dashboard() {
                               </p>
                             </div>
                           </div>
+                          <div className="flex items-center gap-1">
+                          {/* TEMPORARY: test-data cleanup before the defense. */}
+                          <button
+                            type="button"
+                            onClick={() => deletePublicReport(selectedPublicReport)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+                          >
+                            <Trash2Icon className="size-3.5" aria-hidden="true" /> Delete
+                          </button>
                           <button onClick={() => setSelectedPublicReport(null)} aria-label="Close dialog" className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                             <Icons.X />
                           </button>
+                          </div>
                         </div>
 
                         {/* Main 2-Column Case Body */}
@@ -7307,26 +7354,70 @@ export default function Dashboard() {
                           {/* LEFT COLUMN: Evidence & Geolocation (Col 7) */}
                           <div className="lg:col-span-7 space-y-4">
 
-                            {/* Citizen Report Statement */}
-                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs relative">
-                              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
-                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                  <Icons.Document /> Citizen Statement & Description
-                                </span>
-                                <span className="text-xs text-slate-400">
-                                  Submitted {new Date(selectedPublicReport.created_at).toLocaleString()}
+                            {/* 1. What was reported: type, problem, who handles it, where and when */}
+                            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                  <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl border ${reportType?.color || ''}`}>
+                                    <SeverityIcon category={reportCategory} className="size-5" />
+                                  </span>
+                                  <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{reportType?.label}</p>
+                                    <p className="text-base font-bold text-slate-900">{reportProblem || reportType?.label}</p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                      {[selectedPublicReport.barangay && `Brgy. ${selectedPublicReport.barangay}`, selectedPublicReport.municipality].filter(Boolean).join(', ') || 'Location not given'}
+                                      {' · '}Submitted {new Date(selectedPublicReport.created_at).toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+                                  reportHandler === 'lgu' ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-orange-200 bg-orange-50 text-orange-700'
+                                }`}>
+                                  {reportHandler === 'lgu' ? 'Minor · handled by LGU' : 'Major · handled by contractor'}
                                 </span>
                               </div>
-                              <p className="text-sm text-slate-800 leading-relaxed font-medium bg-slate-50/80 p-3.5 rounded-lg border border-slate-100 italic">
-                                &ldquo;{selectedPublicReport.description || 'No detailed description attached.'}&rdquo;
-                              </p>
+                              <div>
+                                <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">Citizen&rsquo;s description</p>
+                                <p className="text-sm text-slate-800 leading-relaxed bg-slate-50/80 p-3.5 rounded-lg border border-slate-100 italic">
+                                  &ldquo;{selectedPublicReport.description || 'No detailed description attached.'}&rdquo;
+                                </p>
+                              </div>
                             </div>
 
-                            {/* Credibility & Geo Metrics Banner */}
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
+                            {/* 2. The citizen's photo */}
+                            {selectedPublicReport.photo_url && (
+                              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Icons.Camera /> Citizen's On-Site Photo
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${photoPoint ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                    {photoPoint ? <><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Geotag Verified</> : 'No Photo Geotag'}
+                                  </span>
+                                </div>
+                                <div className="relative rounded-lg overflow-hidden border border-slate-200">
+                                  <ZoomablePhoto
+                                    src={selectedPublicReport.photo_url}
+                                    alt="Site capture"
+                                    label="Citizen's on-site photo"
+                                    wrapperClassName="w-full rounded-none"
+                                    className="w-full max-h-80 object-cover"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 3. Location check: is the report really on this road? */}
+                            <div className={`p-4 rounded-xl border shadow-xs space-y-2.5 ${
+                              triage.recommendation === 'reject'
+                                ? 'bg-red-50 border-red-200'
+                                : triage.recommendation === 'review'
+                                  ? 'bg-amber-50 border-amber-200'
+                                  : 'bg-white border-slate-200'
+                            }`}>
                               <div className="flex items-center justify-between text-xs font-bold text-slate-700">
                                 <span className="flex items-center gap-1.5 text-slate-600">
-                                  <Icons.ShieldCheck /> Verification & Credibility Index
+                                  <Icons.ShieldCheck /> Location Check &amp; Credibility
                                 </span>
                                 <span className="text-emerald-700 font-extrabold">{credibility.score}/100 ({credibility.label})</span>
                               </div>
@@ -7347,31 +7438,25 @@ export default function Dashboard() {
                                   </a>
                                 )}
                               </div>
+                              <p className="text-xs text-slate-800">
+                                <strong>{triage.distanceLabel}</strong> from the project road
+                                {triage.distanceBasis === 'route-polyline'
+                                  ? ' (measured along the mapped route).'
+                                  : triage.distanceBasis === 'project-start-point'
+                                    ? ' (measured from the project start point — no full route mapped).'
+                                    : '.'}
+                              </p>
+                              {triage.reasons.length > 0 && (
+                                <ul className="text-[11px] text-slate-700 list-disc pl-4 space-y-0.5">
+                                  {triage.reasons.map((r) => <li key={r}>{r}</li>)}
+                                </ul>
+                              )}
                             </div>
 
-                            {/* Site Photo */}
-                            {selectedPublicReport.photo_url && (
-                              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Icons.Camera /> On-Site Damage Photo Evidence
-                                  </span>
-                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${photoPoint ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                    {photoPoint ? <><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Geotag Verified</> : 'No Photo Geotag'}
-                                  </span>
-                                </div>
-                                <div className="relative rounded-lg overflow-hidden border border-slate-200">
-                                  <a href={selectedPublicReport.photo_url} target="_blank" rel="noopener noreferrer">
-                                    <img src={selectedPublicReport.photo_url} alt="Site capture" className="w-full max-h-80 object-cover hover:opacity-95 transition-opacity" />
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Route Map */}
+                            {/* 4. Where it is on the project road */}
                             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
                               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                                Geospatial Location & Route Alignment Map
+                                Location on the Project Road
                               </span>
                               <PublicReportRouteMapPanel
                                 project={selectedReportProject}
@@ -7382,48 +7467,48 @@ export default function Dashboard() {
                                 title="Project Route Map"
                               />
                             </div>
-
-
                           </div>
 
                           {/* RIGHT COLUMN: Administrative Action Station (Col 5) */}
                           <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(92dvh-8rem)] lg:overflow-y-auto lg:pr-1">
 
-                            {/* Triage fact: shown before the action card so it informs the decision. */}
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
-                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                                Vicinity Duplicates Check (100m Radius)
+                            {/* Who reported it, read before acting */}
+                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block border-b border-slate-100 pb-2">
+                                Reporter
                               </span>
-                              {similarReportsLoading ? (
-                                <p className="text-xs text-slate-400">Checking nearby reports...</p>
-                              ) : similarNearbyReports.length > 0 ? (
-                                <div className="space-y-1.5">
-                                  <p className="text-xs font-bold text-amber-800">{similarNearbyReports.length} duplicate report(s) found nearby:</p>
-                                  {similarNearbyReports.slice(0, 3).map((similar) => (
-                                    <button
-                                      key={similar.id}
-                                      onClick={() => {
-                                        const fullReport = publicReports.find((row) => row.id === similar.id);
-                                        if (fullReport) setSelectedPublicReport(fullReport);
-                                      }}
-                                      className="w-full text-left rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs hover:bg-amber-100/60 transition-colors flex items-center justify-between"
-                                    >
-                                      <span className="font-bold text-slate-800">{similar.project_name || 'Unlinked Road'}</span>
-                                      <span className="text-amber-800 font-semibold">{formatDistance(similar.distanceMeters)} away</span>
-                                    </button>
-                                  ))}
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Submitted By</span>
+                                  <span className="font-bold text-slate-900">{selectedPublicReport.full_name || 'Anonymous Citizen'}</span>
                                 </div>
-                              ) : (
-                                <p className="text-xs font-bold text-emerald-700"><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No duplicate reports detected in this vicinity.</p>
-                              )}
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Contact Info</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.contact_info || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Municipality</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.municipality || '—'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block font-semibold text-[11px]">Barangay</span>
+                                  <span className="font-bold text-slate-800">{selectedPublicReport.barangay || '—'}</span>
+                                </div>
+                              </div>
                             </div>
+
                             {/* The single contextual action area */}
                             <AdminWorkflowControls
                               report={selectedPublicReport}
+                              costEstimate={selectedFieldFinding?.estimated_cost_range || null}
                               resolution={selectedResolution}
                               triage={triage}
                               onNotify={showNotification}
                               onRepairChanged={fetchRepairActions}
+                              onReportChanged={(patch) => {
+                                setSelectedPublicReport((prev) => (prev ? { ...prev, ...patch } : prev));
+                                fetchPublicReports();
+                              }}
                               onResolve={(summary, resolutionType) =>
                                 finalizeResolution(selectedPublicReport.id, summary, resolutionType)
                               }
@@ -7472,12 +7557,19 @@ export default function Dashboard() {
                                     </div>
                                     {selectedFieldFinding.estimated_cost_range && (
                                       <div>
-                                        <span className="text-slate-500 block font-medium">Estimated Cost</span>
+                                        <span className="text-slate-500 block font-medium">Engineer&rsquo;s estimated repair cost</span>
                                         <p className="font-semibold text-slate-800 mt-0.5">{selectedFieldFinding.estimated_cost_range}</p>
+                                        <p className="text-[11px] text-slate-400">Estimate only, not a payment</p>
                                       </div>
                                     )}
                                     {selectedFieldFinding.field_photo_url && (
-                                      <img src={selectedFieldFinding.field_photo_url} alt="Field inspection" className="w-full h-36 object-cover rounded-lg border border-slate-200" />
+                                      <ZoomablePhoto
+                                        src={selectedFieldFinding.field_photo_url}
+                                        alt="Field inspection"
+                                        label="Engineer's on-site photo"
+                                        wrapperClassName="w-full"
+                                        className="w-full h-36 object-cover rounded-lg border border-slate-200"
+                                      />
                                     )}
                                   </div>
                                 ) : (
@@ -7524,69 +7616,40 @@ export default function Dashboard() {
                                 )}
                                 {selectedPublicReport.engineer_status === 'validated' && (
                                   <p className="text-[11px] text-emerald-700 font-semibold">
-                                    Findings validated — resolution can now be issued below.
+                                    Findings validated. Send the repair or resolve it in the action panel above.
                                   </p>
                                 )}
                               </div>
                             )}
 
-                            {/* Automated location check — the evidence behind the
-                                triage recommendation shown in the action panel. */}
-                            <div className={`p-4 rounded-xl border-2 shadow-xs space-y-2 ${
-                              triage.recommendation === 'reject'
-                                ? 'bg-red-50 border-red-200'
-                                : triage.recommendation === 'review'
-                                  ? 'bg-amber-50 border-amber-200'
-                                  : 'bg-emerald-50 border-emerald-200'
-                            }`}>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                                  Automated Location Check
-                                </span>
-                                <span className="text-[11px] font-bold text-slate-700">
-                                  Credibility {credibility.score}/100 · {credibility.label}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-800">
-                                <strong>{triage.distanceLabel}</strong> from the project road
-                                {triage.distanceBasis === 'route-polyline'
-                                  ? ' (measured along the mapped route).'
-                                  : triage.distanceBasis === 'project-start-point'
-                                    ? ' (measured from the project start point — no full route mapped).'
-                                    : '.'}
-                              </p>
-                              {triage.reasons.length > 0 && (
-                                <ul className="text-[11px] text-slate-700 list-disc pl-4 space-y-0.5">
-                                  {triage.reasons.map((r) => <li key={r}>{r}</li>)}
-                                </ul>
+                            {/* Nearby reports of the same spot */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                                Nearby Reports (100 m)
+                              </span>
+                              {similarReportsLoading ? (
+                                <p className="text-xs text-slate-400">Checking nearby reports...</p>
+                              ) : similarNearbyReports.length > 0 ? (
+                                <div className="space-y-1.5">
+                                  <p className="text-xs font-bold text-amber-800">{similarNearbyReports.length} duplicate report(s) found nearby:</p>
+                                  {similarNearbyReports.slice(0, 3).map((similar) => (
+                                    <button
+                                      key={similar.id}
+                                      onClick={() => {
+                                        const fullReport = publicReports.find((row) => row.id === similar.id);
+                                        if (fullReport) setSelectedPublicReport(fullReport);
+                                      }}
+                                      className="w-full text-left rounded-lg border border-amber-200 bg-amber-50/60 p-2.5 text-xs hover:bg-amber-100/60 transition-colors flex items-center justify-between"
+                                    >
+                                      <span className="font-bold text-slate-800">{similar.project_name || 'Unlinked Road'}</span>
+                                      <span className="text-amber-800 font-semibold">{formatDistance(similar.distanceMeters)} away</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs font-bold text-emerald-700"><CheckIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />No duplicate reports detected in this vicinity.</p>
                               )}
                             </div>
-
-                            {/* Citizen Details */}
-                            <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-3">
-                              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block border-b border-slate-100 pb-2">
-                                Reporter Metadata
-                              </span>
-                              <div className="grid grid-cols-2 gap-3 text-xs">
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Submitted By</span>
-                                  <span className="font-bold text-slate-900">{selectedPublicReport.full_name || 'Anonymous Citizen'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Contact Info</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.contact_info || '—'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Municipality</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.municipality || '—'}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block font-semibold text-[11px]">Barangay</span>
-                                  <span className="font-bold text-slate-800">{selectedPublicReport.barangay || '—'}</span>
-                                </div>
-                              </div>
-                            </div>
-
                             {/* Internal Notes */}
                             <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-xs space-y-2">
                               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
@@ -7690,7 +7753,7 @@ export default function Dashboard() {
 
                             // Same workflow bucket as the cards above, so a
                             // report's colour means the same thing everywhere.
-                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt)];
+                            const bucket = ADMIN_BUCKET_BY_KEY[getAdminBucket(rpt, repairActions[rpt.id])];
 
                             return (
                               <button
@@ -8135,10 +8198,13 @@ export default function Dashboard() {
                                 <td className="px-5 py-4 max-w-xs">
                                   <p className="text-xs text-slate-600 line-clamp-3">{upd.remarks || '—'}</p>
                                   {upd.photo_url && (
-                                    <a href={upd.photo_url} target="_blank" rel="noreferrer"
-                                      className="mt-1 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">
+                                    <PhotoViewButton
+                                      src={upd.photo_url}
+                                      label="Contractor's progress photo"
+                                      className="mt-1 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+                                    >
                                       View photo
-                                    </a>
+                                    </PhotoViewButton>
                                   )}
                                 </td>
                                 <td className="px-5 py-4">
@@ -8253,9 +8319,11 @@ export default function Dashboard() {
                   )}
 
                   {/* Existing Engineers */}
-                  {fieldEngineers.length > 0 && (
-                    <div className="mb-6 space-y-3">
-                      {fieldEngineers.map(eng => (
+                  <AccountDirectory
+                    items={fieldEngineers}
+                    noun="field engineer"
+                    searchText={(eng) => `${eng.full_name || ''} ${eng.email || ''} ${eng.phone || ''}`}
+                    renderItem={(eng) => (
                         <div key={eng.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
@@ -8268,9 +8336,8 @@ export default function Dashboard() {
                           </div>
                           <span className="px-3 py-1 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-semibold">Field Engineer</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                    )}
+                  />
 
                   {/* Add Field Engineer Form */}
                   <div className="bg-teal-50/50 border border-teal-200/60 rounded-xl p-5">
@@ -8408,9 +8475,11 @@ A new field engineer account will be created with this email and password.`,
                   <p className="text-sm text-slate-500 mb-5">Manage contractor accounts. Contractors log in at <code className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md text-xs">/contractor/login</code> — share this URL with your contractors.</p>
 
                   {/* Existing Contractors */}
-                  {contractors.length > 0 && (
-                    <div className="mb-6 space-y-3">
-                      {contractors.map(c => {
+                  <AccountDirectory
+                    items={contractors}
+                    noun="contractor"
+                    searchText={(c) => `${c.full_name || ''} ${c.email || ''} ${c.phone || ''}`}
+                    renderItem={(c) => {
                         const assignedCount = fmrProjects.filter(p => p.contractor_id === c.id).length;
                         return (
                           <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
@@ -8426,9 +8495,8 @@ A new field engineer account will be created with this email and password.`,
                             <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold">Contractor</span>
                           </div>
                         );
-                      })}
-                    </div>
-                  )}
+                    }}
+                  />
 
                   {/* Add Contractor Form */}
                   <div className="bg-amber-50/50 border border-amber-200/60 rounded-xl p-5">
@@ -8551,9 +8619,12 @@ A new contractor account will be created with this email and password.`,
                   <p className="text-sm text-slate-500 mb-5">Manage LGU accounts. LGUs log in at <code className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-xs">/signin</code> and will be redirected to <code className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-xs">/lgu</code>.</p>
 
                   {/* Existing LGU Users */}
-                  {lgus.length > 0 && (
-                    <div className="mb-6 space-y-3">
-                      {lgus.map((lgu) => (
+                  <AccountDirectory
+                    items={lgus}
+                    noun="LGU account"
+                    placeholder="Search name, email or municipality"
+                    searchText={(lgu) => `${lgu.full_name || ''} ${lgu.email || ''} ${lgu.phone || ''} ${lgu.municipality || ''}`}
+                    renderItem={(lgu) => (
                         <div key={lgu.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-sm">
@@ -8570,9 +8641,8 @@ A new contractor account will be created with this email and password.`,
                           </div>
                           <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold">LGU</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                    )}
+                  />
 
                   {/* Add LGU Form */}
                   <div className="bg-indigo-50/50 border border-indigo-200/60 rounded-xl p-5">
@@ -8752,7 +8822,7 @@ A new LGU account will be created with this email and password.`,
             <form onSubmit={handleAddProject} className="flex-1 overflow-y-auto p-8">
               {pendingProposalLink && (
                 <div className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-                  Pre-filled from a validated LGU proposal: <strong>{pendingProposalLink.project_name}</strong>. Review the details, confirm the FMR Code, select a contractor, then create the project to publish it.
+                  Pre-filled from a validated LGU proposal: <strong>{pendingProposalLink.project_name}</strong>. Review the details, select a contractor, then create the project to publish it. The FMR Code is assigned automatically.
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -8774,18 +8844,15 @@ A new LGU account will be created with this email and password.`,
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">FMR Code *</label>
+                  {/* System-assigned, like Region: shown but not editable. */}
                   <input
                     type="text"
                     name="projectCode"
                     value={formData.projectCode}
-                    onChange={handleInputChange}
-                    required
-                    readOnly={!!pendingProposalLink}
-                    disabled={!!pendingProposalLink}
-                    className={`w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 font-mono ${
-                      pendingProposalLink ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-semibold' : ''
-                    }`}
-                    placeholder="e.g., FMR-2026-ILO-001"
+                    readOnly
+                    tabIndex={-1}
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-mono"
+                    placeholder="Assigned automatically"
                   />
                 </div>
                 <div>
@@ -8937,16 +9004,14 @@ A new LGU account will be created with this email and password.`,
                       onSelect={(r) => { setCreateMapSearchQuery(r.label); setCreateMapSearchCoords([r.lat, r.lng]); setCreateMapSearchZoom(r.zoom); }}
                     />
                   </div>
-                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
+                  <div className="h-80 rounded-xl overflow-hidden border border-slate-200 relative">
 
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
+                      <AdminBaseTile basemap={addRouteLayers.basemap} />
                       <MapSearchController searchCoords={createMapSearchCoords} searchZoom={createMapSearchZoom} />
                       <CreateProposalMapController proposalId={pendingProposalLink?.id} points={newProjectRoutePreview} />
                       <RouteEditorMapClick onPickPoint={handleNewProjectRoutePick} />
+                      <ExistingRoutesLayer projects={existingRouteLines} overlap={newRouteOverlap} layers={addRouteLayers.layers} />
                       {createMapSearchCoords && (
                         <Marker position={createMapSearchCoords}>
                           <Popup>
@@ -8975,7 +9040,9 @@ A new LGU account will be created with this email and password.`,
                         />
                       )}
                     </MapContainer>
+                    <RouteEditorMapPanels projects={existingRouteLines} overlap={newRouteOverlap} {...addRouteLayers} />
                   </div>
+                  <RouteOverlapNotice overlap={newRouteOverlap} routeReady={newProjectRoutePreview.length >= 2} />
 
                   {newProjectRouteWaypoints.length > 0 && (
                     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
@@ -9084,19 +9151,24 @@ A new LGU account will be created with this email and password.`,
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Road Type *</label>
-                  <select name="roadType" value="Concrete" disabled className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700 focus:outline-none">
-                    <option value="Concrete">Concrete</option>
-                  </select>
+                  <input type="text" name="roadType" value="Concrete" readOnly tabIndex={-1} className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Total Budget (₱) *</label>
-                  <input type="number" name="totalBudget" value={formData.totalBudget} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" placeholder="12500000" />
+                  <input
+                    type="text"
+                    name="totalBudget"
+                    value={autoProjectBudget ? `₱${autoProjectBudget.toLocaleString('en-PH')}` : ''}
+                    readOnly
+                    tabIndex={-1}
+                    placeholder="Auto-calculated"
+                    className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">₱{(DA_FMR_RATE_PER_KM / 1_000_000).toFixed(0)}M per km (DA-BAFE 2026 rate) × road length.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Funding Source *</label>
-                  <select name="budgetSource" value="DA" disabled className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed font-semibold text-slate-700 focus:outline-none">
-                    <option value="DA">DA</option>
-                  </select>
+                  <input type="text" name="budgetSource" value="DA" readOnly tabIndex={-1} className="w-full px-5 py-3 border border-slate-200 rounded-xl bg-slate-50 cursor-not-allowed" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Contractor *</label>
@@ -9546,13 +9618,10 @@ A new LGU account will be created with this email and password.`,
                       onSelect={(r) => { setEditMapSearchQuery(r.label); setEditMapSearchCoords([r.lat, r.lng]); setEditMapSearchZoom(r.zoom); }}
                     />
                   </div>
-                  <div className="h-64 rounded-xl overflow-hidden border border-slate-200 relative">
+                  <div className="h-80 rounded-xl overflow-hidden border border-slate-200 relative">
 
                     <MapContainer center={[10.89, 122.45]} zoom={10} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
+                      <AdminBaseTile basemap={editRouteLayers.basemap} />
                       <MapSearchController searchCoords={editMapSearchCoords} searchZoom={editMapSearchZoom} />
                       <EditModalMapController
                         projectId={selectedFmrProject?.id}
@@ -9562,6 +9631,7 @@ A new LGU account will be created with this email and password.`,
                         endLng={fmrFormData.end_longitude}
                       />
                       <RouteEditorMapClick onPickPoint={handleFmrRoutePick} />
+                      <ExistingRoutesLayer projects={editRouteLines} overlap={editRouteOverlap} layers={editRouteLayers.layers} />
                       {editMapSearchCoords && (
                         <Marker position={editMapSearchCoords}>
                           <Popup>
@@ -9590,7 +9660,9 @@ A new LGU account will be created with this email and password.`,
                         />
                       )}
                     </MapContainer>
+                    <RouteEditorMapPanels projects={editRouteLines} overlap={editRouteOverlap} {...editRouteLayers} />
                   </div>
+                  <RouteOverlapNotice overlap={editRouteOverlap} routeReady={fmrRoutePreview.length >= 2} />
 
                   {fmrRouteWaypoints.length > 0 && (
                     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
@@ -9991,9 +10063,14 @@ A new LGU account will be created with this email and password.`,
                               </div>
                               <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{rpt.description}</p>
                               {rpt.photo_url && (
-                                <a href={rpt.photo_url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
-                                  <img src={rpt.photo_url} alt="Site photo" className="h-20 w-auto object-cover rounded-lg border border-slate-200 hover:opacity-80 transition" />
-                                </a>
+                                <ZoomablePhoto
+                                  src={rpt.photo_url}
+                                  alt="Site photo"
+                                  label="Citizen's on-site photo"
+                                  wrapperClassName="mt-2"
+                                  className="h-20 w-auto object-cover rounded-lg border border-slate-200"
+                                  badge={false}
+                                />
                               )}
                               {(rpt.latitude || rpt.longitude) && (
                                 <p className="text-xs text-slate-400 mt-1.5"><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />{Number(rpt.latitude).toFixed(5)}, {Number(rpt.longitude).toFixed(5)}</p>

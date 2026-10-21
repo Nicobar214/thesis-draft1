@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, Marker, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
@@ -395,12 +395,13 @@ export default function LguRouteMap({
             <div key={project.id}>
               {effectivePoints?.length >= 2 && (
                 <>
-                  {isFocused && (
-                    <Polyline
-                      positions={displayPoints}
-                      pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
-                    />
-                  )}
+                  {/* Hover glow: always mounted and non-interactive, so it never takes the
+                      pointer from the road under it (adding it on hover caused flicker). */}
+                  <Polyline
+                    positions={displayPoints}
+                    pathOptions={{ color: '#ffffff', weight: 8, opacity: isFocused ? 0.9 : 0 }}
+                    interactive={false}
+                  />
                   <Polyline
                     positions={displayPoints}
                     pathOptions={{
@@ -410,6 +411,7 @@ export default function LguRouteMap({
                     }}
                     eventHandlers={lineHandlers}
                   >
+                    <Tooltip sticky>{project.project_name}</Tooltip>
                     {popup}
                   </Polyline>
                 </>

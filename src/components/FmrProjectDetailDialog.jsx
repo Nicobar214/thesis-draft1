@@ -16,7 +16,7 @@ import ProjectProgressTimeline from './ProjectProgressTimeline';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
 import { HardHatIcon } from 'lucide-react';
-import { useProjectContractor } from '../lib/projectContractors';
+import { CONTRACTOR_NOT_INDICATED, useProjectContractor } from '../lib/projectContractors';
 
 function DetailItem({ icon, label, value }) {
   return (
@@ -37,8 +37,9 @@ function ProjectDetailBody({ project, tranches = [] }) {
   const hasCoords = project.start_latitude && project.start_longitude;
   const budget = getProjectBudgetSummary(project, tranches);
   const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
-  // Shown only when a contractor is assigned (supabase_public_project_contractors.sql).
-  const contractorName = useProjectContractor(project.id);
+  // Assigned contractor's name (supabase_public_project_contractors.sql), or
+  // "Not indicated" when the DA data doesn't name one.
+  const contractorName = useProjectContractor(project.id) || String(project.contractor || project.contractor_name || '').trim() || null;
 
   return (
     <div className="space-y-6 text-slate-800">
@@ -64,9 +65,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
           <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
-          {contractorName && (
-            <DetailItem icon={<HardHatIcon className="size-4" aria-hidden="true" />} label="Contractor" value={contractorName} />
-          )}
+          <DetailItem icon={<HardHatIcon className="size-4" aria-hidden="true" />} label="Contractor" value={contractorName || CONTRACTOR_NOT_INDICATED} />
           <DetailItem icon={<Icons.MapPinLg />} label="Province" value={`${project.province}, ${project.region}`} />
 
           {project.year_funded && (

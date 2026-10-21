@@ -1,10 +1,13 @@
 // FMR Road Priority Scoring - No ML required. Pure weighted formula.
 
+import { resolveCategory } from './publicReportStatus';
+
+// Keyed by issue type (publicReportStatus.js); old rows are mapped onto these.
 const SEVERITY_WEIGHTS = {
-  safety: 1.0,
-  flood: 0.8,
-  issue: 0.5,
-  general: 0.2,
+  structural: 1.0,
+  obstruction: 0.9,
+  road_damage: 0.6,
+  roadside: 0.4,
 };
 
 const ESCALATION_BONUS = 1.25; // Applied to severity raw sum if project has active escalation.
@@ -40,20 +43,9 @@ export function getCropData(municipality = '') {
 
 export function classifyReportSeverity(reportOrDescription = '') {
   if (typeof reportOrDescription === 'object' && reportOrDescription !== null) {
-    if (reportOrDescription.severity_category) {
-      return reportOrDescription.severity_category;
-    }
-    return classifyByKeywords(reportOrDescription.description || '');
+    return resolveCategory(reportOrDescription);
   }
-  return classifyByKeywords(reportOrDescription);
-}
-
-function classifyByKeywords(description = '') {
-  const d = String(description).toLowerCase();
-  if (/safety|aksidente|peligro|danger|hazard/.test(d)) return 'safety';
-  if (/flood|baha|tubig|drainage|water|inundated/.test(d)) return 'flood';
-  if (/lubak|sira|pothole|road|daan|crack|damage|broken/.test(d)) return 'issue';
-  return 'general';
+  return resolveCategory({ description: reportOrDescription });
 }
 
 function getRecencyMultiplier(createdAt) {
@@ -68,9 +60,9 @@ function getRecencyMultiplier(createdAt) {
 export function buildPlainReason(project, reportCount, bySeverity, cropData, rank) {
   const parts = [];
   if (reportCount > 0) parts.push(`${reportCount} report${reportCount > 1 ? 's' : ''}`);
-  if (bySeverity.safety > 0) parts.push(`${bySeverity.safety} safety`);
-  if (bySeverity.flood > 0) parts.push(`${bySeverity.flood} flood`);
-  if (bySeverity.issue > 0) parts.push(`${bySeverity.issue} road issue`);
+  if (bySeverity.structural > 0) parts.push(`${bySeverity.structural} structural`);
+  if (bySeverity.obstruction > 0) parts.push(`${bySeverity.obstruction} obstruction`);
+  if (bySeverity.road_damage > 0) parts.push(`${bySeverity.road_damage} road damage`);
   if (cropData.score >= 70) {
     parts.push(`high-value ${cropData.primary_crop} area (${cropData.hectares.toLocaleString()} ha)`);
   } else if (cropData.score >= 50) {
@@ -110,7 +102,7 @@ export function computePriorityScores(projects, reports, escalations) {
         String(project.project_name || '').trim().toLowerCase()
     );
 
-    const bySeverity = { safety: 0, flood: 0, issue: 0, general: 0 };
+    const bySeverity = { structural: 0, obstruction: 0, road_damage: 0, roadside: 0 };
 
     let severityRaw = projectReports.reduce((sum, r) => {
       const cat = classifyReportSeverity(r);

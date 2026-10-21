@@ -201,7 +201,7 @@ export default function MarketManagement({ user, profile, municipalityScope }) {
   return (
     <div className="space-y-6">
       {/* Clickable Sub-Nav Bar */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200" data-tour="lgu-market-tabs">
         <button
           type="button"
           onClick={() => setActiveSubTab('list')}

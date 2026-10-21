@@ -1,67 +1,35 @@
-/* ContractorReports.jsx – Operations page for contractor progress history
- * and public reports linked to assigned projects.
+/* ContractorReports.jsx – citizen reports on the contractor's roads: the
+ * repairs the DA assigned to them and the full list of linked reports.
+ * (Progress submission history lives on My Projects.)
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
-import { formatPercentage } from '../lib/percentageFormat';
 import { toast } from '../lib/toast';
-import { pipelineStage, STAGES } from '../lib/contractorPipeline';
 import Pagination, { usePagination } from '../components/ui/Pagination';
-import HierarchyKpis from '../components/ui/HierarchyKpis';
 import FilterToolbar from '../components/ui/FilterToolbar';
-import { FileTextIcon, ShieldCheckIcon, BuildingIcon, CheckCircle2Icon, MessageSquareWarningIcon } from 'lucide-react';
-
-// ── Status badge ─────────────────────────────────────────────
-function ReportStatusBadge({ status }) {
-  const map = {
-    pending:  'bg-amber-50 text-amber-700 border-amber-200',
-    reviewed: 'bg-blue-50 text-blue-700 border-blue-200',
-    resolved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  };
-  const cls = map[status] || 'bg-slate-50 text-slate-600 border-slate-200';
-  const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
-  return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${cls}`}>
-      {label}
-    </span>
-  );
-}
-
-function ProgressStatusBadge({ status }) {
-  const map = {
-    pending: 'bg-amber-50 text-amber-700 border-amber-200',
-    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    rejected: 'bg-red-50 text-red-700 border-red-200',
-  };
-  const cls = map[status] || 'bg-slate-50 text-slate-600 border-slate-200';
-  const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
-  return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${cls}`}>
-      {label}
-    </span>
-  );
-}
+import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react';
+import SeverityIcon from '../components/SeverityIcon';
+import HandlerReportsPanel from '../components/publicReports/HandlerReportsPanel';
+import { buildHandlerQueue, handlerReportStatus, useHandlerFollowUps } from '../lib/handlerFollowUps';
+import { SEVERITY_TAXONOMY, handlerFor, resolveCategory, resolveSpecificProblem } from '../lib/publicReportStatus';
+import { PhotoViewButton } from '../components/ui/ZoomablePhoto';
+import ContractorReportDetailModal from '../components/contractor/ContractorReportDetailModal';
 
 export default function ContractorReports() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const highlightId = searchParams.get('update');
   const [user, setUser] = useState(null);
   const [publicReports, setPublicReports] = useState([]);
-  const [progressHistory, setProgressHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const [remarkState, setRemarkState] = useState({}); // { [reportId]: { open, text, saving } }
-
-  // ── Progress history filters ────────────────────────────────
-  const [progressSearch, setProgressSearch] = useState('');
-  const [progressStageFilter, setProgressStageFilter] = useState('All');
-  const [progressProjectFilter, setProgressProjectFilter] = useState('All');
+  const [selectedReportId, setSelectedReportId] = useState(null); // report open in the detail window
+  const [projectsByRef, setProjectsByRef] = useState({}); // 'fmr-<id>' -> the contractor's project
 
   // ── Public reports filters ──────────────────────────────────
+  // Every report on the contractor's roads; collapsed so the page leads with the repairs.
+  const [showLinkedReports, setShowLinkedReports] = useState(false);
   const [reportSearch, setReportSearch] = useState('');
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
   const [reportProjectFilter, setReportProjectFilter] = useState('All');
@@ -89,35 +57,26 @@ export default function ContractorReports() {
         .from('fmr_projects')
         .select('id, project_name, municipality, accomplishment, status')
         .eq('contractor_id', user.id);
+      setProjectsByRef(Object.fromEntries((projs || []).map((p) => [`fmr-${p.id}`, p])));
       const rawProjectIds = (projs || []).map((p) => p.id);
       const reportProjectIds = rawProjectIds.map((id) => `fmr-${id}`);
 
       if (rawProjectIds.length === 0) {
         setPublicReports([]);
-        setProgressHistory([]);
         setLastSyncedAt(new Date());
         return;
       }
 
-      const [{ data: reportRows, error: reportErr }, { data: progressRows, error: progressErr }] = await Promise.all([
-        supabase
-          .from('public_reports')
-          .select('id, project_name, description, category, status, created_at, contractor_remark, contractor_remark_at, verification, municipality, barangay, photo_url, project_id')
-          .in('project_id', reportProjectIds)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('progress_updates')
-          .select('id, fmr_project_id, reported_accomplishment, remarks, photo_url, status, certification_status, certification_remarks, certified_accomplishment, approval_remarks, submitted_at, reviewed_at, certified_at, fmr_projects(project_name, municipality, accomplishment, status)')
-          .eq('contractor_id', user.id)
-          .in('fmr_project_id', rawProjectIds)
-          .order('submitted_at', { ascending: false })
-      ]);
+      const { data: reportRows, error: reportErr } = await supabase
+        .from('public_reports')
+        .select('*')
+        .in('project_id', reportProjectIds)
+        .order('created_at', { ascending: false });
 
       if (reportErr) throw reportErr;
-      if (progressErr) throw progressErr;
 
-      setPublicReports(reportRows || []);
-      setProgressHistory(progressRows || []);
+      // Only the problems the contractor fixes; obstructions and signs go to the LGU.
+      setPublicReports((reportRows || []).filter((r) => handlerFor(r) === 'contractor'));
       setLastSyncedAt(new Date());
     } catch (err) {
       console.error('ContractorReports fetch error:', err);
@@ -135,7 +94,6 @@ export default function ContractorReports() {
         .channel('contractor-reports-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, () => fetchData(false))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchData(false))
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchData(false))
         .subscribe();
 
       return () => {
@@ -144,43 +102,23 @@ export default function ContractorReports() {
     }
   }, [user, fetchData]);
 
-  useEffect(() => {
-    if (!highlightId || loading) return;
-    document.getElementById(`update-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [highlightId, loading, progressHistory]);
-
-  // ── Remark helpers ───────────────────────────────────────────
-  const openRemark = (reportId, existing) => {
-    setRemarkState((prev) => ({
-      ...prev,
-      [reportId]: { open: true, text: existing || '', saving: false },
-    }));
-  };
-
-  const closeRemark = (reportId) => {
-    setRemarkState((prev) => ({ ...prev, [reportId]: { ...prev[reportId], open: false } }));
-  };
-
-  const saveRemark = async (reportId) => {
-    const text = remarkState[reportId]?.text || '';
-    setRemarkState((prev) => ({ ...prev, [reportId]: { ...prev[reportId], saving: true } }));
-    try {
-      const { error } = await supabase
-        .from('public_reports')
-        .update({
-          contractor_remark:    text.trim(),
-          contractor_remark_at: new Date().toISOString(),
-        })
-        .eq('id', reportId);
-      if (error) throw error;
-      toast.success('Remark saved.');
-      await fetchData(false);
-      closeRemark(reportId);
-    } catch (err) {
-      console.error('Save remark error:', err);
-      toast.error(`Failed to save remark: ${err.message}`);
-      setRemarkState((prev) => ({ ...prev, [reportId]: { ...prev[reportId], saving: false } }));
+  // ── Remark (edited in the report detail window) ────────────
+  const saveRemark = async (reportId, text) => {
+    const { error } = await supabase
+      .from('public_reports')
+      .update({ contractor_remark: text, contractor_remark_at: new Date().toISOString() })
+      .eq('id', reportId);
+    if (error) {
+      console.error('Save remark error:', error);
+      toast.error(`Failed to save remark: ${error.message}`);
+      return;
     }
+    toast.success('Remark saved.');
+    await fetchData(false);
+  };
+
+  const openProject = (project) => {
+    if (project?.id) navigate(`/contractor/projects?project=${project.id}`);
   };
 
   const fmtDate = (d) =>
@@ -188,17 +126,10 @@ export default function ContractorReports() {
   const fmtDateTime = (d) =>
     d ? new Date(d).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
-  // ── Filtered + paginated progress history ───────────────────
-  const filteredProgressHistory = useMemo(() => {
-    const q = progressSearch.trim().toLowerCase();
-    return progressHistory.filter((item) => {
-      if (progressStageFilter !== 'All' && pipelineStage(item).key !== progressStageFilter) return false;
-      if (progressProjectFilter !== 'All' && (item.fmr_projects?.project_name || '') !== progressProjectFilter) return false;
-      if (q && !(item.fmr_projects?.project_name || '').toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [progressHistory, progressSearch, progressStageFilter, progressProjectFilter]);
-  const progressPager = usePagination(filteredProgressHistory, `${progressSearch}|${progressStageFilter}|${progressProjectFilter}`);
+  // ── Repairs the DA assigned to this contractor ──────────────
+  const reportIds = useMemo(() => publicReports.map((r) => r.id), [publicReports]);
+  const followUps = useHandlerFollowUps(supabase, reportIds);
+  const repairQueue = useMemo(() => buildHandlerQueue(publicReports, 'contractor', followUps.actions), [publicReports, followUps.actions]);
 
   // ── Filtered + paginated public reports ─────────────────────
   const filteredPublicReports = useMemo(() => {
@@ -206,7 +137,7 @@ export default function ContractorReports() {
     return publicReports.filter((rpt) => {
       if (reportStatusFilter !== 'All' && rpt.status !== reportStatusFilter) return false;
       if (reportProjectFilter !== 'All' && (rpt.project_name || '') !== reportProjectFilter) return false;
-      if (reportCategoryFilter !== 'All' && (rpt.category || '') !== reportCategoryFilter) return false;
+      if (reportCategoryFilter !== 'All' && resolveCategory(rpt) !== reportCategoryFilter) return false;
       if (q) {
         const hay = `${rpt.project_name || ''} ${rpt.description || ''} ${rpt.barangay || ''} ${rpt.municipality || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -217,9 +148,8 @@ export default function ContractorReports() {
   const reportsPager = usePagination(filteredPublicReports, `${reportSearch}|${reportStatusFilter}|${reportProjectFilter}|${reportCategoryFilter}`);
 
   const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const progressProjectOptions = uniqueSorted(progressHistory.map((i) => i.fmr_projects?.project_name));
   const reportProjectOptions = uniqueSorted(publicReports.map((r) => r.project_name));
-  const reportCategoryOptions = uniqueSorted(publicReports.map((r) => r.category));
+  const reportCategoryOptions = uniqueSorted(publicReports.map((r) => resolveCategory(r)));
 
   if (loading) {
     return (
@@ -249,147 +179,23 @@ export default function ContractorReports() {
           </button>
         </div>
 
-        {/* KPI block, same as the admin pages. Stage cards filter the history below. */}
-        {(() => {
-          const stageCount = (key) => progressHistory.filter((item) => pipelineStage(item).key === key).length;
-          const approved = stageCount('approved');
-          const withEngineer = stageCount('awaiting_engineer');
-          const withDa = stageCount('awaiting_admin');
-          const needsFix = stageCount('disputed') + stageCount('returned');
-          const pendingReports = publicReports.filter((r) => r.status === 'pending').length;
-          const total = progressHistory.length;
-          const toggle = (key) => setProgressStageFilter((cur) => (cur === key ? 'All' : key));
-          return (
-            <HierarchyKpis
-              dense
-              ariaLabel="Submission summary"
-              lead={{
-                label: 'Total Submissions',
-                value: total,
-                note: total === 0 ? <span>No progress updates submitted yet</span> : (
-                  <span>
-                    <span className="font-semibold text-emerald-700">{Math.round((approved / total) * 100)}% approved</span>
-                    {needsFix > 0 ? ` · ${needsFix} need correction` : ' · none need correction'}
-                  </span>
-                ),
-                icon: <FileTextIcon className="size-6" aria-hidden="true" />,
-                iconTone: 'bg-emerald-100 text-emerald-700',
-                segments: [
-                  { label: 'Approved', value: approved, bar: 'bg-emerald-500' },
-                  { label: 'With site engineer', value: withEngineer, bar: 'bg-amber-400' },
-                  { label: 'With DA', value: withDa, bar: 'bg-sky-500' },
-                  { label: 'Needs correction', value: needsFix, bar: 'bg-rose-500' },
-                ].filter((seg) => seg.value > 0),
+        {/* Citizen-reported damage the DA assigned to you after inspecting it. */}
+        {publicReports.length > 0 && (
+          <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 text-base font-bold text-slate-900">Citizen Report Repairs</h2>
+            <HandlerReportsPanel
+              queue={repairQueue}
+              findings={followUps.findings}
+              loading={followUps.loading}
+              party="contractor"
+              client={supabase}
+              onChanged={(message, tone) => {
+                if (message) (tone === 'error' ? toast.error : toast.success)(message);
+                followUps.reload();
               }}
-              items={[
-                { icon: <ShieldCheckIcon className="size-4" aria-hidden="true" />, label: 'With Site Engineer', value: withEngineer, hint: 'Being checked on site', chip: 'bg-amber-50 text-amber-700', onClick: () => toggle('awaiting_engineer'), active: progressStageFilter === 'awaiting_engineer' },
-                { icon: <BuildingIcon className="size-4" aria-hidden="true" />, label: 'With DA for Approval', value: withDa, hint: 'Certified, awaiting approval', chip: 'bg-sky-50 text-sky-700', onClick: () => toggle('awaiting_admin'), active: progressStageFilter === 'awaiting_admin' },
-                { icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />, label: 'Approved', value: approved, hint: 'Accepted by the DA', chip: 'bg-emerald-50 text-emerald-700', onClick: () => toggle('approved'), active: progressStageFilter === 'approved' },
-                { icon: <MessageSquareWarningIcon className="size-4" aria-hidden="true" />, label: 'Public Reports', value: publicReports.length, hint: `${pendingReports} pending on your roads`, chip: pendingReports ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500' },
-              ]}
-            />
-          );
-        })()}
-
-        <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-          <div className="border-b border-slate-200/60">
-            <div className="px-5 pt-5">
-              <h2 className="text-base font-bold text-slate-900">Progress Submission History</h2>
-              <p className="mt-0.5 text-sm text-slate-500">Every update you submitted and where it is in review.</p>
-            </div>
-            <FilterToolbar
-              embedded
-              ariaLabel="Filter submissions"
-              noun="submission"
-              shown={filteredProgressHistory.length}
-              total={progressHistory.length}
-              search={{ value: progressSearch, onChange: setProgressSearch, placeholder: 'Search project name', ariaLabel: 'Search submissions' }}
-              selects={[
-                {
-                  key: 'stage', label: 'Stage', value: progressStageFilter, onChange: setProgressStageFilter, allLabel: 'All stages',
-                  options: Object.values(STAGES).map((st) => ({ value: st.key, label: st.label })),
-                },
-                ...(progressProjectOptions.length > 1 ? [{
-                  key: 'project', label: 'Project', value: progressProjectFilter, onChange: setProgressProjectFilter, allLabel: 'All projects',
-                  options: progressProjectOptions.map((n) => ({ value: n, label: n })),
-                }] : []),
-              ]}
             />
           </div>
-
-          {progressHistory.length === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-base font-bold text-slate-900">No submission history yet</p>
-              <p className="text-sm text-slate-500 mt-1">Your approved, pending, and rejected progress updates will appear here.</p>
-            </div>
-          ) : filteredProgressHistory.length === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-base font-bold text-slate-900">No submissions match these filters</p>
-              <button
-                onClick={() => { setProgressSearch(''); setProgressStageFilter('All'); setProgressProjectFilter('All'); }}
-                className="mt-2 text-sm font-semibold text-teal-700 hover:underline"
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px]">
-                <thead>
-                  <tr className="bg-slate-50/60 border-b border-slate-200">
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted %</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Project %</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Stage</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Submitted At</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reviewed At</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Remarks</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Photo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {progressPager.pageItems.map((item) => (
-                    <tr key={item.id} id={`update-${item.id}`} className={`transition-colors align-top ${item.id === highlightId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60'}`}>
-                      <td className="px-5 py-4 max-w-xs">
-                        <p className="text-sm font-semibold text-slate-900 line-clamp-2">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
-                        {item.fmr_projects?.municipality && <p className="text-xs text-slate-500 mt-0.5">{item.fmr_projects.municipality}</p>}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm font-bold text-slate-900 font-mono">{formatPercentage(item.reported_accomplishment)}</td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 font-mono">{formatPercentage(item.fmr_projects?.accomplishment ?? 0)}</td>
-                      <td className="px-5 py-4">
-                        {(() => {
-                          const stage = pipelineStage(item);
-                          return (
-                            <>
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border ${stage.badge}`}>{stage.label}</span>
-                              <p className="mt-1.5 max-w-[14rem] text-[11px] leading-snug text-slate-500">{stage.helper}</p>
-                              {stage.needsFix && (item.certification_remarks || item.approval_remarks) && (
-                                <p className="mt-1.5 max-w-[14rem] rounded-md bg-red-50 px-2 py-1 text-[11px] text-red-700">{item.certification_remarks || item.approval_remarks}</p>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{fmtDateTime(item.submitted_at)}</td>
-                      <td className="px-5 py-4 whitespace-nowrap text-sm text-slate-600">{item.status === 'pending' ? 'Awaiting review' : fmtDateTime(item.reviewed_at)}</td>
-                      <td className="px-5 py-4 max-w-xs"><p className="text-xs text-slate-600 line-clamp-3">{item.remarks || '—'}</p></td>
-                      <td className="px-5 py-4 whitespace-nowrap">
-                        {item.photo_url ? (
-                          <a href={item.photo_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">View</a>
-                        ) : <span className="text-xs text-slate-400">—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {filteredProgressHistory.length > 0 && (
-            <div className="px-6 py-4 border-t border-slate-100">
-              <Pagination pager={progressPager} noun="record" />
-            </div>
-          )}
-        </div>
+        )}
 
         {publicReports.length === 0 ? (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm py-16 text-center">
@@ -403,11 +209,22 @@ export default function ContractorReports() {
           </div>
         ) : (
           <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-            <div className="border-b border-slate-200/60">
-              <div className="px-5 pt-5">
-                <h2 className="text-base font-bold text-slate-900">Linked Public Reports</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Citizen reports on the roads you are building.</p>
-              </div>
+            <div className={showLinkedReports ? 'border-b border-slate-200/60' : ''}>
+              <button
+                type="button"
+                onClick={() => setShowLinkedReports((v) => !v)}
+                aria-expanded={showLinkedReports}
+                className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-slate-50/60"
+              >
+                <span className="text-base font-bold text-slate-900">
+                  Linked Public Reports <span className="font-semibold text-slate-400">({publicReports.length})</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700">
+                  {showLinkedReports ? 'Hide' : 'Show'}
+                  <ChevronDownIcon className={`size-4 transition-transform ${showLinkedReports ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </span>
+              </button>
+              {showLinkedReports && (
               <FilterToolbar
                 embedded
                 ariaLabel="Filter public reports"
@@ -421,8 +238,8 @@ export default function ContractorReports() {
                     options: [{ value: 'pending', label: 'Pending' }, { value: 'reviewed', label: 'Reviewed' }, { value: 'resolved', label: 'Resolved' }],
                   },
                   ...(reportCategoryOptions.length > 1 ? [{
-                    key: 'category', label: 'Category', value: reportCategoryFilter, onChange: setReportCategoryFilter, allLabel: 'All categories',
-                    options: reportCategoryOptions.map((c) => ({ value: c, label: c.charAt(0).toUpperCase() + c.slice(1) })),
+                    key: 'category', label: 'Issue type', value: reportCategoryFilter, onChange: setReportCategoryFilter, allLabel: 'All issue types',
+                    options: reportCategoryOptions.map((c) => ({ value: c, label: SEVERITY_TAXONOMY[c]?.label || c })),
                   }] : []),
                   ...(reportProjectOptions.length > 1 ? [{
                     key: 'project', label: 'Project', value: reportProjectFilter, onChange: setReportProjectFilter, allLabel: 'All projects',
@@ -430,8 +247,9 @@ export default function ContractorReports() {
                   }] : []),
                 ]}
               />
+              )}
             </div>
-            {filteredPublicReports.length === 0 ? (
+            {showLinkedReports && (filteredPublicReports.length === 0 ? (
               <div className="py-14 text-center">
                 <p className="text-base font-bold text-slate-900">No reports match these filters</p>
                 <button
@@ -443,113 +261,75 @@ export default function ContractorReports() {
               </div>
             ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px]">
+              <table className="w-full min-w-[760px]">
                 <thead>
                   <tr className="bg-slate-50/60 border-b border-slate-200">
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Report</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reported</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Project</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Issue</th>
                     <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Your Remark</th>
-                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Action</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Your remark</th>
+                    <th className="px-5 py-3.5" aria-label="Open" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {reportsPager.pageItems.map((rpt) => {
-                    const rstate = remarkState[rpt.id] || { open: false, text: rpt.contractor_remark || '', saving: false };
+                    const project = projectsByRef[rpt.project_id];
+                    const status = handlerReportStatus(rpt, followUps.actions[rpt.id]);
+                    const category = resolveCategory(rpt);
                     return (
-                      <tr key={rpt.id} className="hover:bg-slate-50/60 transition-colors align-top">
-                        {/* Report description */}
-                        <td className="px-5 py-4 max-w-xs">
-                          <p className="text-sm font-semibold text-slate-900 line-clamp-2">
-                            {rpt.project_name || `${rpt.barangay || ''}, ${rpt.municipality || ''}`}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{rpt.description}</p>
+                      <tr
+                        key={rpt.id}
+                        onClick={() => setSelectedReportId(rpt.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedReportId(rpt.id); } }}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Open report ${String(rpt.id).slice(0, 8).toUpperCase()}`}
+                        className="group cursor-pointer align-top transition-colors hover:bg-teal-50/40 focus:bg-teal-50/40 focus:outline-none"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-mono text-xs font-semibold text-slate-500">#{String(rpt.id).slice(0, 8).toUpperCase()}</p>
+                          <p className="mt-0.5 text-sm text-slate-700">{fmtDate(rpt.created_at)}</p>
+                          <p className="text-xs text-slate-500">{[rpt.barangay, rpt.municipality].filter(Boolean).join(', ')}</p>
+                        </td>
+                        <td className="max-w-[14rem] px-5 py-4">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openProject(project); }}
+                            disabled={!project}
+                            className="text-left text-sm font-semibold text-slate-900 underline-offset-2 hover:text-teal-700 hover:underline disabled:no-underline disabled:hover:text-slate-900"
+                          >
+                            {project?.project_name || rpt.project_name || 'Unlinked road'}
+                          </button>
+                          {project && (
+                            <p className="mt-0.5 text-xs text-slate-500">{project.status || 'No status'} · {Math.round(Number(project.accomplishment || 0))}% done</p>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${SEVERITY_TAXONOMY[category]?.color || ''}`}>
+                            <SeverityIcon category={category} />
+                            {resolveSpecificProblem(rpt)?.label || SEVERITY_TAXONOMY[category]?.label}
+                          </span>
                           {rpt.photo_url && (
-                            <a
-                              href={rpt.photo_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 mt-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                              </svg>
-                              View Photo
-                            </a>
+                            <span onClick={(e) => e.stopPropagation()} className="mt-1.5 block">
+                              <PhotoViewButton src={rpt.photo_url} label="Citizen's on-site photo" className="text-xs font-medium text-teal-600 hover:text-teal-700">
+                                View photo
+                              </PhotoViewButton>
+                            </span>
                           )}
                         </td>
-
-                        {/* Category */}
                         <td className="px-5 py-4">
-                          <span className="text-sm text-slate-600 capitalize">{rpt.category || '—'}</span>
+                          <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${status.tone}`}>{status.label}</span>
                         </td>
-
-                        {/* Reported at */}
-                        <td className="px-5 py-4 whitespace-nowrap">
-                          <span className="text-sm text-slate-600">{fmtDate(rpt.created_at)}</span>
+                        <td className="max-w-[14rem] px-5 py-4">
+                          {rpt.contractor_remark
+                            ? <p className="line-clamp-2 text-xs text-slate-700">{rpt.contractor_remark}</p>
+                            : <p className="text-xs italic text-slate-400">No remark yet</p>}
                         </td>
-
-                        {/* Status */}
-                        <td className="px-5 py-4">
-                          <ReportStatusBadge status={rpt.status} />
-                        </td>
-
-                        {/* Contractor remark */}
-                        <td className="px-5 py-4 max-w-xs">
-                          {rstate.open ? (
-                            <div className="space-y-2">
-                              <textarea
-                                value={rstate.text}
-                                onChange={(e) => setRemarkState((prev) => ({
-                                  ...prev,
-                                  [rpt.id]: { ...prev[rpt.id], text: e.target.value },
-                                }))}
-                                rows={3}
-                                placeholder="Enter your remark…"
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none resize-none"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => saveRemark(rpt.id)}
-                                  disabled={rstate.saving}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                                >
-                                  {rstate.saving ? 'Saving…' : 'Save'}
-                                </button>
-                                <button
-                                  onClick={() => closeRemark(rpt.id)}
-                                  disabled={rstate.saving}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              {rpt.contractor_remark ? (
-                                <p className="text-xs text-slate-700 line-clamp-3">{rpt.contractor_remark}</p>
-                              ) : (
-                                <p className="text-xs text-slate-400 italic">No remark yet</p>
-                              )}
-                              {rpt.contractor_remark_at && (
-                                <p className="text-xs text-slate-400 mt-0.5">{fmtDate(rpt.contractor_remark_at)}</p>
-                              )}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Action */}
-                        <td className="px-5 py-4">
-                          {!rstate.open && (
-                            <button
-                              onClick={() => openRemark(rpt.id, rpt.contractor_remark)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-teal-700 border border-teal-200 bg-teal-50 hover:bg-teal-100 transition-colors whitespace-nowrap"
-                            >
-                              {rpt.contractor_remark ? 'Edit Remark' : 'Add Remark'}
-                            </button>
-                          )}
+                        <td className="px-5 py-4 text-right">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-teal-700 opacity-70 transition group-hover:opacity-100">
+                            Details <ChevronRightIcon className="size-4" aria-hidden="true" />
+                          </span>
                         </td>
                       </tr>
                     );
@@ -557,8 +337,8 @@ export default function ContractorReports() {
                 </tbody>
               </table>
             </div>
-            )}
-            {filteredPublicReports.length > 0 && (
+            ))}
+            {showLinkedReports && filteredPublicReports.length > 0 && (
               <div className="px-6 py-4 border-t border-slate-100">
                 <Pagination pager={reportsPager} noun="report" />
               </div>
@@ -566,6 +346,24 @@ export default function ContractorReports() {
           </div>
         )}
       </div>
+
+      {(() => {
+        const rpt = publicReports.find((r) => r.id === selectedReportId);
+        if (!rpt) return null;
+        return (
+          <ContractorReportDetailModal
+            key={rpt.id}
+            client={supabase}
+            report={rpt}
+            project={projectsByRef[rpt.project_id]}
+            action={followUps.actions[rpt.id]}
+            finding={followUps.findings[rpt.id]}
+            onClose={() => setSelectedReportId(null)}
+            onOpenProject={openProject}
+            onSaveRemark={saveRemark}
+          />
+        );
+      })()}
     </ContractorLayout>
   );
 }

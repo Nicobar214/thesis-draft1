@@ -12,7 +12,16 @@ import ContractorSidebar from './ContractorSidebar';
 import NotificationBell from './NotificationBell';
 import Icons from './Icons';
 import ProfileAvatar from './ui/ProfileAvatar';
+import PortalHeader from './ui/PortalHeader';
 import { useProfileNameUpdates } from '../lib/profileName';
+
+// One line under the title, as on every portal's header.
+const PAGE_DESCRIPTIONS = {
+  '/contractor': 'Your assigned projects and what needs attention',
+  '/contractor/projects': 'Roads assigned to you, their progress and your submission history',
+  '/contractor/reports': 'Citizen reports on your roads and the repairs assigned to you',
+  '/contractor/profile': 'Your photo, contact number and account details',
+};
 
 const PAGE_TITLES = {
   '/contractor': 'Dashboard',
@@ -49,17 +58,20 @@ export default function ContractorLayout({ children }) {
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Contractor';
   const pageTitle = PAGE_TITLES[location.pathname] || 'Contractor Portal';
+  const pageDescription = PAGE_DESCRIPTIONS[location.pathname] || '';
 
   // A notification opens the thing it is about.
   const resolveNotificationTarget = (n) => {
     if (n.progress_update_id) return { actionLabel: 'View this update' };
     if (n.project_id) return { actionLabel: 'Open my projects' };
+    if (n.report_id) return { actionLabel: 'Open citizen report repairs' };
     return null;
   };
 
   const openNotification = (n) => {
-    if (n.progress_update_id) navigate(`/contractor/reports?update=${n.progress_update_id}`);
+    if (n.progress_update_id) navigate(`/contractor/projects?update=${n.progress_update_id}`);
     else if (n.project_id) navigate('/contractor/projects');
+    else if (n.report_id) navigate('/contractor/reports');
   };
 
   return (
@@ -67,40 +79,24 @@ export default function ContractorLayout({ children }) {
       <div className="min-h-dvh bg-slate-50 font-sans text-slate-800">
         <ContractorSidebar collapsed={collapsed} setCollapsed={setCollapsed} user={user} displayName={displayName} />
 
-        <main className={`transition-all duration-300 min-h-dvh ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'}`}>
-          <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-            <div className="w-full px-4 sm:px-6 lg:px-8 h-18 sm:h-20 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5 pl-12 lg:pl-0">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">{pageTitle}</h1>
-                <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200">
-                  <Icons.ShieldCheck />
-                  DA Region VI Contractor Portal
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Link
-                  to="/contractor/projects"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-colors"
-                >
-                  <Icons.Plus />
-                  <span>Submit Progress</span>
-                </Link>
-
-                <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
-
-                <Link
-                  to="/contractor/profile"
-                  title="My profile"
-                  aria-label="Open your profile"
-                  className="flex items-center gap-2 pl-3 border-l border-slate-200 rounded-r-xl py-1 pr-1 hover:bg-slate-50 transition-colors"
-                >
-                  <ProfileAvatar client={supabase} name={displayName} fallback="C" className="size-9 rounded-xl text-xs shadow-xs" />
-                  <span className="hidden sm:block max-w-[140px] truncate text-xs font-semibold text-slate-700">{displayName}</span>
-                </Link>
-              </div>
-            </div>
-          </header>
+        <main className={`transition-all duration-300 min-h-dvh ${collapsed ? 'lg:ml-20' : 'lg:ml-80'}`}>
+          <PortalHeader
+            title={pageTitle}
+            description={pageDescription}
+            actions={(
+              <Link to="/contractor/projects" className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700">
+                <Icons.Plus />
+                <span className="hidden sm:inline">Submit Progress</span>
+              </Link>
+            )}
+            bell={<NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />}
+            account={{
+              to: '/contractor/profile',
+              avatar: <ProfileAvatar client={supabase} name={displayName} fallback="C" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+              name: displayName,
+              detail: user?.email,
+            }}
+          />
 
           <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
             {children}

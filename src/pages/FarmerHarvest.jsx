@@ -424,7 +424,7 @@ export default function FarmerHarvest() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-800 text-white rounded-2xl p-5 shadow-sm">
+      <div className="bg-gradient-to-r from-emerald-700 via-emerald-800 to-teal-800 text-white rounded-2xl p-5 shadow-sm" data-tour="harvest-summary">
         <h3 className="font-extrabold text-base sm:text-lg flex items-center gap-2">
           <Icons.Wheat />
           Keep track of what you grow
@@ -443,7 +443,7 @@ export default function FarmerHarvest() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4" data-tour="harvest-form">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-slate-900 text-base sm:text-lg">
@@ -559,7 +559,7 @@ export default function FarmerHarvest() {
         </form>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4" data-tour="harvest-history">
         <h3 className="font-bold text-slate-900 text-base sm:text-lg flex items-center gap-1.5">
           <Icons.Chart />
           2. Your Harvest History

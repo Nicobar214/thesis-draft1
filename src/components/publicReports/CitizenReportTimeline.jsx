@@ -36,6 +36,7 @@ export default function CitizenReportTimeline({
   finding = null,
   resolution = null,
   resolutionSummary,
+  client = supabase,
 }) {
   const track = useMemo(
     () => (report ? buildCitizenTrack(report, { finding, resolution }) : null),
@@ -52,7 +53,7 @@ export default function CitizenReportTimeline({
   useEffect(() => {
     if (!report?.id || !isClosed || viewCategory !== undefined || report?.is_current_user_report === false) return undefined;
     let alive = true;
-    supabase
+    client
       .from('notifications')
       .select('id')
       .eq('report_id', report.id)
@@ -60,7 +61,7 @@ export default function CitizenReportTimeline({
       .limit(1)
       .then(({ data }) => { if (alive) setNotified({ id: report.id, mismatch: Boolean(data?.length) }); });
     return () => { alive = false; };
-  }, [report?.id, isClosed, viewCategory, report?.is_current_user_report]);
+  }, [report?.id, isClosed, viewCategory, report?.is_current_user_report, client]);
   const locationMismatch = viewCategory === 'location_mismatch'
     || (viewCategory === undefined && notified.id === report?.id && notified.mismatch);
 

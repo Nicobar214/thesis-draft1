@@ -53,6 +53,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
   const { gps, gpsError, gpsLoading, gpsSlow, acquireGps, resetGps } = useGpsLocation();
 
+
   // FMR projects
   const [allProjects, setAllProjects] = useState([]);
   const [projReady,   setProjReady]   = useState(false);

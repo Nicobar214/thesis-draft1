@@ -79,7 +79,8 @@ registerRoute(
 // per municipality, saved the first time it is used so the "pinned outside the
 // barangay" check also works offline.
 registerRoute(
-  ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/data/barangay-boundaries/'),
+  // Also the river and road data used to keep farm routes from crossing water (/data/geo/).
+  ({ url }) => url.origin === self.location.origin && (url.pathname.startsWith('/data/barangay-boundaries/') || url.pathname.startsWith('/data/geo/')),
   new StaleWhileRevalidate({
     cacheName: 'barangay-boundaries-cache',
     plugins: [new CacheableResponsePlugin({ statuses: [200] })],

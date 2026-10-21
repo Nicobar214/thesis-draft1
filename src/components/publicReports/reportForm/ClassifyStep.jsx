@@ -1,5 +1,6 @@
 import SeverityIcon from '../../SeverityIcon';
-import { SEVERITY_TAXONOMY } from '../../../lib/publicReportStatus';
+import { Building2, HardHat } from 'lucide-react';
+import { HANDLER_NOTES, SEVERITY_TAXONOMY } from '../../../lib/publicReportStatus';
 import RequiredReminder from './RequiredReminder';
 
 /** Pick the severity category and the specific problem so the report reaches the right team. */
@@ -33,7 +34,7 @@ export default function ClassifyStep({
         <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
           <p className="text-sm font-medium text-teal-800 mb-0.5">Step 1 of 2 — Classify your report</p>
           <p className="text-xs text-teal-600">
-            Select the severity and specific problem so your report reaches the right team immediately.
+            Pick the problem. The DA checks every report first, then sends it to the contractor or your LGU to fix.
           </p>
         </div>
 
@@ -58,6 +59,14 @@ export default function ClassifyStep({
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{meta.label}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{meta.description}</p>
+                  <span className={`mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    meta.handler === 'lgu' ? 'bg-sky-50 text-sky-700' : 'bg-orange-50 text-orange-700'
+                  }`}>
+                    {meta.handler === 'lgu'
+                      ? <Building2 className="size-3" aria-hidden="true" />
+                      : <HardHat className="size-3" aria-hidden="true" />}
+                    Handled by: {meta.handler === 'lgu' ? 'Your LGU' : 'Contractor'}
+                  </span>
                 </div>
               </button>
             ))}
@@ -88,6 +97,9 @@ export default function ClassifyStep({
                   {categoryMeta?.label} → {problemOptions.find((p) => p.value === specificProblem)?.label}
                 </span>
               </div>
+            )}
+            {specificProblem && categoryMeta && (
+              <p className="mt-1.5 pl-1 text-xs text-slate-500">{HANDLER_NOTES[categoryMeta.handler]}</p>
             )}
           </div>
         )}

@@ -33,6 +33,7 @@ const FarmerDashboard = lazyPage(() => import("./pages/FarmerDashboard"));
 const FarmerHarvest = lazyPage(() => import("./pages/FarmerHarvest"));
 const FarmerFMRProjects = lazyPage(() => import("./pages/FarmerFMRProjects"));
 const FarmerMyReports = lazyPage(() => import("./pages/FarmerMyReports"));
+const FarmerCommunity = lazyPage(() => import("./pages/FarmerCommunity"));
 const FarmerMarkets = lazyPage(() => import("./pages/FarmerMarkets"));
 const FarmerProfile = lazyPage(() => import("./pages/FarmerProfile"));
 
@@ -188,6 +189,7 @@ function App() {
           {/* Reporting is a dialog owned by FarmerLayout; this keeps old links working. */}
           <Route path="report" element={<Navigate to="/farmer/reports?action=new" replace />} />
           <Route path="reports" element={<FarmerMyReports />} />
+          <Route path="community" element={<FarmerCommunity />} />
           <Route path="fmr-projects" element={<FarmerFMRProjects />} />
           <Route path="markets" element={<FarmerMarkets />} />
           <Route path="profile" element={<FarmerProfile />} />

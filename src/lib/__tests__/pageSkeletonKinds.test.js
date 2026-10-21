@@ -14,7 +14,7 @@ describe('page skeletons', () => {
   });
 
   it('draws one sidebar item per page', () => {
-    expect(portalPageCount('farmer')).toBe(6);
+    expect(portalPageCount('farmer')).toBe(7); // includes Community Reports
     expect(portalPageCount('contractor')).toBe(4);
   });
 });

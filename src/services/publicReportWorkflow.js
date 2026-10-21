@@ -158,6 +158,90 @@ export async function cancelPublicReportRepair(client, { actionId, reason }) {
   return data;
 }
 
+/* ── LGU / contractor jobs ─────────────────────────────────────
+ * The admin sends a minor issue straight to the LGU, or a major one to the
+ * contractor after the engineer's findings are validated. The handler accepts
+ * (work date), starts, then sends the on-site after-photo; the admin then
+ * resolves the report or sends the work back. */
+export async function assignPublicReportWork(client, { reportId, party, targetDate, note = null }) {
+  const { data, error } = await client.rpc('assign_public_report_work', {
+    p_report_id: reportId,
+    p_party: party,
+    p_target_date: targetDate,
+    p_note: note,
+  });
+  assertRpc(error, 'Failed to send the job');
+  return data;
+}
+
+export async function acceptPublicReportWork(client, { actionId, workDate }) {
+  const { error } = await client.rpc('accept_public_report_work', { p_action_id: actionId, p_work_date: workDate });
+  assertRpc(error, 'Failed to accept the job');
+}
+
+export async function startPublicReportWork(client, { actionId, note = null }) {
+  const { error } = await client.rpc('start_public_report_work', { p_action_id: actionId, p_note: note });
+  assertRpc(error, 'Failed to start the work');
+}
+
+export async function returnPublicReportWork(client, { actionId, reason }) {
+  const { error } = await client.rpc('return_public_report_work', { p_action_id: actionId, p_reason: reason });
+  assertRpc(error, 'Failed to return the job');
+}
+
+export async function requestPublicReportWorkCheck(client, { actionId }) {
+  const { error } = await client.rpc('request_public_report_work_check', { p_action_id: actionId });
+  assertRpc(error, 'Failed to ask the engineer to check');
+}
+
+/* The handler's on-site after-photo. The job becomes 'completed'. */
+export async function submitPublicReportRepairWork(client, {
+  actionId,
+  photoUrl,
+  latitude,
+  longitude,
+  accuracyMeters,
+  capturedAt,
+  note = null,
+}) {
+  const { data, error } = await client.rpc('submit_public_report_repair_work', {
+    p_action_id: actionId,
+    p_photo_url: photoUrl,
+    p_latitude: latitude,
+    p_longitude: longitude,
+    p_accuracy_m: accuracyMeters,
+    p_captured_at: capturedAt,
+    p_note: note,
+  });
+  assertRpc(error, 'Failed to send the after-photo');
+  return data;
+}
+
+export async function reopenPublicReportRepair(client, { actionId, reason }) {
+  const { data, error } = await client.rpc('reopen_public_report_repair', {
+    p_action_id: actionId,
+    p_reason: reason,
+  });
+  assertRpc(error, 'Failed to reopen the follow-up');
+  return data;
+}
+
+/* Reopen a resolved report the reporter says is still not fixed: the job goes
+ * back to the same LGU/contractor (send a new after-photo). */
+export async function reopenResolvedPublicReport(client, { reportId, reason }) {
+  const { error } = await client.rpc('reopen_resolved_public_report', { p_report_id: reportId, p_reason: reason });
+  assertRpc(error, 'Failed to reopen the report');
+}
+
+export async function setPublicReportHandler(client, { reportId, handler }) {
+  const { data, error } = await client.rpc('set_public_report_handler', {
+    p_report_id: reportId,
+    p_handler: handler,
+  });
+  assertRpc(error, 'Failed to change who handles this report');
+  return data;
+}
+
 export async function updatePublicReportWorkflowMeta(client, { reportId, priority = null, visitDeadline = null }) {
   const { data, error } = await client.rpc('update_public_report_workflow_meta', {
     p_report_id: reportId,

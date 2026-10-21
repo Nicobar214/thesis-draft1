@@ -10,6 +10,7 @@ import { normalizeProjectName } from '../../lib/projectHelpers';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { formatPercentage } from '../../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle, getDaysDeltaFromToday, isProjectOverdue } from '../../lib/projectStatus';
+import { CONTRACTOR_NOT_INDICATED, useProjectContractorMap } from '../../lib/projectContractors';
 
 // Status palette for the KPI block -- the app-wide status colors (see
 // getStatusStyle in lib/projectStatus.js and the analytics STATUS_COLORS).
@@ -96,7 +97,8 @@ export function FMRProjectCard({ project, onClick, tranches = [] }) {
   const normalizedStatus = normalizeUserProjectStatus(project.status);
   const style = getStatusStyle(normalizedStatus);
   const name = normalizeProjectName(project);
-  const contractorName = String(project.contractor || project.contractor_name || '').trim();
+  const contractorNames = useProjectContractorMap(); // shared, loaded once for all cards
+  const contractorName = String(project.contractor || project.contractor_name || contractorNames?.get(String(project.id)) || '').trim();
   const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
   const overdue = isProjectOverdue(project);
   const accomplishment = Number(project.accomplishment) || (normalizedStatus === 'Completed' ? 100 : 0);
@@ -206,6 +208,8 @@ export function PlainTh({ label }) {
 }
 
 export function FMRProjectTable({ projects, loading, onSelect, tranchesByProjectId = {}, sortBy, onSortChange }) {
+  // Assigned contractors' names, one request for the whole table.
+  const contractorNames = useProjectContractorMap();
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
       <div className="overflow-x-auto">
@@ -243,7 +247,7 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
                   const normalizedStatus = normalizeUserProjectStatus(project.status);
                   const style = getStatusStyle(normalizedStatus);
                   const name = normalizeProjectName(project);
-                  const contractorName = String(project.contractor || project.contractor_name || '').trim();
+                  const contractorName = String(project.contractor || project.contractor_name || contractorNames?.get(String(project.id)) || '').trim();
                   const daysDelta = getDaysDeltaFromToday(project.target_completion_date);
                   const overdue = isProjectOverdue(project);
                   const accomplishment = Number(project.accomplishment) || (normalizedStatus === 'Completed' ? 100 : 0);
@@ -321,7 +325,7 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
                       <td className="px-6 py-4 text-sm text-slate-700 max-w-[200px]">
                         {contractorName
                           ? <span className="line-clamp-2">{contractorName}</span>
-                          : <span className="text-slate-300">—</span>}
+                          : <span className="text-xs italic text-slate-400">{contractorNames ? CONTRACTOR_NOT_INDICATED : '…'}</span>}
                       </td>
                     </tr>
                   );

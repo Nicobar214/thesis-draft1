@@ -35,7 +35,8 @@ const statusMeta = (s) => STATUS_META[s] || { label: s || 'Unknown', color: '#64
 const isDone = (s) => s === 'inspected' || s === 'validated';
 
 
-const SEVERITY_WEIGHT = { safety: 1, flood: 0.8, issue: 0.6, general: 0.4 };
+// Keyed by issue type (resolveCategory always returns one of these).
+const SEVERITY_WEIGHT = { structural: 1, obstruction: 0.9, road_damage: 0.6, roadside: 0.4 };
 
 // How much of the baseline weight each engineer status keeps. The heat layer should show
 // where work is still needed, so finished sites fade and failed inspections stay hot.
@@ -278,7 +279,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
               return (
                 <Fragment key={project.id}>
                   <Polyline positions={points} pathOptions={{ color: theme.line, weight: 4, opacity: 0.85 }}>
-                    <Tooltip sticky>{project.project_name}{project.status ? ` (${project.status})` : ''}</Tooltip>
+                    <Tooltip sticky>{project.project_name}</Tooltip>
                   </Polyline>
                   {active.endpoints && <RouteEndpointMarkers project={project} routeData={data} lineColor={theme.line} />}
                 </Fragment>

@@ -87,6 +87,9 @@ export function validateReportInput({ severityCategory, specificProblem, descrip
  * The row stored in public_reports (minus photo_url, which is added after upload).
  * One builder for the online and offline paths so they can never drift apart.
  */
+// New issue type -> closest value the old `category` column accepts.
+const LEGACY_CATEGORY = { road_damage: 'issue', structural: 'issue', obstruction: 'safety', roadside: 'general' };
+
 export function buildReportPayload({
   fullName, contact, selProject, gps, photoTs, description,
   severityCategory, category, specificProblem, userId, now = new Date(),
@@ -108,7 +111,8 @@ export function buildReportPayload({
     photo_timestamp: photoTs || now.toISOString(),
     verification: computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude),
     description: String(description || '').trim(),
-    category: severityCategory || category,
+    // The old column only allows the old 4 values until supabase_report_handlers.sql runs.
+    category: LEGACY_CATEGORY[severityCategory] || LEGACY_CATEGORY[category] || category,
     severity_category: severityCategory || null,
     specific_problem: specificProblem || null,
     source: name ? 'Public Report' : 'Anonymous Public Report',

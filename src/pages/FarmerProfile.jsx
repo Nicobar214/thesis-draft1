@@ -26,7 +26,7 @@ function LanguageSettings() {
   };
 
   return (
-    <section id="language" className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+    <section id="language" className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm" data-tour="profile-language">
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700" aria-hidden="true">
           <LanguagesIcon className="size-5" />

@@ -5,9 +5,13 @@ import { useFarmerRecord } from '../lib/useFarmerRecord';
 import { useFarmerReports } from '../lib/useFarmerReports';
 import FarmerSidebar from './FarmerSidebar';
 import FarmerWelcomeTour from './farmer/FarmerWelcomeTour';
+import PageTour from './ui/PageTour';
+import { usePageTour } from '../lib/usePageTour';
+import { farmerPageTours, farmerTourLabels } from './farmer/farmerPageTours';
 import FarmerReportModal from './farmer/FarmerReportModal';
 import NotificationBell from './NotificationBell';
 import ProfileAvatar from './ui/ProfileAvatar';
+import PortalHeader from './ui/PortalHeader';
 import { CameraIcon, HelpCircleIcon, WifiOffIcon, RefreshCwIcon } from 'lucide-react';
 import { useOnlineStatus } from '../lib/offlineCache';
 import { listQueuedHarvests, syncQueuedHarvests, HARVEST_QUEUE_EVENT } from '../lib/offlineHarvests';
@@ -102,16 +106,24 @@ export default function FarmerLayout() {
     '/farmer': 'nav.myFarm',
     '/farmer/harvest': 'nav.harvest',
     '/farmer/reports': 'nav.myReports',
+    '/farmer/community': 'nav.community',
     '/farmer/fmr-projects': 'nav.roadProjects',
     '/farmer/markets': 'nav.markets',
     '/farmer/profile': 'nav.myProfile',
   };
   const pageTitle = t(pageTitleMap[location.pathname] || 'portal.name');
 
+  // ? opens a walkthrough of the page you are on, in the farmer's language.
+  // The welcome guide (language choice) still opens by itself on the first
+  // visit, so page walkthroughs only start from the ? button.
+  const tourSteps = farmerPageTours(t)[location.pathname];
+  const pageTour = usePageTour(tourSteps ? 'farmer-pages' : null, user?.id, { autoStart: false });
+
   const pageDescriptionMap = {
     '/farmer': 'page.myFarm.desc',
     '/farmer/harvest': 'page.harvest.desc',
     '/farmer/reports': 'page.myReports.desc',
+    '/farmer/community': 'page.community.desc',
     '/farmer/fmr-projects': 'page.roadProjects.desc',
     '/farmer/markets': 'page.markets.desc',
     '/farmer/profile': 'page.myProfile.desc',
@@ -182,71 +194,44 @@ export default function FarmerLayout() {
       <main
         id="main-content"
         tabIndex={-1}
-        className={`transition-all duration-300 ${collapsed ? 'lg:ml-[72px]' : 'lg:ml-64'} min-h-dvh`}
+        className={`transition-all duration-300 ${collapsed ? 'lg:ml-20' : 'lg:ml-80'} min-h-dvh`}
       >
-        <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-          <div className="w-full px-4 sm:px-6 lg:px-8 h-20 sm:h-24 flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3 pl-12 lg:pl-0">
-              <div className="min-w-0">
-                <h1 className="truncate text-lg sm:text-2xl font-bold text-slate-900">{pageTitle}</h1>
-                {pageDescription && (
-                  <p className="hidden sm:block mt-0.5 text-xs text-slate-500 truncate">{pageDescription}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-4">
+        <PortalHeader
+          title={pageTitle}
+          description={pageDescription}
+          actions={(
+            <>
               {/* Primary action, on every farmer page -- reporting a road
                   problem should never be more than one tap away. */}
-              <button
-                type="button"
-                onClick={openReport}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800 active:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
-              >
-                <CameraIcon className="size-4 sm:size-5" aria-hidden="true" />
+              <button type="button" onClick={openReport} data-tour="farmer-report" className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700">
+                <CameraIcon className="size-4" aria-hidden="true" />
                 <span className="sm:hidden">{t('header.report')}</span>
                 <span className="hidden sm:inline">{t('header.reportRoadIssue')}</span>
               </button>
-
               <button
                 type="button"
-                onClick={() => setHelpReopenCount((c) => c + 1)}
+                onClick={tourSteps ? pageTour.start : () => setHelpReopenCount((c) => c + 1)}
+                data-tour="help"
                 aria-label={t('header.help')}
                 title={t('header.help')}
-                className="p-2 sm:p-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
               >
-                <HelpCircleIcon className="size-4 sm:size-5" aria-hidden="true" />
+                <HelpCircleIcon className="size-5" aria-hidden="true" />
               </button>
-
-              <NotificationBell
-                client={supabase}
-                resolveTarget={resolveNotificationTarget}
-                onSelect={openNotification}
-              />
-
-              {/* Farmer profile, top right. Opens My Profile (photo, contact
-                  number, RSBSA record) from wherever the farmer is. */}
-              <button
-                type="button"
-                onClick={() => navigate('/farmer/profile')}
-                aria-label={t('header.profile')}
-                title={t('header.profile')}
-                className="flex items-center gap-2.5 sm:gap-3 pl-2.5 sm:pl-4 border-l border-slate-200 rounded-xl hover:bg-slate-50 transition-colors -mr-1 py-1 pr-1"
-              >
-                <ProfileAvatar
-                  client={supabase}
-                  name={farmerRecord?.full_name || farmerRecord?.first_name}
-                  fallback="F"
-                  className="size-9 sm:size-11 rounded-xl text-sm sm:text-base shadow-sm"
-                />
-                <div className="hidden sm:block min-w-0 text-left">
-                  <p className="text-sm font-bold text-slate-900 truncate max-w-[160px]">{farmerRecord?.full_name || t('farmerAccount')}</p>
-                  <p className="text-xs text-slate-500 truncate max-w-[160px]">RSBSA: {farmerRecord?.rsbsa_number || 'N/A'}</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </header>
+            </>
+          )}
+          bell={(
+            <span data-tour="notifications" className="inline-flex">
+              <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
+            </span>
+          )}
+          account={{
+            to: '/farmer/profile',
+            avatar: <ProfileAvatar client={supabase} name={farmerRecord?.full_name || farmerRecord?.first_name} fallback="F" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+            name: farmerRecord?.full_name || t('farmerAccount'),
+            detail: `RSBSA: ${farmerRecord?.rsbsa_number || 'N/A'}`,
+          }}
+        />
 
         {/* Offline status: what the farmer is looking at, and what is waiting to send. */}
         {!online ? (
@@ -272,6 +257,9 @@ export default function FarmerLayout() {
       </main>
 
       <FarmerWelcomeTour userId={user?.id} reopenSignal={helpReopenCount} />
+      {pageTour.open && tourSteps && (
+        <PageTour key={location.pathname} steps={tourSteps} labels={farmerTourLabels(t)} onClose={pageTour.close} />
+      )}
 
       {showReportModal && (
         <FarmerReportModal

@@ -25,7 +25,7 @@ const CHOICE_IDLE = 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
  *
  * Render with key={reportId} so switching reports starts from a clean state.
  */
-export default function FixConfirmationCard({ reportId }) {
+export default function FixConfirmationCard({ reportId, client = supabase }) {
   const [available, setAvailable] = useState(false);
   const [saved, setSaved] = useState(null); // { is_fixed, comment }
   const [editing, setEditing] = useState(false);
@@ -39,7 +39,7 @@ export default function FixConfirmationCard({ reportId }) {
 
     (async () => {
       // Row-level security returns only this citizen's own answer.
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from(TABLE)
         .select('is_fixed, comment')
         .eq('report_id', reportId)
@@ -52,7 +52,7 @@ export default function FixConfirmationCard({ reportId }) {
     return () => {
       alive = false;
     };
-  }, [reportId]);
+  }, [reportId, client]);
 
   if (!available) return null;
 
@@ -71,7 +71,7 @@ export default function FixConfirmationCard({ reportId }) {
       comment: comment.trim() || null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from(TABLE).upsert(row, { onConflict: 'report_id,user_id' });
+    const { error } = await client.from(TABLE).upsert(row, { onConflict: 'report_id,user_id' });
     setSaving(false);
     if (error) {
       notify('Could not save your answer. Please try again.', 'error');

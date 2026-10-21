@@ -10,6 +10,7 @@ import PublicReportForm from '../components/PublicReportForm';
 import Logo from '../components/Logo';
 import DateFilterInput from '../components/ui/DateFilterInput';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
+import ZoomablePhoto from '../components/ui/ZoomablePhoto';
 
 /* ─── Icons ─── */
 const Icons = {
@@ -478,7 +479,13 @@ export default function PublicReportsPage() {
               {selected.photo_url && (
                 <div>
                   <p className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">Attached Photo</p>
-                  <img src={selected.photo_url} alt="Report photo" className="w-full rounded-xl border border-zinc-200" />
+                  <ZoomablePhoto
+                    src={selected.photo_url}
+                    alt="Report photo"
+                    label="Report photo"
+                    wrapperClassName="w-full rounded-xl"
+                    className="w-full rounded-xl border border-zinc-200"
+                  />
                 </div>
               )}
             </div>

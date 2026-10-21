@@ -15,6 +15,7 @@
  */
 
 import { buildRoutePoints } from './mapRouteUtils';
+import { URGENT_TYPES, resolveCategory } from './publicReportStatus';
 import { nearestPointOnRoute, haversineMeters, toPoint } from '../components/publicReports/routeGeometry';
 
 /* The submission form only offers projects within 250m (midpoint) / 150m
@@ -169,10 +170,10 @@ export function canDismissReport(report) {
 /**
  * Next realistic inspection date. Priority was removed from the admin UI, so
  * this is driven by the engineer's live workload plus issue severity: safety
- * and flood hazards are queued ahead of cosmetic road wear.
+ * failures and road obstructions are queued ahead of surface wear and signs.
  */
 export function recommendInspectionDate(workloadCount = 0, severityCategory = null) {
-  const urgent = ['safety', 'flood'].includes(String(severityCategory || '').toLowerCase());
+  const urgent = URGENT_TYPES.includes(resolveCategory({ severity_category: severityCategory }));
   const daysOut = urgent ? 1 : Math.max(1, Math.min(Number(workloadCount) || 0, 5) + 1);
   const d = new Date();
   d.setDate(d.getDate() + daysOut);

@@ -142,8 +142,8 @@ describe('buildReportPayload', () => {
     gps: { lat: 10, lng: 122, accuracy: 10 },
     photoTs: '2026-01-01T00:00:00.000Z',
     description: '  Cracked  ',
-    severityCategory: 'critical',
-    category: 'general',
+    severityCategory: 'road_damage',
+    category: 'road_damage',
     specificProblem: 'pothole',
     userId: 'user-1',
   };
@@ -158,8 +158,9 @@ describe('buildReportPayload', () => {
       municipality: 'Leon',
       barangay: 'Brgy. X',
       description: 'Cracked',
-      category: 'critical',
-      severity_category: 'critical',
+      // The old column gets the closest old value until the SQL widens it.
+      category: 'issue',
+      severity_category: 'road_damage',
       specific_problem: 'pothole',
       source: 'Public Report',
       verification: 'Verified On-Site',

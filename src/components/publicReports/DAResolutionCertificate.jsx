@@ -161,7 +161,7 @@ export default function DAResolutionCertificate({
                   </div>
                   {fieldFinding.estimated_cost_range && (
                     <div>
-                      <span className="text-slate-500 block font-medium">Estimated Repair Cost Category:</span>
+                      <span className="text-slate-500 block font-medium">Engineer&rsquo;s Estimated Repair Cost (estimate only):</span>
                       <span className="font-bold text-slate-900">{fieldFinding.estimated_cost_range}</span>
                     </div>
                   )}

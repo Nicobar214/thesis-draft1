@@ -20,83 +20,138 @@ function withQueueTone(bucket) {
   return { ...bucket, bar: tone.bar, value: tone.value, activeRing: QUEUE_ACTIVE_RING };
 }
 
-// ── Severity taxonomy ───────────────────────────────────────
-// Shared by the submission form and the citizen report list so the two can
-// never drift apart.
+// ── Issue types ─────────────────────────────────────────────
+/* Shared by the submission form and every report list so they can never drift
+ * apart. Each type names who fixes it once the DA has checked the report:
+ * the project contractor for real road and structure work, the municipal LGU
+ * for quick community jobs (clearing a fallen tree, putting up a sign).
+ *
+ * Problem values are unique across all types, so a problem alone identifies
+ * its type. Values from the old taxonomy are reused where the meaning is the
+ * same, which keeps stored reports valid. The SQL trigger in
+ * supabase_report_handlers.sql repeats this mapping: keep the two in sync. */
 export const SEVERITY_TAXONOMY = {
-  safety: {
-    label: 'Safety Hazard',
-    color: 'bg-red-100 text-red-700 border-red-200',
-    description: 'Risk to life or physical harm',
-    problems: [
-      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
-      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
-      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
-      { value: 'accident_site', label: 'Active accident site' },
-      { value: 'sharp_debris', label: 'Sharp debris / broken glass on road' },
-      { value: 'unsafe_bridge', label: 'Unsafe or damaged bridge' },
-    ],
-  },
-  flood: {
-    label: 'Flood / Drainage',
-    color: 'bg-sky-100 text-sky-700 border-sky-200',
-    description: 'Water-related road obstruction',
-    problems: [
-      { value: 'road_flooded', label: 'Road completely flooded' },
-      { value: 'partial_flood', label: 'Partial flooding — passable with care' },
-      { value: 'blocked_drainage', label: 'Blocked or clogged drainage' },
-      { value: 'erosion', label: 'Soil erosion along road edge' },
-      { value: 'landslide', label: 'Landslide / mudflow on road' },
-    ],
-  },
-  issue: {
-    label: 'Road Condition Issue',
-    color: 'bg-amber-100 text-amber-700 border-amber-200',
-    description: 'Physical damage to road surface',
+  road_damage: {
+    label: 'Road Surface Damage',
+    color: 'bg-amber-100 text-amber-800 border-amber-200',
+    description: 'Potholes, cracks and broken pavement',
+    handler: 'contractor',
     problems: [
       { value: 'pothole', label: 'Potholes / lubak' },
       { value: 'crack', label: 'Surface cracks' },
-      { value: 'missing_pavement', label: 'Missing pavement / unpaved section' },
-      { value: 'broken_curb', label: 'Broken curb or road edge' },
-      { value: 'uneven_surface', label: 'Severely uneven / bumpy surface' },
-      { value: 'dust_gravel', label: 'Excessive dust / loose gravel' },
+      { value: 'uneven_surface', label: 'Sunken, rutted or uneven section' },
+      { value: 'missing_pavement', label: 'Washed-out or missing pavement' },
+      { value: 'broken_curb', label: 'Broken road edge or shoulder' },
     ],
   },
-  general: {
-    label: 'General Concern',
-    color: 'bg-slate-100 text-slate-600 border-slate-200',
-    description: 'Other observations or suggestions',
+  structural: {
+    label: 'Structural & Drainage Failure',
+    color: 'bg-red-100 text-red-700 border-red-200',
+    description: 'Collapse, bridges, culverts and canals',
+    handler: 'contractor',
     problems: [
-      { value: 'no_signage', label: 'Missing road signs' },
-      { value: 'poor_lighting', label: 'No or poor streetlighting' },
-      { value: 'vegetation', label: 'Overgrown vegetation blocking view' },
-      { value: 'project_delay', label: 'Project seems delayed / stalled' },
-      { value: 'quality_concern', label: 'Construction quality concern' },
-      { value: 'other', label: 'Other concern' },
+      { value: 'collapsed_road', label: 'Road collapse / sinkhole' },
+      { value: 'unsafe_bridge', label: 'Damaged bridge, culvert or spillway' },
+      { value: 'blocked_drainage', label: 'Broken or clogged road canal' },
+      { value: 'erosion', label: 'Erosion eating into the road' },
+      { value: 'missing_guardrail', label: 'Missing or broken guardrail' },
+      { value: 'quality_concern', label: 'Poor construction or stalled work' },
+    ],
+  },
+  obstruction: {
+    label: 'Road Obstruction',
+    color: 'bg-sky-100 text-sky-700 border-sky-200',
+    description: 'Fallen trees, landslide soil, debris, flood water',
+    handler: 'lgu',
+    problems: [
+      { value: 'fallen_tree', label: 'Fallen tree blocking road' },
+      { value: 'landslide', label: 'Landslide soil or rocks on road' },
+      { value: 'sharp_debris', label: 'Debris, garbage or sharp objects' },
+      { value: 'vegetation', label: 'Overgrown grass or branches' },
+      { value: 'road_flooded', label: 'Flood water over the road' },
+    ],
+  },
+  roadside: {
+    label: 'Road Safety & Signs',
+    color: 'bg-violet-100 text-violet-700 border-violet-200',
+    description: 'Signs, lights and things left on the road',
+    handler: 'lgu',
+    problems: [
+      { value: 'no_signage', label: 'Missing or damaged road signs' },
+      { value: 'poor_lighting', label: 'No or broken street lights' },
+      { value: 'items_on_road', label: 'Vehicles or materials left on the road' },
+      { value: 'accident_site', label: 'Accident site needing traffic control' },
+      { value: 'other', label: 'Other minor concern' },
     ],
   },
 };
 
-/* Legacy rows predate severity_category, so fall back to keyword matching on
- * the description (English + Hiligaynon/Tagalog terms citizens actually use). */
+/* Who fixes the problem after the DA check. */
+export const HANDLER_LABELS = {
+  lgu: 'Municipal LGU',
+  contractor: 'Project contractor',
+};
+
+export const HANDLER_NOTES = {
+  lgu: 'Your LGU acts on this after the DA checks it.',
+  contractor: 'The project contractor repairs this after the DA checks it.',
+};
+
+export function handlerLabel(value) {
+  return HANDLER_LABELS[String(value || '').toLowerCase()] || null;
+}
+
+// Old problem values that no longer appear in the form, with their new type.
+const LEGACY_PROBLEMS = {
+  dust_gravel: { type: 'road_damage', label: 'Excessive dust / loose gravel' },
+  partial_flood: { type: 'obstruction', label: 'Partial flooding — passable with care' },
+  project_delay: { type: 'structural', label: 'Project seems delayed / stalled' },
+};
+
+// Old type keys (rows saved before the types changed, without a problem).
+const LEGACY_TYPES = { safety: 'obstruction', flood: 'obstruction', issue: 'road_damage', general: 'roadside' };
+
+const TYPE_BY_PROBLEM = Object.fromEntries([
+  ...Object.entries(SEVERITY_TAXONOMY).flatMap(([type, meta]) => meta.problems.map((p) => [p.value, type])),
+  ...Object.entries(LEGACY_PROBLEMS).map(([value, meta]) => [value, meta.type]),
+]);
+
+/* Rows with no type at all: keyword match on the description (English +
+ * Hiligaynon/Tagalog terms citizens actually use). */
 export function classifyReport(desc = '') {
   const d = String(desc).toLowerCase();
-  if (/safety|aksidente|peligro|danger|hazard/.test(d)) return 'safety';
-  if (/flood|baha|tubig|drainage|water|inundated/.test(d)) return 'flood';
-  if (/lubak|sira|pothole|road|daan|crack|damage|broken/.test(d)) return 'issue';
-  return 'general';
+  if (/kahoy|tree|landslide|debris|basura|garbage|baha|flood|tubig/.test(d)) return 'obstruction';
+  if (/collapse|sinkhole|bridge|tulay|culvert|kanal|canal|drainage|erosion|guardrail/.test(d)) return 'structural';
+  if (/lubak|pothole|crack|sira|damage|broken|pavement|daan|road/.test(d)) return 'road_damage';
+  return 'roadside';
 }
 
 export function resolveCategory(report) {
-  return report?.severity_category || classifyReport(report?.description);
+  const saved = String(report?.severity_category || '').toLowerCase();
+  if (SEVERITY_TAXONOMY[saved]) return saved;
+  const byProblem = TYPE_BY_PROBLEM[String(report?.specific_problem || '').toLowerCase()];
+  if (byProblem) return byProblem;
+  return LEGACY_TYPES[saved] || classifyReport(report?.description);
 }
 
 export function resolveSpecificProblem(report) {
-  if (!report?.specific_problem || !report?.severity_category) return null;
-  const cat = SEVERITY_TAXONOMY[report.severity_category];
-  if (!cat) return null;
-  return cat.problems.find((p) => p.value === report.specific_problem) || null;
+  const value = String(report?.specific_problem || '').toLowerCase();
+  if (!value) return null;
+  const type = TYPE_BY_PROBLEM[value];
+  const found = SEVERITY_TAXONOMY[type]?.problems.find((p) => p.value === value);
+  if (found) return found;
+  return LEGACY_PROBLEMS[value] ? { value, label: LEGACY_PROBLEMS[value].label } : null;
 }
+
+/* Who handles a report: what the admin set on the row, else what its type says. */
+export function handlerFor(report) {
+  const saved = String(report?.handled_by || '').toLowerCase();
+  if (HANDLER_LABELS[saved]) return saved;
+  return SEVERITY_TAXONOMY[resolveCategory(report)].handler;
+}
+
+/* Hazard types a field engineer should visit first. */
+export const URGENT_TYPES = ['structural', 'obstruction'];
 
 /* Resolution outcomes. The server validates this exact set in
  * resolve_public_report; public_report_resolutions_citizen_view exposes
@@ -214,6 +269,49 @@ export function repairStatusInfo(status) {
   return REPAIR_STATUS[String(status || '').toLowerCase()] || null;
 }
 
+/* The citizen's line for the repair, naming who is doing it. */
+export function repairCitizenLine(action) {
+  const stage = workOrderStage(action);
+  const who = String(action?.responsible_party || '').toLowerCase() === 'lgu' ? 'Your LGU' : 'The project contractor';
+  switch (stage) {
+    case 'assigned': return `${who} has been asked to fix this.`;
+    case 'accepted': return `${who} accepted the job${action.work_date ? ` and plans to work on it on ${new Date(`${action.work_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.`;
+    case 'in_progress': return `${who} is working on it.`;
+    case 'done': return `${who} sent a photo of the finished work. The DA is checking it.`;
+    case 'closed': return `${who} fixed it and the DA confirmed the after-photo.`;
+    default: return repairStatusInfo(action?.status)?.citizen || null;
+  }
+}
+
+/* Where the LGU's or contractor's job is: assigned -> accepted (work date) ->
+ * in_progress -> done (after-photo sent) -> closed (accepted at resolution or
+ * confirmed by an engineer). `returned` = the handler sent it back to the DA. */
+export const WORK_STAGES = {
+  assigned: { label: 'Assigned', staff: 'Waiting for them to accept' },
+  accepted: { label: 'Accepted', staff: 'Accepted, work date set' },
+  in_progress: { label: 'Work started', staff: 'Work in progress' },
+  done: { label: 'After-photo sent', staff: 'Work done — review the after-photo' },
+  closed: { label: 'Closed', staff: 'Accepted' },
+  returned: { label: 'Returned', staff: 'Returned to the DA' },
+  cancelled: { label: 'Cancelled', staff: 'Cancelled' },
+};
+
+export function workOrderStage(action) {
+  if (!action) return null;
+  const status = String(action.status || '').toLowerCase();
+  if (status === 'cancelled') return action.returned_at ? 'returned' : 'cancelled';
+  if (status === 'verified') return 'closed';
+  if (status === 'completed') return 'done';
+  if (action.started_at) return 'in_progress';
+  if (action.accepted_at) return 'accepted';
+  return 'assigned';
+}
+
+/* An open job (not cancelled or returned). */
+export function activeWorkOrder(action) {
+  return action && String(action.status || '').toLowerCase() !== 'cancelled' ? action : null;
+}
+
 export function isRepairOverdue(action, today = new Date()) {
   if (!action?.target_date || action.status !== 'planned') return false;
   const target = new Date(`${action.target_date}T23:59:59`);
@@ -230,20 +328,13 @@ export const REPAIR_QUEUE_BUCKETS = [
   {
     key: 'repairs_due',
     label: 'Repairs Due',
-    hint: 'Planned repairs that are overdue or due within a week',
+    hint: 'LGU or contractor jobs that are overdue or due within a week',
     tone: 'problem',
-  },
-  {
-    key: 'repairs_verify',
-    label: 'Awaiting Verification',
-    hint: 'Work recorded as done, not yet confirmed on site by an engineer',
-    tone: 'waiting',
   },
 ].map(withQueueTone);
 
 export function getRepairQueueKey(action, today = new Date()) {
   if (!action) return null;
-  if (action.status === 'completed') return 'repairs_verify';
   if (action.status === 'planned' && action.target_date) {
     if (isRepairOverdue(action, today)) return 'repairs_due';
     const target = new Date(`${action.target_date}T23:59:59`);
@@ -254,7 +345,7 @@ export function getRepairQueueKey(action, today = new Date()) {
 }
 
 export function countRepairQueue(actionsByReport = {}, today = new Date()) {
-  const counts = { repairs_due: 0, repairs_verify: 0 };
+  const counts = { repairs_due: 0 };
   Object.values(actionsByReport).forEach((a) => {
     const key = getRepairQueueKey(a, today);
     if (key) counts[key] += 1;
@@ -309,6 +400,22 @@ export const CITIZEN_STATUS = {
     dotTone: 'bg-violet-500',
     order: 3,
   },
+  repair_assigned: {
+    key: 'repair_assigned',
+    label: 'Assigned for Repair',
+    helper: 'The DA sent your report to the LGU or contractor who will fix it.',
+    tone: 'bg-orange-100 text-orange-800 border-orange-200',
+    dotTone: 'bg-orange-500',
+    order: 2,
+  },
+  repair_in_progress: {
+    key: 'repair_in_progress',
+    label: 'Repair in Progress',
+    helper: 'Work on the problem has started.',
+    tone: 'bg-orange-100 text-orange-800 border-orange-200',
+    dotTone: 'bg-orange-500',
+    order: 3,
+  },
   resolved: {
     key: 'resolved',
     label: 'Resolved',
@@ -335,6 +442,8 @@ const CITIZEN_STATUS_BY_VIEW_LABEL = {
   'under review': CITIZEN_STATUS.under_review,
   'site inspection scheduled': CITIZEN_STATUS.inspection_scheduled,
   'under verification': CITIZEN_STATUS.under_verification,
+  'assigned for repair': CITIZEN_STATUS.repair_assigned,
+  'repair in progress': CITIZEN_STATUS.repair_in_progress,
   'resolved': CITIZEN_STATUS.resolved,
   'closed': CITIZEN_STATUS.closed,
 };
@@ -367,36 +476,65 @@ export const CITIZEN_STATUS_FILTERS = [
   { value: 'submitted', label: 'Submitted' },
   { value: 'under_review', label: 'Under Review' },
   { value: 'inspection_scheduled', label: 'Inspection Scheduled' },
+  { value: 'repair_assigned', label: 'Assigned for Repair' },
+  { value: 'repair_in_progress', label: 'Repair in Progress' },
   { value: 'under_verification', label: 'Under Verification' },
   { value: 'resolved', label: 'Resolved' },
   { value: 'closed', label: 'Closed' },
 ];
 
-/* Ordered progress track shown to citizens. A closed report never reached
+/* Progress track shown to citizens. It follows who fixes the report:
+ *   LGU (minor):  Submitted -> Under Review -> Assigned to LGU -> Repair in
+ *                 Progress -> Work Checked -> Resolved (no site inspection);
+ *   contractor:   Submitted -> Under Review -> Site Inspection -> Findings
+ *                 Verified -> Repair by Contractor -> Work Checked -> Resolved.
+ * Each step lists the citizen_workflow_stage values (public_reports_citizen_view)
+ * that place the report on it. A report resolved without any repair (e.g. "no
+ * action required") skips the repair steps. A closed report never reached
  * inspection (dismiss_public_report refuses once findings exist), so its track
- * is truncated rather than left showing three stages stuck on "Waiting". */
-export const CITIZEN_TRACK = [
-  { key: 'submitted', label: 'Submitted', blurb: 'We received your report.' },
-  { key: 'under_review', label: 'Under Review', blurb: 'Staff are assessing the issue.' },
-  { key: 'inspection_scheduled', label: 'Site Inspection', blurb: 'A field engineer visits the site.' },
-  { key: 'under_verification', label: 'Verification', blurb: 'Findings are checked and confirmed.' },
-  { key: 'resolved', label: 'Resolved', blurb: 'Outcome recorded and published.' },
-];
+ * is just Submitted -> Closed. */
+const TRACK_STEPS = {
+  submitted: { label: 'Submitted', blurb: 'We received your report.', stages: ['submitted'] },
+  under_review: { label: 'Under Review', blurb: 'The DA is checking the report.', stages: ['under_review'] },
+  inspection: { label: 'Site Inspection', blurb: 'A DA field engineer visits the site.', stages: ['field_engineer_dispatched', 'inspection_in_progress', 'reinspection_needed'] },
+  findings: { label: 'Findings Verified', blurb: 'The DA confirms what the engineer found.', stages: ['assessment_submitted', 'validated'] },
+  repair_lgu: { label: 'Assigned to LGU', blurb: 'Your LGU accepts the job and sets a work date.', stages: ['repair_assigned'] },
+  repair_lgu_work: { label: 'Repair in Progress', blurb: 'Your LGU is fixing the problem.', stages: ['repair_in_progress'] },
+  repair_contractor: { label: 'Repair by Contractor', blurb: 'The project contractor repairs the road.', stages: ['repair_assigned', 'repair_in_progress'] },
+  work_checked: { label: 'Work Checked', blurb: 'The DA checks the photo of the finished work.', stages: ['repair_done'] },
+  resolved: { label: 'Resolved', blurb: 'Outcome recorded and published.', stages: ['resolved'] },
+};
+
+const LGU_TRACK = ['submitted', 'under_review', 'repair_lgu', 'repair_lgu_work', 'work_checked', 'resolved'];
+const INSPECTION_TRACK = ['submitted', 'under_review', 'inspection', 'findings', 'repair_contractor', 'work_checked', 'resolved'];
+const REPAIR_STEPS = ['repair_lgu', 'repair_lgu_work', 'repair_contractor', 'work_checked'];
+
+// Older views have no citizen_workflow_stage: derive it from the status.
+const STAGE_FROM_STATUS = {
+  submitted: 'submitted',
+  under_review: 'under_review',
+  inspection_scheduled: 'field_engineer_dispatched',
+  under_verification: 'assessment_submitted',
+  repair_assigned: 'repair_assigned',
+  repair_in_progress: 'repair_in_progress',
+  resolved: 'resolved',
+};
+
+/* The default (inspection) track's labels, for callers that only need those. */
+export const CITIZEN_TRACK = INSPECTION_TRACK.map((key) => ({ key, label: TRACK_STEPS[key].label, blurb: TRACK_STEPS[key].blurb }));
 
 /**
  * Build the citizen progress track.
  *
- * Timestamps come from public_reports_citizen_view, which exposes a
- * citizen-safe milestone for each stage (citizen_reviewed_at,
- * citizen_field_dispatched_at, citizen_inspection_started_at,
- * citizen_assessment_submitted_at). `finding` and `resolution` are fallbacks
- * for deployments whose view predates those columns, so the track degrades to
- * "Completed" without a date rather than breaking.
+ * Timestamps come from public_reports_citizen_view's citizen-safe milestone
+ * columns. `finding` and `resolution` are fallbacks for deployments whose view
+ * predates those columns, so the track degrades to "Completed" without a date
+ * rather than breaking.
  */
 export function buildCitizenTrack(report, { finding = null, resolution = null } = {}) {
   const current = getCitizenStatus(report);
-  const needsReinspection =
-    String(report?.citizen_workflow_stage || '').toLowerCase() === 'reinspection_needed';
+  const stage = String(report?.citizen_workflow_stage || '').toLowerCase() || STAGE_FROM_STATUS[current.key] || 'submitted';
+  const needsReinspection = stage === 'reinspection_needed';
 
   if (current.key === 'closed') {
     return {
@@ -404,45 +542,44 @@ export function buildCitizenTrack(report, { finding = null, resolution = null } 
       closed: true,
       needsReinspection: false,
       steps: [
-        {
-          key: 'submitted',
-          label: 'Submitted',
-          blurb: 'We received your report.',
-          done: true,
-          timestamp: report?.created_at || null,
-          isLast: false,
-        },
-        {
-          key: 'closed',
-          label: 'Closed',
-          blurb: 'Reviewed and closed without a site inspection.',
-          done: true,
-          timestamp: report?.dismissed_at || null,
-          isLast: true,
-        },
+        { key: 'submitted', label: 'Submitted', blurb: 'We received your report.', done: true, timestamp: report?.created_at || null, isLast: false },
+        { key: 'closed', label: 'Closed', blurb: 'Reviewed and closed without a site inspection.', done: true, timestamp: report?.dismissed_at || null, isLast: true },
       ],
     };
   }
 
+  const handler = String(report?.citizen_handled_by || report?.handled_by || '').toLowerCase() || handlerFor(report);
+  // A minor LGU job skips the engineer unless the DA chose to send one.
+  const inspected = Boolean(report?.citizen_field_dispatched_at || report?.citizen_assessment_submitted_at || finding);
+  let keys = handler === 'lgu' && !inspected ? LGU_TRACK : INSPECTION_TRACK;
+  const repaired = Boolean(report?.citizen_repair_started_at || report?.citizen_repair_done_at);
+  if (stage === 'resolved' && !repaired) keys = keys.filter((k) => !REPAIR_STEPS.includes(k));
+
   const timestamps = {
     submitted: report?.created_at || null,
     under_review: report?.citizen_reviewed_at || null,
-    inspection_scheduled:
-      report?.citizen_inspection_started_at || report?.citizen_field_dispatched_at || null,
-    under_verification:
-      report?.citizen_assessment_submitted_at || finding?.submitted_at || null,
+    inspection: report?.citizen_inspection_started_at || report?.citizen_field_dispatched_at || null,
+    findings: report?.citizen_assessment_submitted_at || finding?.submitted_at || null,
+    repair_lgu: null,
+    repair_lgu_work: report?.citizen_repair_started_at || null,
+    repair_contractor: report?.citizen_repair_started_at || null,
+    work_checked: report?.citizen_repair_done_at || null,
     resolved: resolution?.resolved_at || report?.resolved_at || null,
   };
 
-  const steps = CITIZEN_TRACK.map((step, index) => {
-    const stage = CITIZEN_STATUS[step.key];
-    const done = stage.order <= current.order;
+  const currentIndex = Math.max(0, keys.findIndex((k) => TRACK_STEPS[k].stages.includes(stage)));
+  const steps = keys.map((key, index) => {
+    const meta = TRACK_STEPS[key];
+    const byLgu = key === 'repair_contractor' && handler === 'lgu';
+    const done = index <= currentIndex;
     return {
-      ...step,
+      key,
+      label: byLgu ? 'Repair by LGU' : meta.label,
+      blurb: byLgu ? 'Your LGU fixes the problem.' : meta.blurb,
       done,
-      active: stage.order === current.order,
-      timestamp: done ? timestamps[step.key] : null,
-      isLast: index === CITIZEN_TRACK.length - 1,
+      active: index === currentIndex,
+      timestamp: done ? timestamps[key] : null,
+      isLast: index === keys.length - 1,
     };
   });
 
@@ -475,23 +612,18 @@ export function buildCitizenTrack(report, { finding = null, resolution = null } 
  * rather than composed at runtime. */
 export const ADMIN_BUCKETS = [
   {
+    // Also holds reports sent back to the admin (engineer removed, job
+    // returned by the LGU/contractor): the next step is the same, send it out.
     key: 'needs_review',
     label: 'Needs Review',
-    hint: 'New citizen reports awaiting triage',
-    owner: 'admin',
-    tone: 'action',
-  },
-  {
-    key: 'needs_assignment',
-    label: 'Needs Assignment',
-    hint: 'Reviewed, but no engineer dispatched yet',
+    hint: 'Send minor issues to the LGU; send an engineer for major ones',
     owner: 'admin',
     tone: 'action',
   },
   {
     key: 'in_field',
     label: 'In the Field',
-    hint: 'With the assigned engineer for inspection',
+    hint: 'With the field engineer for inspection or a repair check',
     owner: 'engineer',
     tone: 'waiting',
   },
@@ -504,8 +636,22 @@ export const ADMIN_BUCKETS = [
   },
   {
     key: 'ready_to_resolve',
-    label: 'Ready to Resolve',
-    hint: 'Findings validated — issue the resolution',
+    label: 'Ready for Repair Order',
+    hint: 'Findings validated: send it to the contractor, or resolve if no repair is needed',
+    owner: 'admin',
+    tone: 'action',
+  },
+  {
+    key: 'with_handler',
+    label: 'With LGU / Contractor',
+    hint: 'They accept the job, fix it and send an after-photo',
+    owner: 'handler',
+    tone: 'waiting',
+  },
+  {
+    key: 'work_done',
+    label: 'Work Done — Review',
+    hint: 'After-photo received: resolve the report or send it back',
     owner: 'admin',
     tone: 'action',
   },
@@ -525,29 +671,40 @@ export const ADMIN_ACTION_BUCKETS = ADMIN_BUCKETS
   .filter((b) => b.owner === 'admin')
   .map((b) => b.key);
 
-export function getAdminBucket(report) {
+/* `action` is the report's work order (public_report_repair_actions), if any. */
+export function getAdminBucket(report, action = null) {
   const status = String(report?.status || '').trim().toLowerCase();
   const engineerStatus = String(report?.engineer_status || '').trim().toLowerCase();
 
   if (status === 'resolved' || status === 'dismissed') return 'closed';
   if (status === 'pending') return 'needs_review';
 
+  const work = activeWorkOrder(action);
+  if (status === 'reviewed' && work) {
+    const workStatus = String(work.status || '').toLowerCase();
+    if (workStatus === 'planned') return 'with_handler';
+    // Contractor work the admin asked the engineer to confirm on site.
+    if (workStatus === 'completed' && work.engineer_check_requested_at) return 'in_field';
+    return 'work_done';
+  }
+
   if (status === 'reviewed') {
     if (engineerStatus === 'inspected') return 'needs_validation';
     if (engineerStatus === 'validated') return 'ready_to_resolve';
     // 'rejected' means the admin sent it back — the engineer owes the re-visit.
     if (['assigned', 'in_progress', 'rejected'].includes(engineerStatus)) return 'in_field';
-    return 'needs_assignment';
+    // Reviewed but not with anyone (engineer removed, job returned): back to the admin.
+    return 'needs_review';
   }
 
   // Unknown/legacy status: surface it rather than hiding it from every bucket.
   return 'needs_review';
 }
 
-export function countAdminBuckets(reports = []) {
+export function countAdminBuckets(reports = [], actionsByReport = {}) {
   const counts = Object.fromEntries(ADMIN_BUCKETS.map((b) => [b.key, 0]));
   reports.forEach((r) => {
-    const key = getAdminBucket(r);
+    const key = getAdminBucket(r, actionsByReport[r.id]);
     counts[key] = (counts[key] || 0) + 1;
   });
   counts.all = reports.length;
@@ -567,6 +724,35 @@ const RPC_MESSAGE_PATTERNS = [
   [/photo was taken before the work was recorded/i, 'This photo was taken before the work was recorded as done. Retake it on site.'],
   [/photo capture time is in the future/i, 'Your device clock looks wrong. Fix the date and time, then retake the photo.'],
   [/time the photo was taken is required|accuracy reading is required/i, 'The photo is missing its location details. Retake it with the camera.'],
+  // Reopening a resolved report.
+  [/say what is still not fixed/i, 'Say what is still not fixed.'],
+  [/only a resolved report can be reopened/i, 'Only a resolved report can be reopened.'],
+  [/could not find the function public\.reopen_resolved_public_report/i, 'This needs a database update. Run supabase_report_reopen.sql.'],
+  // LGU / contractor job steps.
+  [/job was already accepted or is no longer open/i, 'This job was already accepted. Refresh the page.'],
+  [/choose the date the work will be done/i, 'Choose the date the work will be done.'],
+  [/work date cannot be in the past/i, 'The work date cannot be in the past.'],
+  [/accept the job before starting work/i, 'Accept the job first.'],
+  [/work on this job has already started/i, 'Work on this job has already started.'],
+  [/start the work before sending the after-photo/i, 'Mark the work as started first.'],
+  [/photo was taken before the work started/i, 'This photo was taken before the work started. Retake it on site.'],
+  [/only a job that has not started can be returned/i, 'Work has already started, so this job can no longer be returned. Contact the DA.'],
+  [/say why the job is being returned/i, 'Say why you are returning this job.'],
+  [/only the assigned lgu or contractor can update this job/i, 'This job is assigned to someone else.'],
+  [/contractor job needs a validated field inspection/i, 'Send a field engineer and validate the findings before sending this to the contractor.'],
+  [/finish or remove the field inspection before sending/i, 'Finish or remove the field inspection before sending this to the LGU.'],
+  [/job is already open for this report/i, 'A job is already open for this report.'],
+  [/lgu or contractor has not sent the after-photo yet/i, 'The LGU or contractor has not sent the after-photo yet.'],
+  [/handler cannot change while a job is open/i, 'Cancel the open job before changing who fixes this report.'],
+  [/only finished contractor work can be checked/i, 'Only finished contractor work can be checked by an engineer.'],
+  [/report has no assigned field engineer/i, 'This report has no assigned field engineer to send.'],
+  [/report is already closed/i, 'This report is already closed.'],
+  [/could not find the function public\.((assign|accept|start|return)_public_report_work|request_public_report_work_check)/i, 'This needs a database update. Ask the admin to run supabase_report_handlers.sql.'],
+  // Handler (LGU / contractor) follow-up.
+  [/only a planned repair can be sent as done/i, 'This job was already sent or is no longer open. Refresh the page.'],
+  [/only work sent by the lgu or contractor can be reopened/i, 'Only work sent by the LGU or contractor can be reopened.'],
+  [/reason for reopening is required/i, 'Say why the job is being sent back.'],
+  [/could not find the function public\.(submit_public_report_repair_work|reopen_public_report_repair|set_public_report_handler)/i, 'This needs a database update. Ask the admin to run supabase_report_handlers.sql.'],
   [/repair can only be planned for a resolved report/i, 'Resolve the report first, then plan the repair.'],
   [/resolution record is required before planning/i, 'This report has no resolution record, so a repair cannot be planned for it.'],
   [/repair action does not exist/i, 'This follow-up could not be found. Refresh the page and try again.'],

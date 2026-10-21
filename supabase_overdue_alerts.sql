@@ -9,9 +9,9 @@
 --     stage 'due'        -> the assigned field engineer + all admins
 --     stage 'escalated'  -> all admins, once it is 3+ days overdue (reassign?)
 --   Repair overdue (repair action still 'planned', target_date passed)
---     stage 'due'        -> all admins
+--     stage 'due'        -> all admins + the LGU or contractor handling it
 --     stage 'escalated'  -> all admins, at 3+ days overdue
---   (Notifying the repair party itself is left for the repair-parties work.)
+--   (The handler is found with supabase_report_handlers.sql; skipped until that runs.)
 --
 -- Run once in the Supabase SQL Editor. Safe to re-run.
 -- If "create extension pg_cron" fails, switch it on first:
@@ -119,6 +119,16 @@ begin
                     r.project_name, upper(coalesce(r.responsible_party, '')), to_char(r.target_date, 'Mon DD, YYYY')),
              r.report_id, false
       from public.profiles p where p.role = 'admin';
+      -- The LGU or contractor who owes the after-photo.
+      if r.responsible_party in ('lgu', 'contractor')
+         and to_regprocedure('public._public_report_handler_users(uuid,text)') is not null then
+        insert into public.notifications (user_id, type, title, message, report_id, is_read)
+        select h, 'repair_overdue', 'Your follow-up is overdue',
+               format('The job for %s was due on %s. Send the on-site after-photo once it is done.',
+                      r.project_name, to_char(r.target_date, 'Mon DD, YYYY')),
+               r.report_id, false
+        from public._public_report_handler_users(r.report_id, r.responsible_party) h;
+      end if;
       v_sent := v_sent + 1;
     end if;
 

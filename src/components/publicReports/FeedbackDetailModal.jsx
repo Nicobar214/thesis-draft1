@@ -11,6 +11,7 @@ import SupportReportControl from './SupportReportControl';
 import { supabase } from '../../lib/supabase';
 import { getCitizenStatus, resolveCategory, resolveSpecificProblem, SEVERITY_TAXONOMY } from '../../lib/publicReportStatus';
 import { CITIZEN_STATUS_HEX } from '../../lib/useMyReports';
+import ZoomablePhoto from '../ui/ZoomablePhoto';
 
 const FEEDBACK_TYPE_LABELS = {
   issue: 'Road Condition',
@@ -57,7 +58,8 @@ function Fact({ label, children }) {
  * is what carries the photos' location, status stage, severity and milestone dates.
  * Mount with a `key` per entry so its fetched state starts fresh.
  */
-export default function FeedbackDetailModal({ item, report, support = null, onSupportChange, items = [], onSelect, onClose }) {
+// basePath: the portal the modal is shown in ('/user' or '/farmer').
+export default function FeedbackDetailModal({ item, report, support = null, onSupportChange, items = [], onSelect, onClose, client = supabase, basePath = '/user' }) {
   const [finding, setFinding] = useState(null);
   const [resolution, setResolution] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -68,8 +70,8 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
     let alive = true;
     (async () => {
       const [findingRes, resolutionRes] = await Promise.allSettled([
-        supabase.from('public_report_field_findings_citizen_view').select('*').eq('report_id', reportId).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('public_report_resolutions_citizen_view').select('*').eq('report_id', reportId).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
+        client.from('public_report_field_findings_citizen_view').select('*').eq('report_id', reportId).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
+        client.from('public_report_resolutions_citizen_view').select('*').eq('report_id', reportId).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
       if (!alive) return;
       const row = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || null : null);
@@ -77,7 +79,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
       setResolution(row(resolutionRes));
     })();
     return () => { alive = false; };
-  }, [reportId]);
+  }, [reportId, client]);
 
   const index = items.findIndex((x) => x.id === item.id);
   const prev = index > 0 ? items[index - 1] : null;
@@ -127,7 +129,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
             Close
           </button>
           {report && item._isMine && (
-            <Link to={`/user/reports?report=${report.id}`} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
+            <Link to={`${basePath}/reports?report=${report.id}`} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800">
               Open in My Reports
             </Link>
           )}
@@ -149,9 +151,15 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
 
           {photos.length > 0 && (
             <div className="space-y-2">
-              <a href={photos[photoIndex]} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                <img src={photos[photoIndex]} alt={`Report photo ${photoIndex + 1} of ${photos.length}`} className="h-64 w-full object-cover" />
-              </a>
+              <ZoomablePhoto
+                key={photos[photoIndex]}
+                src={photos[photoIndex]}
+                alt={`Report photo ${photoIndex + 1} of ${photos.length}`}
+                photos={photos.map((url, i) => ({ src: url, label: `Photo ${i + 1}` }))}
+                index={photoIndex}
+                wrapperClassName="w-full rounded-xl border border-slate-200 bg-slate-100"
+                className="h-64 w-full object-cover"
+              />
               {photos.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto pb-0.5">
                   {photos.map((url, i) => (
@@ -180,6 +188,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
 
           {support && report && (
             <SupportReportControl
+              client={client}
               reportId={report.id}
               count={support.count}
               mine={support.mine}
@@ -246,7 +255,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
               <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">What happens next</p>
               <p className="mt-1 text-sm text-sky-950">{NEXT_STEP[stage.key]}</p>
               {(stage.key === 'resolved' || stage.key === 'closed') && (
-                <Link to="/user/reports?action=new" className="mt-2.5 inline-flex rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400">
+                <Link to={`${basePath}/reports?action=new`} className="mt-2.5 inline-flex rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400">
                   File a new report
                 </Link>
               )}

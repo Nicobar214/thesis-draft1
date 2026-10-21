@@ -15,7 +15,7 @@ import { supportCountLabel } from '../../lib/reportSupport';
  *   canSupport     false for the citizen's own report or one that is no longer open
  *   onChange       (count, mine) => void - lets the parent keep its cache in sync
  */
-export default function SupportReportControl({ reportId, count = 0, mine = false, canSupport, onChange }) {
+export default function SupportReportControl({ reportId, count = 0, mine = false, canSupport, onChange, client = supabase }) {
   const [busy, setBusy] = useState(false);
   const label = supportCountLabel(count);
 
@@ -27,8 +27,8 @@ export default function SupportReportControl({ reportId, count = 0, mine = false
     onChange?.(nextCount, nextMine); // optimistic
 
     const { error } = nextMine
-      ? await supabase.from('public_report_supporters').insert({ report_id: reportId })
-      : await supabase.from('public_report_supporters').delete().eq('report_id', reportId);
+      ? await client.from('public_report_supporters').insert({ report_id: reportId })
+      : await client.from('public_report_supporters').delete().eq('report_id', reportId);
 
     // A duplicate insert (code 23505) means we were already counted - not an error.
     if (error && error.code !== '23505') {

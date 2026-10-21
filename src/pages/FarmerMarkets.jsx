@@ -53,7 +53,7 @@ export default function FarmerMarkets() {
   }, [farmLat, farmLng, markets]);
 
   return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4" data-tour="markets-list">
         <div>
           <h3 className="font-bold text-slate-900 text-base sm:text-lg">{t('markets.title')}</h3>
           <p className="text-xs text-slate-500 mt-0.5">{t('markets.desc')}</p>

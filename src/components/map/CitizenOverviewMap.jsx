@@ -178,10 +178,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
                 pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.85 }}
                 eventHandlers={onProjectSelect ? { click: () => onProjectSelect(project) } : undefined}
               >
-                <Tooltip sticky>
-                  {project.project_name}{project.status ? ` (${project.status})` : ''}
-                  {onProjectSelect && <span className="block text-[10px] text-slate-500">Tap for project details</span>}
-                </Tooltip>
+                <Tooltip sticky>{project.project_name}</Tooltip>
               </Polyline>
               {layers.endpoints && <RouteEndpointMarkers project={project} routeData={data} lineColor={getRouteStatusTheme(project.status).line} />}
             </Fragment>

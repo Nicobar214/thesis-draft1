@@ -73,14 +73,15 @@ const startOfMonth = () => {
 export function useContractorSummary(client, userId) {
   const [projects, setProjects] = useState([]);
   const [updates, setUpdates] = useState([]);
+  const [repairsToDo, setRepairsToDo] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!userId) return;
-    const [p, u] = await Promise.allSettled([
+    const [p, u, r] = await Promise.allSettled([
       client
         .from('fmr_projects')
-        .select('id, project_name, municipality, status, accomplishment, site_engineer_id')
+        .select('id, project_name, municipality, status, accomplishment, site_engineer_id, target_completion_date, project_length_km')
         .eq('contractor_id', userId),
       client
         .from('progress_updates')
@@ -88,12 +89,19 @@ export function useContractorSummary(client, userId) {
         .eq('contractor_id', userId)
         .order('submitted_at', { ascending: false })
         .limit(60),
+      // Citizen-report repairs the DA assigned to this contractor (RLS: only theirs).
+      client
+        .from('public_report_repair_actions')
+        .select('id', { count: 'exact', head: true })
+        .eq('responsible_party', 'contractor')
+        .eq('status', 'planned'),
     ]);
     const rows = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || [] : null);
     const pr = rows(p);
     const ur = rows(u);
     if (pr) setProjects(pr);
     if (ur) setUpdates(ur);
+    if (r.status === 'fulfilled' && !r.value.error) setRepairsToDo(r.value.count || 0);
     setLoading(false);
   }, [client, userId]);
 
@@ -104,6 +112,7 @@ export function useContractorSummary(client, userId) {
       .channel(`contractor-summary-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_repair_actions' }, load)
       .subscribe();
     const onFocus = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', onFocus);
@@ -148,6 +157,7 @@ export function useContractorSummary(client, userId) {
       withoutEngineer,
       busyProjectIds: busy,
       approvedThisMonth: approvedThisMonthCount,
+      repairsToDo,
     };
-  }, [projects, updates, loading, load]);
+  }, [projects, updates, repairsToDo, loading, load]);
 }

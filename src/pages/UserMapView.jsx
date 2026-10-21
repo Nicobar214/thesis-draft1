@@ -752,7 +752,6 @@ export default function UserMapView({ embedded = false } = {}) {
                   const isSelected = selectedProject?.id === project.id;
                   const isFocused = isSelected || hoveredProjectId === project.id;
                   const isNearby = nearbyProjects.has(project.id);
-                  const normalizedStatus = normalizeStatus(project.status);
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
                   const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
                   const routeStart = routePoints[0] || route.startPoint;
@@ -762,12 +761,13 @@ export default function UserMapView({ embedded = false } = {}) {
                     <div key={project.id}>
                       {route.hasPolyline && !isCentroidFallback && (
                         <>
-                          {isFocused && (
-                            <Polyline
-                              positions={displayRoutePoints}
-                              pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.9 }}
-                            />
-                          )}
+                          {/* Hover glow: always mounted and non-interactive, so it never takes the
+                              pointer from the road under it (adding it on hover caused flicker). */}
+                          <Polyline
+                            positions={displayRoutePoints}
+                            pathOptions={{ color: '#ffffff', weight: 8, opacity: isFocused ? 0.9 : 0 }}
+                            interactive={false}
+                          />
                           <Polyline
                             positions={displayRoutePoints}
                             pathOptions={{
@@ -782,10 +782,7 @@ export default function UserMapView({ embedded = false } = {}) {
                             }}
                           >
                             <Tooltip sticky direction="top" offset={[0, -12]} opacity={0.97}>
-                              <div className="min-w-[180px]">
-                                <p className="text-xs font-semibold text-slate-900">{project.project_name}</p>
-                                <p className="text-[11px] text-slate-600 mt-0.5">{normalizedStatus} • {project.municipality || 'N/A'}</p>
-                              </div>
+                              <span className="text-xs font-semibold text-slate-900">{project.project_name}</span>
                             </Tooltip>
                           </Polyline>
 

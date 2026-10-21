@@ -17,9 +17,9 @@ function ContractorProfileBody() {
       fallbackInitial="C"
       statsLoading={summary.loading}
       stats={[
-        { label: 'Assigned Projects', value: summary.projects.length, icon: FolderKanbanIcon, tone: 'bg-teal-50 text-teal-700' },
-        { label: 'Updates Submitted', value: summary.updates.length, icon: SendIcon, tone: 'bg-sky-50 text-sky-700' },
-        { label: 'Approved This Month', value: summary.approvedThisMonth, icon: CheckCircle2Icon, tone: 'bg-emerald-50 text-emerald-700' },
+        { label: 'Assigned Projects', value: summary.projects.length, icon: FolderKanbanIcon, tone: 'bg-slate-100 text-slate-600' },
+        { label: 'Updates Submitted', value: summary.updates.length, icon: SendIcon, tone: 'bg-slate-100 text-slate-600' },
+        { label: 'Approved This Month', value: summary.approvedThisMonth, icon: CheckCircle2Icon, tone: 'bg-slate-100 text-slate-600' },
       ]}
       details={[
         { label: 'Role', value: 'Contractor' },

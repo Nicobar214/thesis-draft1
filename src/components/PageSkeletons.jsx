@@ -215,7 +215,7 @@ export function PortalPageSkeleton({ portal = 'farmer' }) {
   const { pathname } = useLocation();
   const Body = BODIES[kindForPath(portal, pathname)];
   const navCount = portalPageCount(portal);
-  const headerH = portal === 'farmer' ? 'h-20 sm:h-24' : 'h-18 sm:h-20';
+  const headerH = 'h-20 sm:h-24'; // same header height on every portal (PortalHeader)
 
   return (
     <div className="min-h-dvh bg-slate-50 font-sans" role="status" aria-busy="true" aria-label="Loading">
@@ -225,9 +225,9 @@ export function PortalPageSkeleton({ portal = 'farmer' }) {
       </div>
 
       {/* Dark sidebar, as in FarmerSidebar / UserSidebar / ContractorSidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-slate-800 bg-slate-900 lg:flex">
+      <aside className="fixed inset-y-0 left-0 hidden w-80 flex-col border-r border-slate-800 bg-slate-900 lg:flex">
         <div className={`flex items-center justify-center border-b border-slate-800 ${headerH}`}>
-          <div className="sk sk-dark h-9 w-32 rounded-lg" />
+          <div className="sk sk-dark h-12 w-36 rounded-lg" />
         </div>
         <div className="flex-1 space-y-2 px-3 py-4">
           {Array.from({ length: navCount }).map((_, i) => (
@@ -240,7 +240,7 @@ export function PortalPageSkeleton({ portal = 'farmer' }) {
         <div className="border-t border-slate-800 px-3 py-4"><div className="sk sk-dark h-10 rounded-xl" /></div>
       </aside>
 
-      <div className="lg:ml-64">
+      <div className="lg:ml-80">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95">
           <div className={`flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 ${headerH}`}>
             <div className="space-y-2 pl-12 lg:pl-0">

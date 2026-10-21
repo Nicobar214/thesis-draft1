@@ -262,7 +262,14 @@ function FeedbackSkeleton() {
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Main UserFeedback Component
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-export default function UserFeedback() {
+/* Inside another portal (the farmer's Community Reports): no citizen layout,
+ * and links point at that portal's pages. */
+function EmbeddedShell({ children }) {
+  return <>{children}</>;
+}
+
+export default function UserFeedback({ client = supabase, embedded = false, basePath = '/user' }) {
+  const Shell = embedded ? EmbeddedShell : UserLayout;
   const [feedbacks, setFeedbacks] = useState([]);
   const [publicReports, setPublicReports] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -286,11 +293,11 @@ export default function UserFeedback() {
   // Fetch feedbacks + user's public reports + projects
   useEffect(() => {
     fetchData();
-    const fbChannel = supabase
+    const fbChannel = client
       .channel('feedbacks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, fetchData)
       .subscribe();
-    const prChannel = supabase
+    const prChannel = client
       .channel('user-public-reports')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_reports' }, fetchData)
       .subscribe();
@@ -300,22 +307,22 @@ export default function UserFeedback() {
     document.addEventListener('visibilitychange', refreshOnFocus);
     return () => {
       document.removeEventListener('visibilitychange', refreshOnFocus);
-      supabase.removeChannel(fbChannel);
-      supabase.removeChannel(prChannel);
+      client.removeChannel(fbChannel);
+      client.removeChannel(prChannel);
     };
-  }, []);
+  }, [client]); // eslint-disable-line react-hooks/exhaustive-deps -- fetchData reads current filters; subscribe once per client
 
   async function fetchData() {
     try {
       const [feedbackRes, publicReportRes, projectRes, supportRes] = await Promise.all([
         // Shared with everyone, so it comes from the community view: no author id or email,
         // just an is_current_user_feedback flag (see lib/communityFeedback.js).
-        selectCommunityFeedback(supabase, (q) => q.order('created_at', { ascending: false }).limit(500)),
+        selectCommunityFeedback(client, (q) => q.order('created_at', { ascending: false }).limit(500)),
         // The citizen view already strips reporter identity and hides dismissed reports.
-        supabase.from('public_reports_citizen_view').select('*').order('created_at', { ascending: false }).limit(500),
-        supabase.from('projects').select('id, projectName, project_name, municipality, province'),
+        client.from('public_reports_citizen_view').select('*').order('created_at', { ascending: false }).limit(500),
+        client.from('projects').select('id, projectName, project_name, municipality, province'),
         // Counts only - never who backed a report. Errors until supabase_report_supporters.sql is run.
-        supabase.from('public_report_support_counts').select('report_id, support_count, i_support'),
+        client.from('public_report_support_counts').select('report_id, support_count, i_support'),
       ]);
 
       if (!supportRes.error && supportRes.data) {
@@ -434,7 +441,7 @@ export default function UserFeedback() {
   const clearFilters = () => { setSearch(''); setTypeFilter('all'); setStatusFilter('all'); setVerificationFilter('all'); };
 
   return (
-    <UserLayout>
+    <Shell>
       <div className="space-y-8">
         {/* Error Alert */}
         {error && (
@@ -541,9 +548,11 @@ export default function UserFeedback() {
       </div>
 
       {selectedItem && (
-        <FeedbackDetailModal key={selectedItem.id} item={selectedItem} report={selectedReport} support={selectedSupport} onSupportChange={handleSupportChange} items={filteredItems} onSelect={setSelectedItem} onClose={() => setSelectedItem(null)} />
+        <FeedbackDetailModal
+          client={client}
+          basePath={basePath} key={selectedItem.id} item={selectedItem} report={selectedReport} support={selectedSupport} onSupportChange={handleSupportChange} items={filteredItems} onSelect={setSelectedItem} onClose={() => setSelectedItem(null)} />
       )}
-    </UserLayout>
+    </Shell>
   );
 }
 

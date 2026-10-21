@@ -284,10 +284,10 @@ export default function PriorityTab({ projects, roadGaps = [], reports, escalati
                 { label: 'Area', value: `${cropData.hectares.toLocaleString()} ha` },
               ];
           const severityChips = [
-            { key: 'safety', label: 'Safety' },
-            { key: 'flood', label: 'Flood' },
-            { key: 'issue', label: 'Issue' },
-            { key: 'general', label: 'General' },
+            { key: 'structural', label: 'Structural' },
+            { key: 'obstruction', label: 'Obstruction' },
+            { key: 'road_damage', label: 'Road damage' },
+            { key: 'roadside', label: 'Signs & safety' },
           ].filter((item) => bySeverity[item.key] > 0);
 
           return (

@@ -45,7 +45,19 @@ function cardPosition(rect, width) {
   return { left, bottom: vh - rect.top + PAD + GAP };
 }
 
-export default function PageTour({ steps, onClose }) {
+// Button and counter wording; a portal can pass its own (e.g. the farmer
+// portal's Hiligaynon or Tagalog).
+const DEFAULT_LABELS = {
+  step: (n, total) => `Step ${n} of ${total}`,
+  skip: 'Skip tour',
+  close: 'Close',
+  back: 'Back',
+  next: 'Next',
+  done: 'Done',
+};
+
+export default function PageTour({ steps, onClose, labels: customLabels }) {
+  const labels = { ...DEFAULT_LABELS, ...customLabels };
   // Drop steps whose element is not on screen (no reports yet, mobile layout).
   const [shown] = useState(() => steps.filter((s) => !s.target || findVisible(s.target)));
   const [index, setIndex] = useState(0);
@@ -120,7 +132,7 @@ export default function PageTour({ steps, onClose }) {
         style={{ width, ...cardPosition(spot, width) }}
       >
         <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
-          Step {index + 1} of {shown.length}
+          {labels.step(index + 1, shown.length)}
         </p>
         <h3 id="page-tour-title" className="mt-1 text-base font-bold text-slate-900">{step.title}</h3>
         <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{step.body}</p>
@@ -140,7 +152,7 @@ export default function PageTour({ steps, onClose }) {
             onClick={onClose}
             className="text-xs font-semibold text-slate-400 hover:text-slate-600"
           >
-            {isLast ? 'Close' : 'Skip tour'}
+            {isLast ? labels.close : labels.skip}
           </button>
           <div className="flex items-center gap-2">
             {index > 0 && (
@@ -149,7 +161,7 @@ export default function PageTour({ steps, onClose }) {
                 onClick={back}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Back
+                {labels.back}
               </button>
             )}
             <button
@@ -159,7 +171,7 @@ export default function PageTour({ steps, onClose }) {
               autoFocus
               className="rounded-lg bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
             >
-              {isLast ? 'Done' : 'Next'}
+              {isLast ? labels.done : labels.next}
             </button>
           </div>
         </div>
