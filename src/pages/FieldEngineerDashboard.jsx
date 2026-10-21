@@ -2,7 +2,7 @@
  * Features: Collapsible left sidebar navigation, responsive PWA mobile bottom bar & drawer,
  * GIS Map Explorer, Progress Certification, Damage Reports Inspection, and Profile Management.
  */
-import { CheckIcon, CircleHelpIcon, TriangleAlertIcon, XIcon, ClipboardListIcon, HardHatIcon, CheckCircle2Icon, InboxIcon, BadgeCheckIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, CircleHelpIcon, TriangleAlertIcon, XIcon, ClipboardListIcon, HardHatIcon, CheckCircle2Icon, InboxIcon, BadgeCheckIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabaseFieldEngineer as supabase } from '../lib/supabase';
@@ -10,6 +10,7 @@ import { notify } from '../lib/toast';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
+import FieldEngineerReportDetails from '../components/publicReports/FieldEngineerReportDetails';
 import Logo from '../components/Logo';
 import SidebarEdgeToggle from '../components/ui/SidebarEdgeToggle';
 import NotificationBell from '../components/NotificationBell';
@@ -105,6 +106,12 @@ const PAGE_DESCRIPTIONS = {
   profile: 'Your account details and profile photo',
 };
 
+const needsInspection = (rpt) => {
+  const status = String(rpt.status || '').toLowerCase();
+  if (status === 'resolved' || status === 'dismissed') return false;
+  return ['assigned', 'in_progress', 'rejected'].includes(String(rpt.engineer_status || '').toLowerCase());
+};
+
 export default function FieldEngineerDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -137,6 +144,19 @@ export default function FieldEngineerDashboard() {
   const clearFocusUpdate = useCallback(() => setFocusUpdateId(null), []);
   const [mapStatus, setMapStatus] = useState('all');
   const [engineerNotes, setEngineerNotes] = useState('');
+  const openReport = (rpt) => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); };
+  // A row opens the report's details; the Inspect button only shows while
+  // there is inspection work to do (assigned, in progress, or sent back).
+  const rowOpenProps = (rpt) => ({
+    onClick: () => openReport(rpt),
+    onKeyDown: (e) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openReport(rpt); }
+    },
+    tabIndex: 0,
+    role: 'button',
+    'aria-label': `Open report ${rpt.id.slice(0, 8).toUpperCase()}`,
+  });
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showingSaved, setShowingSaved] = useState(false); // reports list is the copy saved on this device
@@ -246,7 +266,7 @@ export default function FieldEngineerDashboard() {
 
       // Only a role the server actually confirmed can sign the engineer out.
       if (effectiveRole !== 'field_engineer' && fromServer) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         navigate('/field-engineer/login');
         return;
       }
@@ -406,7 +426,7 @@ export default function FieldEngineerDashboard() {
 
   const handleSignOut = async () => {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/field-engineer/login');
   };
 
@@ -519,6 +539,8 @@ export default function FieldEngineerDashboard() {
     inProgress: reports.filter(r => r.engineer_status === 'in_progress').length,
     needsRework: reports.filter(r => r.engineer_status === 'rejected').length,
     completed: reports.filter(r => ['inspected', 'validated'].includes(r.engineer_status)).length,
+    // What still needs the engineer (same rule as the Inspect button); the nav badge shows this.
+    actionable: reports.filter(needsInspection).length,
   }), [reports]);
 
   const openFieldMap = (status = 'all') => {
@@ -595,7 +617,7 @@ export default function FieldEngineerDashboard() {
     { id: 'overview', description: 'Your assignments at a glance', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
     { id: 'gis-map', description: 'Assigned reports on the map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
     { id: 'certify', description: 'Check contractor progress', label: 'Certify Progress', count: certifyCount, icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
-    { id: 'reports', description: 'Inspect reported road damage', label: 'Damage Reports', count: metrics.total, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
+    { id: 'reports', description: 'Inspect reported road damage', label: 'Damage Reports', count: metrics.actionable, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
     { id: 'profile', description: 'Your account details', label: 'Engineer Profile', icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0zM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
   ];
 
@@ -961,7 +983,8 @@ export default function FieldEngineerDashboard() {
                           {paginatedReports.map((rpt) => (
                             <tr
                               key={rpt.id}
-                              className="hover:bg-slate-50/50 transition-colors"
+                              {...rowOpenProps(rpt)}
+                              className="cursor-pointer hover:bg-slate-50/50 focus:outline-none focus:bg-slate-50 transition-colors"
                             >
                               <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
                                 #{rpt.id.slice(0, 8).toUpperCase()}
@@ -990,13 +1013,17 @@ export default function FieldEngineerDashboard() {
                                 <VerifyBadge verification={rpt.verification} />
                               </td>
                               <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
-                                  className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
-                                >
-                                  Inspect →
-                                </button>
+                                  {needsInspection(rpt) ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); openReport(rpt); }}
+                                    className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                                  >
+                                    Inspect →
+                                  </button>
+                                ) : (
+                                  <ChevronRightIcon className="ml-auto size-4 text-slate-300" aria-hidden="true" />
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1281,7 +1308,8 @@ export default function FieldEngineerDashboard() {
                         {paginatedReports.map((rpt) => (
                           <tr
                             key={rpt.id}
-                            className="hover:bg-slate-50/50 transition-colors"
+                            {...rowOpenProps(rpt)}
+                            className="cursor-pointer hover:bg-slate-50/50 focus:outline-none focus:bg-slate-50 transition-colors"
                           >
                             <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
                               #{rpt.id.slice(0, 8).toUpperCase()}
@@ -1310,13 +1338,17 @@ export default function FieldEngineerDashboard() {
                               <VerifyBadge verification={rpt.verification} />
                             </td>
                             <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => { setSelectedReport(rpt); setEngineerNotes(rpt.engineer_notes || ''); }}
-                                className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
-                              >
-                                Inspect Case →
-                              </button>
+                              {needsInspection(rpt) ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openReport(rpt); }}
+                                  className="px-3.5 py-1.5 rounded-lg bg-teal-600 border border-teal-600 text-white font-semibold text-[11px] hover:bg-teal-700 hover:shadow-md cursor-pointer transition-all active:scale-95"
+                                >
+                                  Inspect Case →
+                                </button>
+                              ) : (
+                                <ChevronRightIcon className="ml-auto size-4 text-slate-300" aria-hidden="true" />
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -1474,6 +1506,8 @@ export default function FieldEngineerDashboard() {
                 <VerifyBadge verification={selectedReport.verification} />
                 <ReportStatusBadge status={selectedReport.status} />
               </div>
+
+              <FieldEngineerReportDetails report={selectedReport} />
 
               {selectedReport.engineer_status === 'rejected' && (
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-1">

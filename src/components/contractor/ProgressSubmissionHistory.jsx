@@ -30,7 +30,9 @@ function inPeriod(iso, period) {
  * opens on its own when a notification or link points at an update
  * (?update=<id>) or asks for it (?history=1).
  */
-export default function ProgressSubmissionHistory({ client, userId }) {
+/* onOpenProject(projectId): opens that project's details; rows whose project is
+ * no longer assigned to this contractor (canOpenProject false) stay plain text. */
+export default function ProgressSubmissionHistory({ client, userId, onOpenProject = null, canOpenProject = () => true }) {
   const [searchParams] = useSearchParams();
   const highlightId = searchParams.get('update');
   const [open, setOpen] = useState(Boolean(highlightId || searchParams.get('history')));
@@ -182,10 +184,28 @@ export default function ProgressSubmissionHistory({ client, userId }) {
                   <tbody className="divide-y divide-slate-100">
                     {pager.pageItems.map((item) => {
                       const stage = pipelineStage(item);
+                      const projectName = item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`;
+                      // Like the projects table: the whole row opens the project's details.
+                      const openable = Boolean(onOpenProject) && canOpenProject(item.fmr_project_id);
+                      const rowProps = openable ? {
+                        onClick: () => onOpenProject(item.fmr_project_id),
+                        onKeyDown: (e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenProject(item.fmr_project_id); }
+                        },
+                        tabIndex: 0,
+                        role: 'button',
+                        'aria-label': `View details for ${projectName}`,
+                      } : {};
                       return (
-                        <tr key={item.id} id={`update-${item.id}`} className={`align-top transition-colors ${item.id === highlightId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60'}`}>
+                        <tr
+                          key={item.id}
+                          id={`update-${item.id}`}
+                          {...rowProps}
+                          className={`align-top transition-colors ${openable ? 'cursor-pointer focus:outline-none focus:bg-slate-50' : ''} ${item.id === highlightId ? 'bg-amber-50 ring-2 ring-inset ring-amber-300' : 'hover:bg-slate-50/60'}`}
+                        >
                           <td className="max-w-xs px-5 py-4">
-                            <p className="line-clamp-2 text-sm font-semibold text-slate-900">{item.fmr_projects?.project_name || `Project ${item.fmr_project_id}`}</p>
+                            <p className="line-clamp-2 text-sm font-semibold text-slate-900">{projectName}</p>
                             {item.fmr_projects?.municipality && <p className="mt-0.5 text-xs text-slate-500">{item.fmr_projects.municipality}</p>}
                           </td>
                           <td className="whitespace-nowrap px-5 py-4 font-mono text-sm font-bold text-slate-900">{formatPercentage(item.reported_accomplishment)}</td>
@@ -200,7 +220,8 @@ export default function ProgressSubmissionHistory({ client, userId }) {
                           <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600">{fmtDateTime(item.submitted_at)}</td>
                           <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600">{item.status === 'pending' ? 'Awaiting review' : fmtDateTime(item.reviewed_at)}</td>
                           <td className="max-w-xs px-5 py-4"><p className="line-clamp-3 text-xs text-slate-600">{item.remarks || '—'}</p></td>
-                          <td className="whitespace-nowrap px-5 py-4">
+                          {/* The photo opens its own viewer, not the project. */}
+                          <td className="whitespace-nowrap px-5 py-4" onClick={(e) => e.stopPropagation()}>
                             {item.photo_url ? (
                               <PhotoViewButton src={item.photo_url} label="Progress photo" className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700">View</PhotoViewButton>
                             ) : <span className="text-xs text-slate-400">—</span>}

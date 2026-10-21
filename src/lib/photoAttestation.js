@@ -26,6 +26,7 @@ export const ATTESTATION_KINDS = {
   field_inspection: 'Field engineer inspection',
   repair_verification: 'Repair verification',
   contractor_progress: 'Contractor progress photo',
+  progress_certification: 'Engineer progress certification',
 };
 
 /** 12 random characters (60 bits): unguessable, and generated offline too. */

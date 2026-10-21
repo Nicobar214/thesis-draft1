@@ -22,6 +22,10 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
  *
  * Naming convention for storageKey: 'kt-<role>-session'
  *   kt = KalsaTrack (avoids colliding with the default 'sb-*' key)
+ *
+ * Every sign-out passes { scope: 'local' }. Supabase's default ('global')
+ * ends the account's sessions on every device, so one person signing out of a
+ * shared account kicked everyone else using it out on their next page.
  */
 export const supabaseAdminPortal = createClient(supabaseUrl, supabaseKey, {
   auth: { storageKey: 'kt-admin-session' },

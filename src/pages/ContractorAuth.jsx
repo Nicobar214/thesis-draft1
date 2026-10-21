@@ -71,7 +71,7 @@ export default function ContractorAuth() {
       }
 
       if (userRole !== "contractor") {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setError("Access denied. This login is for contractors only.");
         setLoading(false);
         return;

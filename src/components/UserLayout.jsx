@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { HelpCircleIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useRememberedName } from '../lib/profileName';
 import UserSidebar from './UserSidebar';
 import Icons from './Icons';
 import NotificationBell from './NotificationBell';
@@ -87,7 +88,7 @@ export default function UserLayout({
   };
 
   const page = pageMeta[location.pathname] || { title: 'User Portal', description: '', icon: null };
-  const userLabel = user?.user_metadata?.full_name || user?.email?.split('@')?.[0] || 'there';
+  const userLabel = useRememberedName(supabase, 'citizen', user ? (user.user_metadata?.full_name || user.email?.split('@')?.[0] || 'there') : null);
 
   useEffect(() => {
     if (!requireAuth) return;

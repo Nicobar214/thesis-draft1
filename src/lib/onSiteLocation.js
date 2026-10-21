@@ -102,3 +102,27 @@ export function readBestPosition({ durationMs = POSITION_POLL_MS, goodEnoughM = 
  * matching supabase_handler_photo_testing_limits.sql. Set to null to go back to
  * the normal on-site limits above. The engineer's check never uses this. */
 export const HANDLER_PHOTO_TEST_LIMITS = { maxDistanceM: 50000, maxAccuracyM: 1000 };
+
+/**
+ * Is a geotagged photo usable as on-site evidence? `distanceM` is how far the
+ * fix is from the site (null when the site has no location, which is not
+ * checked). Mirrors the server checks, so the engineer learns it before
+ * submitting. Returns { ok, distanceM, problem } with a plain-language problem.
+ */
+export function onSiteCheck({ accuracy, distanceM }, { maxDistanceM = MAX_DISTANCE_M, maxAccuracyM = MAX_ACCURACY_M, place = 'the site' } = {}) {
+  if (!Number.isFinite(accuracy) || accuracy > maxAccuracyM) {
+    return {
+      ok: false,
+      distanceM,
+      problem: `GPS is not precise enough (±${Number.isFinite(accuracy) ? Math.round(accuracy) : '?'} m, needs ±${maxAccuracyM} m or better). Move to open sky and retake.`,
+    };
+  }
+  if (distanceM != null && distanceM > maxDistanceM) {
+    return {
+      ok: false,
+      distanceM,
+      problem: `You are ${distanceM >= 1000 ? `${(distanceM / 1000).toFixed(1)} km` : `${Math.round(distanceM)} m`} from ${place} (must be within ${maxDistanceM} m). Take the photo on site.`,
+    };
+  }
+  return { ok: true, distanceM, problem: null };
+}

@@ -4,7 +4,7 @@ import { BeneficiaryKeyCards } from '../components/admin/BeneficiaryAnalytics';
 import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, SidebarNav, SidebarNavItem, SidebarSignOut } from '../components/ui/SidebarParts';
 import ProfileAvatar from '../components/ui/ProfileAvatar';
 import PortalHeader from '../components/ui/PortalHeader';
-import { useProfileNameUpdates } from '../lib/profileName';
+import { useProfileNameUpdates, useRememberedName } from '../lib/profileName';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents, Popup, Polyline, Polygon, CircleMarker, Tooltip } from 'react-leaflet';
@@ -237,6 +237,7 @@ export default function LguDashboard() {
 
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const headerName = useRememberedName(supabase, 'lgu', profile ? (profile.full_name || 'LGU Administrator') : null);
   const [activeTab, setActiveTab] = useState('overview');
   useProfileNameUpdates(useCallback((name) => setProfile((p) => (p ? { ...p, full_name: name } : p)), []));
   const [loading, setLoading] = useState(true);
@@ -956,7 +957,7 @@ export default function LguDashboard() {
 
   const handleSignOut = async () => {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/lgu/login');
   };
 
@@ -1720,7 +1721,7 @@ export default function LguDashboard() {
           account={{
             onClick: () => setActiveTab('profile'),
             avatar: <ProfileAvatar client={supabase} name={profile?.full_name} fallback="L" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
-            name: profile?.full_name || 'LGU Administrator',
+            name: headerName,
             detail: municipalityScope ? `LGU of ${municipalityScope}` : (profile?.email || 'LGU Account'),
           }}
         />

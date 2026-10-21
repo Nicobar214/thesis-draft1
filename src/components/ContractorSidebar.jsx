@@ -26,7 +26,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
 
   async function handleLogout() {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/contractor/login');
   }
 

@@ -9,7 +9,6 @@ import Icons from '../components/Icons';
 import UserLayout from '../components/UserLayout';
 import CitizenOverviewMap from '../components/map/CitizenOverviewMap';
 import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
-import Pagination, { usePagination } from '../components/ui/Pagination';
 import { formatPercentage } from '../lib/percentageFormat';
 import { useMyReports, CITIZEN_STATUS_HEX } from '../lib/useMyReports';
 import { getCitizenStatus, CITIZEN_STATUS } from '../lib/publicReportStatus';
@@ -102,17 +101,6 @@ function ActivitySkeleton() {
         <div className="h-3 w-24 bg-zinc-200 rounded" />
       </div>
     </div>
-  );
-}
-
-function RankingRowSkeleton() {
-  return (
-    <tr className="animate-pulse">
-      <td className="px-5 py-3"><div className="h-4 w-32 bg-zinc-200 rounded" /></td>
-      <td className="px-5 py-3"><div className="h-4 w-8 bg-zinc-200 rounded" /></td>
-      <td className="px-5 py-3"><div className="h-4 w-8 bg-zinc-200 rounded" /></td>
-      <td className="px-5 py-3"><div className="h-4 w-12 bg-zinc-200 rounded" /></td>
-    </tr>
   );
 }
 
@@ -258,7 +246,6 @@ export default function UserDashboard() {
   const [userMunicipality, setUserMunicipality] = useState('');
   const [activityFeed, setActivityFeed] = useState([]);
   const [submissions, setSubmissions] = useState({ reportsSubmitted: 0, reportsResolved: 0, reportsPending: 0, feedbackSubmitted: 0 });
-  const [municipalityTableCollapsed, setMunicipalityTableCollapsed] = useState(true);
   const [dismissedStatusAlert, setDismissedStatusAlert] = useState(false);
   const [showAllRecentProjects, setShowAllRecentProjects] = useState(false);
   const [showAllRecentActivity, setShowAllRecentActivity] = useState(false);
@@ -352,11 +339,6 @@ export default function UserDashboard() {
       supabase.removeChannel(channel);
       window.removeEventListener('online', fetchData);
     };
-  }, []);
-
-  useEffect(() => {
-    const mobileCollapsedDefault = window.innerWidth < 768;
-    setMunicipalityTableCollapsed(mobileCollapsedDefault);
   }, []);
 
   async function fetchData() {
@@ -493,43 +475,29 @@ export default function UserDashboard() {
     }
   }
 
-  const donutData = useMemo(
-    () => [
-      { name: 'Completed', value: stats.completed, color: '#14b8a6' },
-      { name: 'On-Going', value: stats.ongoing, color: '#f59e0b' },
-      { name: 'Proposed', value: stats.proposed, color: '#3b82f6' },
-    ],
-    [stats.completed, stats.ongoing, stats.proposed]
-  );
-
+  // Every project in the citizen's municipality (the region's latest when no
+  // municipality is set). The breakdown chart and the list both use it.
   const nearbyProjects = useMemo(() => {
-    if (!userMunicipality) return allProjects.slice(0, 5);
+    if (!userMunicipality) return allProjects.slice(0, 6);
     const key = userMunicipality.toLowerCase();
-    return allProjects
-      .filter((project) => String(project.municipality || '').toLowerCase() === key)
-      .slice(0, 5);
+    return allProjects.filter((project) => String(project.municipality || '').toLowerCase() === key);
   }, [allProjects, userMunicipality]);
 
-  const municipalityProgressRows = useMemo(() => {
-    const map = allProjects.reduce((acc, project) => {
-      const municipality = project.municipality || 'Unspecified';
-      if (!acc[municipality]) {
-        acc[municipality] = { municipality, total: 0, completed: 0 };
-      }
-      acc[municipality].total += 1;
-      if (project.status === 'Completed') acc[municipality].completed += 1;
-      return acc;
-    }, {});
+  const areaStats = useMemo(() => {
+    if (!userMunicipality) return stats;
+    const count = (status) => nearbyProjects.filter((p) => (p.status || 'Proposed') === status).length;
+    return { total: nearbyProjects.length, completed: count('Completed'), ongoing: count('On-Going'), proposed: count('Proposed') };
+  }, [userMunicipality, nearbyProjects, stats]);
 
-    return Object.values(map)
-      .map((row) => ({
-        ...row,
-        completionPct: row.total ? (row.completed / row.total) * 100 : 0,
-      }))
-      .sort((a, b) => b.completionPct - a.completionPct)
-      .map((row, i) => ({ ...row, rank: i + 1 }));
-  }, [allProjects]);
-  const rankingPager = usePagination(municipalityProgressRows);
+  const donutData = useMemo(
+    () => [
+      { name: 'Completed', value: areaStats.completed, color: '#14b8a6' },
+      { name: 'On-Going', value: areaStats.ongoing, color: '#f59e0b' },
+      { name: 'Proposed', value: areaStats.proposed, color: '#3b82f6' },
+    ],
+    [areaStats.completed, areaStats.ongoing, areaStats.proposed]
+  );
+
 
   const areaStatusAlert = useMemo(() => {
     if (!userMunicipality || dismissedStatusAlert) return null;
@@ -631,12 +599,18 @@ export default function UserDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col">
             <div>
               <h2 className="font-bold text-slate-900 text-base">Project Status Breakdown</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Ratio of completed vs ongoing infrastructure</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {userMunicipality ? `FMR projects in ${userMunicipality}` : 'All FMR projects in Region VI · set your location to see your area'}
+              </p>
             </div>
 
             <div className="mt-4 flex items-center gap-5">
               <div className="relative size-36 shrink-0">
-                {loading ? <DonutSkeleton /> : (<>
+                {loading ? <DonutSkeleton /> : areaStats.total === 0 ? (
+                  <div className="grid size-full place-items-center rounded-full border-[14px] border-slate-100 text-center">
+                    <p className="text-xl font-bold text-slate-300">0</p>
+                  </div>
+                ) : (<>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={donutData} dataKey="value" innerRadius={42} outerRadius={64} paddingAngle={2} stroke="none">
@@ -649,7 +623,7 @@ export default function UserDashboard() {
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider">Total</p>
-                  <p className="text-xl font-bold leading-tight text-slate-900">{stats.total}</p>
+                  <p className="text-xl font-bold leading-tight text-slate-900">{areaStats.total}</p>
                 </div>
                 </>)}
               </div>
@@ -664,7 +638,7 @@ export default function UserDashboard() {
                     <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="flex-1 truncate font-medium text-slate-600">{item.name}</span>
                     <span className="font-bold tabular-nums text-slate-900">{item.value}</span>
-                    <span className="w-9 text-right tabular-nums text-slate-500">{stats.total ? Math.round((item.value / stats.total) * 100) : 0}%</span>
+                    <span className="w-9 text-right tabular-nums text-slate-500">{areaStats.total ? Math.round((item.value / areaStats.total) * 100) : 0}%</span>
                   </li>
                 ))}
               </ul>
@@ -683,7 +657,9 @@ export default function UserDashboard() {
                   Set location
                 </Link>
               ) : (
-                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">{userMunicipality}</span>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  {userMunicipality} · {nearbyProjects.length} {nearbyProjects.length === 1 ? 'project' : 'projects'}
+                </span>
               )}
             </header>
 
@@ -696,8 +672,10 @@ export default function UserDashboard() {
             ) : nearbyProjects.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-xs sm:text-sm">No nearby FMR projects found for {userMunicipality} yet.</div>
             ) : (
-              <div className="p-4 ">
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              // Fixed height: a municipality with many projects scrolls inside
+              // the card instead of stretching the row.
+              <div className="max-h-[22rem] overflow-y-auto p-4">
+                <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {nearbyProjects.map((project) => {
                     const status = project.status || 'Proposed';
                     const statusStyles = {
@@ -711,11 +689,11 @@ export default function UserDashboard() {
                         key={project.id}
                         onClick={() => openProject(project)}
                         aria-label={`View details of ${project.projectName}`}
-                        className="block w-full text-left rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all space-y-3 cursor-pointer hover:bg-white hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                        className="flex h-full w-full flex-col justify-between gap-3 text-left rounded-xl border border-slate-200 bg-slate-50/50 p-4 transition-all cursor-pointer hover:bg-white hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="font-bold text-slate-900 text-sm line-clamp-2">{project.projectName}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[status] || statusStyles.Proposed}`}>
+                          <span className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[status] || statusStyles.Proposed}`}>
                             {status}
                           </span>
                         </div>
@@ -759,14 +737,18 @@ export default function UserDashboard() {
 
         </div>
 
-        {/* Level 1: program-wide figures and activity */}
+        {/* Level 1: program-wide figures */}
         <div className="space-y-4 pt-2">
           <SectionLabel title="Program overview" subtitle="Farm-to-market road progress across Region VI" />
-        {/* Same KPI block as the admin and FMR Projects pages (shared component). */}
-        <div data-tour="dash-stats">
-          <FmrProjectKpis stats={stats} loading={loading} scopeLabel="across Region VI" />
+          {/* Same KPI block as the admin and FMR Projects pages (shared component). */}
+          <div data-tour="dash-stats">
+            <FmrProjectKpis stats={stats} loading={loading} scopeLabel="across Region VI" />
+          </div>
         </div>
 
+        {/* Latest program updates */}
+        <div className="space-y-4 pt-2">
+          <SectionLabel title="Latest updates" subtitle="Recent project progress and activity across the region" />
         <section className="grid lg:grid-cols-2 gap-6 items-stretch">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
             <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100">
@@ -858,64 +840,6 @@ export default function UserDashboard() {
         </section>
         </div>
 
-        {/* Municipality Ranking Table */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden" data-tour="dash-rankings">
-          <header className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Municipality Progress Rankings</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Percentage of completed Farm-to-Market roads per municipality</p>
-            </div>
-            <button
-              onClick={() => setMunicipalityTableCollapsed((prev) => !prev)}
-              className="text-xs font-semibold text-emerald-700 hover:text-emerald-800"
-            >
-              {municipalityTableCollapsed ? 'Show Table' : 'Hide Table'}
-            </button>
-          </header>
-
-          {!municipalityTableCollapsed && (
-            <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-xs">
-                <thead className="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th className="w-12 px-5 py-3 text-left font-semibold uppercase tracking-wider">#</th>
-                    <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Municipality</th>
-                    <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Total FMR Projects</th>
-                    <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Completed</th>
-                    <th className="px-5 py-3 text-left font-semibold uppercase tracking-wider">Completion Ratio</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loading && Array.from({ length: 5 }).map((_, i) => <RankingRowSkeleton key={i} />)}
-                  {!loading && rankingPager.pageItems.map((row) => {
-                    const isUserMunicipality = userMunicipality && row.municipality.toLowerCase() === userMunicipality.toLowerCase();
-                    return (
-                      <tr key={row.municipality} className={isUserMunicipality ? 'bg-emerald-50/60 font-semibold' : 'hover:bg-slate-50/60 transition-colors'}>
-                        <td className="px-5 py-3 font-semibold text-slate-400 tabular-nums">{row.rank}</td>
-                        <td className="px-5 py-3 font-semibold text-slate-900 flex items-center gap-2">
-                          <span>{row.municipality}</span>
-                          {isUserMunicipality && (
-                            <span className="px-2 py-0.5 rounded bg-emerald-700 text-white text-[9px] font-bold uppercase tracking-wider">My Area</span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3 text-slate-700 font-medium">{row.total}</td>
-                        <td className="px-5 py-3 text-slate-700 font-medium">{row.completed}</td>
-                        <td className="px-5 py-3 font-bold text-emerald-800">{row.completionPct.toFixed(1)}%</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {!loading && (
-              <div className="border-t border-slate-100 px-5 py-3">
-                <Pagination pager={rankingPager} noun="municipality" />
-              </div>
-            )}
-            </>
-          )}
-        </section>
       </div>
       {selectedProject && (
         <FmrProjectDetailDialog

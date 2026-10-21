@@ -1,4 +1,9 @@
-/* AuthPage.jsx — citizen sign in / sign up.
+/* AuthPage.jsx — citizen and farmer sign in, citizen sign up.
+ *
+ * Sign in asks who is signing in (Citizen or Farmer) and lets in only that
+ * kind of account, each into its own portal session. Staff accounts (DA admin,
+ * engineers, contractors, LGU) are turned away with a pointer to their own
+ * portal's login page.
  *
  * One page, three states (signin | signup | forgot) inside a split-screen
  * shell. Switching between sign in and sign up slides the two panels past each
@@ -10,9 +15,10 @@
  * error handling were reworked.
  */
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseFarmer } from "../lib/supabase";
+import { resolveLoginEmail } from "../lib/farmerAuth";
 import { useNavigate, Link } from "react-router-dom";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, SproutIcon, UserIcon } from "lucide-react";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
 import AuthField from "../components/auth/AuthField";
@@ -50,14 +56,26 @@ function resolveEffectiveRole(profileRole, metadataRole) {
   return normalizedProfileRole || normalizedMetadataRole || "user";
 }
 
-/* Signed-in landing page per role. Kept identical to the previous behaviour so
-   an admin signing in here still reaches the DA dashboard. */
-function routeForRole(role) {
-  if (role === "admin") return "/dashboard";
-  if (role === "field_engineer") return "/field-engineer";
-  if (role === "contractor") return "/contractor";
-  if (role === "lgu") return "/lgu";
-  return "/user";
+/* Who can sign in on this page, and the portal each lands in. */
+const ACCOUNT_TYPES = {
+  citizen: { label: "Citizen", role: "user", client: supabase, home: "/user", Icon: UserIcon },
+  farmer: { label: "Farmer", role: "farmer", client: supabaseFarmer, home: "/farmer", Icon: SproutIcon },
+};
+
+/* Where an account that does not belong on this page should sign in instead. */
+const OTHER_PORTALS = {
+  admin: { name: "DA Admin", path: "/admin" },
+  field_engineer: { name: "Field Engineer", path: "/field-engineer/login" },
+  contractor: { name: "Contractor", path: "/contractor/login" },
+  lgu: { name: "LGU", path: "/lgu/login" },
+};
+
+function wrongAccountMessage(role, chosen) {
+  if (role === "user") return "This is a citizen account. Choose Citizen above and sign in again.";
+  if (role === "farmer") return "This is a farmer account. Choose Farmer above and sign in again.";
+  const other = OTHER_PORTALS[role];
+  if (other) return `This is a ${other.name} account. Sign in on the ${other.name} portal (${other.path}).`;
+  return `This account cannot sign in as a ${ACCOUNT_TYPES[chosen].label.toLowerCase()}.`;
 }
 
 const BENEFITS = [
@@ -78,6 +96,11 @@ export default function AuthPage({ mode = "signin" }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(() => Boolean(safeStorage.get(REMEMBER_KEY)));
+  // Who is signing in; ?as=farmer opens on Farmer. Sign up is citizen-only.
+  const [accountType, setAccountType] = useState(() => (
+    new URLSearchParams(window.location.search).get("as") === "farmer" ? "farmer" : "citizen"
+  ));
+  const isFarmerSignin = activeMode === "signin" && accountType === "farmer";
 
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState("");
@@ -153,7 +176,12 @@ export default function AuthPage({ mode = "signin" }) {
     e.preventDefault();
     clearMessages();
 
-    const errors = validateAuthFields({ email, password, confirmPassword, mode: activeMode });
+    const errors = isFarmerSignin
+      ? {
+        ...(email.trim() ? {} : { email: "Enter your username or email." }),
+        ...(password ? {} : { password: "Enter your password." }),
+      }
+      : validateAuthFields({ email, password, confirmPassword, mode: activeMode });
     if (Object.keys(errors).length) {
       setFieldErrors(errors);
       return;
@@ -165,8 +193,14 @@ export default function AuthPage({ mode = "signin" }) {
       const trimmedEmail = email.trim();
       let response;
 
+      const account = ACCOUNT_TYPES[activeMode === "signin" ? accountType : "citizen"];
+      const client = account.client;
+
       if (activeMode === "signin") {
-        response = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
+        response = await client.auth.signInWithPassword({
+          email: accountType === "farmer" ? resolveLoginEmail(trimmedEmail) : trimmedEmail,
+          password,
+        });
       } else {
         /* Public signup always creates a citizen account. The role used to come
            from a ?role= query parameter, which meant /signup?role=admin minted
@@ -197,15 +231,21 @@ export default function AuthPage({ mode = "signin" }) {
 
       let targetRoute = "/user";
       if (activeMode === "signin" && user) {
-        const { data: profile } = await supabase
+        const { data: profile } = await client
           .from("profiles")
           .select("role")
           .eq("id", user.id)
           .maybeSingle();
 
-        targetRoute = routeForRole(
-          resolveEffectiveRole(profile?.role, user.user_metadata?.role)
-        );
+        // Only the chosen kind of account gets in; any other is signed straight back out.
+        const role = resolveEffectiveRole(profile?.role, user.user_metadata?.role);
+        if (role !== account.role) {
+          await client.auth.signOut({ scope: "local" });
+          setFormError(wrongAccountMessage(role, accountType));
+          setLoading(false);
+          return;
+        }
+        targetRoute = account.home;
       }
 
       setSuccess(
@@ -323,14 +363,42 @@ export default function AuthPage({ mode = "signin" }) {
                 </div>
               )}
 
-              <form onSubmit={isForgot ? handleForgotPassword : handleAuth} className="mt-6 space-y-4" noValidate>
+              {activeMode === "signin" && (
+                <div role="radiogroup" aria-label="Signing in as" className="mt-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+                  {Object.entries(ACCOUNT_TYPES).map(([key, type]) => {
+                    const active = accountType === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => { setAccountType(key); clearMessages(); }}
+                        disabled={busy}
+                        className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+                          active ? "bg-white text-emerald-800 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        <type.Icon className="size-4" aria-hidden="true" /> {type.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {isForgot && accountType === "farmer" ? (
+                <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Farmer accounts are set up by your LGU. Ask your Municipal Agriculture Office to reset your password.
+                </p>
+              ) : (
+              <form onSubmit={isForgot ? handleForgotPassword : handleAuth} className={`${activeMode === "signin" ? "mt-4" : "mt-6"} space-y-4`} noValidate>
                 <AuthField
-                  label="Email address"
+                  label={isFarmerSignin ? "Username or email" : "Email address"}
                   name="email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="your@email.com"
+                  type={isFarmerSignin ? "text" : "email"}
+                  inputMode={isFarmerSignin ? "text" : "email"}
+                  autoComplete={isFarmerSignin ? "username" : "email"}
+                  placeholder={isFarmerSignin ? "juan_delacruz or your email" : "your@email.com"}
                   value={email}
                   onChange={setEmail}
                   error={fieldErrors.email}
@@ -410,6 +478,7 @@ export default function AuthPage({ mode = "signin" }) {
                   )}
                 </button>
               </form>
+              )}
 
               {isForgot ? (
                 <button
@@ -421,6 +490,11 @@ export default function AuthPage({ mode = "signin" }) {
                 </button>
               ) : (
                 <>
+                  {isFarmerSignin ? (
+                  <p className="text-center text-xs text-slate-500 mt-5 leading-relaxed">
+                    Farmer accounts are set up by your LGU during registration. Ask your Municipal Agriculture Office if you need one.
+                  </p>
+                  ) : (
                   <p className="text-center text-sm text-slate-500 mt-5">
                     {isSignup ? "Already have an account?" : "New to KalsaTrack?"}{" "}
                     <button
@@ -431,6 +505,7 @@ export default function AuthPage({ mode = "signin" }) {
                       {isSignup ? "Sign in" : "Create one"}
                     </button>
                   </p>
+                  )}
 
                   <p className="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
                     By continuing, you agree to our{" "}

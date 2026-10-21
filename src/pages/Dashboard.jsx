@@ -73,7 +73,7 @@ import StaffProfile from '../components/profile/StaffProfile';
 import ProfileAvatar from '../components/ui/ProfileAvatar';
 import PortalHeader from '../components/ui/PortalHeader';
 import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, SidebarNav, SidebarNavItem, SidebarSignOut } from '../components/ui/SidebarParts';
-import { useProfileNameUpdates } from '../lib/profileName';
+import { useProfileNameUpdates, useRememberedName } from '../lib/profileName';
 import GapSegmentLayer from '../components/map/GapSegmentLayer';
 import Icons from '../components/Icons';
 import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
@@ -787,7 +787,9 @@ export default function Dashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [adminIdentity, setAdminIdentity] = useState({ full_name: 'Administrator', email: '', role: 'System Administrator' });
+  // full_name stays empty until the account loads, so the header never shows a stand-in name first.
+  const [adminIdentity, setAdminIdentity] = useState({ full_name: '', email: '', role: 'System Administrator' });
+  const headerName = useRememberedName(supabase, 'admin', adminIdentity.full_name || null);
   useProfileNameUpdates(useCallback((name) => { if (name) setAdminIdentity((prev) => ({ ...prev, full_name: name })); }, []));
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -1848,7 +1850,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from('progress_updates')
-        .select('id, fmr_project_id, contractor_id, reported_accomplishment, certified_accomplishment, certification_status, certification_remarks, certified_at, certified_by, amount_this_billing, period_start, period_end, remarks, photo_url, status, submitted_at, reviewed_at, fmr_projects(project_name, municipality, accomplishment)')
+        .select('*, fmr_projects(project_name, municipality, accomplishment)')
         .order('submitted_at', { ascending: false });
       if (error) throw error;
       setProgressUpdates(data || []);
@@ -3786,7 +3788,7 @@ export default function Dashboard() {
   // Handle sign out
   const handleSignOut = async () => {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/admin');
   };
 
@@ -3964,8 +3966,8 @@ export default function Dashboard() {
           bell={<NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />}
           account={{
             onClick: () => setActiveTab('settings'),
-            avatar: <ProfileAvatar client={supabase} name={adminIdentity.full_name} fallback="A" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
-            name: adminIdentity.full_name,
+            avatar: <ProfileAvatar client={supabase} name={headerName} fallback="A" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
+            name: headerName,
             detail: adminIdentity.email,
           }}
         />
@@ -8204,6 +8206,15 @@ export default function Dashboard() {
                                       className="mt-1 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
                                     >
                                       View photo
+                                    </PhotoViewButton>
+                                  )}
+                                  {upd.certification_photo_url && (
+                                    <PhotoViewButton
+                                      src={upd.certification_photo_url}
+                                      label={`Engineer's geotagged site photo${upd.certification_photo_lat != null ? ` · ${Number(upd.certification_photo_lat).toFixed(5)}, ${Number(upd.certification_photo_lng).toFixed(5)}` : ''}`}
+                                      className="mt-1 ml-3 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+                                    >
+                                      Engineer's photo
                                     </PhotoViewButton>
                                   )}
                                 </td>

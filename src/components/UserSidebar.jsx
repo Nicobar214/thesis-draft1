@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRememberedName } from '../lib/profileName';
 import Icons from './Icons';
 import SidebarEdgeToggle from './ui/SidebarEdgeToggle';
 import { SidebarConnectionStatus } from './UserSidebarStatus';
@@ -32,7 +33,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
 
   async function handleLogout() {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/signin');
   }
 
@@ -41,7 +42,7 @@ export default function UserSidebar({ collapsed, setCollapsed, user }) {
     return location.pathname.startsWith(path);
   };
 
-  const userName = user?.user_metadata?.full_name || user?.email?.split('@')?.[0] || 'Citizen';
+  const userName = useRememberedName(supabase, 'citizen', user ? (user.user_metadata?.full_name || user.email?.split('@')?.[0] || 'Citizen') : null);
 
   // `isCollapsed` is false in the phone drawer, which always shows labels.
   const sidebarContent = (isCollapsed) => (

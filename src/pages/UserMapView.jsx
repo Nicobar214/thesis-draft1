@@ -1,4 +1,4 @@
-import { LocateFixedIcon, MapPinIcon, TriangleAlertIcon } from 'lucide-react';
+import { CrosshairIcon, LocateFixedIcon, MapPinIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, Circle, CircleMarker, Polyline, Marker, Popup, Tooltip, useMap } from 'react-leaflet';
@@ -15,6 +15,9 @@ import { CITIZEN_STATUS_HEX, useMyReports } from '../lib/useMyReports';
 import { getCitizenStatus } from '../lib/publicReportStatus';
 import ReportStatusLegend from '../components/map/ReportStatusLegend';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
+import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from '../components/map/NearestRoads';
+import { useNearestRoads, useRoadGuide } from '../lib/useNearestRoads';
+import { nearestPointOnRoute } from '../components/publicReports/routeGeometry';
 import {
   buildRoutePoints,
   boundsFromPoints,
@@ -204,6 +207,11 @@ export default function UserMapView({ embedded = false } = {}) {
   const [userLocation, setUserLocation] = useState(null); // { lat, lng, accuracy }
   const [nearbyProjects, setNearbyProjects] = useState(new Set());
   const gpsWatchRef = useRef(null);
+  // "Find the nearest FMR road to me"
+  const [nearestOpen, setNearestOpen] = useState(false);
+  const [focusedRoadId, setFocusedRoadId] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState('');
 
   // Start GPS watcher for geofencing
   useEffect(() => {
@@ -495,6 +503,48 @@ export default function UserMapView({ embedded = false } = {}) {
     return pts;
   }, [mappable, snappedRouteByProjectId]);
 
+  // Every road with a drawn route, whatever the filters, so "nearest" means nearest.
+  const allRoadLines = useMemo(() => projects
+    .map((project) => {
+      const route = buildRoutePoints(project, routeByProjectId[project.id]);
+      const points = snappedRouteByProjectId[project.id] || route.points;
+      return route.hasPolyline && points.length >= 2 ? { project, points } : null;
+    })
+    .filter(Boolean), [projects, routeByProjectId, snappedRouteByProjectId]);
+  const me = useMemo(() => (userLocation ? [userLocation.lat, userLocation.lng] : null), [userLocation]);
+  const distanceToRoadById = useMemo(() => {
+    if (!me) return {};
+    const out = {};
+    allRoadLines.forEach(({ project, points }) => {
+      const hit = nearestPointOnRoute(points, me);
+      if (hit) out[project.id] = hit.distanceMeters;
+    });
+    return out;
+  }, [me, allRoadLines]);
+  const nearestRoads = useNearestRoads(nearestOpen ? me : null, allRoadLines);
+  const focusedRoad = nearestRoads.find((r) => r.project.id === focusedRoadId) || null;
+  const guide = useRoadGuide(me, focusedRoad);
+
+  const findNearestRoads = () => {
+    setLocateError('');
+    setFocusedRoadId(null);
+    if (userLocation) { setNearestOpen(true); return; }
+    if (!navigator.geolocation) { setLocateError('Location is not available on this device.'); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setNearestOpen(true);
+        setLocating(false);
+      },
+      (err) => {
+        setLocateError(err.code === 1 ? 'Allow location access to find the nearest road.' : 'Could not read your location.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 },
+    );
+  };
+
   // Recompute nearby projects whenever location or mappable projects change
   useEffect(() => {
     if (!userLocation) return;
@@ -658,15 +708,26 @@ export default function UserMapView({ embedded = false } = {}) {
           </div>
         </div>
 
-        {/* GPS / Nearby banner */}
-        {userLocation && nearbyProjects.size > 0 && (
-          <div className="flex items-center gap-2.5 px-4 py-3 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-800">
-            <LocateFixedIcon className="size-4 text-teal-600 shrink-0" aria-hidden="true" />
-            <span className="font-medium">
-              {nearbyProjects.size} project{nearbyProjects.size > 1 ? 's' : ''} detected near your current location
+        {/* GPS / Nearby banner, with "find the nearest road" */}
+        {!embedded && (
+          <div className="flex flex-col gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800 sm:flex-row sm:items-center">
+            <LocateFixedIcon className="hidden size-4 shrink-0 text-teal-600 sm:block" aria-hidden="true" />
+            <span className="flex-1 font-medium">
+              {userLocation && nearbyProjects.size > 0
+                ? `${nearbyProjects.size} project${nearbyProjects.size > 1 ? 's' : ''} detected near your current location`
+                : 'See which FMR roads are closest to you and how to get there.'}
             </span>
+            <button
+              type="button"
+              onClick={findNearestRoads}
+              disabled={locating}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:opacity-60"
+            >
+              <CrosshairIcon className="size-3.5" aria-hidden="true" /> {locating ? 'Locating...' : 'Find the nearest FMR road to me'}
+            </button>
           </div>
         )}
+        {locateError && <p role="alert" className="px-1 text-xs text-red-600">{locateError}</p>}
 
         {/* Stats row */}
         <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
@@ -751,7 +812,6 @@ export default function UserMapView({ embedded = false } = {}) {
                   const color = getStatusColor(project.status);
                   const isSelected = selectedProject?.id === project.id;
                   const isFocused = isSelected || hoveredProjectId === project.id;
-                  const isNearby = nearbyProjects.has(project.id);
                   const routePoints = snappedRouteByProjectId[project.id] || route.points;
                   const displayRoutePoints = createDisplayRoutePoints(routePoints, project.id);
                   const routeStart = routePoints[0] || route.startPoint;
@@ -771,7 +831,7 @@ export default function UserMapView({ embedded = false } = {}) {
                           <Polyline
                             positions={displayRoutePoints}
                             pathOptions={{
-                              color: isNearby ? '#0d9488' : color.fill,
+                              color: color.fill,
                               weight: isFocused ? 5.5 : 3.4,
                               opacity: isFocused ? 0.96 : 0.72,
                             }}
@@ -928,7 +988,33 @@ export default function UserMapView({ embedded = false } = {}) {
                     </Marker>
                   );
                 })}
+                <RoadGuideLayer road={focusedRoad} guide={guide} onRoadClick={openProject} />
               </MapContainer>
+            )}
+
+            {nearestOpen && me && (
+              <div className="absolute left-14 top-3 z-[500] w-80 max-w-[calc(100%-4.5rem)] rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
+                <NearestRoadsHeading
+                  action={(
+                    <button
+                      type="button"
+                      onClick={() => { setNearestOpen(false); setFocusedRoadId(null); }}
+                      aria-label="Close nearest roads"
+                      className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      <XIcon className="size-4" aria-hidden="true" />
+                    </button>
+                  )}
+                />
+                <NearestRoadsList
+                  roads={nearestRoads}
+                  focusedId={focusedRoadId}
+                  focusedRoad={focusedRoad}
+                  guide={guide}
+                  onFocus={(road) => setFocusedRoadId(road.project.id)}
+                  onDetails={openProject}
+                />
+              </div>
             )}
 
             {/* Same grouping as the dashboard map: lines, point markers,
@@ -1015,9 +1101,8 @@ export default function UserMapView({ embedded = false } = {}) {
                   const color = getStatusColor(p.status);
                   const isNearby = nearbyProjects.has(p.id);
                   const mid = segmentMidpoint(p);
-                  const distM = mid && userLocation
-                    ? haversineMeters(userLocation.lat, userLocation.lng, mid.lat, mid.lng)
-                    : null;
+                  const distM = !userLocation ? null
+                    : distanceToRoadById[p.id] ?? (mid ? haversineMeters(userLocation.lat, userLocation.lng, mid.lat, mid.lng) : null);
 
                   return (
                     <button
@@ -1026,19 +1111,20 @@ export default function UserMapView({ embedded = false } = {}) {
                       className={`w-full text-left px-4 py-3 transition-colors text-sm ${
                         isActive
                           ? 'bg-emerald-50 border-l-2 border-emerald-500'
-                          : isNearby
-                          ? 'bg-teal-50/60 border-l-2 border-teal-400 hover:bg-teal-50'
                           : 'hover:bg-slate-50 border-l-2 border-transparent'
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <span
                           className="size-2.5 rounded-full mt-1.5 shrink-0"
-                          style={{ backgroundColor: isNearby ? '#0d9488' : color.fill }}
+                          style={{ backgroundColor: color.fill }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className={`font-medium line-clamp-2 leading-snug ${isActive ? 'text-emerald-800' : isNearby ? 'text-teal-800' : 'text-slate-800'}`}>
+                          <p className={`font-medium line-clamp-2 leading-snug ${isActive ? 'text-emerald-800' : 'text-slate-800'}`}>
                             {p.project_name}
+                            {isNearby && (
+                              <span className="ml-1.5 inline-flex rounded-full bg-teal-600 px-1.5 py-px align-middle text-[10px] font-semibold text-white">Near you</span>
+                            )}
                           </p>
                           <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
                             {p.municipality && <span>{p.municipality}</span>}

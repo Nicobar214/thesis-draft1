@@ -405,7 +405,7 @@ export default function LandingPage() {
               </p>
             </div>
             <Link
-              to="/farmer/login"
+              to="/signin?as=farmer"
               className="shrink-0 inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity duration-200 shadow-md shadow-emerald-600/20"
             >
               Farmer Sign In
@@ -473,7 +473,7 @@ export default function LandingPage() {
             <div>
               <h4 className="font-bold text-white text-sm uppercase tracking-wider mb-4">Portals Sign In</h4>
               <ul className="space-y-2 text-xs sm:text-sm">
-                <li><Link to="/farmer/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Farmer Sign In</span></Link></li>
+                <li><Link to="/signin?as=farmer" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Farmer Sign In</span></Link></li>
                 <li><Link to="/lgu/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">LGU Officer Sign In</span></Link></li>
                 <li><Link to="/field-engineer/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Field Engineer Sign In</span></Link></li>
                 <li><Link to="/contractor/login" className="group inline-block hover:text-white transition-colors duration-200"><span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">Contractor Sign In</span></Link></li>

@@ -8,6 +8,8 @@ import { formatDistance, sumRouteLengthMeters } from './routeGeometry';
 import { friendlyReportError } from '../../lib/publicReportStatus';
 import { buttonClass } from '../ui/Button';
 import { attestPhoto } from '../../lib/photoAttestation';
+import { geoErrorMessage, MAX_DISTANCE_M, onSiteCheck, readBestPosition } from '../../lib/onSiteLocation';
+import { haversineMeters as distanceBetween, toPoint as asPoint } from './routeGeometry';
 import { cacheGet, cacheSet, isConnectionError } from '../../lib/offlineCache';
 import { sendInspection, enqueueInspection, listQueuedInspections, discardQueuedInspection, INSPECTION_QUEUE_EVENT } from '../../lib/offlineInspections';
 import ZoomablePhoto from '../ui/ZoomablePhoto';
@@ -42,6 +44,8 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [captureGeoError, setCaptureGeoError] = useState('');
   const [cameraError, setCameraError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
+  const [fixAccuracy, setFixAccuracy] = useState(null); // live accuracy while the GPS settles
+  const [capturing, setCapturing] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -294,6 +298,10 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       if (onSaved) onSaved('Live geotag is required. Enable location and capture again.', 'error');
       return;
     }
+    if (siteCheck && !siteCheck.ok) {
+      if (onSaved) onSaved(siteCheck.problem, 'error');
+      return;
+    }
     if (!engineerCertified) {
       if (onSaved) onSaved('Certification is required before submitting findings.', 'error');
       return;
@@ -356,67 +364,67 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
 
   const deadlineText = fmtCountdown(workflowMeta?.visit_deadline);
 
-  const captureFromCamera = useCallback(() => {
+  // Geofence: the photo must be taken at the reported site (the server checks
+  // the same limits in submit_public_report_inspection).
+  const sitePoint = asPoint(report?.latitude, report?.longitude);
+  const siteCheck = useMemo(() => {
+    if (!capturedGeo) return null;
+    const distanceM = sitePoint ? distanceBetween(sitePoint, [capturedGeo.latitude, capturedGeo.longitude]) : null;
+    return onSiteCheck({ accuracy: capturedGeo.accuracy, distanceM }, { place: "the citizen's reported pin" });
+  }, [capturedGeo, sitePoint]);
+
+  const captureFromCamera = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
-    if (!navigator.geolocation) {
-      setCaptureGeoError('Geolocation is not supported on this device/browser.');
+    // Freeze the frame first, so the picture is the moment the button was pressed.
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    setCaptureGeoError('');
+    setCapturing(true);
+    setFixAccuracy(null);
+    let geo;
+    try {
+      // Sample the GPS for a few seconds and keep the most precise fix.
+      const fix = await readBestPosition({ onSample: (sample) => setFixAccuracy(sample.accuracy) });
+      geo = { latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, capturedAt: fix.capturedAt };
+    } catch (err) {
+      setCaptureGeoError(err?.message === 'timeout' ? 'Could not get a GPS fix. Move to open sky and capture again.' : geoErrorMessage(err));
+      setCapturing(false);
       return;
     }
 
-    setCaptureGeoError('');
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const geo = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          capturedAt: new Date().toISOString(),
-        };
-
-        canvas.width = video.videoWidth || 1280;
-        canvas.height = video.videoHeight || 720;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        canvas.toBlob(async (blob) => {
-          if (!blob) return;
-          // Tamper-evident stamp: date/time, GPS, project and a verification QR
-          // (lib/photoAttestation.js). Falls back to the plain photo if stamping fails.
-          let photo = new File([blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          let attestation = null;
-          try {
-            const stamped = await attestPhoto(blob, {
-              kind: 'field_inspection',
-              latitude: geo.latitude,
-              longitude: geo.longitude,
-              accuracy: geo.accuracy,
-              capturedAt: geo.capturedAt,
-              label: `Field inspection · ${report?.project_name || `Report ${String(report?.id || '').slice(0, 8).toUpperCase()}`}`,
-            });
-            photo = new File([stamped.blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            attestation = stamped.attestation;
-          } catch (stampErr) {
-            console.warn('[inspection] photo stamp failed, keeping the plain photo', stampErr);
-          }
-          setCapturedGeo(geo);
-          setPhotoAttestation(attestation);
-          setPhotoFile(photo);
-          stopCamera();
-        }, 'image/jpeg', 0.9);
-      },
-      () => {
-        setCaptureGeoError('Unable to read current GPS location. Enable location and capture again.');
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
+    canvas.toBlob(async (blob) => {
+      if (!blob) { setCapturing(false); return; }
+      // Tamper-evident stamp: date/time, GPS, project and a verification QR
+      // (lib/photoAttestation.js). Falls back to the plain photo if stamping fails.
+      let photo = new File([blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      let attestation = null;
+      try {
+        const stamped = await attestPhoto(blob, {
+          kind: 'field_inspection',
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          accuracy: geo.accuracy,
+          capturedAt: geo.capturedAt,
+          label: `Field inspection · ${report?.project_name || `Report ${String(report?.id || '').slice(0, 8).toUpperCase()}`}`,
+        });
+        photo = new File([stamped.blob], `field-capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        attestation = stamped.attestation;
+      } catch (stampErr) {
+        console.warn('[inspection] photo stamp failed, keeping the plain photo', stampErr);
       }
-    );
+      setCapturedGeo(geo);
+      setPhotoAttestation(attestation);
+      setPhotoFile(photo);
+      setCapturing(false);
+      stopCamera();
+    }, 'image/jpeg', 0.9);
   }, [report, stopCamera]);
 
   const retakeCapture = () => {
@@ -646,10 +654,10 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
               <button
                 type="button"
                 onClick={captureFromCamera}
-                disabled={!cameraReady || saving}
+                disabled={!cameraReady || saving || capturing}
                 className={buttonClass('primary')}
               >
-                Capture Photo
+                {capturing ? `Getting GPS${fixAccuracy != null ? ` (±${Math.round(fixAccuracy)} m)` : ''}…` : 'Capture Photo'}
               </button>
             ) : (
               <button
@@ -676,11 +684,24 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           {cameraError && (
             <p className="mt-1 text-xs text-amber-700">{cameraError}</p>
           )}
-          {capturedGeo && (
-            <p className="mt-1 text-xs text-emerald-700">
-              GPS captured: {capturedGeo.latitude.toFixed(6)}, {capturedGeo.longitude.toFixed(6)}
-              {Number.isFinite(capturedGeo.accuracy) ? ` (±${Math.round(capturedGeo.accuracy)}m)` : ''}
-            </p>
+          {capturedGeo && siteCheck && (
+            <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${siteCheck.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+              <p className="font-semibold">
+                {siteCheck.ok
+                  ? (siteCheck.distanceM != null
+                    ? `On site: ${Math.round(siteCheck.distanceM)} m from the reported pin (within ${MAX_DISTANCE_M} m)`
+                    : 'Geotagged (this report has no pin to compare with)')
+                  : 'Not accepted as on-site evidence'}
+              </p>
+              {!siteCheck.ok && <p className="mt-0.5">{siteCheck.problem}</p>}
+              <p className="mt-0.5 opacity-80">
+                GPS: {capturedGeo.latitude.toFixed(6)}, {capturedGeo.longitude.toFixed(6)}
+                {Number.isFinite(capturedGeo.accuracy) ? ` (±${Math.round(capturedGeo.accuracy)} m)` : ''}
+              </p>
+            </div>
+          )}
+          {!photoFile && sitePoint && (
+            <p className="mt-1 text-[11px] text-slate-500">The photo must be taken within {MAX_DISTANCE_M} m of the citizen's reported pin.</p>
           )}
           {captureGeoError && (
             <p className="mt-1 text-xs text-amber-700">{captureGeoError}</p>

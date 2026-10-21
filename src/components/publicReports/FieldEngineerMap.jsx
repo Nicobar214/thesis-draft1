@@ -1,13 +1,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, Marker, Polyline, Popup, Tooltip, Circle, CircleMarker, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, Popup, Tooltip, Circle, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 import {
   CrosshairIcon,
   ExpandIcon,
+  LocateFixedIcon,
   NavigationIcon,
   RouteIcon,
+  XIcon,
 } from 'lucide-react';
 
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
@@ -19,10 +21,16 @@ import GapSegmentLayer from '../map/GapSegmentLayer';
 import StableHeatLayer from '../map/StableHeatLayer';
 import BaseTiles from '../map/BaseTiles';
 import { useBasemap } from '../../lib/basemaps';
+import { fetchDrivingRoute, formatEta, routeProgress } from '../../lib/inMapNavigation';
 import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from '../map/MapPanels';
 
 const DEFAULT_CENTER = [10.7, 122.56];
 const GEOFENCE_M = 500; // same radius the repair-verification camera lock and server check enforce
+const ARRIVED_M = 40; // close enough to say "you have arrived"
+const OFF_ROUTE_M = 60; // farther than this from the drawn route → fetch a new one
+const REROUTE_GAP_MS = 10_000; // at most one new route every 10 s
+const ROUTE_TIMEOUT_MS = 12_000; // give up on the router and show the straight line
+const FOLLOW_AFTER_M = 30; // start following once the engineer has moved this far
 
 const STATUS_META = {
   assigned: { label: 'Assigned', color: '#2563eb' },
@@ -96,6 +104,52 @@ function FlyTo({ target }) {
   return null;
 }
 
+/* While navigating: closes the open popup when a trip starts and brings the
+ * trip into view right away (the site, then you and the site once GPS answers,
+ * then the road route when it arrives), then follows the engineer until they
+ * drag the map. */
+function NavCamera({ nav, me, follow, onUserMove }) {
+  const map = useMap();
+  const framed = useRef(null);
+  useMapEvents({ dragstart: onUserMove });
+  const siteId = nav?.site.report.id;
+  const sitePoint = nav?.site.point;
+  const route = nav?.route;
+  const hasMe = Boolean(me);
+  useEffect(() => {
+    if (siteId) map.closePopup();
+  }, [map, siteId]);
+  useEffect(() => {
+    if (!siteId) {
+      framed.current = null;
+      return;
+    }
+    const key = route || `${siteId}-${hasMe ? 'with-me' : 'site'}`;
+    if (framed.current === key) return;
+    framed.current = key;
+    const points = route ? route.points : [sitePoint, ...(me ? [me.point] : [])];
+    const bounds = boundsFromPoints(points);
+    if (bounds) map.flyToBounds(bounds, { padding: [64, 64], maxZoom: 18, duration: 1 });
+  }, [map, siteId, sitePoint, route, hasMe, me]);
+  // Keep the whole-route view until the engineer actually starts moving;
+  // panning on every GPS fix snapped the map straight back to them and hid
+  // a far destination (e.g. Iloilo City from Santa Barbara).
+  const startPoint = useRef(null);
+  useEffect(() => {
+    startPoint.current = null;
+  }, [route]);
+  useEffect(() => {
+    if (!follow || !me || !route || framed.current !== route) return;
+    if (!startPoint.current) {
+      startPoint.current = me.point;
+      return;
+    }
+    if (haversineMeters(startPoint.current, me.point) < FOLLOW_AFTER_M) return;
+    map.setView(me.point, Math.max(map.getZoom(), 16), { animate: true });
+  }, [map, me, follow, route]);
+  return null;
+}
+
 function HeatLayer({ visible, points }) {
   return (
     <StableHeatLayer
@@ -156,6 +210,11 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
   const [flyTarget, setFlyTarget] = useState(null);
   const [fitKey, setFitKey] = useState(0);
   const watchRef = useRef(null);
+  // In-map navigation to one report site: { site, route, status: 'locating' | 'routing' | 'ready' | 'offline' }
+  const [nav, setNav] = useState(null);
+  const [follow, setFollow] = useState(true);
+  const lastRouteAt = useRef(0);
+  const routeReqRef = useRef(null);
 
   const setLayer = (key) => (value) => setLayers((prev) => ({ ...prev, [key]: value }));
 
@@ -182,16 +241,11 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
     if (watchRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchRef.current);
   }, []);
 
-  const toggleTracking = useCallback(() => {
-    if (tracking) {
-      if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
-      watchRef.current = null;
-      setTracking(false);
-      return;
-    }
+  const startTracking = useCallback(() => {
+    if (watchRef.current != null) return true;
     if (!navigator.geolocation) {
       setGeoError('Location is not available on this device.');
-      return;
+      return false;
     }
     setGeoError('');
     setTracking(true);
@@ -202,11 +256,77 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
       },
       (err) => {
         setGeoError(err.code === 1 ? 'Location permission was denied.' : 'Could not read your location.');
+        if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+        watchRef.current = null;
         setTracking(false);
+        setNav(null);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
     );
-  }, [tracking]);
+    return true;
+  }, []);
+
+  const toggleTracking = useCallback(() => {
+    if (!tracking) {
+      startTracking();
+      return;
+    }
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+    watchRef.current = null;
+    setTracking(false);
+    setNav(null);
+  }, [tracking, startTracking]);
+
+  const startNavigation = useCallback((site) => {
+    if (!startTracking()) return;
+    lastRouteAt.current = 0;
+    setFollow(true);
+    setNav({ site, route: null, status: 'locating' });
+  }, [startTracking]);
+
+  const stopNavigation = () => setNav(null);
+
+  // Fetch the road route once the location is known, and again when the
+  // engineer leaves it (took another road), at most every REROUTE_GAP_MS.
+  const navSite = nav?.site;
+  const navRoute = nav?.route;
+  useEffect(() => {
+    if (!navSite || !me) return undefined;
+    if (navRoute) {
+      const off = nearestPointOnRoute(navRoute.points, me.point);
+      if (!off || off.distanceMeters <= OFF_ROUTE_M) return undefined;
+    }
+    if (Date.now() - lastRouteAt.current < REROUTE_GAP_MS) return undefined;
+    lastRouteAt.current = Date.now();
+    // Not aborted on the next GPS fix (that comes every second or two); only
+    // when the trip changes or the router takes too long.
+    routeReqRef.current?.abort();
+    const ctrl = new AbortController();
+    routeReqRef.current = ctrl;
+    const timer = setTimeout(() => ctrl.abort(), ROUTE_TIMEOUT_MS);
+    fetchDrivingRoute(me.point, navSite.point, { signal: ctrl.signal })
+      .then((route) => setNav((prev) => (prev?.site === navSite ? { ...prev, route, status: 'ready' } : prev)))
+      .catch(() => {
+        // No road route (offline, router down or slow): keep a straight line to the site.
+        setNav((prev) => (prev?.site === navSite && !prev.route ? { ...prev, status: 'offline' } : prev));
+      })
+      .finally(() => clearTimeout(timer));
+    return undefined;
+  }, [navSite, navRoute, me]);
+
+  useEffect(() => () => routeReqRef.current?.abort(), [navSite]);
+
+  // Live trip figures: distance and time left, the next turn, and arrival.
+  const navLive = useMemo(() => {
+    if (!nav) return null;
+    const toSite = me ? haversineMeters(me.point, nav.site.point) : null;
+    let progress = null;
+    if (nav.route && me) {
+      const along = nearestPointOnRoute(nav.route.points, me.point);
+      progress = routeProgress(nav.route, along ? along.kmAtPoint * 1000 : 0);
+    }
+    return { toSite, progress, arrived: toSite != null && toSite <= ARRIVED_M, inRange: toSite != null && toSite <= GEOFENCE_M };
+  }, [nav, me]);
 
   const routeByProject = useMemo(() => {
     const byProject = new Map();
@@ -263,7 +383,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
     : null;
 
   const distanceFromMe = (point) => (me ? haversineMeters(me.point, point) : null);
-  const navUrl = (point) => `https://www.google.com/maps/dir/?api=1&destination=${point[0]},${point[1]}&travelmode=driving`;
+  const externalNavUrl = (point) => `https://www.google.com/maps/dir/?api=1&destination=${point[0]},${point[1]}&travelmode=driving`;
 
   const active = layers;
   const routeStatuses = new Set([...routeByProject.values()].map((v) => normalizeRouteStatus(v.project.status)));
@@ -272,6 +392,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
   const mapOverlays = (
     <>
             <FlyTo target={flyTarget} />
+            <NavCamera nav={nav} me={me} follow={follow} onUserMove={() => setFollow(false)} />
             <HeatLayer visible={active.heat} points={heatPoints} />
 
             {active.routes && [...routeByProject.values()].map(({ project, points, data }) => {
@@ -330,15 +451,25 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
                         <button type="button" onClick={() => onOpenReport?.(report)} className="rounded-md bg-teal-600 px-2.5 py-1 font-semibold text-white hover:bg-teal-700">
                           Open inspection
                         </button>
-                        <a href={navUrl(s.point)} target="_blank" rel="noopener noreferrer" className="rounded-md border border-slate-200 px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-50">
+                        <button type="button" onClick={() => startNavigation(s)} className="rounded-md border border-slate-200 px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-50">
                           Navigate
-                        </a>
+                        </button>
                       </div>
                     </div>
                   </Popup>
                 </Marker>
               );
             })}
+
+            {nav?.route && (
+              <>
+                <Polyline positions={nav.route.points} interactive={false} pathOptions={{ color: '#ffffff', weight: 9, opacity: 0.95 }} />
+                <Polyline positions={nav.route.points} interactive={false} pathOptions={{ color: '#2563eb', weight: 5, opacity: 1 }} />
+              </>
+            )}
+            {nav && !nav.route && me && nav.status === 'offline' && (
+              <Polyline positions={[me.point, nav.site.point]} interactive={false} pathOptions={{ color: '#2563eb', weight: 3, dashArray: '6 8' }} />
+            )}
 
             {me && (
               <>
@@ -350,8 +481,59 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
             )}
     </>
   );
+  const navPanel = nav && (
+    <div className="absolute left-3 top-3 z-20 w-80 max-w-[calc(100%-5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+      <div className={`flex items-start gap-2.5 px-3 py-2.5 text-white ${navLive?.arrived ? 'bg-emerald-600' : 'bg-blue-600'}`}>
+        <NavigationIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1" aria-live="polite">
+          {navLive?.arrived ? (
+            <p className="text-sm font-semibold">You have arrived</p>
+          ) : nav.status === 'ready' && navLive?.progress ? (
+            <>
+              <p className="text-sm font-semibold leading-snug">{navLive.progress.nextText}</p>
+              {navLive.progress.nextInM > 15 && <p className="text-[11px] text-blue-100">in {formatDistance(navLive.progress.nextInM)}</p>}
+            </>
+          ) : nav.status === 'offline' ? (
+            <p className="text-sm font-semibold leading-snug">No road route right now. Head toward the site on the dashed line.</p>
+          ) : (
+            <p className="text-sm font-semibold">{me ? 'Getting directions…' : 'Finding your location…'}</p>
+          )}
+        </div>
+        <button type="button" onClick={stopNavigation} aria-label="Stop navigation" className="rounded-md p-0.5 text-white/80 hover:bg-white/15 hover:text-white">
+          <XIcon className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="space-y-2 px-3 py-2.5 text-xs">
+        <p className="truncate font-medium text-slate-800">
+          {[nav.site.report.barangay, nav.site.report.municipality].filter(Boolean).join(', ') || 'Report site'}
+        </p>
+        <p className="text-slate-500">
+          {navLive?.progress && !navLive.arrived
+            ? `${formatDistance(navLive.progress.remainingM)} · about ${formatEta(navLive.progress.remainingS)} by car`
+            : navLive?.toSite != null ? `${formatDistance(navLive.toSite)} away (straight line)` : 'Waiting for GPS…'}
+          {navLive?.inRange && !navLive.arrived && ' · within inspection range'}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {(navLive?.inRange || navLive?.arrived) && (
+            <button type="button" onClick={() => onOpenReport?.(nav.site.report)} className="rounded-md bg-teal-600 px-2.5 py-1 font-semibold text-white hover:bg-teal-700">
+              Open inspection
+            </button>
+          )}
+          {!follow && me && (
+            <button type="button" onClick={() => setFollow(true)} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-50">
+              <LocateFixedIcon className="size-3.5" aria-hidden="true" /> Recenter
+            </button>
+          )}
+          <a href={externalNavUrl(nav.site.point)} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11px] text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline">
+            Open in Google Maps
+          </a>
+        </div>
+      </div>
+    </div>
+  );
   const mapPanels = (
     <>
+          {navPanel}
           <MapLegend compact={compact}>
             <LegendGroup label="Report status">
               {['assigned', 'in_progress', 'rejected', 'inspected'].map((k) => (
@@ -566,16 +748,15 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
                       </span>
                     </button>
                     <div className="flex shrink-0 flex-col gap-1">
-                      <a
-                        href={navUrl(s.point)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => startNavigation(s)}
                         aria-label="Navigate to site"
                         title="Navigate"
-                        className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+                        className={`rounded-md border p-1.5 ${nav?.site.report.id === s.report.id ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                       >
                         <NavigationIcon className="size-3.5" aria-hidden="true" />
-                      </a>
+                      </button>
                     </div>
                   </li>
                 );

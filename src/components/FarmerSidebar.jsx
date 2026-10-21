@@ -29,7 +29,7 @@ const NAV_GROUPS = [
   { labelKey: 'nav.group.account', to: ['/farmer/profile'] },
 ];
 
-export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRecord, pendingReportsCount = 0 }) {
+export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRecord, displayName = '', pendingReportsCount = 0 }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -37,7 +37,7 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
 
   async function handleLogout() {
     if (!(await confirmSignOut())) return;
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/farmer/login');
   }
 
@@ -88,7 +88,7 @@ export default function FarmerSidebar({ collapsed, setCollapsed, user, farmerRec
                 className="size-10 rounded-xl text-sm shadow-sm"
               />
             )}
-            name={farmerRecord?.full_name || t('farmerAccount')}
+            name={displayName}
             subtitle={`RSBSA: ${farmerRecord?.rsbsa_number || 'N/A'}`}
           />
         )}

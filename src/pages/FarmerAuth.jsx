@@ -64,7 +64,7 @@ export default function FarmerAuth() {
       userRole = resolveEffectiveRole(profile?.role, data.user.user_metadata?.role);
 
       if (userRole !== "farmer") {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setError("Access denied. This login is for Farmer accounts only.");
         setLoading(false);
         return;

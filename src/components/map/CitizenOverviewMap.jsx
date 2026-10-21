@@ -16,7 +16,9 @@ import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, Control
 import { getCitizenStatus } from '../../lib/publicReportStatus';
 import { CITIZEN_STATUS_HEX, useMyReports } from '../../lib/useMyReports';
 import ReportStatusLegend from './ReportStatusLegend';
-import { formatDistance, nearestPointOnRoute, toPoint } from '../publicReports/routeGeometry';
+import { formatDistance, toPoint } from '../publicReports/routeGeometry';
+import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from './NearestRoads';
+import { useNearestRoads, useRoadGuide } from '../../lib/useNearestRoads';
 
 const DEFAULT_CENTER = [10.89, 122.45];
 const ROAD_STATUSES = ['Completed', 'On-Going', 'Proposed'];
@@ -80,6 +82,9 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
   const [geoError, setGeoError] = useState('');
   const [locating, setLocating] = useState(false);
   const [flyTarget, setFlyTarget] = useState(null);
+  // Side panel: the citizen's reports, or the nearest roads once they locate themselves.
+  const [panel, setPanel] = useState('reports');
+  const [focusedRoadId, setFocusedRoadId] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -126,15 +131,10 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
     })
     .filter(Boolean), [reports]);
 
-  const nearestRoad = useMemo(() => {
-    if (!me) return null;
-    let best = null;
-    allRouteLines.forEach(({ project, points }) => {
-      const hit = nearestPointOnRoute(points, me);
-      if (hit && (!best || hit.distanceMeters < best.distance)) best = { project, distance: hit.distanceMeters };
-    });
-    return best;
-  }, [me, allRouteLines]);
+  const nearestRoads = useNearestRoads(me, allRouteLines);
+  const nearestRoad = nearestRoads[0] || null;
+  const focusedRoad = nearestRoads.find((r) => r.project.id === focusedRoadId) || null;
+  const guide = useRoadGuide(me, focusedRoad);
 
   const fitPoints = useMemo(() => {
     if (pins.length) return pins.map((p) => p.point);
@@ -150,6 +150,8 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
         const point = [pos.coords.latitude, pos.coords.longitude];
         setMe(point);
         setFlyTarget([...point]);
+        setFocusedRoadId(null);
+        setPanel('nearest');
         setLocating(false);
       },
       (err) => {
@@ -183,6 +185,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
               {layers.endpoints && <RouteEndpointMarkers project={project} routeData={data} lineColor={getRouteStatusTheme(project.status).line} />}
             </Fragment>
           ))}
+          <RoadGuideLayer road={focusedRoad} guide={guide} onRoadClick={onProjectSelect} />
           <GapSegmentLayer gaps={gaps} visible={layers.gaps} />
           {layers.markets && markets.filter((m) => Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))).map((m) => (
             <Marker key={`market-${m.id}`} position={[Number(m.latitude), Number(m.longitude)]} icon={marketIcon()}>
@@ -266,9 +269,33 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
           </p>
         )}
 
-        <div>
+        {panel === 'nearest' && me ? (
+          <div>
+            <NearestRoadsHeading
+              action={(
+                <button type="button" onClick={() => { setPanel('reports'); setFocusedRoadId(null); }} className="text-[11px] font-semibold text-emerald-700 hover:underline">
+                  My reports
+                </button>
+              )}
+            />
+            <NearestRoadsList
+              roads={nearestRoads}
+              focusedId={focusedRoadId}
+              focusedRoad={focusedRoad}
+              guide={guide}
+              onFocus={(road) => setFocusedRoadId(road.project.id)}
+              onDetails={onProjectSelect}
+            />
+          </div>
+        ) : (
+          <div>
           <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-800">
             <MapPinIcon className="size-4 text-emerald-700" aria-hidden="true" /> Your reports on the map
+            {nearestRoads.length > 0 && (
+              <button type="button" onClick={() => setPanel('nearest')} className="ml-auto text-[11px] font-semibold text-emerald-700 hover:underline">
+                Nearest roads
+              </button>
+            )}
           </p>
           {recent.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500">
@@ -300,7 +327,8 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
               })}
             </ul>
           )}
-        </div>
+          </div>
+        )}
 
         <Link
           to="/user/map"

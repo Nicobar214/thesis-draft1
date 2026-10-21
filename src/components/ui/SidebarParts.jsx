@@ -81,7 +81,9 @@ export function SidebarAccount({ collapsed, avatar, name, subtitle, to, onClick 
       {avatar}
       {!collapsed && (
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-white">{name}</span>
+          {name
+            ? <span className="block truncate text-sm font-bold text-white">{name}</span>
+            : <span className="block h-4 w-28 animate-pulse rounded bg-slate-700" aria-hidden="true" />}
           <span className="mt-1 block truncate text-xs leading-none text-slate-400">{subtitle}</span>
         </span>
       )}

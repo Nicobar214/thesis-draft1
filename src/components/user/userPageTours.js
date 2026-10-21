@@ -41,11 +41,6 @@ export const USER_PAGE_TOURS = {
       body: 'How many road projects there are in the region, and how many are completed, ongoing or proposed.',
     },
     {
-      target: t('dash-rankings'),
-      title: 'Municipality rankings',
-      body: 'Compare how far along each municipality’s road projects are.',
-    },
-    {
       target: t('notifications'),
       title: 'Notifications',
       body: 'Updates on your reports and on projects you follow show up here.',

@@ -17,7 +17,9 @@ export default function PortalHeader({ title, description, leading = null, actio
     <>
       {account.avatar}
       <span className="hidden min-w-0 text-left md:block">
-        <span className="block max-w-[11rem] truncate text-sm font-bold text-slate-900">{account.name}</span>
+        {account.name
+          ? <span className="block max-w-[11rem] truncate text-sm font-bold text-slate-900">{account.name}</span>
+          : <span className="block h-4 w-28 animate-pulse rounded bg-slate-200" aria-hidden="true" />}
         {account.detail && <span className="block max-w-[11rem] truncate text-xs text-slate-500">{account.detail}</span>}
       </span>
     </>

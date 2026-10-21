@@ -306,7 +306,7 @@ Your dashboard will show road projects near this location.`,
       const { error: rpcError } = await supabase.rpc('delete_my_account');
       if (rpcError) throw rpcError;
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
       window.location.href = '/signin';
     } catch (err) {
       setError(err.message || 'Unable to delete account automatically. Please contact the administrator.');

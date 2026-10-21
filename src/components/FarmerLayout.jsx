@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { supabaseFarmer as supabase } from '../lib/supabase';
+import { useRememberedName } from '../lib/profileName';
 import { useFarmerRecord } from '../lib/useFarmerRecord';
 import { useFarmerReports } from '../lib/useFarmerReports';
 import FarmerSidebar from './FarmerSidebar';
@@ -53,6 +54,7 @@ export default function FarmerLayout() {
   // Farmer portal language (English / Hiligaynon / Tagalog), chosen in My Profile or the welcome guide.
   const i18n = useFarmerLanguageState();
   const { t } = i18n;
+  const headerName = useRememberedName(supabase, 'farmer', loading ? null : (farmerRecord?.full_name || t('farmerAccount')));
   const [pendingCount, setPendingCount] = useState(0);
 
   // Offline-first: harvests and road reports added with no signal wait on the
@@ -188,6 +190,7 @@ export default function FarmerLayout() {
         setCollapsed={setCollapsed}
         user={user}
         farmerRecord={farmerRecord}
+        displayName={headerName}
         pendingReportsCount={pendingReportsCount}
       />
 
@@ -228,7 +231,7 @@ export default function FarmerLayout() {
           account={{
             to: '/farmer/profile',
             avatar: <ProfileAvatar client={supabase} name={farmerRecord?.full_name || farmerRecord?.first_name} fallback="F" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,
-            name: farmerRecord?.full_name || t('farmerAccount'),
+            name: headerName,
             detail: `RSBSA: ${farmerRecord?.rsbsa_number || 'N/A'}`,
           }}
         />

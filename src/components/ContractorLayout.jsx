@@ -13,7 +13,7 @@ import NotificationBell from './NotificationBell';
 import Icons from './Icons';
 import ProfileAvatar from './ui/ProfileAvatar';
 import PortalHeader from './ui/PortalHeader';
-import { useProfileNameUpdates } from '../lib/profileName';
+import { useProfileNameUpdates, useRememberedName } from '../lib/profileName';
 
 // One line under the title, as on every portal's header.
 const PAGE_DESCRIPTIONS = {
@@ -35,6 +35,7 @@ export default function ContractorLayout({ children }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -42,7 +43,10 @@ export default function ContractorLayout({ children }) {
       if (!u) { navigate('/contractor/login'); return; }
       setUser(u);
       supabase.from('profiles').select('full_name, email').eq('id', u.id).maybeSingle()
-        .then(({ data }) => setProfile(data));
+        .then(({ data }) => {
+          setProfile(data);
+          setProfileLoaded(true);
+        });
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -56,7 +60,13 @@ export default function ContractorLayout({ children }) {
   const summary = useContractorSummary(supabase, user?.id || null);
   useProfileNameUpdates(useCallback((name) => setProfile((p) => ({ ...(p || {}), full_name: name })), []));
 
-  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Contractor';
+  // The fallbacks only apply once the profile has loaded; until then the name
+  // remembered from the last visit is shown, so it never flickers on refresh.
+  const displayName = useRememberedName(
+    supabase,
+    'contractor',
+    profileLoaded ? (profile?.full_name || user?.email?.split('@')[0] || 'Contractor') : null,
+  );
   const pageTitle = PAGE_TITLES[location.pathname] || 'Contractor Portal';
   const pageDescription = PAGE_DESCRIPTIONS[location.pathname] || '';
 

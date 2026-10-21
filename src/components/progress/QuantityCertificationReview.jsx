@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { formatPercentage } from '../../lib/percentageFormat';
+import { attachCertificationPhoto } from '../../lib/progressCertificationPhoto';
+import CertificationPhotoCapture from './CertificationPhotoCapture';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono ' +
@@ -44,6 +46,7 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [certPhoto, setCertPhoto] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,8 +190,14 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
       }
     }
 
+    if (!certPhoto || !certPhoto.check?.ok) {
+      setError(certPhoto?.check?.problem || 'Take a geotagged site photo as evidence before you certify or dispute.');
+      return;
+    }
+
     setSaving(true);
     try {
+      await attachCertificationPhoto(supabase, row.id, certPhoto);
       const payload = disputeMode ? [] : previewRows.map((item) => ({
         work_plan_item_id: item.work_plan_item_id,
         engineer_validated_quantity: Number(quantities[item.work_plan_item_id]),
@@ -335,6 +344,14 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
             </button>
           </div>
 
+          <CertificationPhotoCapture
+            value={certPhoto}
+            onChange={setCertPhoto}
+            projectId={row.fmr_project_id}
+            projectName={row.fmr_projects?.project_name}
+            disabled={saving}
+          />
+
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Review remarks {disputeMode && <span className="text-rose-500">*</span>}
@@ -372,7 +389,7 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
         <button
           type="button"
           onClick={submitReview}
-          disabled={saving || loading || items.length === 0}
+          disabled={saving || loading || items.length === 0 || !certPhoto?.check?.ok}
           className={`px-4 py-2.5 rounded-lg text-sm font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed ${disputeMode ? 'bg-rose-600 hover:bg-rose-700' : 'bg-teal-600 hover:bg-teal-700'}`}
         >
           {saving ? 'Saving...' : disputeMode ? 'Submit Dispute' : `Certify Quantities (${formatPercentage(overallPreview)})`}

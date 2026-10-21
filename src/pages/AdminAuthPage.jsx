@@ -37,7 +37,7 @@ export default function AdminAuthPage() {
       const adminEmails = ['gab@gmail.com'];
 
       if (!adminEmails.includes(email.toLowerCase())) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setError("Access denied. This login is for administrators only.");
         setLoading(false);
         return;

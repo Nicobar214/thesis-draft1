@@ -608,7 +608,15 @@ export default function ContractorProjects() {
         )}
         {/* Progress history: collapsed by default (opens from a notification
             or ?history=1), so this page stays on the projects. */}
-        <ProgressSubmissionHistory client={supabase} userId={user?.id} />
+        <ProgressSubmissionHistory
+          client={supabase}
+          userId={user?.id}
+          canOpenProject={(id) => projects.some((p) => String(p.id) === String(id))}
+          onOpenProject={(id) => {
+            const project = projects.find((p) => String(p.id) === String(id));
+            if (project) setDetailProject(project);
+          }}
+        />
       </div>
 
       {/* Project detail (opened by clicking a row) */}

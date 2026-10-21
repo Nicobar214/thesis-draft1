@@ -63,7 +63,7 @@ export default function LguAuth() {
       userRole = resolveEffectiveRole(profile?.role, data.user.user_metadata?.role);
 
       if (userRole !== "lgu") {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setError("Access denied. This login is for LGU accounts only.");
         setLoading(false);
         return;

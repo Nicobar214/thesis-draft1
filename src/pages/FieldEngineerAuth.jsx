@@ -83,7 +83,7 @@ export default function FieldEngineerAuth() {
       }
 
       if (userRole !== "field_engineer") {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setError("Access denied. This login is for field engineers only.");
         setLoading(false);
         return;
