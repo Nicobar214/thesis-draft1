@@ -103,6 +103,12 @@ export function readBestPosition({ durationMs = POSITION_POLL_MS, goodEnoughM = 
  * the normal on-site limits above. The engineer's check never uses this. */
 export const HANDLER_PHOTO_TEST_LIMITS = { maxDistanceM: 50000, maxAccuracyM: 1000 };
 
+/* TEMPORARY (testing): wider limits for the KalsaTrack camera photos only
+ * (progress certification and Priority Tasks), matching
+ * supabase_field_photo_testing_limits.sql. Set to null to go back to the
+ * normal on-site limits (100 m GPS, 500 m from the road). */
+export const FIELD_PHOTO_TEST_LIMITS = { maxDistanceM: 50000, maxAccuracyM: 1000 };
+
 /**
  * Is a geotagged photo usable as on-site evidence? `distanceM` is how far the
  * fix is from the site (null when the site has no location, which is not

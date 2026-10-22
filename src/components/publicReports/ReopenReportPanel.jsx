@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { confirm as confirmDialog } from '../../lib/confirm';
 import { RotateCcwIcon } from 'lucide-react';
 import { buttonClass } from '../ui/Button';
 
@@ -44,6 +45,13 @@ export default function ReopenReportPanel({ report, client = defaultClient, onNo
 
   const submit = async () => {
     if (!reason.trim()) return;
+    const ok = await confirmDialog({
+      title: 'Reopen this resolved report?',
+      message: 'The report goes back to being fixed. The LGU or contractor is asked to fix it again, and the reporter is told.',
+      confirmLabel: 'Reopen report',
+      tone: 'warning',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await reopenResolvedPublicReport(client, { reportId: report.id, reason: reason.trim() });

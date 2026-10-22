@@ -1,6 +1,9 @@
-// FMR Road Priority Scoring - No ML required. Pure weighted formula.
+// FMR road prioritization - a transparent weighted formula (no ML).
 
 import { resolveCategory } from './publicReportStatus';
+import { buildRoutePoints, normalizeRouteStatus, parsePointList } from './mapRouteUtils';
+import { haversineMeters, nearestPointOnRoute, toPoint } from '../components/publicReports/routeGeometry';
+import { findRouteOverlaps, OVERLAP_METERS } from './routeOverlap';
 
 // Keyed by issue type (publicReportStatus.js); old rows are mapped onto these.
 const SEVERITY_WEIGHTS = {
@@ -10,9 +13,9 @@ const SEVERITY_WEIGHTS = {
   roadside: 0.4,
 };
 
-const ESCALATION_BONUS = 1.25; // Applied to severity raw sum if project has active escalation.
-
-// Simulated crop data (replace with Supabase query when fmr_crop_data table is ready).
+// Municipality-level crop scores used ONLY by the LGU proposal triage below
+// (computeProposalPriorityScores). FMR prioritization uses the real farmer
+// registry instead (topCommoditiesByMunicipality).
 const SIMULATED_CROP_DATA = {
   "pototan": { score: 88, primary_crop: "Sugarcane", hectares: 4200 },
   "barotac viejo": { score: 82, primary_crop: "Rice", hectares: 3800 },
@@ -57,104 +60,6 @@ function getRecencyMultiplier(createdAt) {
   return 0.2;
 }
 
-export function buildPlainReason(project, reportCount, bySeverity, cropData, rank) {
-  const parts = [];
-  if (reportCount > 0) parts.push(`${reportCount} report${reportCount > 1 ? 's' : ''}`);
-  if (bySeverity.structural > 0) parts.push(`${bySeverity.structural} structural`);
-  if (bySeverity.obstruction > 0) parts.push(`${bySeverity.obstruction} obstruction`);
-  if (bySeverity.road_damage > 0) parts.push(`${bySeverity.road_damage} road damage`);
-  if (cropData.score >= 70) {
-    parts.push(`high-value ${cropData.primary_crop} area (${cropData.hectares.toLocaleString()} ha)`);
-  } else if (cropData.score >= 50) {
-    parts.push(`moderate crop area (${cropData.primary_crop})`);
-  }
-
-  const summary = parts.length
-    ? parts.join(', ')
-    : 'no recent reports and low agricultural impact';
-
-  return `Ranks #${rank} - serves ${project.municipality || 'area'}: ${summary}.`;
-}
-
-/**
- * Main scoring function.
- * @param {Array} projects - fmr_projects rows
- * @param {Array} reports - public_reports rows
- * @param {Array} escalations - public_report_lgu_escalations rows
- * @returns {Array} Sorted priority results, rank 1 = highest priority
- */
-export function computePriorityScores(projects, reports, escalations) {
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const safeReports = Array.isArray(reports) ? reports : [];
-  const safeEscalations = Array.isArray(escalations) ? escalations : [];
-
-  // Build a Set of report_ids that have an active escalation.
-  const escalatedReportIds = new Set(
-    safeEscalations
-      .filter((e) => ['for_action', 'endorsed'].includes(e.escalation_status))
-      .map((e) => e.report_id)
-  );
-
-  const raw = safeProjects.map((project) => {
-    const projectReports = safeReports.filter(
-      (r) =>
-        String(r.project_name || '').trim().toLowerCase() ===
-        String(project.project_name || '').trim().toLowerCase()
-    );
-
-    const bySeverity = { structural: 0, obstruction: 0, road_damage: 0, roadside: 0 };
-
-    let severityRaw = projectReports.reduce((sum, r) => {
-      const cat = classifyReportSeverity(r);
-      bySeverity[cat] += 1;
-      return sum + SEVERITY_WEIGHTS[cat] * getRecencyMultiplier(r.created_at);
-    }, 0);
-
-    const hasEscalation = projectReports.some((r) => escalatedReportIds.has(r.id));
-    if (hasEscalation) severityRaw *= ESCALATION_BONUS;
-
-    const cropData = getCropData(project.municipality);
-
-    return {
-      project,
-      reportCount: projectReports.length,
-      volumeRaw: projectReports.length,
-      severityRaw,
-      cropScore: cropData.score,
-      cropData,
-      bySeverity,
-      hasEscalation,
-    };
-  });
-
-  const maxVolume = Math.max(...raw.map((r) => r.volumeRaw), 1);
-  const maxSeverity = Math.max(...raw.map((r) => r.severityRaw), 1);
-
-  const scored = raw.map((r) => {
-    const V = (r.volumeRaw / maxVolume) * 100;
-    const S = (r.severityRaw / maxSeverity) * 100;
-    const C = r.cropScore;
-
-    const score = Math.round(V * 0.4 + S * 0.35 + C * 0.25);
-
-    return {
-      ...r,
-      score,
-      V: Math.round(V),
-      S: Math.round(S),
-      C: Math.round(C),
-    };
-  });
-
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .map((r, i) => ({
-      ...r,
-      rank: i + 1,
-      reason: buildPlainReason(r.project, r.reportCount, r.bySeverity, r.cropData, i + 1),
-    }));
-}
-
 // Shared score/rank/factor-bar tone helpers -- used by PriorityTab.jsx (real
 // projects) and the LGU proposal priority view below, so both look consistent.
 export function scoreTone(score) {
@@ -171,360 +76,359 @@ export function rankTone(rank) {
 }
 
 export function factorBarTone(key) {
-  if (key === 'V' || key === 'U' || key === 'G') return 'bg-blue-500';
-  if (key === 'S' || key === 'B' || key === 'E') return 'bg-red-500';
+  if (key === 'U' || key === 'G') return 'bg-blue-500';
+  if (key === 'B' || key === 'R') return 'bg-red-500';
   if (key === 'M') return 'bg-emerald-500';
+  if (key === 'F') return 'bg-violet-500';
   return 'bg-amber-500';
 }
 
-/**
- * SUPERSEDED by computeRoadGapPriorityScores below. Kept only so the write-up can
- * show the before/after; it is no longer wired into the UI.
- *
- * Two defects, both confirmed against the live data:
- *
- *  - E collapses. `connectivityIndex` is 85 when the project name contains '-',
- *    'rd' or 'road' and 60 otherwise. Every Leon FMR name contains "Rd" or
- *    "Road", so the value is 85 for essentially every row and, after dividing by
- *    the batch maximum, E = 100 for every row.
- *  - M barely varies. `marketAccessScore` is 95 when the name contains
- *    'poblacion' and 75 otherwise, plus a fixed 10 for a severity keyword.
- *
- * A factor with no variance cannot change an ordering, so the documented
- * 40/35/25 weighting silently reduces to a plain sort on gap km: 60% of the
- * stated weight does nothing. It also reads `project.barangay`, a column that did
- * not exist, so every generated reason string printed the literal word
- * "Barangay".
- *
- * Original factors:
- *  - G (Gap Distance / Unpaved Length) 40%
- *  - E (Edge-to-Edge Connectivity)      35%
- *  - M (Market Access Impact)           25%
- */
-export function computeRoadGapPriorityScoresLegacy(projects, roadInventory = [], reports = []) {
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const safeInventory = Array.isArray(roadInventory) ? roadInventory : [];
-
-  const raw = safeProjects.map((project) => {
-    const projName = String(project.project_name || '').toLowerCase();
-    const barangay = String(project.barangay || project.location || '').toLowerCase();
-
-    // Match inventory entry if available
-    const invMatch = safeInventory.find((inv) => 
-      projName.includes(String(inv.roadName || '').toLowerCase()) ||
-      String(inv.roadName || '').toLowerCase().includes(projName) ||
-      (inv.barangay && barangay.includes(String(inv.barangay).toLowerCase()))
-    );
-
-    // Explicit road gap fields win over inferred inventory matches.
-    let gapKm = Number(project.road_gap_km || project.project_length_km || project.length_km || 1.2);
-    let gapType = project.road_gap_type || 'Barangay Road Gap';
-    let gapReason = project.road_gap_reason || '';
-
-    if (!project.road_gap_km && invMatch) {
-      const earthSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Earth');
-      const gravelSurfaces = (invMatch.surfaces || []).find((s) => s.type === 'Gravel');
-      const earthLen = Number(earthSurfaces?.length || 0);
-      const gravelLen = Number(gravelSurfaces?.length || 0);
-      
-      if (earthLen > 0 || gravelLen > 0) {
-        gapKm = earthLen + gravelLen;
-        gapType = earthLen > 0 ? 'Earth Surface Gap' : 'Gravel Surface Gap';
-      } else {
-        gapKm = Number(invMatch.lengthKm || gapKm);
-        gapType = invMatch.surfaceType || 'Barangay Road Gap';
-      }
-    }
-
-    const isConnectingRoad = projName.includes('-') || projName.includes('rd') || projName.includes('road');
-    const connectivityIndex = isConnectingRoad ? 85 : 60;
-    const gapSeverityBoost = /critical|earth|poor/i.test(`${gapType} ${gapReason}`) ? 10 : 0;
-    const marketAccessScore = Math.min(100, (projName.includes('poblacion') || barangay.includes('poblacion') ? 95 : 75) + gapSeverityBoost);
-
-    const projectReports = (reports || []).filter(
-      (r) => String(r.project_name || '').trim().toLowerCase() === projName
-    );
-
-    return {
-      project,
-      gapKm: Number(gapKm.toFixed(2)),
-      gapType,
-      connectivityIndex,
-      marketAccessScore,
-      reportCount: projectReports.length,
-      invMatch: Boolean(invMatch),
-      gapReason,
-    };
-  });
-
-  const maxGapKm = Math.max(...raw.map((r) => r.gapKm), 1);
-  const maxConn = Math.max(...raw.map((r) => r.connectivityIndex), 1);
-  const maxMarket = Math.max(...raw.map((r) => r.marketAccessScore), 1);
-
-  const scored = raw.map((r) => {
-    const G = Math.round((r.gapKm / maxGapKm) * 100);
-    const E = Math.round((r.connectivityIndex / maxConn) * 100);
-    const M = Math.round((r.marketAccessScore / maxMarket) * 100);
-
-    const score = Math.round(G * 0.40 + E * 0.35 + M * 0.25);
-
-    return {
-      ...r,
-      score,
-      G,
-      E,
-      M,
-      cropData: { score: 0, primary_crop: 'N/A (Disregarded)', hectares: 0 },
-      bySeverity: { safety: 0, flood: 0, issue: 0, general: 0 },
-      hasEscalation: false,
-    };
-  });
-
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .map((r, i) => ({
-      ...r,
-      rank: i + 1,
-      reason: `Rank #${i + 1} — ${r.project.municipality || 'Leon'} (${r.project.barangay || 'Barangay'}): ${r.gapKm} km ${r.gapType} connecting to market network.`,
-    }));
-}
-
 // ---------------------------------------------------------------------------
-// Module 1: Road Network Gap Prioritization
+// FMR prioritization: one module, five criteria, two groups
 // ---------------------------------------------------------------------------
+//
+// Candidates are ranked in two groups that are never mixed:
+//   - New road suggestions: the surveyed unpaved gaps (road_network_gaps)
+//   - Ongoing projects:     FMR projects still being built (status On-Going)
+// Completed and proposed projects are not candidates.
+//
+// Every distance is measured to the nearest point on the candidate's line
+// (nearestPointOnRoute), the same rule used for report locations elsewhere.
+
+/** Published weights (sum to 1). */
+export const PRIORITY_WEIGHTS = { G: 0.25, M: 0.20, R: 0.20, C: 0.20, F: 0.15 };
+
+/** One definition of the criteria, used by the scorer, the UI and the write-up. */
+export const PRIORITY_CRITERIA = [
+  { key: 'G', label: 'Gap length' },
+  { key: 'M', label: 'Market access' },
+  { key: 'R', label: 'Citizen reports' },
+  { key: 'C', label: 'Top commodities' },
+  { key: 'F', label: 'Farmer density' },
+];
+
+export const REPORT_RADIUS_M = 500;    // citizen reports counted around the road
+export const FARMER_RADIUS_M = 2000;   // farms counted as served by the road
+export const TOP_COMMODITY_COUNT = 5;  // the municipality's top crops that count
+/** A gap whose length is this much on an existing project's road already has
+ * a project: it leaves the New group. Lower would hide real gaps that only meet
+ * a project where they join the network; higher would keep gaps whose project
+ * was simply drawn a little differently. */
+export const COVERED_SHARE = 0.6;
+const NEUTRAL = 50;                     // a criterion with no data sits mid-range
+const MIN_LENGTH_KM = 0.5;              // floor for "per km" so short roads don't explode
 
 /**
- * Published weights.
- *
- *  - G (40%) gap length: the surveyed unpaved km
- *  - A (35%) access: connectivity and market access, merged. Both asked how well
- *            closing the gap ties the road network to the market, so scoring them
- *            as two factors counted that one idea twice. A keeps their previous
- *            relative balance (35:25) via ACCESS_MIX.
- *  - C (25%) surface condition: how bad the existing surface is, from the survey
- *            (Earth worse than Gravel; Poor worse than Fair). Replaces the weight
- *            freed by the merge with a factor that measures something different.
- */
-export const GAP_WEIGHTS = { G: 0.40, A: 0.35, C: 0.25 };
-
-/** Inside A: connectivity vs market access, in their previous 35:25 proportion. */
-export const ACCESS_MIX = { connectivity: 35 / 60, market: 25 / 60 };
-
-/**
- * Surface severity points (0-100 after adding both parts). An Earth surface is
- * worse than Gravel regardless of condition, so surface type carries the larger
- * share. A missing value takes the midpoint of its range rather than zero, so a
- * gap is never ranked as "fine" just because a field was left blank.
- */
-const SURFACE_TYPE_POINTS = { earth: 60, gravel: 30 };
-const SURFACE_TYPE_UNKNOWN = 45;
-const CONDITION_POINTS = { poor: 40, fair: 20, good: 0 };
-const CONDITION_UNKNOWN = 20;
-
-export function surfaceSeverity(gapType, condition) {
-  const type = String(gapType || '').toLowerCase();
-  const typePoints = /earth/.test(type) ? SURFACE_TYPE_POINTS.earth
-    : /gravel/.test(type) ? SURFACE_TYPE_POINTS.gravel
-    : SURFACE_TYPE_UNKNOWN;
-  const cond = String(condition || '').trim().toLowerCase();
-  const conditionPoints = cond in CONDITION_POINTS ? CONDITION_POINTS[cond] : CONDITION_UNKNOWN;
-  return typePoints + conditionPoints;
-}
-
-/**
- * Market-access direction.
- *
- * true  -> a gap NEARER the market hub scores higher, on the reading that roads
- *          closer to the consolidation point carry traffic from more barangays, so
- *          closing them benefits a larger share of the network.
- * false -> a gap FARTHER from the market scores higher, on the reading that
- *          remoteness is itself the access penalty being measured.
- *
- * This is the one genuine judgement call in the formula, so it is a named switch
- * rather than an arithmetic detail buried in the scoring expression.
+ * Market-access direction. true: a road NEARER the market scores higher (it
+ * carries produce from more of the network to the consolidation point).
+ * false: FARTHER scores higher (remoteness is the access problem). The one
+ * judgement call in the formula, kept as a named switch.
  */
 export const MARKET_PROXIMITY_SCORES_HIGHER = true;
 
-// Composition of E, the connectivity factor. Replaces the previous substring test,
-// which produced the same value for every row.
-const CONNECTIVITY_JOIN_WEIGHT = 55;      // closing the gap links two funded segments
-const CONNECTIVITY_DENSITY_WEIGHT = 45;   // built road already meeting these barangays
-const CONNECTIVITY_SATURATION = 4;        // projects per barangay pair where density maxes out
+const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v));
+const farmerPoint = (f) => toPoint(
+  f.farm_latitude ?? f.farmLatitude ?? f.gps?.lat,
+  f.farm_longitude ?? f.farmLongitude ?? f.gps?.lng,
+);
+const farmerArea = (f) => Math.max(num(f.farm_area_ha ?? f.farmAreaHa) || 0, 0.5);
+const farmerCrop = (f) => String(f.crop || '').trim();
+const farmerMunicipality = (f) => String(f.municipality || '').trim().toLowerCase();
 
-const normalizePct = (value, max) => (max > 0 ? (Number(value) / max) * 100 : 0);
-const distinctCount = (values) =>
-  new Set(values.filter((v) => Number.isFinite(v)).map((v) => v.toFixed(4))).size;
+function lineLengthKm(points) {
+  let m = 0;
+  for (let i = 1; i < points.length; i += 1) m += haversineMeters(points[i - 1], points[i]);
+  return m / 1000;
+}
+
+function distanceToLine(points, point) {
+  if (!point || points.length === 0) return Infinity;
+  if (points.length === 1) return haversineMeters(points[0], point);
+  return nearestPointOnRoute(points, point)?.distanceMeters ?? Infinity;
+}
 
 /**
- * Rank road-network gaps for improvement.
- *
- * Scores rows of public.road_network_gaps, where a gap is the surveyed unpaved
- * (Earth + Gravel) portion of a barangay road drawn on that road's own alignment.
- * Scoring the gap rather than the project is what lets all three factors come from
- * measured data instead of from the project's name (weights: see GAP_WEIGHTS):
- *
- *  - G gap_km, the surveyed unpaved length
- *  - A access, mixing (ACCESS_MIX):
- *      connectivity -- whether closing the gap joins two funded FMR segments, and
- *                      how much built road already meets the barangays at either end
- *      market       -- market_distance_km over the same local road network
- *  - C surface condition severity, from gap_type and surface_condition
- *
- * Returns rows with project, score, rank, reason and G/A/C, plus `gap` and
- * `factorVariance`. The two halves of A stay on the row as E and M so the
- * write-up can show what A is made of.
+ * Each municipality's top crops by number of registered farmers (the LGU's
+ * farmer registry), rank 1 = most farmers. Same counting as the LGU commodity
+ * breakdown (one main crop per farmer).
  */
-export function computeRoadGapPriorityScores(gaps, projects = [], reports = []) {
-  const safeGaps = Array.isArray(gaps) ? gaps : [];
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const safeReports = Array.isArray(reports) ? reports : [];
-  if (safeGaps.length === 0) return [];
+export function topCommoditiesByMunicipality(farmers, count = TOP_COMMODITY_COUNT) {
+  const byMuni = new Map();
+  (farmers || []).forEach((f) => {
+    const crop = farmerCrop(f);
+    if (!crop) return;
+    const muni = farmerMunicipality(f);
+    if (!byMuni.has(muni)) byMuni.set(muni, new Map());
+    const counts = byMuni.get(muni);
+    counts.set(crop, (counts.get(crop) || 0) + 1);
+  });
+  const out = {};
+  byMuni.forEach((counts, muni) => {
+    out[muni] = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, count)
+      .map(([crop, farmers], i) => ({ crop, farmers, rank: i + 1 }));
+  });
+  return out;
+}
 
-  const projectById = new Map(safeProjects.map((p) => [p.id, p]));
+// Reports that should not count as evidence of a problem on this road.
+function reportCounts(report) {
+  const status = String(report.status || '').toLowerCase();
+  if (status === 'dismissed') return false;
+  if (report.verification === 'Location Mismatch') return false;
+  return Boolean(toPoint(report.latitude, report.longitude));
+}
 
-  // How many funded projects touch each barangay, for the density half of E.
-  const projectsPerBarangay = new Map();
-  for (const project of safeProjects) {
-    for (const barangay of [project.barangay, project.barangay_end]) {
-      if (!barangay) continue;
-      projectsPerBarangay.set(barangay, (projectsPerBarangay.get(barangay) || 0) + 1);
+/** Gaps and ongoing projects as candidates with a line to measure against. */
+function buildCandidates({ gaps, projects, routesByProjectId }) {
+  const newRoads = (gaps || []).map((gap) => {
+    let points = parsePointList(gap.gap_points);
+    if (points.length < 2) {
+      points = [toPoint(gap.start_latitude, gap.start_longitude), toPoint(gap.end_latitude, gap.end_longitude)].filter(Boolean);
     }
+    return {
+      kind: 'gap',
+      id: gap.id,
+      gap,
+      title: gap.source_road_name || gap.gap_code || 'Road network gap',
+      municipality: gap.municipality || 'Leon',
+      points,
+      lengthKm: num(gap.gap_km),
+      marketKm: num(gap.market_distance_km),
+    };
+  });
+
+  const ongoing = (projects || [])
+    .filter((p) => normalizeRouteStatus(p.status) === 'On-Going')
+    .map((project) => {
+      const points = buildRoutePoints(project, routesByProjectId?.[project.id] || null).points;
+      const totalKm = num(project.project_length_km) || (points.length >= 2 ? lineLengthKm(points) : NaN);
+      const done = Math.min(100, Math.max(0, num(project.accomplishment) || 0));
+      return {
+        kind: 'project',
+        id: project.id,
+        project,
+        title: project.project_name,
+        municipality: project.municipality || 'Leon',
+        points,
+        totalKm,
+        accomplishment: done,
+        // What is still to be built.
+        lengthKm: Number.isFinite(totalKm) ? totalKm * (1 - done / 100) : NaN,
+        marketKm: NaN, // measured below from market_locations
+      };
+    });
+
+  return { newRoads, ongoing };
+}
+
+/** Raw (un-normalized) values of the five criteria for one candidate. */
+function measure(candidate, { reports, farmers, markets, topCommodities }) {
+  const { points } = candidate;
+  const hasLine = points.length > 0;
+
+  // M: road distance to market for gaps (surveyed); straight distance to the
+  // nearest market point for ongoing projects.
+  let marketKm = candidate.marketKm;
+  if (!Number.isFinite(marketKm) && hasLine && markets?.length) {
+    const nearest = Math.min(...markets.map((m) => distanceToLine(points, toPoint(m.latitude, m.longitude))));
+    if (Number.isFinite(nearest)) marketKm = nearest / 1000;
   }
 
-  const raw = safeGaps.map((gap) => {
-    const project = projectById.get(gap.from_project_id) || null;
-    const gapKm = Number(gap.gap_km) || 0;
+  // R: citizen reports near the road, weighted by issue type and recency.
+  let reportWeight = 0;
+  let reportCount = 0;
+  const bySeverity = { structural: 0, obstruction: 0, road_damage: 0, roadside: 0 };
+  if (hasLine) {
+    (reports || []).filter(reportCounts).forEach((r) => {
+      if (distanceToLine(points, toPoint(r.latitude, r.longitude)) > REPORT_RADIUS_M) return;
+      const type = classifyReportSeverity(r);
+      bySeverity[type] = (bySeverity[type] || 0) + 1;
+      reportWeight += (SEVERITY_WEIGHTS[type] ?? 0.5) * getRecencyMultiplier(r.created_at);
+      reportCount += 1;
+    });
+  }
 
-    const joinsTwoSegments = Boolean(gap.to_project_id);
-    const incidentProjects =
-      (projectsPerBarangay.get(gap.barangay) || 0) +
-      (projectsPerBarangay.get(gap.barangay_end) || 0);
+  // C and F: registered farms within reach of the road.
+  const top = topCommodities[String(candidate.municipality).trim().toLowerCase()] || [];
+  const rankOf = new Map(top.map((t) => [t.crop, t.rank]));
+  let commodityWeight = 0;
+  let farmersNear = 0;
+  let topCropFarmers = 0;
+  if (hasLine) {
+    (farmers || []).forEach((f) => {
+      if (distanceToLine(points, farmerPoint(f)) > FARMER_RADIUS_M) return;
+      farmersNear += 1;
+      const rank = rankOf.get(farmerCrop(f));
+      if (rank) {
+        topCropFarmers += 1;
+        commodityWeight += (TOP_COMMODITY_COUNT + 1 - rank) * farmerArea(f);
+      }
+    });
+  }
+  const lengthForDensity = Math.max(
+    Number.isFinite(candidate.totalKm) ? candidate.totalKm : (Number.isFinite(candidate.lengthKm) ? candidate.lengthKm : (hasLine ? lineLengthKm(points) : 0)),
+    MIN_LENGTH_KM,
+  );
 
-    const connectivityRaw =
-      (joinsTwoSegments ? CONNECTIVITY_JOIN_WEIGHT : 0) +
-      Math.min(1, incidentProjects / CONNECTIVITY_SATURATION) * CONNECTIVITY_DENSITY_WEIGHT;
+  // No farmer registry for this municipality yet: "no data", not "no farmers".
+  const hasRegistry = top.length > 0;
 
-    // Guard the null explicitly: Number(null) is 0, and 0 is finite, so a gap with
-    // no measured market distance would otherwise read as sitting AT the market and
-    // score full marks on the market factor.
-    const marketRaw = gap.market_distance_km;
-    const marketKm =
-      marketRaw === null || marketRaw === undefined || marketRaw === ''
-        ? null
-        : Number(marketRaw);
+  return {
+    hasLine,
+    hasRegistry,
+    marketKm: Number.isFinite(marketKm) ? marketKm : null,
+    reportCount,
+    reportWeight,
+    bySeverity,
+    farmersNear,
+    topCropFarmers,
+    commodityWeight,
+    farmerDensity: hasLine && hasRegistry ? farmersNear / lengthForDensity : null,
+    topCrops: top.map((t) => t.crop),
+  };
+}
 
-    const projectReports = project
-      ? safeReports.filter(
-          (r) =>
-            String(r.project_name || '').trim().toLowerCase() ===
-            String(project.project_name || '').trim().toLowerCase()
-        )
-      : [];
+const pctOfMax = (value, max) => (max > 0 ? (value / max) * 100 : 0);
+const distinctCount = (values) => new Set(values.filter(Number.isFinite).map((v) => v.toFixed(4))).size;
 
-    return {
-      gap,
-      // Keep the shape PriorityTab expects even when the parent project is absent.
-      project: project || {
-        id: gap.from_project_id,
-        project_name: gap.source_road_name || gap.gap_code,
-        municipality: gap.municipality || 'Leon',
-        barangay: gap.barangay,
-        barangay_end: gap.barangay_end,
-      },
-      gapKm,
-      gapType: gap.gap_type || 'Road Network Gap',
-      gapReason: gap.gap_reason || '',
-      surfaceCondition: gap.surface_condition || null,
-      joinsTwoSegments,
-      incidentProjects,
-      connectivityRaw,
-      marketKm: Number.isFinite(marketKm) ? marketKm : null,
-      reportCount: projectReports.length,
-    };
-  });
+function shortCrops(crops) {
+  return crops.slice(0, 2).map((c) => c.replace(/\s*\(.*\)$/, '').toLowerCase()).join('/');
+}
 
-  const maxGapKm = Math.max(...raw.map((r) => r.gapKm), 0);
-  const maxConnectivity = Math.max(...raw.map((r) => r.connectivityRaw), 0);
-  const measuredMarket = raw.map((r) => r.marketKm).filter((n) => Number.isFinite(n));
-  const maxMarketKm = measuredMarket.length > 0 ? Math.max(...measuredMarket) : 0;
+function buildReason(row, rank) {
+  const parts = [];
+  if (Number.isFinite(row.lengthKm)) {
+    parts.push(row.kind === 'gap' ? `${row.lengthKm.toFixed(2)} km unpaved` : `${row.lengthKm.toFixed(2)} km still to build`);
+  }
+  if (row.marketKm != null) parts.push(`${row.marketKm.toFixed(1)} km to market`);
+  parts.push(`${row.reportCount} citizen report${row.reportCount === 1 ? '' : 's'} nearby`);
+  if (row.topCropFarmers > 0) parts.push(`${row.topCropFarmers} ${shortCrops(row.topCrops)} farmers within ${FARMER_RADIUS_M / 1000} km`);
+  else parts.push(`${row.farmersNear} registered farmers within ${FARMER_RADIUS_M / 1000} km`);
+  return `Rank #${rank} — ${parts.join(', ')}.`;
+}
 
-  const scored = raw.map((r) => {
-    const G = normalizePct(r.gapKm, maxGapKm);
-    const E = normalizePct(r.connectivityRaw, maxConnectivity);
+/** Normalize the five criteria within one group, score, rank. */
+function scoreGroup(rows) {
+  const max = (pick) => Math.max(0, ...rows.map(pick).filter(Number.isFinite));
+  const maxLen = max((r) => r.lengthKm);
+  const maxMarket = max((r) => (r.marketKm == null ? NaN : r.marketKm));
+  const maxReports = max((r) => r.reportWeight);
+  const maxCommodity = max((r) => (r.hasLine && r.hasRegistry ? r.commodityWeight : NaN));
+  const maxDensity = max((r) => (r.farmerDensity == null ? NaN : r.farmerDensity));
 
-    // Gaps with no measured market distance sit mid-range rather than at zero, so a
-    // measurement failure cannot masquerade as "no market impact".
-    let M = 50;
-    if (Number.isFinite(r.marketKm) && maxMarketKm > 0) {
-      const proximity = 1 - Math.min(1, r.marketKm / maxMarketKm);
+  const scored = rows.map((r) => {
+    const G = Number.isFinite(r.lengthKm) ? pctOfMax(r.lengthKm, maxLen) : NEUTRAL;
+    let M = NEUTRAL;
+    if (r.marketKm != null && maxMarket > 0) {
+      const proximity = 1 - Math.min(1, r.marketKm / maxMarket);
       M = (MARKET_PROXIMITY_SCORES_HIGHER ? proximity : 1 - proximity) * 100;
     }
-
-    const A = E * ACCESS_MIX.connectivity + M * ACCESS_MIX.market;
-    const C = surfaceSeverity(r.gapType, r.surfaceCondition);
-
+    const R = r.hasLine ? pctOfMax(r.reportWeight, maxReports) : NEUTRAL;
+    const C = r.hasLine && r.hasRegistry ? pctOfMax(r.commodityWeight, maxCommodity) : NEUTRAL;
+    const F = r.farmerDensity != null ? pctOfMax(r.farmerDensity, maxDensity) : NEUTRAL;
+    const score = G * PRIORITY_WEIGHTS.G + M * PRIORITY_WEIGHTS.M + R * PRIORITY_WEIGHTS.R
+      + C * PRIORITY_WEIGHTS.C + F * PRIORITY_WEIGHTS.F;
     return {
       ...r,
-      score: Math.round(G * GAP_WEIGHTS.G + A * GAP_WEIGHTS.A + C * GAP_WEIGHTS.C),
-      G: Math.round(G),
-      A: Math.round(A),
-      C: Math.round(C),
-      E: Math.round(E),
-      M: Math.round(M),
-      // Fields the shared row renderer expects from the agri module.
-      cropData: { score: 0, primary_crop: 'N/A (not used by this module)', hectares: 0 },
-      bySeverity: { safety: 0, flood: 0, issue: 0, general: 0 },
-      hasEscalation: false,
+      score: Math.round(score),
+      G: Math.round(G), M: Math.round(M), R: Math.round(R), C: Math.round(C), F: Math.round(F),
     };
   });
 
-  // A factor taking one value across the batch cannot affect the ordering, whatever
-  // its weight -- which is exactly how the previous version's 35% and 25% came to do
-  // nothing without anyone noticing. Surface it instead of letting it hide.
-  const factorVariance = {
-    G: distinctCount(scored.map((r) => r.G)),
-    A: distinctCount(scored.map((r) => r.A)),
-    C: distinctCount(scored.map((r) => r.C)),
-    rows: scored.length,
-  };
+  // A criterion with one value across the group cannot change the order,
+  // whatever its weight: say so instead of letting it hide.
   if (scored.length > 1) {
-    const inert = ['G', 'A', 'C'].filter((key) => factorVariance[key] < 2);
-    if (inert.length > 0) {
-      console.warn(
-        `[priorityScoring] Factor(s) ${inert.join(', ')} are constant across ${scored.length} gaps, so ` +
-        `${inert.map((key) => `${Math.round(GAP_WEIGHTS[key] * 100)}%`).join(' + ')} of the weighting ` +
-        'has no effect on the ranking.'
-      );
+    const inert = PRIORITY_CRITERIA.map((c) => c.key).filter((k) => distinctCount(scored.map((r) => r[k])) < 2);
+    if (inert.length) {
+      console.warn(`[priorityScoring] ${inert.join(', ')} constant across ${scored.length} candidates; their weight has no effect on this group's order.`);
     }
   }
 
   return scored
-    .sort((a, b) => b.score - a.score)
-    .map((r, i) => ({
-      ...r,
-      rank: i + 1,
-      factorVariance,
-      reason: buildGapReason(r, i + 1),
-    }));
+    .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
+    .map((r, i) => ({ ...r, rank: i + 1, reason: buildReason(r, i + 1) }));
 }
 
-function buildGapReason(row, rank) {
-  const where = [row.gap.barangay, row.gap.barangay_end].filter(Boolean).join(' to ');
-  const parts = [`${row.gapKm.toFixed(2)} km unpaved`];
-
-  if (row.surfaceCondition) parts.push(`${row.surfaceCondition.toLowerCase()} condition`);
-  parts.push(
-    row.joinsTwoSegments
-      ? 'closing it would join two funded FMR segments'
-      : 'no funded project continues beyond it'
-  );
-  if (Number.isFinite(row.marketKm)) parts.push(`${row.marketKm.toFixed(1)} km from Leon market`);
-  if (row.reportCount > 0) {
-    parts.push(`${row.reportCount} citizen report${row.reportCount > 1 ? 's' : ''}`);
-  }
-
-  return `Rank #${rank} — ${where || row.gap.municipality || 'Leon'}: ${parts.join(', ')}.`;
+function boundsOf(points, padM) {
+  const pad = padM / 111320;
+  let minLat = Infinity; let maxLat = -Infinity; let minLng = Infinity; let maxLng = -Infinity;
+  points.forEach(([lat, lng]) => {
+    minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+    minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
+  });
+  return { minLat: minLat - pad, maxLat: maxLat + pad, minLng: minLng - pad, maxLng: maxLng + pad };
 }
+const boxesMeet = (a, b) => a.minLat <= b.maxLat && b.minLat <= a.maxLat && a.minLng <= b.maxLng && b.minLng <= a.maxLng;
+
+/**
+ * Gaps that an FMR project already covers (COVERED_SHARE of the gap's length
+ * runs on the project's road), whatever screen created that project.
+ * Returns Map gapId -> { id, name, share }.
+ */
+export function coveredGaps(gapCandidates, projects, routesByProjectId) {
+  const lines = (projects || [])
+    .filter((p) => !/cancel/i.test(String(p.status || '')))
+    .map((p) => {
+      const line = buildRoutePoints(p, routesByProjectId?.[p.id] || null).points;
+      return line.length >= 2 ? { id: p.id, name: p.project_name, line, box: boundsOf(line, OVERLAP_METERS) } : null;
+    })
+    .filter(Boolean);
+  const out = new Map();
+  gapCandidates.forEach((c) => {
+    if (c.points.length < 2) return;
+    const box = boundsOf(c.points, OVERLAP_METERS);
+    const nearby = lines.filter((l) => boxesMeet(box, l.box));
+    if (!nearby.length) return;
+    const best = findRouteOverlaps(c.points, nearby).overlaps[0];
+    if (best && best.share >= COVERED_SHARE) out.set(String(c.id), best);
+  });
+  return out;
+}
+
+/**
+ * Rank both groups.
+ * @returns {{ newRoads: Row[], ongoing: Row[], covered: Object[], topCommodities: Object }}
+ * Row: { kind: 'gap'|'project', id, gap?, project, title, municipality, points,
+ *        score, rank, reason, G, M, R, C, F, lengthKm, marketKm, reportCount,
+ *        bySeverity, farmersNear, topCropFarmers, accomplishment? }
+ */
+export function computePriority({ gaps = [], projects = [], routesByProjectId = {}, reports = [], farmers = [], markets = [], excludeGapIds = [] } = {}) {
+  const topCommodities = topCommoditiesByMunicipality(farmers);
+  const ctx = { reports, farmers, markets, topCommodities };
+  const skip = new Set(excludeGapIds.map(String));
+  const { newRoads, ongoing } = buildCandidates({ gaps, projects, routesByProjectId });
+  // A road that already has a project is not a new suggestion any more.
+  const covered = coveredGaps(newRoads.filter((c) => !skip.has(String(c.id))), projects, routesByProjectId);
+
+  const withMeasures = (list) => list.map((c) => {
+    const m = measure(c, ctx);
+    // Keep the shape the cards use: a `project` to open, even for a gap.
+    const project = c.project || {
+      id: c.gap?.from_project_id ?? null,
+      project_name: c.title,
+      municipality: c.municipality,
+      barangay: c.gap?.barangay,
+      barangay_end: c.gap?.barangay_end,
+    };
+    return { ...c, ...m, project };
+  });
+
+  return {
+    newRoads: scoreGroup(withMeasures(newRoads.filter((c) => !skip.has(String(c.id)) && !covered.has(String(c.id))))),
+    ongoing: scoreGroup(withMeasures(ongoing)),
+    // Shown under the New list so it is clear why these gaps are not ranked.
+    covered: newRoads
+      .filter((c) => covered.has(String(c.id)))
+      .map((c) => ({ id: c.id, gap: c.gap, title: c.title, coveredBy: covered.get(String(c.id)) })),
+    topCommodities,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// LGU proposal triage (LguProposalsTab), separate from the module above
+// ---------------------------------------------------------------------------
 
 function proposalPendingDays(proposal) {
   const submitted = new Date(proposal.submitted_at);

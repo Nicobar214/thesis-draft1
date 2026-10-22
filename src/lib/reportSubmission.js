@@ -4,6 +4,7 @@
  * what makes a submission valid, and exactly what gets sent to the database.
  */
 import { SEVERITY_TAXONOMY } from './publicReportStatus';
+import { distanceToProjectRoute, locationVerdict, VERIFICATION } from './publicReportTriage';
 
 export const REGION = 'Region VI – Western Visayas';
 export const PROVINCE = 'Iloilo';
@@ -64,13 +65,16 @@ export function sortProjectsByDistance(projects, gps) {
   return [...projects].sort((a, b) => distToProject(gps.lat, gps.lng, a) - distToProject(gps.lat, gps.lng, b));
 }
 
-/** Does the GPS fix back up that the reporter is actually at the project? */
-export function computeVerification(userLat, userLng, accuracy, projLat, projLng) {
-  if (!projLat || !projLng || !userLat) return 'Needs Review';
-  const d = haversineMeters(userLat, userLng, projLat, projLng);
-  if (d <= 100) return 'Verified On-Site';
-  if (accuracy && accuracy > 50) return 'Needs Review';
-  return 'Location Mismatch';
+/**
+ * Does the GPS fix back up that the reporter is actually at the project?
+ * Measured to the nearest point on the road (its mapped route when there is
+ * one), not to its start point: on a long road a reporter standing on it can
+ * be far from where it starts.
+ */
+export function computeVerification(gps, project, routeRecord = null) {
+  if (!gps || !project) return VERIFICATION.REVIEW;
+  const { meters } = distanceToProjectRoute({ latitude: gps.lat, longitude: gps.lng }, project, routeRecord);
+  return locationVerdict({ meters, accuracy: gps.accuracy });
 }
 
 /** The first problem that blocks submission, or null when the report is complete. */
@@ -92,7 +96,7 @@ const LEGACY_CATEGORY = { road_damage: 'issue', structural: 'issue', obstruction
 
 export function buildReportPayload({
   fullName, contact, selProject, gps, photoTs, description,
-  severityCategory, category, specificProblem, userId, now = new Date(),
+  severityCategory, category, specificProblem, userId, routeRecord = null, now = new Date(),
 }) {
   const name = String(fullName || '').trim();
   const payload = {
@@ -109,7 +113,7 @@ export function buildReportPayload({
     longitude: gps.lng,
     geo_accuracy: gps.accuracy,
     photo_timestamp: photoTs || now.toISOString(),
-    verification: computeVerification(gps.lat, gps.lng, gps.accuracy, selProject.start_latitude, selProject.start_longitude),
+    verification: computeVerification(gps, selProject, routeRecord),
     description: String(description || '').trim(),
     // The old column only allows the old 4 values until supabase_report_handlers.sql runs.
     category: LEGACY_CATEGORY[severityCategory] || LEGACY_CATEGORY[category] || category,

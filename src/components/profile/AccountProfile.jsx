@@ -15,6 +15,7 @@ import { MapPinIcon, UserRoundIcon, PencilIcon, BadgeCheckIcon, PhoneIcon } from
 import AvatarUploader from '../ui/AvatarUploader';
 import { confirm } from '../../lib/confirm';
 import { notify } from '../../lib/toast';
+import { lowerKeepAcronyms } from '../../lib/textCase';
 
 function SectionHeading({ icon, title, description }) {
   const HeadingIcon = icon;
@@ -65,7 +66,7 @@ function EditableField({ id, label, savedValue, type = 'text', placeholder, conf
       notify(`${label} updated.`);
       setEditing(false);
     } catch (err) {
-      notify(err.message || `Could not update your ${label.toLowerCase()}.`, 'error');
+      notify(err.message || `Could not update your ${lowerKeepAcronyms(label)}.`, 'error');
     } finally {
       setSaving(false);
     }
@@ -107,7 +108,7 @@ function EditableField({ id, label, savedValue, type = 'text', placeholder, conf
           <button
             type="button"
             onClick={() => setEditing(true)}
-            aria-label={`Edit ${label.toLowerCase()}`}
+            aria-label={`Edit ${lowerKeepAcronyms(label)}`}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             <PencilIcon className="size-4" aria-hidden="true" />

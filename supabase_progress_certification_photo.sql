@@ -43,32 +43,59 @@ create policy progress_photos_delete_certification on storage.objects
     and (storage.foldername(name))[2] = auth.uid()::text
   );
 
--- 4a. Distance (m) from a point to an FMR project's road: the nearest of its
--- mapped route points and its start/end pins. Null when the project has no
--- location at all (then the distance check is skipped).
+-- Distance (m) from a point to a project's road, measured to the nearest point
+-- on the line (each segment of its mapped route, or the straight line from its
+-- start to its end when no route is mapped), like nearestPointOnRoute() in the
+-- app. Null when the project has no location at all.
 create or replace function public._fmr_project_distance_m(p_project_id bigint, p_lat double precision, p_lng double precision)
 returns double precision
-language sql
+language plpgsql
 stable
 set search_path to 'public'
 as $$
-  select min(d) from (
-    select public._public_report_distance_m((pt->>'lat')::double precision, (pt->>'lng')::double precision, p_lat, p_lng) as d
-      from public.project_routes r, jsonb_array_elements(coalesce(r.route_points, '[]'::jsonb)) pt
-     where r.project_id = p_project_id and pt ? 'lat' and pt ? 'lng'
-    union all
-    select public._public_report_distance_m(r.start_latitude, r.start_longitude, p_lat, p_lng)
-      from public.project_routes r where r.project_id = p_project_id and r.start_latitude is not null
-    union all
-    select public._public_report_distance_m(r.end_latitude, r.end_longitude, p_lat, p_lng)
-      from public.project_routes r where r.project_id = p_project_id and r.end_latitude is not null
-    union all
-    select public._public_report_distance_m(p.start_latitude, p.start_longitude, p_lat, p_lng)
-      from public.fmr_projects p where p.id = p_project_id and p.start_latitude is not null
-    union all
-    select public._public_report_distance_m(p.end_latitude, p.end_longitude, p_lat, p_lng)
-      from public.fmr_projects p where p.id = p_project_id and p.end_latitude is not null
-  ) x;
+declare
+  lats double precision[];
+  lngs double precision[];
+  kx double precision := 111320 * cos(radians(p_lat)); -- metres per degree of longitude here
+  ky constant double precision := 110540;              -- metres per degree of latitude
+  best double precision := null;
+  ax double precision; ay double precision; bx double precision; by_ double precision;
+  dx double precision; dy double precision; t double precision; d double precision;
+  i int;
+begin
+  select array_agg((pt->>'lat')::double precision order by ord), array_agg((pt->>'lng')::double precision order by ord)
+    into lats, lngs
+    from public.project_routes r,
+         jsonb_array_elements(coalesce(r.route_points, '[]'::jsonb)) with ordinality as e(pt, ord)
+   where r.project_id = p_project_id and pt ? 'lat' and pt ? 'lng';
+
+  if coalesce(array_length(lats, 1), 0) < 2 then
+    select array_remove(array[coalesce(r.start_latitude, p.start_latitude), coalesce(r.end_latitude, p.end_latitude)], null),
+           array_remove(array[coalesce(r.start_longitude, p.start_longitude), coalesce(r.end_longitude, p.end_longitude)], null)
+      into lats, lngs
+      from public.fmr_projects p
+      left join public.project_routes r on r.project_id = p.id
+     where p.id = p_project_id;
+  end if;
+
+  if coalesce(array_length(lats, 1), 0) = 0 then
+    return null;
+  end if;
+  if array_length(lats, 1) = 1 then
+    return public._public_report_distance_m(lats[1], lngs[1], p_lat, p_lng);
+  end if;
+
+  -- Local flat projection around the reported point (fine at road scale).
+  for i in 1 .. array_length(lats, 1) - 1 loop
+    ax := (lngs[i] - p_lng) * kx;      ay := (lats[i] - p_lat) * ky;
+    bx := (lngs[i + 1] - p_lng) * kx;  by_ := (lats[i + 1] - p_lat) * ky;
+    dx := bx - ax; dy := by_ - ay;
+    t := case when dx * dx + dy * dy > 0 then greatest(0, least(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) else 0 end;
+    d := sqrt((ax + t * dx) ^ 2 + (ay + t * dy) ^ 2);
+    if best is null or d < best then best := d; end if;
+  end loop;
+  return best;
+end;
 $$;
 
 -- 4b. Link the photo to a progress update that is still waiting for review

@@ -94,20 +94,26 @@ describe('fmtDist', () => {
 });
 
 describe('computeVerification', () => {
-  it('verifies a reporter within 100 m of the project', () => {
-    expect(computeVerification(10, 122, 10, 10.0005, 122)).toBe('Verified On-Site'); // ~55 m
+  const project = { start_latitude: 10, start_longitude: 122, end_latitude: 10.02, end_longitude: 122 };
+  const along = { points: [[10, 122], [10.01, 122], [10.02, 122]] };
+  const route = { route_points: along.points.map(([lat, lng]) => ({ lat, lng })) };
+
+  it('is on site when the reporter stands on the road, even far from its start', () => {
+    // ~1.1 km from the start point, but on the road itself
+    expect(computeVerification({ lat: 10.01, lng: 122.0003, accuracy: 10 }, project, route)).toBe('Verified On-Site');
   });
 
-  it('asks for review when the fix is imprecise and the reporter is not clearly there', () => {
-    expect(computeVerification(10, 122, 80, 10.01, 122)).toBe('Needs Review');
+  it('needs review when near but not on the road, or with a weak fix', () => {
+    expect(computeVerification({ lat: 10.01, lng: 122.004, accuracy: 10 }, project, route)).toBe('Needs Review');
+    expect(computeVerification({ lat: 10.01, lng: 122.0003, accuracy: 300 }, project, route)).toBe('Needs Review');
   });
 
-  it('flags a mismatch when the fix is precise but far from the project', () => {
-    expect(computeVerification(10, 122, 10, 10.01, 122)).toBe('Location Mismatch');
+  it('is a mismatch more than 1 km from the road', () => {
+    expect(computeVerification({ lat: 10.01, lng: 122.02, accuracy: 10 }, project, route)).toBe('Location Mismatch');
   });
 
-  it('asks for review when the project has no coordinates', () => {
-    expect(computeVerification(10, 122, 10, null, null)).toBe('Needs Review');
+  it('needs review when the project has no location', () => {
+    expect(computeVerification({ lat: 10, lng: 122, accuracy: 10 }, {}, null)).toBe('Needs Review');
   });
 });
 

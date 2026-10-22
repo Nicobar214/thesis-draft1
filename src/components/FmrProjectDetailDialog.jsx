@@ -13,6 +13,7 @@ import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { formatPercentage } from '../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import ProjectProgressTimeline from './ProjectProgressTimeline';
+import ProjectRouteMiniMap from './map/ProjectRouteMiniMap';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
 import { HardHatIcon } from 'lucide-react';
@@ -86,34 +87,33 @@ function ProjectDetailBody({ project, tranches = [] }) {
         </div>
       </div>
 
-      {/* Coordinates Section */}
+      {/* Route map: the road with its start (S) and end (E) */}
       {hasCoords && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
-          <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2 text-sm sm:text-base">
-            <Icons.MapPinLg /> GPS Coordinates
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-3">
+          <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
+            <Icons.MapPinLg /> Project Route
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-              <p className="text-xs text-teal-600 font-medium uppercase tracking-wider mb-1">Start Point</p>
-              <p className="text-sm font-mono text-emerald-800">
-                {project.start_latitude?.toFixed(6)}, {project.start_longitude?.toFixed(6)}
-              </p>
-            </div>
-            <div className="p-4 bg-rose-50 rounded-xl border border-rose-100">
-              <p className="text-xs text-rose-600 font-medium uppercase tracking-wider mb-1">End Point</p>
-              <p className="text-sm font-mono text-rose-800">
-                {project.end_latitude?.toFixed(6)}, {project.end_longitude?.toFixed(6)}
-              </p>
-            </div>
+          <ProjectRouteMiniMap project={project} />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="grid size-4 place-items-center rounded-full bg-green-600 text-[9px] font-bold text-white">S</span>
+              <span className="font-mono">{Number(project.start_latitude).toFixed(6)}, {Number(project.start_longitude).toFixed(6)}</span>
+            </span>
+            {project.end_latitude != null && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="grid size-4 place-items-center rounded-full bg-orange-500 text-[9px] font-bold text-white">E</span>
+                <span className="font-mono">{Number(project.end_latitude).toFixed(6)}, {Number(project.end_longitude).toFixed(6)}</span>
+              </span>
+            )}
+            <a
+              href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude ?? project.start_latitude},${project.end_longitude ?? project.start_longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              <Icons.ExternalLink /> Open in Google Maps
+            </a>
           </div>
-          <a
-            href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude},${project.end_longitude}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-white text-sm font-medium rounded-xl transition-colors shadow-xs"
-          >
-            <Icons.ExternalLink /> View Route on Google Maps
-          </a>
         </div>
       )}
 

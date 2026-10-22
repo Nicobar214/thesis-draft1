@@ -1,6 +1,7 @@
 import { Children, useState } from 'react';
 import { BASEMAPS, BASEMAP_IDS } from '../../lib/basemaps';
 import { ChevronDownIcon, LayersIcon, ListIcon, XIcon } from 'lucide-react';
+import { lowerKeepAcronyms } from '../../lib/textCase';
 
 /*
  * Shared floating panels for every map. Two jobs, two corners:
@@ -29,7 +30,7 @@ export function MapLegend({ title = 'Legend', children, defaultOpen, compact = f
           <button
             type="button"
             onClick={() => setOpen(false)}
-            aria-label={`Hide ${title.toLowerCase()}`}
+            aria-label={`Hide ${lowerKeepAcronyms(title)}`}
             className="absolute right-1.5 top-1.5 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <XIcon className="size-3.5" aria-hidden="true" />
@@ -40,7 +41,7 @@ export function MapLegend({ title = 'Legend', children, defaultOpen, compact = f
         <button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label={`Show ${title.toLowerCase()}`}
+          aria-label={`Show ${lowerKeepAcronyms(title)}`}
           className="pointer-events-auto inline-flex items-center gap-1.5 rounded-lg bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-lg ring-1 ring-slate-900/10 backdrop-blur-md transition hover:bg-white"
         >
           <ListIcon className="size-3.5 text-slate-500" aria-hidden="true" />

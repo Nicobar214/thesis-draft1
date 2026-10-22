@@ -547,6 +547,7 @@ export function createDisplayRoutePoints(points, routeKey, maxOffsetMeters = 8) 
 }
 
 const roadSnapCache = new Map();
+const KEEP_AS_DRAWN = Symbol('keep-as-drawn'); // cached: the snap strayed, use the drawn line
 
 const OSRM_MAX_WAYPOINTS = 15;
 
@@ -574,8 +575,110 @@ export function isAlreadyRoadAligned(routeRecord) {
   return source.startsWith('osrm') || source.startsWith('osm');
 }
 
-export async function fetchRoadAlignedPolyline(points) {
+/* Cleaning up a snapped line. OSRM routes through every via-point, so a point
+ * drawn a little off the road makes it drive to that point and back: a short
+ * out-and-back "spike", or a loop around a block. Those are display artefacts,
+ * not road, and are cut out here. The saved route itself is never changed. */
+const SPIKE_RETURN_M = 12;      // the line came back within this of an earlier point...
+const SPIKE_MAX_LENGTH_M = 800; // ...after a detour no longer than this: cut it out
+const SNAP_MIN_DEVIATION_M = 250; // a snapped line this far from the drawn one took a wrong road
+
+function metersBetween(a, b) {
+  return haversineKm(a, b) * 1000;
+}
+
+/**
+ * Remove out-and-back spikes and small loops from a road-snapped line: when the
+ * line returns to (nearly) a point it already passed, within a short distance,
+ * everything in between is dropped.
+ */
+export function removeRouteSpikes(points, { returnM = SPIKE_RETURN_M, maxLengthM = SPIKE_MAX_LENGTH_M } = {}) {
+  const pts = toValidPairs(points);
+  if (pts.length < 4) return pts;
+  const out = [pts[0]];
+  const along = [0]; // distance along `out` to each kept vertex
+  for (let i = 1; i < pts.length; i += 1) {
+    const p = pts[i];
+    const here = along[along.length - 1] + metersBetween(out[out.length - 1], p);
+    // Look back (not at the vertex just before) for a point this one returns to.
+    let cut = -1;
+    for (let k = out.length - 2; k >= 0; k -= 1) {
+      if (here - along[k] > maxLengthM) break;
+      if (metersBetween(out[k], p) > returnM) continue;
+      // Only a real excursion counts: dense vertices on a straight road are
+      // also close together, but the line never left the spot.
+      const wentAway = out.slice(k + 1).some((q) => metersBetween(out[k], q) > returnM * 2);
+      if (wentAway) { cut = k; break; }
+    }
+    if (cut >= 0) {
+      out.length = cut + 1;
+      along.length = cut + 1;
+      continue; // `p` duplicates out[cut]; keep the earlier vertex
+    }
+    out.push(p);
+    along.push(here);
+  }
+  return out.length >= 2 ? out : pts;
+}
+
+/**
+ * Make the snapped line start and end at the project's own pins. OSRM stops at
+ * the nearest road it knows, which for a farm road is often short of the pin
+ * (the last stretch is not on the map yet); a straight link covers that part.
+ */
+export function connectToPins(line, start, end, minGapM = 3) {
+  const pts = toValidPairs(line);
+  if (pts.length < 2) return pts;
+  const s0 = coordPair(start);
+  const e0 = coordPair(end);
+  if (isFinitePair(s0) && metersBetween(s0, pts[0]) > minGapM) pts.unshift(s0);
+  if (isFinitePair(e0) && metersBetween(e0, pts[pts.length - 1]) > minGapM) pts.push(e0);
+  return pts;
+}
+
+/**
+ * Round the sharp corners of a road line for display (Chaikin corner cutting),
+ * never cutting more than `maxCutM` off a corner so the line stays on the road.
+ * The first and last points are kept exactly.
+ */
+export function smoothRouteCorners(points, { maxCutM = 6, passes = 2 } = {}) {
+  let pts = toValidPairs(points);
+  for (let pass = 0; pass < passes && pts.length >= 3; pass += 1) {
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const len = metersBetween(a, b);
+      const t = len > 0 ? Math.min(0.25, maxCutM / len) : 0;
+      const lerp = (u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+      if (i > 0) out.push(lerp(t));
+      if (i < pts.length - 2) out.push(lerp(1 - t));
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+
+/** Farthest any vertex of `line` gets from the polyline `reference`, in meters. */
+export function maxDeviationMeters(line, reference) {
+  let worst = 0;
+  for (const p of line) {
+    const near = nearestPointOnPolyline(p, reference);
+    if (near && near.distanceMeters > worst) worst = near.distanceMeters;
+  }
+  return worst;
+}
+
+/**
+ * The route drawn along real roads (OSRM), for display: spikes cut out, joined
+ * to the start and end pins, corners gently rounded. Falls back to the points
+ * as given. Nothing is saved; pass { smooth: false } when the result is going
+ * to be stored as waypoints (the "Snap to Road" buttons), to keep it compact.
+ */
+export async function fetchRoadAlignedPolyline(points, { smooth = true } = {}) {
   if (!Array.isArray(points) || points.length < 2) return points || [];
+  const finish = (line) => (smooth ? smoothRouteCorners(line) : line);
 
   // Keep requests lightweight and API-safe: OSRM is asked for at most
   // OSRM_MAX_WAYPOINTS via-points.
@@ -590,11 +693,16 @@ export async function fetchRoadAlignedPolyline(points) {
   if (valid.length < 2) return points;
 
   const cacheKey = valid.map((point) => `${point[0].toFixed(5)},${point[1].toFixed(5)}`).join('|');
-  if (roadSnapCache.has(cacheKey)) return roadSnapCache.get(cacheKey);
+  if (roadSnapCache.has(cacheKey)) {
+    const cached = roadSnapCache.get(cacheKey);
+    return cached === KEEP_AS_DRAWN ? points : finish(cached);
+  }
 
   try {
     const coordString = valid.map((point) => `${point[1]},${point[0]}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson`;
+    // continue_straight=false: at a slightly-off via-point OSRM may turn back
+    // (a spike, cut out below) instead of looping around a whole block.
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson&continue_straight=false`;
     const res = await fetch(url);
     if (!res.ok) throw new Error('Road snap request failed');
 
@@ -614,8 +722,22 @@ export async function fetchRoadAlignedPolyline(points) {
     // momentary rate limit) into a permanent failure for these coordinates
     // for the rest of the session, since nothing would ever retry them.
     if (snapped && snapped.length >= 2) {
-      roadSnapCache.set(cacheKey, snapped);
-      return snapped;
+      const cleaned = connectToPins(removeRouteSpikes(snapped), valid[0], valid[valid.length - 1]);
+      // A drawn route (3+ points) should be followed, not replaced: if the
+      // snapped line wanders far from it, OSRM picked another road, so keep
+      // the line as drawn. (Two points is plain A-to-B routing; any road goes.)
+      if (valid.length >= 3) {
+        let longestLegM = 0;
+        for (let i = 1; i < valid.length; i += 1) longestLegM = Math.max(longestLegM, metersBetween(valid[i - 1], valid[i]));
+        const allowedM = Math.max(SNAP_MIN_DEVIATION_M, longestLegM * 0.5);
+        if (maxDeviationMeters(cleaned, valid) > allowedM) {
+          console.warn('Road snap strayed from the drawn route; keeping it as drawn.', { cacheKey });
+          roadSnapCache.set(cacheKey, KEEP_AS_DRAWN);
+          return points;
+        }
+      }
+      roadSnapCache.set(cacheKey, cleaned);
+      return finish(cleaned);
     }
     console.warn('Road snap returned no route; using a straight line.', { cacheKey });
     return points;

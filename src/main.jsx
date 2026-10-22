@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+// Map defaults (smooth wheel zoom) before any map is created.
+import './lib/leafletDefaults.js'
 import App from './App.jsx'
 
 if ('serviceWorker' in navigator) {

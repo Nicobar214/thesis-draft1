@@ -24,6 +24,27 @@ import { nearestPointOnRoute, haversineMeters, toPoint } from '../components/pub
 export const AUTO_REJECT_DISTANCE_M = 1000;
 export const SUSPECT_DISTANCE_M = 500;
 export const LOW_SCORE_THRESHOLD = 40;
+// Close enough to the road to count as reported on site.
+export const ON_SITE_DISTANCE_M = 150;
+
+export const VERIFICATION = {
+  ON_SITE: 'Verified On-Site',
+  REVIEW: 'Needs Review',
+  MISMATCH: 'Location Mismatch',
+};
+
+/**
+ * The location badge, from the distance to the nearest point on the project
+ * road (distanceToProjectRoute). The same rule sets the badge when a report is
+ * submitted and in the admin case file, so the badge and the credibility score
+ * always agree.
+ */
+export function locationVerdict({ meters, accuracy }) {
+  if (!Number.isFinite(meters)) return VERIFICATION.REVIEW;
+  if (meters > AUTO_REJECT_DISTANCE_M) return VERIFICATION.MISMATCH;
+  if (meters <= ON_SITE_DISTANCE_M && !(Number(accuracy) > 100)) return VERIFICATION.ON_SITE;
+  return VERIFICATION.REVIEW;
+}
 
 export const TRIAGE = {
   REJECT: 'reject',
@@ -54,7 +75,13 @@ export function scoreCredibility({ accuracy, distanceMeters, isVerifiedUser, pho
   const identityScore = isVerifiedUser ? 20 : 10;
   const photoMatchScore = photoGpsMatch ? 15 : 3;
 
-  const score = Math.max(0, Math.min(100, accuracyScore + distanceScore + identityScore + photoMatchScore));
+  let score = Math.max(0, Math.min(100, accuracyScore + distanceScore + identityScore + photoMatchScore));
+  // Being at the road is the deciding signal: a good GPS fix and a signed-in
+  // reporter cannot make a report filed far from the road look credible.
+  if (Number.isFinite(distanceMeters)) {
+    if (distanceMeters > AUTO_REJECT_DISTANCE_M) score = Math.min(score, 25);
+    else if (distanceMeters > SUSPECT_DISTANCE_M) score = Math.min(score, 55);
+  }
   if (score >= 70) return { score, label: 'High', tone: 'bg-emerald-500' };
   if (score >= LOW_SCORE_THRESHOLD) return { score, label: 'Medium', tone: 'bg-amber-500' };
   return { score, label: 'Low', tone: 'bg-red-500' };
@@ -151,6 +178,7 @@ export function assessReport({ report, project, routeRecord, photoGpsMatch = fal
     distanceBasis: basis,
     distanceLabel: formatTriageDistance(meters),
     credibility,
+    verdict: locationVerdict({ meters, accuracy: Number(report?.geo_accuracy) }),
     recommendation,
     reasons,
     suggestedDismissalReason,

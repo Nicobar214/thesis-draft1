@@ -195,6 +195,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     const payloadBase = buildReportPayload({
       fullName, contact, selProject, gps, photoTs, description,
       severityCategory, category, specificProblem, userId: currentUser?.id,
+      routeRecord: selProjectRoute,
     });
 
     // Tamper-evident photo: stamp date/time, GPS, project and a verification

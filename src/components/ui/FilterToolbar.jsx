@@ -14,6 +14,7 @@
  * embedded: render without its own card (inside a table card header)
  */
 import { SearchIcon, XIcon } from 'lucide-react';
+import { lowerKeepAcronyms } from '../../lib/textCase';
 
 const fieldBase = 'h-10 rounded-xl border border-slate-200 text-sm text-slate-700 outline-none transition hover:border-slate-300 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10';
 
@@ -71,7 +72,7 @@ export default function FilterToolbar({
                 aria-label={s.label}
                 className={`${fieldBase} w-full min-w-0 truncate bg-white pl-3.5 pr-8 xl:w-44`}
               >
-                <option value={s.allValue ?? 'All'}>{s.allLabel || `All ${s.label.toLowerCase()}`}</option>
+                <option value={s.allValue ?? 'All'}>{s.allLabel || `All ${lowerKeepAcronyms(s.label)}`}</option>
                 {s.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             ))}

@@ -18,6 +18,7 @@ import ReviewQueueSummary from './ReviewQueueSummary';
 import Pagination, { usePagination } from '../ui/Pagination';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 import { PhotoViewButton } from '../ui/ZoomablePhoto';
+import { lowerKeepAcronyms } from '../../lib/textCase';
 
 const ATTACHMENTS_BUCKET = 'lgu-proposal-documents';
 
@@ -305,10 +306,12 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
     }
     setBusy(action);
     try {
-      if (action === 'validate') await onValidate(proposal, notes.trim() || null);
-      if (action === 'reject') await onReject(proposal, notes.trim());
-      if (action === 'revision') await onRequestRevision(proposal, notes.trim());
-      onClose();
+      let result;
+      if (action === 'validate') result = await onValidate(proposal, notes.trim() || null);
+      if (action === 'reject') result = await onReject(proposal, notes.trim());
+      if (action === 'revision') result = await onRequestRevision(proposal, notes.trim());
+      // false = the admin cancelled the confirmation: keep the review open.
+      if (result !== false) onClose();
     } finally {
       setBusy('');
     }
@@ -520,7 +523,7 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
             </div>
           ) : (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-              This proposal was {proposal.status.toLowerCase()}{proposal.review_notes ? `: ${proposal.review_notes}` : '.'}
+              This proposal was {lowerKeepAcronyms(proposal.status)}{proposal.review_notes ? `: ${proposal.review_notes}` : '.'}
             </div>
           )}
         </div>

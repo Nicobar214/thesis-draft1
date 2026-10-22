@@ -3,27 +3,10 @@
  * other evidence photo (lib/photoAttestation.js), uploaded under the engineer's
  * folder in progress-photos, then linked to the update by
  * attach_progress_certification_photo (supabase_progress_certification_photo.sql). */
-import { attestPhoto, registerAttestation } from './photoAttestation';
-import { readBestPosition } from './onSiteLocation';
+import { registerAttestation } from './photoAttestation';
+// Photos come from the shared KalsaTrack camera (components/camera/GeotagCamera.jsx).
 
 const BUCKET = 'progress-photos';
-
-/** Stamp a frame from the live camera with the engineer's best GPS fix. */
-export async function captureCertificationPhoto(frame, { projectName, onSample } = {}) {
-  const fix = await readBestPosition({ onSample });
-  const { blob, attestation } = await attestPhoto(frame, {
-    kind: 'progress_certification',
-    latitude: fix.latitude,
-    longitude: fix.longitude,
-    accuracy: fix.accuracy,
-    capturedAt: fix.capturedAt,
-    label: `Certification · ${projectName || 'FMR project'}`,
-  });
-  return {
-    file: new File([blob], `certification-${Date.now()}.jpg`, { type: 'image/jpeg' }),
-    attestation,
-  };
-}
 
 /** Upload the stamped photo and link it to the progress update. Throws on failure. */
 export async function attachCertificationPhoto(client, updateId, photo) {

@@ -71,7 +71,9 @@ export default function ContractorLayout({ children }) {
   const pageDescription = PAGE_DESCRIPTIONS[location.pathname] || '';
 
   // A notification opens the thing it is about.
+  const isPriority = (n) => String(n.type || '').startsWith('priority_');
   const resolveNotificationTarget = (n) => {
+    if (isPriority(n)) return { actionLabel: 'Open on my dashboard' };
     if (n.progress_update_id) return { actionLabel: 'View this update' };
     if (n.project_id) return { actionLabel: 'Open my projects' };
     if (n.report_id) return { actionLabel: 'Open citizen report repairs' };
@@ -79,7 +81,8 @@ export default function ContractorLayout({ children }) {
   };
 
   const openNotification = (n) => {
-    if (n.progress_update_id) navigate(`/contractor/projects?update=${n.progress_update_id}`);
+    if (isPriority(n)) navigate('/contractor#priority-tasks');
+    else if (n.progress_update_id) navigate(`/contractor/projects?update=${n.progress_update_id}`);
     else if (n.project_id) navigate('/contractor/projects');
     else if (n.report_id) navigate('/contractor/reports');
   };

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { confirm as confirmDialog } from '../../lib/confirm';
 import { CheckIcon } from 'lucide-react';
 import { buttonClass } from '../ui/Button';
 
@@ -38,6 +39,12 @@ export function SendWorkForm({ report, party, client = defaultClient, onNotify, 
   const [busy, setBusy] = useState(false);
 
   const send = async () => {
+    const ok = await confirmDialog({
+      title: `Send this job to the ${partyName(party)}?`,
+      message: `The ${partyName(party)} is notified and should finish by ${targetDate}. The reporter sees who is fixing it.${costEstimate ? `\n\nThe engineer's estimate (${costEstimate}) is shown to them as an estimate only, not a payment.` : ''}`,
+      confirmLabel: `Send to ${partyName(party)}`,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await assignPublicReportWork(client, { reportId: report.id, party, targetDate, note: note.trim() || null });

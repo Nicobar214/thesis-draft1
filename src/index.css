@@ -161,3 +161,8 @@ a, button, [role='button'], summary, label, select, input[type='checkbox'], inpu
 @media (prefers-reduced-motion: reduce) {
   .kt-glow { animation: none; }
 }
+
+/* Smoother zoom animation on every Leaflet map (eases out instead of snapping). */
+.leaflet-zoom-anim .leaflet-zoom-animated {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}

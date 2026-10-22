@@ -23,6 +23,7 @@ import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
 import AuthField from "../components/auth/AuthField";
 import { toFriendlyAuthError, validateAuthFields } from "../lib/authErrors";
+import { lowerKeepAcronyms } from '../lib/textCase';
 
 const REMEMBER_KEY = "kalsatrack:remembered-email";
 
@@ -75,7 +76,7 @@ function wrongAccountMessage(role, chosen) {
   if (role === "farmer") return "This is a farmer account. Choose Farmer above and sign in again.";
   const other = OTHER_PORTALS[role];
   if (other) return `This is a ${other.name} account. Sign in on the ${other.name} portal (${other.path}).`;
-  return `This account cannot sign in as a ${ACCOUNT_TYPES[chosen].label.toLowerCase()}.`;
+  return `This account cannot sign in as a ${lowerKeepAcronyms(ACCOUNT_TYPES[chosen].label)}.`;
 }
 
 const BENEFITS = [

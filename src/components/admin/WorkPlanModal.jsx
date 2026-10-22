@@ -27,6 +27,7 @@ import {
   maxUnitCostFor,
   summarizeWorkPlanCosts,
 } from '../../lib/workPlanCost';
+import { lowerKeepAcronyms } from '../../lib/textCase';
 
 /* A database refusal for going over the budget, in plain words. */
 function workPlanErrorMessage(error, fallback) {
@@ -178,11 +179,13 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
       return showNotification?.('The planned Work Plan cost exceeds the project cost basis.', 'error');
     }
     const warning = costSummary.state === 'below'
-      ? `\n\nWarning: planned cost is ${formatPesoAmount(costSummary.difference)} below the ${costBasis.label.toLowerCase()}.`
+      ? `\n\nWarning: planned cost is ${formatPesoAmount(costSummary.difference)} below the ${lowerKeepAcronyms(costBasis.label)}.`
       : '';
+    // A project created after the publish rule is private until this moment.
+    const publishesNow = Boolean(project) && 'published_at' in project && !project.published_at;
     const confirmed = await confirm({
       title: 'Finalize this Work Plan?',
-      message: `It will become read-only for normal edits.${warning}`,
+      message: `It will become read-only for normal edits, and contractor progress is measured against it.${publishesNow ? '\n\nThis also PUBLISHES the project: citizens, farmers and LGUs will see it on the map and project pages.' : ''}\n\nReminder: check each activity, quantity and unit cost before you finalize.${warning}`,
       confirmLabel: 'Finalize Work Plan',
       tone: warning ? 'warning' : 'primary',
     });
@@ -194,7 +197,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
       if (error) throw error;
       setStatus('finalized');
       setAdoptionBaseline((current) => current ?? Number(project.accomplishment || 0));
-      showNotification?.('Work Plan finalized.');
+      showNotification?.(publishesNow ? 'Work Plan finalized. The project is now public.' : 'Work Plan finalized.');
       await onChanged?.();
     } catch (error) {
       console.error('Failed to finalize Work Plan', error);
@@ -241,7 +244,7 @@ export default function WorkPlanModal({ project, supabase, onClose, onChanged, s
               <div role="alert" className="mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
                 <p className="font-bold">Over budget by {formatPesoAmount(headroom.overBy)}</p>
                 <p className="mt-0.5 text-xs">
-                  Lower a quantity or unit cost, or remove an activity. Saving and finalizing are blocked until the plan fits the {formatPesoAmount(costBasis.amount)} {costBasis.label.toLowerCase()}.
+                  Lower a quantity or unit cost, or remove an activity. Saving and finalizing are blocked until the plan fits the {formatPesoAmount(costBasis.amount)} {lowerKeepAcronyms(costBasis.label)}.
                 </p>
               </div>
             )}

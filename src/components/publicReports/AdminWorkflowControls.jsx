@@ -187,7 +187,8 @@ export default function AdminWorkflowControls({
     if (!selectedEngineerId || typeof onAssignEngineer !== 'function') return;
     // The parent reviews the report first when it is still pending, then
     // assigns, then stores this target date — one admin gesture.
-    await onAssignEngineer(selectedEngineerId, autoDate);
+    // false = the admin cancelled the confirmation: keep the choice.
+    if ((await onAssignEngineer(selectedEngineerId, autoDate)) === false) return;
     setSelectedEngineerId('');
   };
 
@@ -196,7 +197,7 @@ export default function AdminWorkflowControls({
       if (onNotify) onNotify('Please give a reason for removing this engineer.', 'error');
       return;
     }
-    await onUnassignEngineer(unassignReason.trim());
+    if ((await onUnassignEngineer(unassignReason.trim())) === false) return;
     setUnassignReason('');
     setShowUnassign(false);
   };
@@ -209,7 +210,7 @@ export default function AdminWorkflowControls({
     }
     setDismissing(true);
     try {
-      await onDismiss(reason, options);
+      if ((await onDismiss(reason, options)) === false) return;
       setShowDismiss(false);
       setDismissReason('');
     } finally {
@@ -224,7 +225,7 @@ export default function AdminWorkflowControls({
     }
     setSaving(true);
     try {
-      await onResolve(resolutionSummary.trim(), resolutionType);
+      if ((await onResolve(resolutionSummary.trim(), resolutionType)) === false) return;
       setResolutionSummary('');
       setShowResolveForm(false);
     } finally {

@@ -31,6 +31,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
 import { resolveCategory, resolveSpecificProblem, workOrderStage, WORK_STAGES } from '../lib/publicReportStatus';
 import Icons from '../components/Icons';
+import PriorityTasksPanel from '../components/priority/PriorityTasksPanel';
 
 const statusKey = (s) => {
   const v = String(s || '').toLowerCase();
@@ -90,12 +91,14 @@ function DashboardBody() {
   const summary = useContractorSummaryContext();
   const [openReports, setOpenReports] = useState(null);
   const [repairJobs, setRepairJobs] = useState([]);
+  const [userId, setUserId] = useState(null);
 
   // The portal is contractor-only: anyone else is sent back to sign in.
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/contractor/login'); return; }
+      setUserId(user.id);
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
       if (prof?.role !== 'contractor') navigate('/contractor/login');
     })();
@@ -186,6 +189,11 @@ function DashboardBody() {
 
   return (
     <div className="space-y-6">
+      {/* What the DA's prioritization asks of this contractor (only when there is something). */}
+      <div id="priority-tasks">
+        <PriorityTasksPanel client={supabase} userId={userId} role="contractor" compact />
+      </div>
+
       {/* 1. Headline numbers */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {tiles.map((t) => (

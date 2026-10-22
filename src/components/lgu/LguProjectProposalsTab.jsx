@@ -421,7 +421,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
         [sLat, sLng],
         ...routeWaypoints.map((w) => [w.lat, w.lng]),
         [eLat, eLng],
-      ]);
+      ], { smooth: false });
 
       if (snappedPoints && snappedPoints.length >= 2) {
         const first = snappedPoints[0];

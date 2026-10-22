@@ -64,7 +64,8 @@ import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectDeadlinesView from '../components/admin/ProjectDeadlinesView';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
-import { computeRoadGapPriorityScores } from '../lib/priorityScoring';
+import { computePriority } from '../lib/priorityScoring';
+import { parsePointList } from '../lib/mapRouteUtils';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import ProjectProgressReport from '../components/admin/ProjectProgressReport';
 import { PROJECT_FILTERS } from '../lib/projectSchedule';
@@ -125,6 +126,7 @@ import NotificationBell from '../components/NotificationBell';
 import { storeGlyph } from '../lib/mapMarkerIcons';
 import { confirm as confirmDialog, confirmSignOut } from '../lib/confirm';
 import ZoomablePhoto, { PhotoViewButton } from '../components/ui/ZoomablePhoto';
+import { lowerKeepAcronyms } from '../lib/textCase';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
@@ -262,40 +264,6 @@ function formatDistance(distanceMeters) {
   return `${(distanceMeters / 1000).toFixed(2)}km`;
 }
 
-function calculateCredibilityScore({ accuracy, distanceMeters, isVerifiedUser, photoGpsMatch }) {
-  let accuracyScore = 5;
-  if (Number.isFinite(accuracy)) {
-    if (accuracy <= 10) accuracyScore = 30;
-    else if (accuracy <= 25) accuracyScore = 26;
-    else if (accuracy <= 50) accuracyScore = 22;
-    else if (accuracy <= 100) accuracyScore = 14;
-    else accuracyScore = 8;
-  }
-
-  let distanceScore = 8;
-  if (Number.isFinite(distanceMeters)) {
-    if (distanceMeters <= 50) distanceScore = 35;
-    else if (distanceMeters <= 200) distanceScore = 22;
-    else distanceScore = 10;
-  }
-
-  const identityScore = isVerifiedUser ? 20 : 10;
-  const photoMatchScore = photoGpsMatch ? 15 : 3;
-
-  const score = Math.max(0, Math.min(100, accuracyScore + distanceScore + identityScore + photoMatchScore));
-  let label = 'Low';
-  let tone = 'bg-red-500';
-
-  if (score >= 70) {
-    label = 'High';
-    tone = 'bg-emerald-500';
-  } else if (score >= 40) {
-    label = 'Medium';
-    tone = 'bg-amber-500';
-  }
-
-  return { score, label, tone };
-}
 
 function PublicReportLocationComparisonMap({ officialPoint, reportPoint }) {
   const points = [];
@@ -622,6 +590,21 @@ function FmrSortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortCha
 }
 
 /* Admin FMR projects table - the default view for the Projects tab. */
+/* Shown on a project the public cannot see yet: it is published when its Work
+ * Plan is finalized (supabase_project_publish_on_work_plan.sql). Projects
+ * loaded before that column existed have no published_at key and count as public. */
+const isUnpublished = (project) => Boolean(project) && 'published_at' in project && !project.published_at;
+function NotPublicChip() {
+  return (
+    <span
+      title="Hidden from the public until its Work Plan is finalized"
+      className="inline-flex items-center rounded-md border border-slate-300 bg-slate-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-slate-600"
+    >
+      Not public yet
+    </span>
+  );
+}
+
 function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, onEdit, onWorkPlan, onAssign, onDelete, onReport }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/60 overflow-hidden">
@@ -660,6 +643,7 @@ function AdminFmrProjectTable({ projects, sortBy, onSortChange, onOpenDetail, on
                 >
                   <td className="px-6 py-4 max-w-[320px]">
                     <p className="text-sm font-semibold text-slate-900 line-clamp-2 leading-snug">{project.project_name}</p>
+                    {isUnpublished(project) && <div className="mt-1"><NotPublicChip /></div>}
                     <p className="mt-0.5 text-xs text-slate-500 truncate">
                       {project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}
                     </p>
@@ -1020,6 +1004,8 @@ export default function Dashboard() {
   const [lguProposals, setLguProposals] = useState([]);
   const [lguProposalsLoading, setLguProposalsLoading] = useState(false);
   const [pendingProposalLink, setPendingProposalLink] = useState(null);
+  // A prioritized road gap being turned into a project: called with the new id.
+  const [pendingGapConversion, setPendingGapConversion] = useState(null);
   const [assignContractorModal, setAssignContractorModal] = useState(null); // holds fmr project
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState('');
@@ -1465,6 +1451,12 @@ export default function Dashboard() {
   // status='reviewed', so a still-pending report is reviewed first rather than
   // making the admin set the case status by hand.
   const assignEngineerToReport = async (reportId, engineerId, targetDate = null) => {
+    const chosen = fieldEngineers.find((e) => e.id === engineerId);
+    if (!(await confirmDialog({
+      title: 'Send this field engineer?',
+      message: `${chosen?.full_name || chosen?.email || 'The engineer'} is notified and must inspect the site${targetDate ? ` by ${targetDate}` : ''}. The reporter sees that an engineer is on the way.`,
+      confirmLabel: 'Assign engineer',
+    }))) return false;
     setAssigningEngineer(true);
     try {
       const engineer = fieldEngineers.find(e => e.id === engineerId);
@@ -1516,6 +1508,15 @@ export default function Dashboard() {
       showNotification('A reason is required to close this report.', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Close this report without action?',
+      message: `The report is closed and the reporter is notified with your reason:
+"${reason.trim()}"
+
+Reminder: write the reason so the citizen understands it; they will read it.`,
+      confirmLabel: 'Close report',
+      tone: 'danger',
+    }))) return false;
     try {
       const report = publicReports.find((r) => r.id === reportId) || selectedPublicReport;
       const trimmed = reason.trim();
@@ -1556,6 +1557,12 @@ export default function Dashboard() {
       showNotification('A reason is required to unassign an engineer.', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Remove the assigned engineer?',
+      message: 'The engineer is taken off this report and any inspection in progress stops. Assign another engineer afterwards so the report keeps moving.',
+      confirmLabel: 'Remove engineer',
+      tone: 'warning',
+    }))) return false;
     try {
       await unassignPublicReportEngineer(supabase, { reportId, reason: reason.trim() });
       await fetchPublicReports();
@@ -1864,6 +1871,16 @@ export default function Dashboard() {
 
   // Assign contractor to FMR project
   const assignContractorToProject = async (projectId, contractorId, siteEngineerId) => {
+    const project = fmrProjects.find((p) => p.id === projectId);
+    const contractor = contractors.find((c) => c.id === contractorId);
+    if (!(await confirmDialog({
+      title: contractorId ? 'Assign this contractor?' : 'Remove the contractor?',
+      message: contractorId
+        ? `${contractor?.full_name || contractor?.email || 'The contractor'} will be assigned to ${project?.project_name || 'this project'} and can submit progress for it. Their progress updates go to the selected site engineer for certification.`
+        : `${project?.project_name || 'This project'} will have no contractor, and nobody can submit progress for it until you assign one.`,
+      confirmLabel: contractorId ? 'Assign' : 'Remove contractor',
+      tone: contractorId ? 'primary' : 'warning',
+    }))) return false;
     setAssigningContractor(true);
     try {
       const { error } = await supabase
@@ -1897,6 +1914,14 @@ export default function Dashboard() {
 
   // Approve progress update (and bump fmr_projects.accomplishment)
   const approveProgressUpdate = async (update) => {
+    const pct = update.certified_accomplishment ?? update.reported_accomplishment;
+    if (!(await confirmDialog({
+      title: 'Approve this progress update?',
+      message: `${update.fmr_projects?.project_name || 'This project'}: ${pct != null ? `${Number(pct).toFixed(2)}%` : 'the certified figure'} becomes the official accomplishment, shown to the public and used for payment.
+
+Reminder: check that the site engineer certified it and the photos match the claim. This cannot be undone here.`,
+      confirmLabel: 'Approve',
+    }))) return false;
     try {
       const { error } = await supabase.rpc('approve_progress_update_admin', {
         progress_update_id: update.id,
@@ -1919,6 +1944,12 @@ export default function Dashboard() {
 
   // Reject progress update
   const rejectProgressUpdate = async (updateId) => {
+    if (!(await confirmDialog({
+      title: 'Reject this progress update?',
+      message: 'The contractor is told it was rejected and must submit a corrected update. The project accomplishment stays as it is.',
+      confirmLabel: 'Reject update',
+      tone: 'danger',
+    }))) return false;
     try {
       const { error } = await supabase.rpc('reject_progress_update_admin', {
         progress_update_id: updateId,
@@ -1959,6 +1990,50 @@ export default function Dashboard() {
   // Opens the standard "Add New Project" form pre-filled from a validated
   // LGU proposal, and remembers the proposal so handleAddProject can link
   // it back once the officer actually submits the form (see pendingProposalLink).
+  // Prioritization end point for a new road: the Add Project form, filled in
+  // from the surveyed gap. onCreated(projectId) records the decision once saved.
+  const openAddProjectFromGap = (gap, onCreated) => {
+    const lengthKm = Number(gap.gap_km || 0);
+    const points = parsePointList(gap.gap_points);
+    const start = points[0] || [gap.start_latitude, gap.start_longitude];
+    const end = points[points.length - 1] || [gap.end_latitude, gap.end_longitude];
+    setFormData({
+      ...emptyForm,
+      projectName: gap.source_road_name ? `Concreting of ${gap.source_road_name}` : '',
+      projectCode: generateNextProjectCode(),
+      municipality: gap.municipality || 'Leon',
+      barangay: gap.barangay || '',
+      province: 'Iloilo',
+      startLatitude: start?.[0] != null ? String(start[0]) : '',
+      startLongitude: start?.[1] != null ? String(start[1]) : '',
+      endLatitude: end?.[0] != null ? String(end[0]) : '',
+      endLongitude: end?.[1] != null ? String(end[1]) : '',
+      roadLength: lengthKm > 0 ? String(lengthKm) : '',
+      totalBudget: lengthKm > 0 ? String(Math.round(lengthKm * 15000000)) : '',
+      budgetSource: 'DA',
+      roadType: 'Concrete',
+      description: [
+        `Prioritized road gap ${gap.gap_code || ''}`.trim(),
+        gap.gap_type,
+        gap.source_surface_summary,
+        gap.barangay_end ? `${gap.barangay} to ${gap.barangay_end}` : null,
+      ].filter(Boolean).join(' · '),
+    });
+    setNewProjectRouteWaypoints(points.slice(1, -1).map(([lat, lng]) => ({ lat, lng })));
+    setNewProjectRouteWaypointsOpen(false);
+    setNewProjectContractorId('');
+    setCreateMapSearchQuery('');
+    setCreateMapSearchCoords(null);
+    setPendingGapConversion(() => onCreated);
+    setActiveTab('projects');
+    setShowAddModal(true);
+  };
+
+  // Closing the form without saving cancels the conversion.
+  useEffect(() => {
+    if (!showAddModal) setPendingGapConversion(null);
+  }, [showAddModal]);
+
   const openAddProjectFromProposal = (proposal) => {
     const lengthKm = Number(proposal.estimated_length_km || 0);
     const calculatedBudget = lengthKm > 0 ? String(Math.round(lengthKm * 15000000)) : (proposal.estimated_budget ? String(proposal.estimated_budget) : '');
@@ -2004,6 +2079,11 @@ export default function Dashboard() {
   // official record themselves; the project only becomes public once they
   // submit that form.
   const validateLguProposal = async (proposal, notes) => {
+    if (!(await confirmDialog({
+      title: 'Validate this LGU proposal?',
+      message: `"${proposal.project_name}" will be marked validated and the LGU is notified. You can then create the FMR project from it (it stays private until its Work Plan is finalized).`,
+      confirmLabel: 'Validate proposal',
+    }))) return false;
     try {
       const { error } = await supabase.rpc('validate_lgu_project_proposal', {
         p_proposal_id: proposal.id,
@@ -2031,6 +2111,12 @@ export default function Dashboard() {
   };
 
   const rejectLguProposal = async (proposal, notes) => {
+    if (!(await confirmDialog({
+      title: 'Reject this LGU proposal?',
+      message: `"${proposal.project_name}" will be rejected and the LGU is notified with your notes. To let them fix it instead, use Request revision.`,
+      confirmLabel: 'Reject proposal',
+      tone: 'danger',
+    }))) return false;
     try {
       const { error } = await supabase.rpc('reject_lgu_project_proposal', {
         p_proposal_id: proposal.id,
@@ -2056,6 +2142,12 @@ export default function Dashboard() {
   };
 
   const requestLguProposalRevision = async (proposal, notes) => {
+    if (!(await confirmDialog({
+      title: 'Send this proposal back for revision?',
+      message: `The LGU is notified and can edit and resubmit "${proposal.project_name}". Make sure your notes say what to change.`,
+      confirmLabel: 'Request revision',
+      tone: 'warning',
+    }))) return false;
     try {
       const { error } = await supabase.rpc('request_lgu_project_proposal_revision', {
         p_proposal_id: proposal.id,
@@ -2122,6 +2214,11 @@ export default function Dashboard() {
       showNotification('No submitted inspection record was found to validate.', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Validate the engineer\'s findings?',
+      message: 'The inspection becomes the official record for this report and the reporter can see it. Next you can send the job to the contractor or LGU, or resolve the report.',
+      confirmLabel: 'Validate findings',
+    }))) return false;
     setFindingActionSaving(true);
     try {
       await validatePublicReportInspection(supabase, { reportId, inspectionId: selectedFieldFinding.id });
@@ -2160,6 +2257,12 @@ export default function Dashboard() {
       showNotification('A reason is required to reject findings', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Send the findings back?',
+      message: 'The engineer is notified with your reason and must inspect the site again.',
+      confirmLabel: 'Send back',
+      tone: 'warning',
+    }))) return false;
     if (!selectedFieldFinding?.id) {
       showNotification('No submitted inspection record was found to reject.', 'error');
       return;
@@ -2210,6 +2313,13 @@ export default function Dashboard() {
       showNotification('Resolution requires DA validation of field findings first', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Resolve this report?',
+      message: `The report is closed as resolved and the reporter is notified. They can still say it is not fixed, which brings it back to you.
+
+Reminder: the summary is shown to the citizen and on the resolution certificate.`,
+      confirmLabel: 'Resolve report',
+    }))) return false;
 
     try {
       await resolvePublicReport(supabase, {
@@ -2986,8 +3096,15 @@ export default function Dashboard() {
   // was therefore ranking on simulated data while the Priorities tab ranked on
   // surveyed gaps, and the two disagreed.
   const topPriorityProjects = useMemo(
-    () => computeRoadGapPriorityScores(roadGaps, fmrProjects, publicReports).slice(0, 3),
-    [roadGaps, fmrProjects, publicReports]
+    () => computePriority({
+      gaps: roadGaps,
+      projects: fmrProjects,
+      routesByProjectId: routeByProjectId,
+      reports: publicReports,
+      farmers: farmerBeneficiaries,
+      markets,
+    }).newRoads.slice(0, 3),
+    [roadGaps, fmrProjects, routeByProjectId, publicReports, farmerBeneficiaries, markets]
   );
   const priorityRankById = useMemo(() => {
     const map = new Map();
@@ -3270,8 +3387,17 @@ export default function Dashboard() {
       ].filter(Boolean).join(' | '),
     };
 
+    if (!(await confirmDialog({
+      title: 'Create this FMR project?',
+      message: `${fmrPayload.project_name}${fmrPayload.municipality ? ` · ${fmrPayload.municipality}` : ''}
+Budget: ₱${Number(fmrPayload.total_budget || 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+
+Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will only see it after you draft and finalize its Work Plan. Check the route, contractor and budget before you continue.`,
+      confirmLabel: 'Create project',
+    }))) return false;
+
     try {
-      const { data: inserted, error } = await supabase.from('fmr_projects').insert([fmrPayload]).select('id').single();
+      const { data: inserted, error } = await supabase.from('fmr_projects').insert([fmrPayload]).select('*').single();
       if (error) throw error;
       await upsertProjectRoute(
         inserted?.id,
@@ -3283,6 +3409,14 @@ export default function Dashboard() {
       );
       await fetchFmrProjects();
       await fetchProjectRoutes();
+
+      if (pendingGapConversion && inserted?.id) {
+        try {
+          await pendingGapConversion(inserted.id);
+        } catch (convErr) {
+          console.error('Project created, but the prioritization decision was not saved:', convErr.message);
+        }
+      }
 
       if (pendingProposalLink && inserted?.id) {
         try {
@@ -3300,8 +3434,8 @@ export default function Dashboard() {
           await notifyProposalSubmitter(
             pendingProposalLink,
             'lgu_proposal_published',
-            'Your project is now live',
-            `"${pendingProposalLink.project_name}" has been created and is now visible to the public.`
+            'Your project was created',
+            `"${pendingProposalLink.project_name}" has been created. It becomes visible to the public once the DA finalizes its Work Plan.`
           );
           await fetchLguProposals();
         } catch (linkErr) {
@@ -3315,7 +3449,9 @@ export default function Dashboard() {
       setNewProjectContractorId('');
       setNewProjectRouteWaypoints([]);
       setNewProjectRouteWaypointsOpen(false);
-      showNotification('FMR project created successfully!');
+      // New projects are private until their Work Plan is finalized: open it now.
+      showNotification('Project saved. It stays hidden from the public until you draft and finalize its Work Plan.');
+      if (inserted) setWorkPlanProject(inserted);
     } catch (err) {
       console.error('Failed to create project:', err.message);
       showNotification(`Failed to save FMR project: ${err.message}`, 'error');
@@ -3613,6 +3749,11 @@ export default function Dashboard() {
   const handleEditFmrProject = async (e) => {
     e.preventDefault();
     if (!(await confirmRouteOverlap(editRouteOverlap))) return;
+    if (selectedFmrProject?.published_at && !(await confirmDialog({
+      title: 'Save changes to a public project?',
+      message: `${selectedFmrProject.project_name} is already public. Your changes (status, location, route, dates) will show on the public map and project pages right away.`,
+      confirmLabel: 'Save changes',
+    }))) return false;
     const payload = {
       project_name: fmrFormData.project_name,
       status: fmrFormData.status,
@@ -5265,6 +5406,7 @@ export default function Dashboard() {
 
                               {/* Project Name */}
                               <h3 className="font-bold text-base text-slate-900 mb-2 line-clamp-2 leading-snug group-hover:text-teal-700 transition-colors">{project.project_name}</h3>
+                              {isUnpublished(project) && <div className="-mt-1 mb-2"><NotPublicChip /></div>}
 
                               {/* Location */}
                               <div className="flex items-center gap-1.5 text-sm text-slate-500 mb-4">
@@ -6174,7 +6316,13 @@ export default function Dashboard() {
               projects={fmrProjects}
               roadGaps={roadGaps}
               reports={publicReports}
-              escalations={escalations}
+              farmers={farmerBeneficiaries}
+              markets={markets}
+              routesByProjectId={routeByProjectId}
+              client={supabase}
+              showNotification={showNotification}
+              onCreateProjectFromGap={openAddProjectFromGap}
+              fieldEngineers={fieldEngineers}
               onViewReports={(project) => {
                 openProjectFeedbackModal({
                   projectName: project.project_name,
@@ -6901,14 +7049,6 @@ export default function Dashboard() {
               return haversineMeters(officialPoint.lat, officialPoint.lng, reportPoint.lat, reportPoint.lng);
             })();
 
-            const distanceBand = getDistanceBand(distanceFromProjectMeters);
-
-            const credibility = calculateCredibilityScore({
-              accuracy: Number(selectedPublicReport?.geo_accuracy),
-              distanceMeters: distanceFromProjectMeters,
-              isVerifiedUser: Boolean(selectedPublicReport?.user_id),
-              photoGpsMatch: photoGpsMatchesReport,
-            });
 
             const timelineEntries = (() => {
               const baseEntries = [];
@@ -7287,8 +7427,6 @@ export default function Dashboard() {
                     return haversineMeters(officialPoint.lat, officialPoint.lng, reportPoint.lat, reportPoint.lng);
                   })();
 
-                  const distanceBand = getDistanceBand(distanceFromProjectMeters);
-
                   /* Triage measures to the nearest point on the route polyline,
                      not to the route midpoint — on a long road a genuine report
                      at the far end is kilometres from the midpoint but metres
@@ -7300,6 +7438,12 @@ export default function Dashboard() {
                     photoGpsMatch: photoGpsMatchesReport,
                   });
                   const credibility = triage.credibility;
+                  // Offset chip from the same road distance as the score and badge.
+                  const distanceBand = getDistanceBand(triage.distanceMeters);
+                  // An engineer's validated visit outranks the automatic check.
+                  const locationBadge = selectedPublicReport.engineer_status === 'validated'
+                    ? selectedPublicReport.verification
+                    : triage.verdict;
                   // Issue type, specific problem and who fixes it (LGU = minor, contractor = major).
                   const reportCategory = resolveCategory(selectedPublicReport);
                   const reportType = SEVERITY_TAXONOMY[reportCategory];
@@ -7328,7 +7472,7 @@ export default function Dashboard() {
                                 <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold ${reportType?.color || ''}`}>
                                   <SeverityIcon category={reportCategory} /> {reportType?.label}
                                 </span>
-                                {verifyBadge(selectedPublicReport.verification)}
+                                {verifyBadge(locationBadge)}
                               </div>
                               <p className="text-xs text-slate-500 font-medium mt-0.5">
                                 DA RAED Region VI &middot; {selectedPublicReport.project_name || 'General Road Sector Area'}
@@ -7421,7 +7565,7 @@ export default function Dashboard() {
                                 <span className="flex items-center gap-1.5 text-slate-600">
                                   <Icons.ShieldCheck /> Location Check &amp; Credibility
                                 </span>
-                                <span className="text-emerald-700 font-extrabold">{credibility.score}/100 ({credibility.label})</span>
+                                <span className={`font-extrabold ${credibility.label === 'High' ? 'text-emerald-700' : credibility.label === 'Medium' ? 'text-amber-700' : 'text-red-700'}`}>{credibility.score}/100 ({credibility.label})</span>
                               </div>
                               <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200/50">
                                 <div className={`h-full rounded-full ${credibility.tone} transition-all duration-500`} style={{ width: `${credibility.score}%` }} />
@@ -8957,7 +9101,7 @@ A new LGU account will be created with this email and password.`,
                           }
 
                           try {
-                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
+                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], { smooth: false });
                             if (snappedPoints && snappedPoints.length >= 2) {
                               const first = snappedPoints[0];
                               const last = snappedPoints[snappedPoints.length - 1];
@@ -9571,7 +9715,7 @@ A new LGU account will be created with this email and password.`,
                           }
 
                           try {
-                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]]);
+                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], { smooth: false });
                             if (snappedPoints && snappedPoints.length >= 2) {
                               const first = snappedPoints[0];
                               const last = snappedPoints[snappedPoints.length - 1];
@@ -9864,7 +10008,7 @@ A new LGU account will be created with this email and password.`,
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Project Details</p>
                   <h3 className="mt-1 text-2xl font-bold text-slate-900">{projectName}</h3>
-                  <p className="mt-1 text-sm text-slate-500">Detailed {sourceLabel.toLowerCase()} record for DA review.</p>
+                  <p className="mt-1 text-sm text-slate-500">Detailed {lowerKeepAcronyms(sourceLabel)} record for DA review.</p>
                 </div>
                 <button onClick={() => setSelectedProjectDetail(null)} aria-label="Close dialog" className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
