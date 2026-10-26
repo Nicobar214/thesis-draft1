@@ -176,6 +176,31 @@ function parseDateOnly(dateValue) {
   return parsed;
 }
 
+/* The fmr_projects columns the Edit Project form saves, from its form values. */
+function fmrPayloadFromForm(form) {
+  return {
+    project_name: form.project_name,
+    status: form.status,
+    year_funded: form.year_funded ? parseInt(form.year_funded) : null,
+    municipality: form.municipality,
+    province: form.province,
+    project_length_km: form.project_length_km ? parseFloat(form.project_length_km) : null,
+    start_latitude: form.start_latitude ? parseFloat(form.start_latitude) : null,
+    start_longitude: form.start_longitude ? parseFloat(form.start_longitude) : null,
+    end_latitude: form.end_latitude ? parseFloat(form.end_latitude) : null,
+    end_longitude: form.end_longitude ? parseFloat(form.end_longitude) : null,
+    date_completed: form.date_completed || null,
+    target_completion_date: form.target_completion_date || null,
+    date_started: form.date_started || null,
+    contract_amount: form.contract_amount ? parseFloat(form.contract_amount) : null,
+    location: form.location,
+    remarks: form.remarks,
+    total_budget: form.total_budget ? parseFloat(form.total_budget) : null,
+    funds_released: form.funds_released ? parseFloat(form.funds_released) : null,
+    funding_source: form.funding_source || null,
+  };
+}
+
 function isPastDate(dateValue, todayDate) {
   const date = parseDateOnly(dateValue);
   if (!date) return false;
@@ -944,6 +969,7 @@ export default function Dashboard() {
     total_budget: '', funds_released: '', funding_source: ''
   };
   const [fmrFormData, setFmrFormData] = useState(emptyFmrForm);
+  const fmrFormInitialRef = useRef(null); // the form as opened, to save only what changed
   const [fmrRouteMode, setFmrRouteMode] = useState('waypoint');
   const [fmrRouteWaypoints, setFmrRouteWaypoints] = useState([]);
   const [fmrRouteWaypointsOpen, setFmrRouteWaypointsOpen] = useState(false);
@@ -3734,7 +3760,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
     setFmrRouteWaypoints(waypoints);
     setFmrRouteWaypointsOpen(false);
 
-    setFmrFormData({
+    const initialForm = {
       project_name: project.project_name || '',
       status: normalizeFmrStatus(project.status) || 'Proposed',
       year_funded: project.year_funded?.toString() || '',
@@ -3755,7 +3781,9 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
       total_budget: project.total_budget?.toString() || '',
       funds_released: project.funds_released?.toString() || '',
       funding_source: project.funding_source || '',
-    });
+    };
+    fmrFormInitialRef.current = initialForm;
+    setFmrFormData(initialForm);
     setShowFmrEditModal(true);
   };
 
@@ -3776,30 +3804,17 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
       message: `${selectedFmrProject.project_name} is already public. Your changes (status, location, route, dates) will show on the public map and project pages right away.`,
       confirmLabel: 'Save changes',
     }))) return false;
-    const payload = {
-      project_name: fmrFormData.project_name,
-      status: fmrFormData.status,
-      year_funded: fmrFormData.year_funded ? parseInt(fmrFormData.year_funded) : null,
-      municipality: fmrFormData.municipality,
-      province: fmrFormData.province,
-      project_length_km: fmrFormData.project_length_km ? parseFloat(fmrFormData.project_length_km) : null,
-      start_latitude: fmrFormData.start_latitude ? parseFloat(fmrFormData.start_latitude) : null,
-      start_longitude: fmrFormData.start_longitude ? parseFloat(fmrFormData.start_longitude) : null,
-      end_latitude: fmrFormData.end_latitude ? parseFloat(fmrFormData.end_latitude) : null,
-      end_longitude: fmrFormData.end_longitude ? parseFloat(fmrFormData.end_longitude) : null,
-      date_completed: fmrFormData.date_completed || null,
-      target_completion_date: fmrFormData.target_completion_date || null,
-      date_started: fmrFormData.date_started || null,
-      contract_amount: fmrFormData.contract_amount ? parseFloat(fmrFormData.contract_amount) : null,
-      location: fmrFormData.location,
-      remarks: fmrFormData.remarks,
-      total_budget: fmrFormData.total_budget ? parseFloat(fmrFormData.total_budget) : null,
-      funds_released: fmrFormData.funds_released ? parseFloat(fmrFormData.funds_released) : null,
-      funding_source: fmrFormData.funding_source || null,
-    };
+    // Only what the admin changed in this form is saved. Sending every field let a
+    // form opened earlier write old values back over newer ones (a resumed
+    // project's new target date was reverted this way, reopening its follow-up).
+    const edited = fmrPayloadFromForm(fmrFormData);
+    const opened = fmrFormInitialRef.current ? fmrPayloadFromForm(fmrFormInitialRef.current) : {};
+    const payload = Object.fromEntries(Object.entries(edited).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(opened[key])));
     try {
-      const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
-      if (error) throw error;
+      if (Object.keys(payload).length) {
+        const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
+        if (error) throw error;
+      }
 
       await upsertProjectRoute(
         selectedFmrProject.id,
