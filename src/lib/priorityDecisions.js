@@ -63,6 +63,21 @@ export function nextStatus(kind, status = 'ranked') {
   return i >= 0 && i < flow.length - 1 ? flow[i + 1] : null;
 }
 
+/**
+ * A project that finished (left On-Going) while its follow-up was still open
+ * can be closed from where it stands: there is nothing left to act on.
+ */
+export const canCloseFinished = (kind, from) => kind === 'project' && (from === 'flagged' || from === 'action_recorded');
+
+/** Open follow-ups whose project is no longer being built. */
+export function finishedFollowUps(decisions, projects = [], isOngoing = () => true) {
+  const byId = new Map((projects || []).map((p) => [String(p.id), p]));
+  return [...(decisions?.values() || [])]
+    .filter((d) => d.candidate_kind === 'project' && (d.status === 'flagged' || d.status === 'action_recorded'))
+    .map((d) => ({ decision: d, project: byId.get(String(d.candidate_id)) || null }))
+    .filter(({ project }) => project && !isOngoing(project));
+}
+
 /** Where a deferred candidate resumes. */
 export const resumeStatus = (kind) => DECISION_FLOW[kind]?.[1] || null;
 
@@ -85,12 +100,39 @@ export async function loadDecisions(client) {
 
 export const decisionFor = (decisions, row) => decisions?.get(keyOf(row.kind, row.id)) || null;
 
+/* Acting out of rank order. The top PRIORITY_TOP_TIER of a group can be taken
+ * in any order; below that, starting on a candidate while a higher-ranked one
+ * in the same group has not been acted on yet asks for a reason, which is
+ * saved with the decision. */
+export const PRIORITY_TOP_TIER = 3;
+
+/**
+ * Higher-ranked candidates of the same group still waiting (no decision yet),
+ * when `entry` is below the top tier and is about to take its first step.
+ * Returns [{ id, rank, title, score }], best rank first; empty means no warning.
+ */
+export function skippedAhead(entry, groupRows = [], decisions = null) {
+  if (!entry || !(entry.rank > PRIORITY_TOP_TIER)) return [];
+  const status = decisionFor(decisions, entry)?.status || 'ranked';
+  if (status !== 'ranked') return [];
+  return groupRows
+    .filter((row) => row.kind === entry.kind && row.rank < entry.rank)
+    .filter((row) => (decisionFor(decisions, row)?.status || 'ranked') === 'ranked')
+    .sort((a, b) => a.rank - b.rank)
+    .map((row) => ({ id: row.id, rank: row.rank, title: row.title, score: row.score }));
+}
+
 /**
  * Record one step. `snapshot` keeps the rank, score and the five criteria at
  * the time of the decision, so later re-scoring never rewrites history.
  */
-export async function saveDecision(client, { kind, id, from = 'ranked', to, note = null, action = null, snapshot = null, fmrProjectId = null, assignedEngineerId = null, dueDate = null }) {
-  if (!canMove(kind, from, to)) throw new Error(`Cannot move from ${DECISION_LABELS[from] || from} to ${DECISION_LABELS[to] || to}.`);
+export async function saveDecision(client, { kind, id, from = 'ranked', to, note = null, action = null, snapshot = null, fmrProjectId = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, finishedClose = false }) {
+  const allowed = canMove(kind, from, to) || (finishedClose && to === 'closed' && canCloseFinished(kind, from));
+  if (!allowed) throw new Error(`Cannot move from ${DECISION_LABELS[from] || from} to ${DECISION_LABELS[to] || to}.`);
+  if (to === 'action_recorded') {
+    if (!replyDueDate) throw new Error('Set the date the reply is due.');
+    if (replyDueDate < localDateISO()) throw new Error('The reply date cannot be in the past.');
+  }
   if (kind === 'gap' && to === 'for_validation') {
     if (!assignedEngineerId) throw new Error('Choose the field engineer who will validate this road.');
     if (!dueDate) throw new Error('Set the date the field engineer should visit the road by.');
@@ -108,6 +150,7 @@ export async function saveDecision(client, { kind, id, from = 'ranked', to, note
     ...(fmrProjectId ? { fmr_project_id: fmrProjectId } : {}),
     ...(assignedEngineerId ? { assigned_engineer_id: assignedEngineerId } : {}),
     ...(dueDate ? { due_date: dueDate } : {}),
+    ...(replyDueDate ? { reply_due_date: replyDueDate } : {}),
   };
   const { data, error } = await client
     .from('priority_decisions')
@@ -121,6 +164,7 @@ export async function saveDecision(client, { kind, id, from = 'ranked', to, note
 /* Site-validation deadline. Dates are plain calendar days ('YYYY-MM-DD',
  * the due_date column), compared in local time so "today" is the user's day. */
 export const DEFAULT_VALIDATION_DAYS = 7;
+export const DEFAULT_REPLY_DAYS = 7;
 
 export function localDateISO(date = new Date(), addDays = 0) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate() + addDays);

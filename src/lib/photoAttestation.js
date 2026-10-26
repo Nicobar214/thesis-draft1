@@ -27,7 +27,7 @@ export const ATTESTATION_KINDS = {
   repair_verification: 'Repair verification',
   contractor_progress: 'Contractor progress photo',
   progress_certification: 'Engineer progress certification',
-  priority_validation: 'Engineer road gap validation',
+  priority_validation: 'Engineer concreting need validation',
   priority_inspection: 'Engineer priority site inspection',
 };
 

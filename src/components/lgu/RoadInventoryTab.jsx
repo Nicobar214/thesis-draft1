@@ -126,7 +126,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             <p className="text-xs uppercase tracking-[0.24em] text-emerald-700 font-semibold">Road Inventory</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-900">Leon barangay roads inventory</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Browse the road records provided in the CSV. Surface type and condition are summarized from the dominant surfaced segment so LGU staff can scan the inventory quickly.
+              Browse the road records provided in the CSV. Surface type and condition are summarized from the dominant surfaced segment so staff can scan the inventory quickly.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[46rem]">

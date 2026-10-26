@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import CameraSheet from '../camera/CameraSheet';
 import { buttonClass } from '../ui/Button';
 
 import { supabaseFieldEngineer as defaultClient } from '../../lib/supabase';
@@ -516,34 +517,19 @@ export default function RepairVerifyPanel({ report, client = defaultClient, onDo
               </button>
             )}
 
-            {cameraOn && (
-              <div className="space-y-2">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="aspect-video w-full rounded-lg border border-slate-200 bg-black object-cover"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={takePhoto}
-                    disabled={!cameraReady || shotBusy}
-                    className={buttonClass('primary', 'md', 'flex-1')}
-                  >
-                    {shotBusy ? 'Taking photo...' : cameraReady ? 'Take photo' : 'Starting camera...'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={stopCamera}
-                    className="rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+            <CameraSheet
+              open={cameraOn}
+              title="Verification after-photo"
+              onClose={() => { if (!shotBusy) stopCamera(); }}
+              videoRef={videoRef}
+              ready={cameraReady}
+              error={cameraError}
+              hint={shotBusy ? 'Taking photo… hold still while GPS is read.' : 'Your position and the time are stamped on the photo.'}
+              onShutter={takePhoto}
+              shutterDisabled={!cameraReady || shotBusy}
+              busy={shotBusy}
+              shutterLabel="Take photo"
+            />
 
             {photoFile && (
               <div className="space-y-2">

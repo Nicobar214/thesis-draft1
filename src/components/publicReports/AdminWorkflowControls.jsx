@@ -20,6 +20,7 @@ import { buttonClass } from '../ui/Button';
 import RepairActionPanel from './RepairActionPanel';
 import WorkOrderPanel, { SendWorkForm } from './WorkOrderPanel';
 import CitizenConfirmationNote from './CitizenConfirmationNote';
+import { FIX_CONFIRMATION_ENABLED } from './FixConfirmationCard';
 import ReopenReportPanel from './ReopenReportPanel';
 import SupportCountNote from './SupportCountNote';
 
@@ -434,7 +435,7 @@ export default function AdminWorkflowControls({
           {activeWork
             ? <WorkOrderPanel action={activeWork} report={report} readOnly />
             : <RepairActionPanel report={report} resolution={resolution} onNotify={onNotify} onChanged={onRepairChanged} handler={handler} />}
-          <CitizenConfirmationNote key={report?.id} reportId={report?.id} />
+          {FIX_CONFIRMATION_ENABLED && <CitizenConfirmationNote key={report?.id} reportId={report?.id} />}
           <ReopenReportPanel
             key={`reopen-${report?.id}`}
             report={report}

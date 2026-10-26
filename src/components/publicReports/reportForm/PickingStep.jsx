@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { MapPinIcon, SearchIcon } from 'lucide-react';
-import { distToProject, fmtDist, sortProjectsByDistance } from '../../../lib/reportSubmission';
+import { distToProject, distanceToLine, fmtDist, sortProjectsByDistance } from '../../../lib/reportSubmission';
+import NearbyProjectsMap from './NearbyProjectsMap';
+import { getRouteStatusTheme } from '../../../lib/mapRouteUtils';
 
 function statusCls(status) {
   const s = (status || '').toLowerCase();
@@ -29,6 +31,8 @@ const BROWSE_PAGE_SIZE = 20;
 export default function PickingStep({
   gps,
   allProjects,
+  lines = [],
+  nearbyRoads = [],
   nearby,
   browseAll,
   widerSearch,
@@ -63,6 +67,14 @@ export default function PickingStep({
   }, [browseAll, allProjects, gps, query, statusFilter]);
 
   const displayList = browseAll ? browseFiltered.slice(0, visibleCount) : nearby;
+  // Distance to the road line when it is drawn, else to the project's midpoint.
+  const lineById = useMemo(() => new Map(lines.map((l) => [l.project.id, l.points])), [lines]);
+  const distanceTo = (p) => {
+    const points = lineById.get(p.id);
+    return points ? distanceToLine(gps, points) : distToProject(gps.lat, gps.lng, p);
+  };
+  // Picking a road opens directions to it (NavigateStep); the report follows.
+  const pick = (p) => { setSelProject(p); setStep('navigating'); };
   const lowAcc = gps && gps.accuracy > 100;
 
   return (
@@ -87,6 +99,16 @@ export default function PickingStep({
             {lowAcc && <span className="ml-1 font-medium">— move to open sky for better results</span>}
           </p>
         </div>
+
+        {/* Where you are and the roads around you; tap a road (or its card) to pick it */}
+        {!browseAll && gps && (
+          <div className="space-y-1.5">
+            <NearbyProjectsMap gps={gps} lines={lines} nearbyRoads={nearbyRoads} onPick={pick} />
+            <p className="text-[11px] text-slate-500">
+              Tap a road on the map or a card below to get directions to it. The numbers match the list.
+            </p>
+          </div>
+        )}
 
         {isOffline && (
           <div className="px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-800">
@@ -176,15 +198,20 @@ export default function PickingStep({
         {/* Project cards */}
         {displayList.length > 0 && (
           <div className="space-y-3">
-            {displayList.map((p) => {
-              const dist     = gps ? distToProject(gps.lat, gps.lng, p) : null;
+            {displayList.map((p, index) => {
+              const dist     = gps ? distanceTo(p) : null;
               const isOngoing = /progress|going|ongoing/i.test(p.status || '');
               return (
                 <button type="button" key={p.id}
-                  onClick={() => { setSelProject(p); setStep('classify'); }}
+                  onClick={() => pick(p)}
                   className="w-full text-left p-5 rounded-2xl border-2 border-slate-200 bg-white hover:border-teal-400 hover:bg-teal-50/30 transition-all active:scale-[0.98] shadow-sm">
                   <div className="flex items-start justify-between gap-3 mb-2">
-                    <p className="text-sm font-semibold text-slate-900 leading-tight">{p.project_name}</p>
+                    <p className="text-sm font-semibold text-slate-900 leading-tight">
+                      {!browseAll && (
+                        <span className="mr-1.5 inline-flex size-5 items-center justify-center rounded-full align-[1px] text-[10px] font-bold text-white" style={{ background: getRouteStatusTheme(p.status).line }}>{index + 1}</span>
+                      )}
+                      {p.project_name}
+                    </p>
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${statusCls(p.status)}`}>
                       {p.status || 'Unknown'}
                     </span>

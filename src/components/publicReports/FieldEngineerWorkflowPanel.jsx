@@ -1,5 +1,6 @@
 import { CheckIcon, StarIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import CameraSheet from '../camera/CameraSheet';
 
 import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { buildRoutePoints } from '../../lib/mapRouteUtils';
@@ -46,6 +47,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
   const [cameraReady, setCameraReady] = useState(false);
   const [fixAccuracy, setFixAccuracy] = useState(null); // live accuracy while the GPS settles
   const [capturing, setCapturing] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false); // full-screen camera (CameraSheet)
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -225,15 +227,14 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
     }
   }, []);
 
+  // The camera runs only while the full-screen view is open and no photo is kept.
   useEffect(() => {
-    if (!photoFile) {
-      startCamera();
-    }
-
+    if (!cameraOpen || photoFile) return undefined;
+    startCamera();
     return () => {
       stopCamera();
     };
-  }, [photoFile, startCamera, stopCamera]);
+  }, [cameraOpen, photoFile, startCamera, stopCamera]);
 
   const routeData = useMemo(() => buildRoutePoints(project, routeRecord), [project, routeRecord]);
 
@@ -423,6 +424,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       setPhotoAttestation(attestation);
       setPhotoFile(photo);
       setCapturing(false);
+      setCameraOpen(false);
       stopCamera();
     }, 'image/jpeg', 0.9);
   }, [report, stopCamera]);
@@ -433,6 +435,7 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
     setPhotoAttestation(null);
     setCaptureGeoError('');
     setCameraError('');
+    setCameraOpen(true);
   };
 
   return (
@@ -640,24 +643,22 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
           <label className="text-xs text-slate-500 font-semibold uppercase">On-Site Camera Capture</label>
           <p className="mt-1 text-xs text-slate-500">Capture directly from camera with live GPS geotag.</p>
 
-          <div className="mt-2 relative bg-black rounded-xl overflow-hidden aspect-video border border-slate-200">
-            {!photoFile ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            ) : (
+          {photoFile ? (
+            <div className="mt-2 relative bg-black rounded-xl overflow-hidden aspect-video border border-slate-200">
               <img src={photoPreviewUrl} alt="Field capture preview" className="w-full h-full object-cover" />
-            )}
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
+            </div>
+          ) : null}
+          <canvas ref={canvasRef} className="hidden" />
 
           <div className="mt-2 flex flex-wrap gap-2">
             {!photoFile ? (
               <button
                 type="button"
-                onClick={captureFromCamera}
-                disabled={!cameraReady || saving || capturing}
+                onClick={() => { setCaptureGeoError(''); setCameraError(''); setCameraOpen(true); }}
+                disabled={saving}
                 className={buttonClass('primary')}
               >
-                {capturing ? `Getting GPS${fixAccuracy != null ? ` (±${Math.round(fixAccuracy)} m)` : ''}…` : 'Capture Photo'}
+                Open camera
               </button>
             ) : (
               <button
@@ -669,17 +670,21 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
                 Retake Photo
               </button>
             )}
-            {!photoFile && (
-              <button
-                type="button"
-                onClick={startCamera}
-                disabled={saving}
-                className={buttonClass('secondary')}
-              >
-                Restart Camera
-              </button>
-            )}
           </div>
+          <CameraSheet
+            open={cameraOpen && !photoFile}
+            title={`Field inspection · ${report?.project_name || 'site photo'}`}
+            onClose={() => { if (!capturing) setCameraOpen(false); }}
+            videoRef={videoRef}
+            ready={cameraReady}
+            error={cameraError || captureGeoError}
+            hint={capturing ? `Getting GPS${fixAccuracy != null ? ` (±${Math.round(fixAccuracy)} m)` : ''}… hold still` : 'Take it at the reported pin. Position, time and a verification QR are stamped on it.'}
+            onShutter={captureFromCamera}
+            shutterDisabled={!cameraReady || saving || capturing}
+            busy={capturing}
+            shutterLabel="Capture photo"
+            onRestart={capturing ? undefined : startCamera}
+          />
 
           {cameraError && (
             <p className="mt-1 text-xs text-amber-700">{cameraError}</p>

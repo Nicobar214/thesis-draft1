@@ -4,6 +4,7 @@ import { resolveCategory } from './publicReportStatus';
 import { buildRoutePoints, normalizeRouteStatus, parsePointList } from './mapRouteUtils';
 import { haversineMeters, nearestPointOnRoute, toPoint } from '../components/publicReports/routeGeometry';
 import { findRouteOverlaps, OVERLAP_METERS } from './routeOverlap';
+import { gapSurfaceLabel, makeGapResolver } from './gapGeometry';
 
 // Keyed by issue type (publicReportStatus.js); old rows are mapped onto these.
 const SEVERITY_WEIGHTS = {
@@ -182,20 +183,24 @@ function reportCounts(report) {
 
 /** Gaps and ongoing projects as candidates with a line to measure against. */
 function buildCandidates({ gaps, projects, routesByProjectId }) {
+  // A gap is drawn and measured on its own surveyed road (gapGeometry.js),
+  // not on the generated line stored with it.
+  const resolveGap = makeGapResolver(projects, routesByProjectId);
   const newRoads = (gaps || []).map((gap) => {
-    let points = parsePointList(gap.gap_points);
-    if (points.length < 2) {
-      points = [toPoint(gap.start_latitude, gap.start_longitude), toPoint(gap.end_latitude, gap.end_longitude)].filter(Boolean);
-    }
+    const geometry = resolveGap(gap);
     return {
       kind: 'gap',
       id: gap.id,
       gap,
+      geometry,
+      surfaceLabel: gapSurfaceLabel(gap.gap_type),
       title: gap.source_road_name || gap.gap_code || 'Road network gap',
       municipality: gap.municipality || 'Leon',
-      points,
+      points: geometry.points,
       lengthKm: num(gap.gap_km),
-      marketKm: num(gap.market_distance_km),
+      // Measured live from the road to the nearest market (as for ongoing
+      // projects); the stored market_distance_km was measured from the old line.
+      marketKm: NaN,
     };
   });
 
@@ -228,8 +233,8 @@ function measure(candidate, { reports, farmers, markets, topCommodities }) {
   const { points } = candidate;
   const hasLine = points.length > 0;
 
-  // M: road distance to market for gaps (surveyed); straight distance to the
-  // nearest market point for ongoing projects.
+  // M: straight distance from the road to the nearest market point, the same
+  // way for both groups, so it follows the markets the LGU registers.
   let marketKm = candidate.marketKm;
   if (!Number.isFinite(marketKm) && hasLine && markets?.length) {
     const nearest = Math.min(...markets.map((m) => distanceToLine(points, toPoint(m.latitude, m.longitude))));
@@ -300,7 +305,7 @@ function shortCrops(crops) {
 function buildReason(row, rank) {
   const parts = [];
   if (Number.isFinite(row.lengthKm)) {
-    parts.push(row.kind === 'gap' ? `${row.lengthKm.toFixed(2)} km unpaved` : `${row.lengthKm.toFixed(2)} km still to build`);
+    parts.push(row.kind === 'gap' ? `${row.lengthKm.toFixed(2)} km gap length` : `${row.lengthKm.toFixed(2)} km still to build`);
   }
   if (row.marketKm != null) parts.push(`${row.marketKm.toFixed(1)} km to market`);
   parts.push(`${row.reportCount} citizen report${row.reportCount === 1 ? '' : 's'} nearby`);
@@ -363,6 +368,55 @@ function boundsOf(points, padM) {
 const boxesMeet = (a, b) => a.minLat <= b.maxLat && b.minLat <= a.maxLat && a.minLng <= b.maxLng && b.minLng <= a.maxLng;
 
 /**
+ * Does this project pave (part of) the gap's road, as opposed to being the
+ * existing road the gap was surveyed on? Not started or being built, or
+ * created after the gap was surveyed.
+ */
+export function isNewWorkFor(project, gap) {
+  if (!project) return false;
+  if (gap && String(project.id) === String(gap.from_project_id)) return false;
+  const status = normalizeRouteStatus(project.status);
+  if (status === 'On-Going' || status === 'Proposed' || /not\s*started|pending|planned/i.test(String(project.status || ''))) return true;
+  const made = Date.parse(project.created_at);
+  const surveyed = Date.parse(gap?.created_at);
+  return Number.isFinite(made) && Number.isFinite(surveyed) && made > surveyed;
+}
+
+const PENDING_PROPOSAL = /submitted|under validation|needs revision/i;
+
+/**
+ * Pending LGU proposals on a gap's road (information only: they do not hide or
+ * re-rank the gap). A proposal counts when COVERED_SHARE of either line runs on
+ * the other. Returns Map gapId -> [{ id, name, status }].
+ */
+export function pendingProposalsOnGaps(gapCandidates, proposals = []) {
+  const lines = (proposals || [])
+    .filter((p) => PENDING_PROPOSAL.test(String(p.status || '')))
+    .map((p) => {
+      const line = [
+        toPoint(p.start_latitude, p.start_longitude),
+        ...parsePointList(p.route_waypoints),
+        toPoint(p.end_latitude, p.end_longitude),
+      ].filter(Boolean);
+      return line.length >= 2 ? { id: p.id, name: p.project_name, status: p.status, line, box: boundsOf(line, OVERLAP_METERS) } : null;
+    })
+    .filter(Boolean);
+  const out = new Map();
+  if (!lines.length) return out;
+  gapCandidates.forEach((c) => {
+    if (c.points.length < 2) return;
+    const box = boundsOf(c.points, OVERLAP_METERS);
+    const hits = lines.filter((l) => boxesMeet(box, l.box)).filter((l) => {
+      const onGap = findRouteOverlaps(c.points, [l]).overlaps[0]?.share || 0;
+      const onProposal = findRouteOverlaps(l.line, [{ id: 'gap', line: c.points }]).overlaps[0]?.share || 0;
+      return Math.max(onGap, onProposal) >= COVERED_SHARE;
+    });
+    if (hits.length) out.set(String(c.id), hits.map(({ id, name, status }) => ({ id, name, status })));
+  });
+  return out;
+}
+
+/**
  * Gaps that an FMR project already covers (COVERED_SHARE of the gap's length
  * runs on the project's road), whatever screen created that project.
  * Returns Map gapId -> { id, name, share }.
@@ -375,11 +429,15 @@ export function coveredGaps(gapCandidates, projects, routesByProjectId) {
       return line.length >= 2 ? { id: p.id, name: p.project_name, line, box: boundsOf(line, OVERLAP_METERS) } : null;
     })
     .filter(Boolean);
+  const projectById = new Map((projects || []).map((p) => [String(p.id), p]));
   const out = new Map();
   gapCandidates.forEach((c) => {
     if (c.points.length < 2) return;
     const box = boundsOf(c.points, OVERLAP_METERS);
-    const nearby = lines.filter((l) => boxesMeet(box, l.box));
+    // Only new work covers a gap: never the surveyed road it belongs to, and
+    // never an older road (existing roads are why it is a gap at all).
+    const project = (id) => projectById.get(String(id));
+    const nearby = lines.filter((l) => boxesMeet(box, l.box) && isNewWorkFor(project(l.id), c.gap));
     if (!nearby.length) return;
     const best = findRouteOverlaps(c.points, nearby).overlaps[0];
     if (best && best.share >= COVERED_SHARE) out.set(String(c.id), best);
@@ -394,13 +452,14 @@ export function coveredGaps(gapCandidates, projects, routesByProjectId) {
  *        score, rank, reason, G, M, R, C, F, lengthKm, marketKm, reportCount,
  *        bySeverity, farmersNear, topCropFarmers, accomplishment? }
  */
-export function computePriority({ gaps = [], projects = [], routesByProjectId = {}, reports = [], farmers = [], markets = [], excludeGapIds = [] } = {}) {
+export function computePriority({ gaps = [], projects = [], routesByProjectId = {}, reports = [], farmers = [], markets = [], excludeGapIds = [], proposals = [] } = {}) {
   const topCommodities = topCommoditiesByMunicipality(farmers);
   const ctx = { reports, farmers, markets, topCommodities };
   const skip = new Set(excludeGapIds.map(String));
   const { newRoads, ongoing } = buildCandidates({ gaps, projects, routesByProjectId });
   // A road that already has a project is not a new suggestion any more.
   const covered = coveredGaps(newRoads.filter((c) => !skip.has(String(c.id))), projects, routesByProjectId);
+  const proposalsOnGap = pendingProposalsOnGaps(newRoads, proposals);
 
   const withMeasures = (list) => list.map((c) => {
     const m = measure(c, ctx);
@@ -412,7 +471,7 @@ export function computePriority({ gaps = [], projects = [], routesByProjectId = 
       barangay: c.gap?.barangay,
       barangay_end: c.gap?.barangay_end,
     };
-    return { ...c, ...m, project };
+    return { ...c, ...m, project, ...(c.kind === 'gap' ? { pendingProposals: proposalsOnGap.get(String(c.id)) || [] } : {}) };
   });
 
   return {

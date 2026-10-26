@@ -19,7 +19,7 @@ import useReportResponders from '../lib/useReportResponders';
 import PhotoLightbox from '../components/ui/PhotoLightbox';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
-import FixConfirmationCard from '../components/publicReports/FixConfirmationCard';
+import FixConfirmationCard, { FIX_CONFIRMATION_ENABLED } from '../components/publicReports/FixConfirmationCard';
 import {
   CITIZEN_STATUS_FILTERS,
   SEVERITY_TAXONOMY,
@@ -1006,7 +1006,7 @@ function UserReports({ client = supabase, embedded = false, onNewReport = null }
                     <span>View Resolution Certificate</span>
                   </button>
 
-                  <FixConfirmationCard key={selected.id} reportId={selected.id} client={client} />
+                  {FIX_CONFIRMATION_ENABLED && <FixConfirmationCard key={selected.id} reportId={selected.id} client={client} />}
                 </section>
               )}
             </div>

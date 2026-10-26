@@ -1,5 +1,7 @@
 /* Dashboard.jsx - Complete Functional Rewrite with Supabase Integration */
-import { ArchiveIcon, CheckCircle2Icon, CheckIcon, CircleHelpIcon, ClipboardListIcon, HardHatIcon, MapPinIcon, RotateCcwIcon, SearchIcon, ShieldCheckIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, UserPlusIcon, WrenchIcon, XCircleIcon, XIcon, ZapIcon } from 'lucide-react';
+import { ArchiveIcon, CheckCircle2Icon, CheckIcon, CircleHelpIcon, ClipboardListIcon, HardHatIcon, MapPinIcon, RotateCcwIcon, SearchIcon, ShieldCheckIcon, SirenIcon, TrendingUpIcon, TriangleAlertIcon, UserPlusIcon, WrenchIcon, XCircleIcon, XIcon, ZapIcon, Loader2Icon } from 'lucide-react';
+import { resolveGapGeometry } from '../lib/gapGeometry';
+import { FIX_CONFIRMATION_ENABLED } from '../components/publicReports/FixConfirmationCard';
 import SeverityIcon from '../components/SeverityIcon';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -21,6 +23,7 @@ import {
   boundsFromPoints,
   createDisplayRoutePoints,
   fetchRoadAlignedPolyline,
+  snapToRoad,
   getProjectBarangay,
   getLocationConfidence,
   getRouteStatusTheme,
@@ -64,8 +67,8 @@ import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectDeadlinesView from '../components/admin/ProjectDeadlinesView';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
+import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
-import { parsePointList } from '../lib/mapRouteUtils';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import ProjectProgressReport from '../components/admin/ProjectProgressReport';
 import { PROJECT_FILTERS } from '../lib/projectSchedule';
@@ -528,7 +531,7 @@ const PROGRESS_STAGE_OUTCOMES = [WORKFLOW_STAGES.DISPUTED, WORKFLOW_STAGES.RETUR
 const ADMIN_PAGE_META = {
   projects: { title: 'FMR Projects', description: 'Manage all Farm-to-Market Road projects' },
   analytics: { title: 'Analytics', description: 'Program performance, citizen reports, and data coverage' },
-  priorities: { title: 'Priorities', description: 'Weighted ranking of road gaps for investment' },
+  priorities: { title: 'Priorities', description: 'Weighted ranking of roads to concrete for investment' },
   'public-reports': { title: 'Public Reports', description: 'Location-verified citizen reports on FMR roads' },
   'progress-updates': { title: 'Progress Updates', description: 'Contractor-submitted progress for review and approval' },
   'lgu-proposals': { title: 'LGU Proposals', description: 'LGU-submitted FMR proposals for feasibility validation' },
@@ -594,6 +597,8 @@ function FmrSortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortCha
  * Plan is finalized (supabase_project_publish_on_work_plan.sql). Projects
  * loaded before that column existed have no published_at key and count as public. */
 const isUnpublished = (project) => Boolean(project) && 'published_at' in project && !project.published_at;
+/* A draft is not a Work Plan yet: only a finalized one counts (it is also what publishes the project). */
+const hasFinalWorkPlan = (project) => project?.work_plan_status === 'finalized';
 function NotPublicChip() {
   return (
     <span
@@ -966,6 +971,7 @@ export default function Dashboard() {
   // pre-filtered to On-Going, so its 271 Completed and 51 Proposed rows looked absent.
   const [fmrProjectStatusFilter, setFmrProjectStatusFilter] = useState('All');
   const [fmrProjectYearFilter, setFmrProjectYearFilter] = useState('All');
+  const [fmrWorkPlanFilter, setFmrWorkPlanFilter] = useState('All');
   const [fmrProjectDateFrom, setFmrProjectDateFrom] = useState('');
   const [fmrProjectDateTo, setFmrProjectDateTo] = useState('');
   const [fmrProjectSortBy, setFmrProjectSortBy] = useState('latest');
@@ -1103,6 +1109,19 @@ export default function Dashboard() {
   };
 
   const [formData, setFormData] = useState(emptyForm);
+  // Snap to Road: fetched in the background while the route is set up, so the
+  // button answers at once (lib/useRoadSnapPrefetch.js); `snappingRoute` while it waits.
+  const [snappingRoute, setSnappingRoute] = useState(false);
+  useRoadSnapPrefetch(showAddModal ? [
+    [parseCoordinate(formData.startLatitude), parseCoordinate(formData.startLongitude)],
+    ...newProjectRouteWaypoints.map((w) => [w.lat, w.lng]),
+    [parseCoordinate(formData.endLatitude), parseCoordinate(formData.endLongitude)],
+  ] : null);
+  useRoadSnapPrefetch(showFmrEditModal ? [
+    [parseCoordinate(fmrFormData.start_latitude), parseCoordinate(fmrFormData.start_longitude)],
+    ...fmrRouteWaypoints.map((w) => [w.lat, w.lng]),
+    [parseCoordinate(fmrFormData.end_latitude), parseCoordinate(fmrFormData.end_longitude)],
+  ] : null);
 
   // Shared toast (see lib/toast.js); signature kept so call sites are unchanged.
   const showNotification = notify;
@@ -1994,7 +2013,10 @@ Reminder: check that the site engineer certified it and the photos match the cla
   // from the surveyed gap. onCreated(projectId) records the decision once saved.
   const openAddProjectFromGap = (gap, onCreated) => {
     const lengthKm = Number(gap.gap_km || 0);
-    const points = parsePointList(gap.gap_points);
+    // The gap's own road (gapGeometry.js), not the generated line stored with it.
+    const parent = fmrProjects.find((p) => String(p.id) === String(gap.from_project_id)) || null;
+    const geometry = resolveGapGeometry(gap, parent, parent ? routeByProjectId[parent.id] || null : null);
+    const points = geometry.points;
     const start = points[0] || [gap.start_latitude, gap.start_longitude];
     const end = points[points.length - 1] || [gap.end_latitude, gap.end_longitude];
     setFormData({
@@ -2014,9 +2036,9 @@ Reminder: check that the site engineer certified it and the photos match the cla
       roadType: 'Concrete',
       description: [
         `Prioritized road gap ${gap.gap_code || ''}`.trim(),
-        gap.gap_type,
-        gap.source_surface_summary,
+        geometry.surveyKm > 0 ? `${lengthKm.toFixed(2)} of ${geometry.surveyKm.toFixed(2)} km to concrete` : null,
         gap.barangay_end ? `${gap.barangay} to ${gap.barangay_end}` : null,
+        geometry.note,
       ].filter(Boolean).join(' · '),
     });
     setNewProjectRouteWaypoints(points.slice(1, -1).map(([lat, lng]) => ({ lat, lng })));
@@ -2859,7 +2881,7 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
       const snappedEntries = await Promise.all(
         toSnap.map(async (project) => {
           const route = buildRoutePoints(project, routeByProjectId[project.id]);
-          const snapped = await fetchRoadAlignedPolyline(route.points);
+          const snapped = await fetchRoadAlignedPolyline(route.points, { alongLine: true });
           return [project.id, snapped];
         })
       );
@@ -2983,7 +3005,7 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
 
   useEffect(() => {
     setFmrProjectCurrentPage(1);
-  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter, fmrProjectDateFrom, fmrProjectDateTo, fmrProjectSortBy, fmrRowsPerPage, fmrViewMode]);
+  }, [fmrProjectSearch, fmrProjectStatusFilter, fmrProjectYearFilter, fmrWorkPlanFilter, fmrProjectDateFrom, fmrProjectDateTo, fmrProjectSortBy, fmrRowsPerPage, fmrViewMode]);
 
   const unifiedProjects = useMemo(() => {
     const mappedFmr = fmrProjects.map((p) => {
@@ -4531,9 +4553,10 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
               const normalizedStatus = normalizeFmrStatus(p.status);
               const matchesStatus = (PROJECT_FILTERS.find((f) => f.value === fmrProjectStatusFilter)?.match(p, normalizeFmrStatus)) ?? normalizedStatus === fmrProjectStatusFilter;
               const matchesYear = fmrProjectYearFilter === 'All' || String(Number(p.year_funded)) === fmrProjectYearFilter;
+              const matchesWorkPlan = fmrWorkPlanFilter === 'All' || (fmrWorkPlanFilter === 'with') === hasFinalWorkPlan(p);
               const candidateDate = p.updated_at || p.created_at || p.date_completed || p.target_completion_date;
               const matchesDate = inDateRange(candidateDate, fmrProjectDateFrom, fmrProjectDateTo);
-              return matchesSearch && matchesStatus && matchesYear && matchesDate;
+              return matchesSearch && matchesStatus && matchesYear && matchesWorkPlan && matchesDate;
             }).sort((a, b) => {
               if (fmrProjectSortBy === 'name-asc') return (a.project_name || '').localeCompare(b.project_name || '');
               if (fmrProjectSortBy === 'name-desc') return (b.project_name || '').localeCompare(a.project_name || '');
@@ -4727,7 +4750,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                       <MapSearchController searchCoords={projectsMapSearchCoords} searchZoom={projectsMapSearchZoom} />
 
                       {/* Unpaved gaps beyond each funded route, from public.road_network_gaps */}
-                      <GapSegmentLayer gaps={roadGaps} visible={adminMapShowGaps} />
+                      <GapSegmentLayer gaps={roadGaps} visible={adminMapShowGaps} projects={fmrProjects} routesByProjectId={routeByProjectId} />
                       {projectsMapSearchCoords && (
                         <Marker position={projectsMapSearchCoords}>
                           <Popup>
@@ -4970,7 +4993,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                         {mapStats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={mapStats.completed} />}
                         {mapStats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={mapStats.ongoing} />}
                         {mapStats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={mapStats.proposed} />}
-                        {adminMapShowGaps && <LegendLine color="border-red-500" dashed label="Unpaved road gap" />}
+                        {adminMapShowGaps && <LegendLine color="border-red-500" dashed label="Road to concrete" />}
                       </LegendGroup>
                       <LegendGroup label="Markers">
                         {mapStats.mapped > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
@@ -5016,7 +5039,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
 </HeatModeControls>
 )}
                         <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
-                        <LayerToggle checked={adminMapShowGaps} onChange={setAdminMapShowGaps} label={`Road gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+                        <LayerToggle checked={adminMapShowGaps} onChange={setAdminMapShowGaps} label={`Roads to concrete (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
                       </ControlGroup>
                       <ControlGroup label="Supply chain">
                         <LayerToggle
@@ -5290,8 +5313,15 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                     </div>
 
                     <div className="lg:col-span-4 flex items-center justify-between lg:justify-end gap-4">
-                      {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
-                        <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
+                      <select value={fmrWorkPlanFilter} onChange={(e) => setFmrWorkPlanFilter(e.target.value)}
+                        aria-label="Work Plan"
+                        className="h-12 px-4 border border-slate-200 rounded-2xl text-sm text-slate-700 bg-slate-50/60 hover:bg-white focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none shadow-sm">
+                        <option value="All">Work Plan: Any</option>
+                        <option value="with">Work Plan: With ({fmrProjects.filter(hasFinalWorkPlan).length})</option>
+                        <option value="without">Work Plan: Without ({fmrProjects.filter((p) => !hasFinalWorkPlan(p)).length})</option>
+                      </select>
+                      {(fmrProjectSearch || fmrProjectStatusFilter !== 'On-Going' || fmrProjectYearFilter !== 'All' || fmrWorkPlanFilter !== 'All' || fmrProjectDateFrom || fmrProjectDateTo || fmrProjectSortBy !== 'latest') && (
+                        <button onClick={() => { setFmrProjectSearch(''); setFmrProjectStatusFilter('On-Going'); setFmrProjectYearFilter('All'); setFmrWorkPlanFilter('All'); setFmrProjectDateFrom(''); setFmrProjectDateTo(''); setFmrProjectSortBy('latest'); setFmrProjectCurrentPage(1); }}
                           className="text-sm text-slate-500 hover:text-emerald-700 font-medium transition-colors">
                           Clear filters
                         </button>
@@ -6323,6 +6353,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
               showNotification={showNotification}
               onCreateProjectFromGap={openAddProjectFromGap}
               fieldEngineers={fieldEngineers}
+              proposals={lguProposals}
               onViewReports={(project) => {
                 openProjectFeedbackModal({
                   projectName: project.project_name,
@@ -7167,14 +7198,14 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                         ...REPAIR_QUEUE_BUCKETS.map((b) => ({
                           key: b.key, label: b.label, count: bucketCounts[b.key] || 0, tone: b.tone, hint: b.hint, icon: WrenchIcon,
                         })),
-                        {
+                        ...(FIX_CONFIRMATION_ENABLED ? [{
                           key: 'reported_not_fixed',
                           label: 'Reported Not Fixed',
                           count: bucketCounts.reported_not_fixed || 0,
                           tone: 'problem',
                           hint: 'Resolved, but the reporter says it is still a problem: open and reopen it',
                           icon: RotateCcwIcon,
-                        },
+                        }] : []),
                       ],
                     },
                   ]}
@@ -9101,10 +9132,11 @@ A new LGU account will be created with this email and password.`,
                           }
 
                           try {
-                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], { smooth: false });
-                            if (snappedPoints && snappedPoints.length >= 2) {
-                              const first = snappedPoints[0];
-                              const last = snappedPoints[snappedPoints.length - 1];
+                            setSnappingRoute(true);
+                            const snap = await snapToRoad([[sLat, sLng], ...newProjectRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], SNAP_BUTTON_OPTIONS);
+                            const snappedPoints = snap.points;
+                            if (snap.snapped) {
+                              // The pins stay exactly where they were set; only the road between them changes.
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
 
                               setNewProjectRouteWaypoints(middle);
@@ -9112,23 +9144,25 @@ A new LGU account will be created with this email and password.`,
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFormData(prev => ({
                                 ...prev,
-                                startLatitude: first[0].toFixed(6),
-                                startLongitude: first[1].toFixed(6),
-                                endLatitude: last[0].toFixed(6),
-                                endLongitude: last[1].toFixed(6),
                                 roadLength: totalDist.toFixed(2)
                               }));
                               showNotification('Snapped successfully to road alignment!');
                             } else {
-                              showNotification('Could not find road connection between coordinates.', 'error');
+                              showNotification(snap.reason === 'strayed' ? 'The nearest mapped road goes a different way, so the route was left as drawn. Add waypoints along the road and try again.' : 'Could not reach the road service. The route was left as drawn; please try again in a moment.', 'error');
                             }
                           } catch (err) {
                             showNotification('Failed to connect coordinates to road network.', 'error');
+                          } finally {
+                            setSnappingRoute(false);
                           }
                         }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                        disabled={snappingRoute}
+                        aria-busy={snappingRoute}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:cursor-wait disabled:opacity-70"
                       >
-                        <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road
+                        {snappingRoute
+                          ? <><Loader2Icon className="inline size-3.5 -mt-0.5 mr-1 animate-spin" aria-hidden="true" />Snapping…</>
+                          : <><ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road</>}
                       </button>
                       <button
                         type="button"
@@ -9715,10 +9749,11 @@ A new LGU account will be created with this email and password.`,
                           }
 
                           try {
-                            const snappedPoints = await fetchRoadAlignedPolyline([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], { smooth: false });
-                            if (snappedPoints && snappedPoints.length >= 2) {
-                              const first = snappedPoints[0];
-                              const last = snappedPoints[snappedPoints.length - 1];
+                            setSnappingRoute(true);
+                            const snap = await snapToRoad([[sLat, sLng], ...fmrRouteWaypoints.map(w => [w.lat, w.lng]), [eLat, eLng]], SNAP_BUTTON_OPTIONS);
+                            const snappedPoints = snap.points;
+                            if (snap.snapped) {
+                              // The pins stay exactly where they were set; only the road between them changes.
                               const middle = snappedPoints.slice(1, snappedPoints.length - 1).map(pt => ({ lat: pt[0], lng: pt[1] }));
 
                               setFmrRouteWaypoints(middle);
@@ -9726,23 +9761,25 @@ A new LGU account will be created with this email and password.`,
                               const totalDist = calculateSnappedPolylineDistanceKm(snappedPoints);
                               setFmrFormData(prev => ({
                                 ...prev,
-                                start_latitude: first[0].toFixed(6),
-                                start_longitude: first[1].toFixed(6),
-                                end_latitude: last[0].toFixed(6),
-                                end_longitude: last[1].toFixed(6),
                                 project_length_km: totalDist.toFixed(2)
                               }));
                               showNotification('Snapped successfully to road alignment!');
                             } else {
-                              showNotification('Could not find road connection between coordinates.', 'error');
+                              showNotification(snap.reason === 'strayed' ? 'The nearest mapped road goes a different way, so the route was left as drawn. Add waypoints along the road and try again.' : 'Could not reach the road service. The route was left as drawn; please try again in a moment.', 'error');
                             }
                           } catch (err) {
                             showNotification('Failed to connect coordinates to road network.', 'error');
+                          } finally {
+                            setSnappingRoute(false);
                           }
                         }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                        disabled={snappingRoute}
+                        aria-busy={snappingRoute}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:cursor-wait disabled:opacity-70"
                       >
-                        <ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road
+                        {snappingRoute
+                          ? <><Loader2Icon className="inline size-3.5 -mt-0.5 mr-1 animate-spin" aria-hidden="true" />Snapping…</>
+                          : <><ZapIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Snap to Road</>}
                       </button>
                       <button
                         type="button"

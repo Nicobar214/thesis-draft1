@@ -269,7 +269,7 @@ export default function LguRouteMap({
       if (routeData.hasRouteRecord || isAlreadyRoadAligned(routeRecord)) return;
 
       if (routeData.points && routeData.points.length >= 2) {
-        fetchRoadAlignedPolyline(routeData.points).then((snapped) => {
+        fetchRoadAlignedPolyline(routeData.points, { alongLine: true }).then((snapped) => {
           if (active && snapped && snapped.length >= 2) {
             setSnappedProjectRoutes((prev) => ({
               ...prev,
@@ -433,6 +433,9 @@ export default function LguRouteMap({
         {/* Module 1: road network gaps, from public.road_network_gaps */}
         <GapSegmentLayer
           gaps={roadGaps}
+          projects={projects}
+          routesByProjectId={routesByProjectId}
+          showSurvey
           visible={showRoadGaps}
           focusedGapId={focusedGapId}
           onFocusGap={setFocusedGapId}
@@ -626,7 +629,7 @@ export default function LguRouteMap({
         </LegendGroup>
         {(showRoadGaps || showMarketsMap || showFarmerDots || showFarmerHeatmap) && (
           <LegendGroup label="Layers">
-            {showRoadGaps && <LegendLine color="border-red-500" dashed label="Road network gap" />}
+            {showRoadGaps && <LegendLine color="border-red-500" dashed label="Road to concrete" />}
             {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}
             {showFarmerDots && <LegendDot color="bg-teal-600" label="Farmer" />}
             {showFarmerHeatmap && (
@@ -654,7 +657,7 @@ export default function LguRouteMap({
             label={`Citizen reports (${reportPoints.length})${actionReportIds.size > 0 ? ` · ${actionReportIds.size} need action` : ''}`}
           />
           <LayerToggle checked={showHeat} onChange={setShowHeat} label="Report heatmap" accent="text-amber-600 focus:ring-amber-500" />
-          <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Road network gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+          <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Roads to concrete (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
           <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
         </ControlGroup>
 

@@ -6,9 +6,13 @@
  *   <GeotagCamera roadPoints={line} kind="priority_validation" label="…"
  *     place="the road gap" onCaptured={(photo) => …} />
  *
- * photo: { file, attestation, preview, check: { ok, distanceM, problem } } */
+ * photo: { file, attestation, preview, check: { ok, distanceM, problem } }
+ *
+ * The live view opens full screen (CameraSheet) from an "Open camera" button and
+ * closes after each capture; the camera runs only while it is open. */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CameraIcon, RefreshCwIcon } from 'lucide-react';
+import { CameraIcon } from 'lucide-react';
+import CameraSheet from './CameraSheet';
 import { captureGeotagPhoto, distanceToRoad } from '../../lib/geotagPhoto';
 import { FIELD_PHOTO_TEST_LIMITS, geoErrorMessage, onSiteCheck } from '../../lib/onSiteLocation';
 import { describeCameraError } from '../../lib/useReportCamera';
@@ -22,6 +26,7 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
   const [busy, setBusy] = useState(false);
   const [accuracy, setAccuracy] = useState(null);
   const [error, setError] = useState('');
+  const [open, setOpen] = useState(false);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -50,11 +55,12 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
     }
   }, []);
 
-  // The camera runs only while this is on screen, and is always released.
+  // The camera runs only while the full-screen view is open, and is always released.
   useEffect(() => {
-    if (!disabled) startCamera();
+    if (!open || disabled) return undefined;
+    startCamera();
     return () => stopCamera();
-  }, [disabled, startCamera, stopCamera]);
+  }, [open, disabled, startCamera, stopCamera]);
 
   const capture = async () => {
     const video = videoRef.current;
@@ -78,6 +84,7 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
         { place, ...(FIELD_PHOTO_TEST_LIMITS || {}) },
       );
       onCaptured({ ...photo, check, preview: URL.createObjectURL(photo.file) });
+      setOpen(false);
     } catch (err) {
       setError(err?.message === 'timeout' ? 'Could not get a GPS fix. Move to open sky and try again.' : geoErrorMessage(err));
     } finally {
@@ -87,35 +94,30 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
 
   return (
     <div className="max-w-md">
-      <div className="relative aspect-video overflow-hidden rounded-xl border border-slate-200 bg-black">
-        <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
-        {!cameraReady && !cameraError && (
-          <p className="absolute inset-0 grid place-items-center text-xs text-white/70">Starting camera…</p>
-        )}
-        <canvas ref={canvasRef} className="hidden" />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={capture}
-          disabled={!cameraReady || busy || disabled}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-        >
-          <CameraIcon className="size-4" aria-hidden="true" />
-          {busy ? `Getting GPS${accuracy != null ? ` (±${Math.round(accuracy)} m)` : ''}…` : captureText}
-        </button>
-        <button
-          type="button"
-          onClick={startCamera}
-          disabled={busy || disabled}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          <RefreshCwIcon className="size-3.5" aria-hidden="true" /> Restart camera
-        </button>
-      </div>
-      <p className="mt-1 text-[11px] text-slate-400">Your GPS position and the time are stamped on the photo, with a verification QR.</p>
-      {cameraError && <p role="alert" className="mt-1.5 text-xs text-amber-700">{cameraError}</p>}
-      {error && <p role="alert" className="mt-1.5 text-xs text-rose-600">{error}</p>}
+      <button
+        type="button"
+        onClick={() => { setError(''); setOpen(true); }}
+        disabled={disabled}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+      >
+        <CameraIcon className="size-4" aria-hidden="true" /> {captureText === 'Capture photo' ? 'Open camera' : captureText}
+      </button>
+      <p className="mt-1 text-[11px] text-slate-400">Opens full screen. Your GPS position and the time are stamped on the photo, with a verification QR.</p>
+      <canvas ref={canvasRef} className="hidden" />
+      <CameraSheet
+        open={open}
+        title={label || 'KalsaTrack camera'}
+        onClose={() => { if (!busy) setOpen(false); }}
+        videoRef={videoRef}
+        ready={cameraReady}
+        error={cameraError || error}
+        hint={busy ? `Getting GPS${accuracy != null ? ` (±${Math.round(accuracy)} m)` : ''}… hold still` : `Take it at ${place}. Position, time and a verification QR are stamped on it.`}
+        onShutter={capture}
+        shutterDisabled={!cameraReady || busy || disabled}
+        busy={busy}
+        shutterLabel="Capture photo"
+        onRestart={busy ? undefined : startCamera}
+      />
     </div>
   );
 }

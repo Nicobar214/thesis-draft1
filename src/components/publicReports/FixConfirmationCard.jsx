@@ -4,6 +4,11 @@ import { notify } from '../../lib/toast';
 import { buttonClass } from '../ui/Button';
 
 const TABLE = 'public_report_citizen_confirmations';
+
+/* Hidden for now: the reporter's "Is it actually fixed?" check, on the citizen's
+ * resolved report and its answer on the admin case file (CitizenConfirmationNote).
+ * Set to true to bring both back; the table and answers already saved are kept. */
+export const FIX_CONFIRMATION_ENABLED = false;
 const MAX_COMMENT = 500;
 
 // Choice buttons are toggles, so they are styled here rather than through buttonClass

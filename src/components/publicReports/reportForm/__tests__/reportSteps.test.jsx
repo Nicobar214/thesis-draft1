@@ -11,6 +11,9 @@ import ReportingStep from '../ReportingStep';
 
 afterEach(cleanup);
 
+// The maps are exercised in the browser; these tests cover the step logic.
+vi.mock('../NearbyProjectsMap', () => ({ default: () => null }));
+
 const firstCategory = Object.keys(SEVERITY_TAXONOMY)[0];
 const firstProblem = SEVERITY_TAXONOMY[firstCategory].problems[0];
 
@@ -86,12 +89,12 @@ describe('PickingStep', () => {
     ...overrides,
   });
 
-  it('lists nearby projects and moves to classification when one is chosen', () => {
+  it('lists nearby projects and opens directions to the one chosen', () => {
     const p = props();
     render(<PickingStep {...p} />);
     fireEvent.click(screen.getByText('Brgy. Road 1'));
     expect(p.setSelProject).toHaveBeenCalledWith(road);
-    expect(p.setStep).toHaveBeenCalledWith('classify');
+    expect(p.setStep).toHaveBeenCalledWith('navigating');
   });
 
   it('offers a wider search when nothing is nearby', () => {
@@ -200,6 +203,9 @@ describe('ReportingStep', () => {
     canvasRef: { current: null },
     capturePhoto: vi.fn(),
     retakePhoto: vi.fn(),
+    cameraOpen: false,
+    openCamera: vi.fn(),
+    closeCamera: vi.fn(),
     fullName: '',
     setFullName: vi.fn(),
     contact: '',
@@ -246,11 +252,23 @@ describe('ReportingStep', () => {
     expect(screen.getByText(/submitting/i).closest('button').disabled).toBe(true);
   });
 
-  it('only allows capturing once the camera is ready', () => {
-    const { rerender } = render(<ReportingStep {...props({ camReady: false })} />);
-    expect(screen.getByText('Capture Photo').closest('button').disabled).toBe(true);
-    rerender(<ReportingStep {...props({ camReady: true })} />);
-    expect(screen.getByText('Capture Photo').closest('button').disabled).toBe(false);
+  it('opens the full-screen camera from the photo field', () => {
+    const p = props();
+    render(<ReportingStep {...p} />);
+    expect(screen.queryByRole('dialog', { name: /site photo/i })).toBeNull();
+    fireEvent.click(screen.getByText('Open camera'));
+    expect(p.openCamera).toHaveBeenCalledTimes(1);
+  });
+
+  it('only allows capturing once the camera is ready, then closes the camera', () => {
+    const { rerender } = render(<ReportingStep {...props({ cameraOpen: true, camReady: false })} />);
+    expect(screen.getByRole('dialog', { name: /site photo/i })).toBeTruthy();
+    expect(screen.getByLabelText('Capture photo').disabled).toBe(true);
+    const p = props({ cameraOpen: true, camReady: true });
+    rerender(<ReportingStep {...p} />);
+    fireEvent.click(screen.getByLabelText('Capture photo'));
+    expect(p.capturePhoto).toHaveBeenCalledTimes(1);
+    expect(p.closeCamera).toHaveBeenCalledTimes(1);
   });
 
   it('offers a retake once a photo exists', () => {
@@ -258,6 +276,7 @@ describe('ReportingStep', () => {
     render(<ReportingStep {...p} />);
     fireEvent.click(screen.getByText('Retake'));
     expect(p.retakePhoto).toHaveBeenCalledTimes(1);
+    expect(p.openCamera).toHaveBeenCalledTimes(1);
   });
 
   it('shows submit and camera errors to the user', () => {

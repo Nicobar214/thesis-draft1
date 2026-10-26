@@ -237,6 +237,9 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
     return () => { alive = false; };
   }, []);
 
+  // Roads to concrete are drawn on their own surveyed road (gapGeometry.js).
+  const routesByProjectId = useMemo(() => Object.fromEntries(routes.map((r) => [r.project_id, r])), [routes]);
+
   useEffect(() => () => {
     if (watchRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchRef.current);
   }, []);
@@ -407,7 +410,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
               );
             })}
 
-            <GapSegmentLayer gaps={gaps} visible={active.gaps} />
+            <GapSegmentLayer gaps={gaps} visible={active.gaps} projects={projects} routesByProjectId={routesByProjectId} />
 
             {active.links && visibleSites.map((s) => s.nearest && (
               <Polyline
@@ -546,7 +549,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
                 {active.routes && routeStatuses.has('On-Going') && <LegendLine color="bg-amber-500" label="Ongoing route" />}
                 {active.routes && active.endpoints && <LegendDot style={{ background: '#16a34a' }} label="Route start (S)" />}
                 {active.routes && active.endpoints && <LegendDot style={{ background: '#f97316' }} label="Route end (E)" />}
-                {active.gaps && <LegendLine color="border-red-500" dashed label="Unpaved gap" />}
+                {active.gaps && <LegendLine color="border-red-500" dashed label="Road to concrete" />}
                 {active.links && <LegendLine color="border-slate-500" dashed label="Report to road" />}
                 {active.geofence && <LegendLine color="border-teal-600" dashed label={`${GEOFENCE_M} m geofence`} />}
                 {active.heat && (
@@ -564,7 +567,7 @@ export default function FieldEngineerMap({ reports, onOpenReport, compact = fals
               <LayerToggle checked={active.reports} onChange={setLayer('reports')} label="Report sites" />
               <LayerToggle checked={active.routes} onChange={setLayer('routes')} label="FMR routes" />
               <LayerToggle checked={active.endpoints} onChange={setLayer('endpoints')} label="Route start / end pins" />
-              <LayerToggle checked={active.gaps} onChange={setLayer('gaps')} label="Unpaved gaps" />
+              <LayerToggle checked={active.gaps} onChange={setLayer('gaps')} label="Roads to concrete" />
               <LayerToggle checked={active.links} onChange={setLayer('links')} label="Link to nearest road" />
               <LayerToggle checked={active.geofence} onChange={setLayer('geofence')} label={`${GEOFENCE_M} m geofence`} />
               <LayerToggle checked={active.heat} onChange={setLayer('heat')} label="Damage hotspots" />

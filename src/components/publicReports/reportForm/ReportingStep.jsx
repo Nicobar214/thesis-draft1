@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Building2Icon, LocateFixedIcon, MapPinIcon, RouteIcon, TriangleAlertIcon } from 'lucide-react';
+import { Building2Icon, CameraIcon, LocateFixedIcon, MapPinIcon, RefreshCwIcon, RouteIcon, TriangleAlertIcon } from 'lucide-react';
+import CameraSheet from '../../camera/CameraSheet';
 import { buildRoutePoints } from '../../../lib/mapRouteUtils';
 import { distToProject } from '../../../lib/reportSubmission';
 import { nearestPointOnRoute } from '../routeGeometry';
@@ -40,6 +41,9 @@ export default function ReportingStep({
   canvasRef,
   capturePhoto,
   retakePhoto,
+  cameraOpen,
+  openCamera,
+  closeCamera,
   fullName,
   setFullName,
   contact,
@@ -195,41 +199,43 @@ export default function ReportingStep({
               <span>{camError}</span>
             </div>
           )}
-          <div className="relative bg-black rounded-2xl overflow-hidden aspect-video">
-            {!photoPreview ? (
-              <>
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                {!camReady && !camError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-                    <div className="animate-spin w-8 h-8 border-2 border-white/30 border-t-white rounded-full" />
-                  </div>
-                )}
-              </>
-            ) : (
-              <img src={photoPreview} alt="Captured" className="w-full h-full object-cover" />
-            )}
-            <canvas ref={canvasRef} className="hidden" />
-          </div>
-          <div className="flex justify-center gap-3 mt-3">
-            {!photoPreview ? (
-              <button type="button" onClick={capturePhoto} disabled={!camReady}
-                className="inline-flex items-center gap-2 bg-white text-slate-900 border-2 border-slate-300 px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 disabled:opacity-40 transition">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
-                </svg>
-                Capture Photo
-              </button>
-            ) : (
-              <button type="button" onClick={retakePhoto}
+          {photoPreview ? (
+            <div className="relative bg-black rounded-2xl overflow-hidden aspect-video">
+              <img src={photoPreview} alt="Captured site" className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={openCamera}
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-teal-300 bg-teal-50/60 px-4 py-8 text-teal-800 transition hover:bg-teal-50 active:scale-[0.99]"
+            >
+              <CameraIcon className="size-8" aria-hidden="true" />
+              <span className="text-sm font-semibold">Open camera</span>
+              <span className="text-xs text-teal-700/80">Opens full screen. Point it at the problem and tap the round button.</span>
+            </button>
+          )}
+          <canvas ref={canvasRef} className="hidden" />
+          {photoPreview && (
+            <div className="flex justify-center gap-3 mt-3">
+              <button type="button" onClick={() => { retakePhoto(); openCamera(); }}
                 className="inline-flex items-center gap-2 text-slate-600 border border-slate-300 px-5 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 transition">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-                </svg>
+                <RefreshCwIcon className="size-4" aria-hidden="true" />
                 Retake
               </button>
-            )}
-          </div>
+            </div>
+          )}
+          <CameraSheet
+            open={cameraOpen && !photoPreview}
+            title={selProject?.project_name ? `Site photo · ${selProject.project_name}` : 'Site photo'}
+            onClose={closeCamera}
+            videoRef={videoRef}
+            ready={camReady}
+            error={camError || ''}
+            hint={gps ? `Your GPS position and the time are stamped on the photo (±${Math.round(gps.accuracy)} m).` : 'Waiting for GPS…'}
+            onShutter={() => { capturePhoto(); closeCamera(); }}
+            shutterDisabled={!camReady}
+            shutterLabel="Capture photo"
+          />
         </div>
 
         {/* Description */}

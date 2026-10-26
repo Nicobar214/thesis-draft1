@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  actionOwner, canEndorse, canMove, deadlineStatus, isFinal, localDateISO, nextStatus, resumeStatus, saveDecision,
+  actionOwner, canCloseFinished, canEndorse, canMove, deadlineStatus, finishedFollowUps, isFinal, localDateISO, nextStatus, resumeStatus,
+  saveDecision, skippedAhead,
 } from '../priorityDecisions';
 
 describe('decision flow', () => {
@@ -75,5 +76,54 @@ describe('site validation deadline', () => {
     const send = (dueDate) => saveDecision(client, { kind: 'gap', id: 1, from: 'shortlisted', to: 'for_validation', assignedEngineerId: 'eng', dueDate });
     await expect(send(null)).rejects.toThrow(/date/);
     await expect(send('2000-01-01')).rejects.toThrow(/past/);
+  });
+});
+
+describe('skipping ahead of higher-ranked roads', () => {
+  const rows = [1, 2, 3, 4, 5, 6].map((rank) => ({ kind: 'gap', id: rank * 10, rank, title: `Road ${rank}`, score: 100 - rank }));
+  const decided = (...pairs) => new Map(pairs.map(([id, status]) => [`gap:${id}`, { candidate_kind: 'gap', candidate_id: String(id), status }]));
+
+  it('lets the top tier act in any order', () => {
+    expect(skippedAhead(rows[2], rows, decided())).toEqual([]);
+  });
+
+  it('lists the higher-ranked roads still waiting, best rank first', () => {
+    const waiting = skippedAhead(rows[4], rows, decided([10, 'shortlisted'], [30, 'deferred']));
+    expect(waiting.map((w) => w.rank)).toEqual([2, 4]);
+    expect(waiting[0]).toEqual({ id: 20, rank: 2, title: 'Road 2', score: 98 });
+  });
+
+  it('does not warn once everything above has been acted on, or after the first step', () => {
+    const all = decided([10, 'shortlisted'], [20, 'deferred'], [30, 'for_validation'], [40, 'endorsed']);
+    expect(skippedAhead(rows[4], rows, all)).toEqual([]);
+    expect(skippedAhead(rows[5], rows, decided([60, 'shortlisted']))).toEqual([]);
+  });
+
+  it('keeps the two groups apart', () => {
+    const project = { kind: 'project', id: 99, rank: 5, title: 'Ongoing 5', score: 40 };
+    expect(skippedAhead(project, [...rows, project], decided())).toEqual([]);
+  });
+});
+
+describe('follow-ups that are followed up', () => {
+  const client = { auth: { getUser: async () => ({ data: { user: { id: 'admin' } } }) } };
+
+  it('asks for a reply date that is not in the past when recording an action', async () => {
+    const record = (replyDueDate) => saveDecision(client, { kind: 'project', id: 5, from: 'flagged', to: 'action_recorded', action: 'Expedite contractor', replyDueDate });
+    await expect(record(null)).rejects.toThrow(/reply is due/);
+    await expect(record('2000-01-01')).rejects.toThrow(/past/);
+  });
+
+  it('lists open follow-ups whose project is no longer on-going, and lets them close early', () => {
+    const decisions = new Map([
+      ['project:1', { candidate_kind: 'project', candidate_id: '1', status: 'flagged' }],
+      ['project:2', { candidate_kind: 'project', candidate_id: '2', status: 'action_recorded' }],
+      ['project:3', { candidate_kind: 'project', candidate_id: '3', status: 'closed' }],
+    ]);
+    const projects = [{ id: 1, status: 'Completed' }, { id: 2, status: 'On-Going' }, { id: 3, status: 'Completed' }];
+    const out = finishedFollowUps(decisions, projects, (p) => p.status === 'On-Going');
+    expect(out.map((x) => x.project.id)).toEqual([1]);
+    expect(canCloseFinished('project', 'flagged')).toBe(true);
+    expect(canCloseFinished('gap', 'shortlisted')).toBe(false);
   });
 });

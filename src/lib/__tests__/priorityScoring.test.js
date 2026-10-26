@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   PRIORITY_WEIGHTS,
   computePriority,
+  isNewWorkFor,
   topCommoditiesByMunicipality,
 } from '../priorityScoring';
 
@@ -125,5 +126,46 @@ describe('computePriority', () => {
   it('drops gaps that were already converted into projects', () => {
     const { newRoads } = computePriority({ gaps: [gap(1, 11.0, 1, 2), gap(2, 11.1, 1, 2)], excludeGapIds: [2] });
     expect(newRoads.map((r) => r.id)).toEqual([1]);
+  });
+
+  it('draws a gap on its own surveyed road and never counts that road as covering it', () => {
+    const parent = { id: 7, project_name: 'Surveyed road', status: 'Completed', created_at: '2026-07-19', start_latitude: 11.0, start_longitude: 122.40, end_latitude: 11.0, end_longitude: 122.41 };
+    const g = gap(1, 12.0, 1.0, 2, { from_project_id: 7, created_at: '2026-10-04', source_surface_summary: 'Earth 1.0 km (100%, Poor)' });
+    const result = computePriority({ gaps: [g], projects: [parent] });
+    expect(result.newRoads).toHaveLength(1);
+    expect(result.newRoads[0].points[0]).toEqual([11.0, 122.40]); // the road, not the stored line at 12.0
+    expect(result.newRoads[0].geometry.placement).toBe('whole-road');
+    expect(result.covered).toHaveLength(0);
+  });
+
+  it('measures market access live from the road', () => {
+    const near = gap(1, 11.0, 1, 99);
+    const far = gap(2, 11.5, 1, 0.1);
+    const { newRoads } = computePriority({ gaps: [near, far], markets: [{ latitude: 11.0, longitude: 122.405 }] });
+    const byId = Object.fromEntries(newRoads.map((r) => [r.id, r]));
+    expect(byId[1].marketKm).toBeLessThan(0.1);
+    expect(byId[2].marketKm).toBeGreaterThan(50);
+  });
+
+  it('shows a pending LGU proposal on the gap road without hiding the gap', () => {
+    const { newRoads } = computePriority({
+      gaps: [gap(1, 11.0, 1, 2)],
+      proposals: [{ id: 'p1', project_name: 'Brgy proposal', status: 'Submitted', start_latitude: 11.0, start_longitude: 122.40, end_latitude: 11.0, end_longitude: 122.41 }],
+    });
+    expect(newRoads).toHaveLength(1);
+    expect(newRoads[0].pendingProposals).toEqual([{ id: 'p1', name: 'Brgy proposal', status: 'Submitted' }]);
+  });
+});
+
+describe('isNewWorkFor', () => {
+  const g = { from_project_id: 7, created_at: '2026-10-04T00:00:00Z' };
+  it('is new work when not started, being built, or created after the survey', () => {
+    expect(isNewWorkFor({ id: 9, status: 'On-Going' }, g)).toBe(true);
+    expect(isNewWorkFor({ id: 9, status: 'Proposed' }, g)).toBe(true);
+    expect(isNewWorkFor({ id: 9, status: 'Completed', created_at: '2026-10-20' }, g)).toBe(true);
+  });
+  it('is not the surveyed road itself or an older existing road', () => {
+    expect(isNewWorkFor({ id: 7, status: 'On-Going' }, g)).toBe(false);
+    expect(isNewWorkFor({ id: 9, status: 'Completed', created_at: '2026-07-19' }, g)).toBe(false);
   });
 });

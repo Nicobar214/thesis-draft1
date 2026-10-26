@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildReportPayload,
+  ARRIVAL_M,
   buildReportPhotoLabel,
   computeVerification,
+  distanceToLine,
   distToProject,
   findNearbyProjects,
+  findNearbyRoads,
   friendlySubmitError,
   fmtDist,
+  hasArrived,
   haversineMeters,
   isNetworkFailure,
   isProjectNearby,
   makePhotoPath,
   sortProjectsByDistance,
   validateReportInput,
+  REPORT_LOCATION_TEST_LIMIT_M,
 } from '../reportSubmission';
 import { SEVERITY_TAXONOMY } from '../publicReportStatus';
 
@@ -124,10 +129,12 @@ describe('validateReportInput', () => {
     description: 'Big hole',
     photoBlob: {},
     selProject: { id: 1 },
-    gps: { lat: 10, lng: 122 },
+    gps: { lat: 10, lng: 122, accuracy: 8 },
+    // A road running north from the reporter's position.
+    roadPoints: [[10, 122], [10.005, 122]],
   };
 
-  it('accepts a complete report', () => {
+  it('accepts a complete report made at the road', () => {
     expect(validateReportInput(valid)).toBeNull();
   });
 
@@ -137,6 +144,28 @@ describe('validateReportInput', () => {
     expect(validateReportInput({ ...valid, photoBlob: null })).toMatch(/photo/i);
     expect(validateReportInput({ ...valid, selProject: null })).toMatch(/project/i);
     expect(validateReportInput({ ...valid, gps: null })).toMatch(/GPS/);
+  });
+
+  // While the TEMPORARY testing limit is on, reports from away are allowed up to it.
+  it.runIf(REPORT_LOCATION_TEST_LIMIT_M != null)('testing mode: allows a report from away, up to the test limit', () => {
+    expect(validateReportInput({ ...valid, gps: { lat: 10.002, lng: 122.01, accuracy: 8 } })).toBeNull();
+    expect(validateReportInput({ ...valid, gps: { lat: 10.002, lng: 125, accuracy: 8 } })).toMatch(/from this road/);
+  });
+
+  it.runIf(REPORT_LOCATION_TEST_LIMIT_M == null)('refuses a report made away from the road', () => {
+    // ~1.1 km east of the road.
+    expect(validateReportInput({ ...valid, gps: { lat: 10.002, lng: 122.01, accuracy: 8 } })).toMatch(/1\.1 km from this road/);
+    // 400 m off with a rough ±300 m fix: the benefit of the doubt is capped at 100 m.
+    expect(validateReportInput({ ...valid, gps: { lat: 10.002, lng: 122.00365, accuracy: 300 } })).toMatch(/400 m from this road/);
+  });
+
+  it('allows a rough GPS fix its capped benefit of the doubt', () => {
+    // ~220 m off, ±100 m: 220 - 100 <= 150.
+    expect(validateReportInput({ ...valid, gps: { lat: 10.002, lng: 122.002, accuracy: 100 } })).toBeNull();
+  });
+
+  it('refuses a road with no line to check against', () => {
+    expect(validateReportInput({ ...valid, roadPoints: undefined })).toMatch(/no location on the map/);
   });
 });
 
@@ -233,5 +262,36 @@ describe('buildReportPhotoLabel', () => {
   it('still reads well with details missing', () => {
     expect(buildReportPhotoLabel({})).toBe('Road report');
     expect(buildReportPhotoLabel({ selProject: { project_name: 'Leon', municipality: 'Leon' } })).toBe('Road report · Leon');
+  });
+});
+
+describe('map-first picking: distance to the road line', () => {
+  // A road running east, 0.01 deg (~1.1 km) long, at lat 10.
+  const road = { project: { id: 1, project_name: 'Road' }, points: [[10, 122], [10, 122.01]] };
+  const far = { project: { id: 2, project_name: 'Far road' }, points: [[10.05, 122], [10.05, 122.01]] };
+  const north = (m) => m / 111320;
+
+  it('counts a long road passing beside the reporter as near, even far from its middle', () => {
+    const gps = { lat: 10 + north(40), lng: 122.0001, accuracy: 10 }; // 40 m off, near the start
+    expect(distanceToLine(gps, road.points)).toBeGreaterThan(35);
+    expect(distanceToLine(gps, road.points)).toBeLessThan(45);
+    const [near] = findNearbyRoads([far, road], gps);
+    expect(near.project.id).toBe(1);
+    expect(near.point[0]).toBeCloseTo(10, 5); // the closest spot on the road, for the map badge
+    expect(findNearbyRoads([far, road], gps)).toHaveLength(1);
+  });
+
+  it('widens to 1 km on request, nearest first', () => {
+    const gps = { lat: 10 + north(600), lng: 122.005, accuracy: 10 };
+    expect(findNearbyRoads([road], gps)).toHaveLength(0);
+    expect(findNearbyRoads([far, road], gps, true).map((r) => r.project.id)).toEqual([1]);
+  });
+
+  it('arrives within ARRIVAL_M, giving a rough fix limited benefit of the doubt', () => {
+    expect(hasArrived(ARRIVAL_M, 5)).toBe(true);
+    expect(hasArrived(ARRIVAL_M + 80, 100)).toBe(true);
+    expect(hasArrived(ARRIVAL_M + 80, 20)).toBe(false);
+    expect(hasArrived(ARRIVAL_M + 500, 2000)).toBe(false); // a ±2 km Wi-Fi guess is not arrival
+    expect(hasArrived(Infinity, 5)).toBe(false);
   });
 });

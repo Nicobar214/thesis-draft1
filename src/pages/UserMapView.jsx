@@ -17,6 +17,7 @@ import ReportStatusLegend from '../components/map/ReportStatusLegend';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
 import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from '../components/map/NearestRoads';
 import { useNearestRoads, useRoadGuide } from '../lib/useNearestRoads';
+import { useRoadAlignedLines } from '../lib/useRoadAlignedLines';
 import { nearestPointOnRoute } from '../components/publicReports/routeGeometry';
 import {
   buildRoutePoints,
@@ -469,7 +470,7 @@ export default function UserMapView({ embedded = false } = {}) {
       const candidates = mappable.filter((entity) => entity.route.hasPolyline && !entity.route.hasRouteRecord).slice(0, 50);
       const snappedEntries = await Promise.all(
         candidates.map(async (entity) => {
-          const snapped = await fetchRoadAlignedPolyline(entity.route.points);
+          const snapped = await fetchRoadAlignedPolyline(entity.route.points, { alongLine: true });
           return [entity.project.id, snapped];
         })
       );
@@ -512,16 +513,18 @@ export default function UserMapView({ embedded = false } = {}) {
     })
     .filter(Boolean), [projects, routeByProjectId, snappedRouteByProjectId]);
   const me = useMemo(() => (userLocation ? [userLocation.lat, userLocation.lng] : null), [userLocation]);
+  // The roads nearest the user that are still straight pin-to-pin lines follow the real road.
+  const nearestLines = useRoadAlignedLines(allRoadLines, me);
   const distanceToRoadById = useMemo(() => {
     if (!me) return {};
     const out = {};
-    allRoadLines.forEach(({ project, points }) => {
+    nearestLines.forEach(({ project, points }) => {
       const hit = nearestPointOnRoute(points, me);
       if (hit) out[project.id] = hit.distanceMeters;
     });
     return out;
-  }, [me, allRoadLines]);
-  const nearestRoads = useNearestRoads(nearestOpen ? me : null, allRoadLines);
+  }, [me, nearestLines]);
+  const nearestRoads = useNearestRoads(nearestOpen ? me : null, nearestLines);
   const focusedRoad = nearestRoads.find((r) => r.project.id === focusedRoadId) || null;
   const guide = useRoadGuide(me, focusedRoad);
 
@@ -893,7 +896,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />
 
                 {/* Unpaved gaps beyond each funded route, from public.road_network_gaps */}
-                <GapSegmentLayer gaps={roadGaps} visible={showRoadGaps} />
+                <GapSegmentLayer gaps={roadGaps} visible={showRoadGaps} projects={projects} routesByProjectId={routeByProjectId} />
 
                 {/* Markets Layer */}
                 {showMarketsMap && (markets || []).map(m => (
@@ -1024,7 +1027,7 @@ export default function UserMapView({ embedded = false } = {}) {
                 {stats.completed > 0 && <LegendLine color="bg-emerald-500" label="Completed" count={stats.completed} />}
                 {stats.ongoing > 0 && <LegendLine color="bg-amber-500" label="On-Going" count={stats.ongoing} />}
                 {stats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={stats.proposed} />}
-                {showRoadGaps && <LegendLine color="border-red-500" dashed label="Unpaved gap" count={roadGaps.length} />}
+                {showRoadGaps && <LegendLine color="border-red-500" dashed label="Road to concrete" count={roadGaps.length} />}
               </LegendGroup>
               <LegendGroup label="Markers">
                 {mappable.length > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
@@ -1052,7 +1055,7 @@ export default function UserMapView({ embedded = false } = {}) {
             <MapControlPanel>
               <ControlGroup label="Layers">
                 <LayerToggle checked={showMarketsMap} onChange={setShowMarketsMap} label="Markets" />
-                <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Road gaps (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
+                <LayerToggle checked={showRoadGaps} onChange={setShowRoadGaps} label={`Roads to concrete (${roadGaps.length})`} accent="text-red-600 focus:ring-red-500" />
                 <LayerToggle checked={showFarmerDots} onChange={setShowFarmerDots} label="Farmers (dots)" />
                 <LayerToggle checked={showFarmerHeatmap} onChange={setShowFarmerHeatmap} label="Farmer density" />
                 {!embedded && <LayerToggle checked={showMyReports} onChange={setShowMyReports} label={`My reports (${myReports.length})`} />}

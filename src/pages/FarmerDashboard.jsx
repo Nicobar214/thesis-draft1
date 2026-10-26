@@ -191,7 +191,7 @@ export default function FarmerDashboard() {
       const fmrEndLng = Number(nearestFmr?.end_longitude);
 
       const fmrPromise = (nearestFmr && fmrStartLat && fmrStartLng && fmrEndLat && fmrEndLng)
-        ? fetchRoadAlignedPolyline([[fmrStartLat, fmrStartLng], [fmrEndLat, fmrEndLng]])
+        ? fetchRoadAlignedPolyline([[fmrStartLat, fmrStartLng], [fmrEndLat, fmrEndLng]], { alongLine: true })
         : Promise.resolve(null);
 
       const supplyPromise = supplyChainPath.length > 1

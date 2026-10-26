@@ -1,6 +1,7 @@
 /* PublicReportForm.jsx - Location-First Public Report (Region VI - Iloilo)
- * Flow: locating -> picking -> classify -> reporting -> success
- * GPS is detected automatically on mount; nearby FMR projects are auto-filtered by proximity.
+ * Flow: locating -> picking (map + list) -> navigating -> classify -> reporting -> success
+ * GPS is detected automatically on mount; nearby FMR roads are found by distance to
+ * the road line, shown on a map, and the picked one gets in-map directions.
  *
  * This component owns the flow and the submit. The pieces live elsewhere:
  *   lib/useGpsLocation.js      GPS fix + drift watcher
@@ -8,17 +9,20 @@
  *   lib/reportSubmission.js    nearby / validation / payload / error rules
  *   publicReports/reportForm/  one component per step
  */
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase, supabaseFarmer } from '../lib/supabase';
-import { enqueueReport, loadCachedProjects, saveCachedProjects } from '../lib/offlineReports';
+import { enqueueReport, loadCachedProjects, loadCachedRoutes, saveCachedProjects, saveCachedRoutes } from '../lib/offlineReports';
+import { buildRoutePoints } from '../lib/mapRouteUtils';
+import { useRoadAlignedLines } from '../lib/useRoadAlignedLines';
 import { requestBackgroundSync, triggerQueuedSync } from '../lib/offlineSync';
 import {
   buildReportPayload,
   buildReportPhotoLabel,
-  findNearbyProjects,
+  findNearbyRoads,
   friendlySubmitError,
   isNetworkFailure,
   makePhotoPath,
+  reportLocationProblem,
   validateReportInput,
 } from '../lib/reportSubmission';
 import { useGpsLocation } from '../lib/useGpsLocation';
@@ -29,6 +33,7 @@ import LocatingStep from './publicReports/reportForm/LocatingStep';
 import PickingStep from './publicReports/reportForm/PickingStep';
 import ClassifyStep from './publicReports/reportForm/ClassifyStep';
 import ReportingStep from './publicReports/reportForm/ReportingStep';
+import NavigateStep from './publicReports/reportForm/NavigateStep';
 
 // Each step fades and rises in, so moving between steps reads as one flow
 // instead of the content being swapped out underneath the user.
@@ -48,7 +53,7 @@ if (typeof document !== 'undefined' && !document.getElementById(STEP_STYLE_ID)) 
  * user's "My Reports".
  */
 export default function PublicReportForm({ prefillCategory = null, prefillProblem = null, client = supabase, onSubmitted }) {
-  // Step: 'locating' | 'picking' | 'classify' | 'reporting' | 'success'
+  // Step: 'locating' | 'picking' | 'navigating' | 'classify' | 'reporting' | 'success'
   const [step, setStep] = useState('locating');
 
   const { gps, gpsError, gpsLoading, gpsSlow, acquireGps, resetGps } = useGpsLocation();
@@ -57,19 +62,22 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // FMR projects
   const [allProjects, setAllProjects] = useState([]);
   const [projReady,   setProjReady]   = useState(false);
-  const [nearby,      setNearby]      = useState([]);
+  const [routes,      setRoutes]      = useState([]);
   const [widerSearch, setWiderSearch] = useState(false);
   const [browseAll,   setBrowseAll]   = useState(false);
   const [selProject,  setSelProject]  = useState(null);
   const [selProjectRoute, setSelProjectRoute] = useState(null);
 
-  // Camera / photo (runs only while the reporting step is showing)
+  // Camera / photo: runs only while the full-screen camera is open on the reporting step
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const openCamera = useCallback(() => setCameraOpen(true), []);
+  const closeCamera = useCallback(() => setCameraOpen(false), []);
   const {
     videoRef, canvasRef,
     photoBlob, photoPreview, photoTs,
     camError, camReady,
     capturePhoto, retakePhoto, resetPhoto, stopCamera,
-  } = useReportCamera({ gps, active: step === 'reporting' });
+  } = useReportCamera({ gps, active: step === 'reporting' && cameraOpen });
 
   // Form fields
   const [description, setDescription] = useState('');
@@ -114,6 +122,21 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     if (projReady) return;
     let alive = true;
 
+    // Road lines for the map. Not required: without them a project is drawn
+    // start-to-end, so a failure here never blocks reporting.
+    const loadRoutes = async () => {
+      try {
+        const { data, error: routeErr } = await client.from('project_routes').select('*');
+        if (routeErr) throw routeErr;
+        if (!alive) return;
+        setRoutes(data || []);
+        saveCachedRoutes(data || []).catch(() => {});
+      } catch {
+        const cached = await loadCachedRoutes().catch(() => null);
+        if (alive) setRoutes(cached?.data || []);
+      }
+    };
+
     const loadProjects = async () => {
       try {
         const { data, error: fetchErr } = await client
@@ -122,6 +145,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
 
         if (fetchErr) throw fetchErr;
         if (!alive) return;
+        loadRoutes();
         setAllProjects(data || []);
         setProjReady(true);
         const cached = await saveCachedProjects(data || []);
@@ -129,6 +153,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       } catch {
         const cached = await loadCachedProjects();
         if (!alive) return;
+        loadRoutes();
         if (cached?.data?.length) {
           setAllProjects(cached.data);
           setProjReady(true);
@@ -156,17 +181,45 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     return () => clearTimeout(timer);
   }, [step, gps, projReady]);
 
-  // Recompute nearby when GPS or projects change
-  useEffect(() => {
-    if (!gps || !projReady) return;
-    setNearby(findNearbyProjects(allProjects, gps, widerSearch));
-  }, [gps, allProjects, projReady, widerSearch]);
+  // Every project as a road line ([[lat, lng]]): its mapped route, else start to end.
+  const routeByProjectId = useMemo(() => new Map(routes.map((r) => [r.project_id, r])), [routes]);
+  const rawLines = useMemo(() => allProjects
+    .map((project) => {
+      const { points } = buildRoutePoints(project, routeByProjectId.get(project.id) || null);
+      return points.length >= 2 ? { project, points } : null;
+    })
+    .filter(Boolean), [allProjects, routeByProjectId]);
+  // Roads known only by their two pins follow the real road near the reporter.
+  const me = useMemo(() => (gps ? [gps.lat, gps.lng] : null), [gps]);
+  const lines = useRoadAlignedLines(rawLines, me);
+
+  // Nearby = within reach of the road line, nearest first.
+  const nearbyRoads = useMemo(
+    () => (gps && projReady ? findNearbyRoads(lines, gps, widerSearch) : []),
+    [gps, projReady, lines, widerSearch],
+  );
+  const nearby = useMemo(() => nearbyRoads.map((r) => r.project), [nearbyRoads]);
+  const selLine = useMemo(
+    () => (selProject ? lines.find((l) => l.project.id === selProject.id) || null : null),
+    [lines, selProject],
+  );
+  // The road the report is checked against: the mapped route, else the aligned
+  // road line, so the location badge measures to the real road too.
+  const reportRoute = useMemo(
+    () => selProjectRoute || (selLine?.aligned ? { route_points: selLine.points, route_source: 'osrm-aligned' } : null),
+    [selProjectRoute, selLine],
+  );
 
   // Fetch the project's mapped route once a project is selected
   useEffect(() => {
     if (!selProject?.id) {
       setSelProjectRoute(null);
       return;
+    }
+    const known = routeByProjectId.get(selProject.id);
+    if (known) {
+      setSelProjectRoute(known);
+      return undefined;
     }
     let alive = true;
     client
@@ -181,12 +234,12 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         if (alive) setSelProjectRoute(null);
       });
     return () => { alive = false; };
-  }, [selProject, client]);
+  }, [selProject, client, routeByProjectId]);
 
   // Submit
   const handleSubmit = async () => {
     setError(null);
-    const problem = validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps });
+    const problem = validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps, roadPoints: selLine?.points });
     if (problem) { setError(problem); return; }
     setSubmitting(true);
 
@@ -195,7 +248,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     const payloadBase = buildReportPayload({
       fullName, contact, selProject, gps, photoTs, description,
       severityCategory, category, specificProblem, userId: currentUser?.id,
-      routeRecord: selProjectRoute,
+      routeRecord: reportRoute,
     });
 
     // Tamper-evident photo: stamp date/time, GPS, project and a verification
@@ -265,12 +318,12 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // Reset for "Submit another report"
   const resetAll = () => {
     stopCamera();
+    setCameraOpen(false);
     resetGps();
     resetPhoto();
     setStep('locating');
     setProjReady(false);
     setAllProjects([]);
-    setNearby([]);
     setWiderSearch(false);
     setBrowseAll(false);
     setSelProject(null);
@@ -287,6 +340,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     setTimeout(acquireGps, 80);
   };
 
+  const goClassify = useCallback(() => setStep('classify'), []);
+
   // Render - one component per step (see publicReports/reportForm/)
   if (step === 'success') {
     return <SuccessStep queuedOffline={queuedOffline} resetAll={resetAll} />;
@@ -301,6 +356,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
       <PickingStep
         gps={gps}
         allProjects={allProjects}
+        lines={lines}
+        nearbyRoads={nearbyRoads}
         nearby={nearby}
         browseAll={browseAll}
         widerSearch={widerSearch}
@@ -310,6 +367,33 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         setBrowseAll={setBrowseAll}
         setSelProject={setSelProject}
         setStep={setStep}
+      />
+    );
+  }
+
+  if (step === 'navigating' && selProject) {
+    // No drawable line (no coordinates at all): there is no road to check the
+    // reporter's location against, so a report on it cannot be accepted.
+    if (!selLine) {
+      return (
+        <div className="report-step-in space-y-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+            <p className="font-semibold">{selProject.project_name}</p>
+            <p className="mt-1">{reportLocationProblem(gps, null)}</p>
+          </div>
+          <button type="button" onClick={() => { setSelProject(null); setStep('picking'); }} className="w-full rounded-xl border border-slate-200 px-6 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            Pick another road
+          </button>
+        </div>
+      );
+    }
+    return (
+      <NavigateStep
+        gps={gps}
+        project={selProject}
+        points={selLine.points}
+        onReportNow={goClassify}
+        onBack={() => { setSelProject(null); setStep('picking'); }}
       />
     );
   }
@@ -334,7 +418,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         setStep={setStep}
         selProject={selProject}
         gps={gps}
-        selProjectRoute={selProjectRoute}
+        selProjectRoute={reportRoute}
         error={error}
         severityCategory={severityCategory}
         specificProblem={specificProblem}
@@ -348,6 +432,9 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         canvasRef={canvasRef}
         capturePhoto={capturePhoto}
         retakePhoto={retakePhoto}
+        cameraOpen={cameraOpen}
+        openCamera={openCamera}
+        closeCamera={closeCamera}
         fullName={fullName}
         setFullName={setFullName}
         contact={contact}

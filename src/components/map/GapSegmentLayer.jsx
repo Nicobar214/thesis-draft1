@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Marker, Polyline, Popup, Tooltip } from 'react-leaflet';
 
-import { parsePointList, calculatePolylineDistanceKm } from '../../lib/mapRouteUtils';
+import { makeGapResolver, PLACEMENT_LABELS } from '../../lib/gapGeometry';
 import { GAP_PATH_OPTIONS, gapEndcapIcon } from './routeMarkerIcons';
 import useMapZoom from './useMapZoom';
 
@@ -13,7 +13,9 @@ const GAP_LABEL_ZOOM = 14;
  *
  * A gap is the UNPAVED portion of a surveyed barangay road -- the Earth and/or
  * Gravel sub-segments recorded in Leon_barangay_roads.csv -- drawn on that road's
- * own alignment, continuing from where the funded project's route ends.
+ * own mapped route (gapGeometry.js). The survey does not say where along the road
+ * the unpaved part is, so the popup states what is known; pass `projects` and
+ * `routesByProjectId` so the road can be found (without them the stored line is used).
  *
  * This replaces the four hardcoded demo segments that lived in LguRouteMap, whose
  * coordinates were hand-typed and all converged on the market point. Their code
@@ -23,6 +25,9 @@ const GAP_LABEL_ZOOM = 14;
  */
 export default function GapSegmentLayer({
   gaps = [],
+  projects = [],
+  routesByProjectId = {},
+  showSurvey = false,
   visible = true,
   focusedGapId = null,
   onFocusGap = undefined,
@@ -30,35 +35,27 @@ export default function GapSegmentLayer({
   const zoom = useMapZoom();
 
   const segments = useMemo(() => {
+    const resolve = makeGapResolver(projects, routesByProjectId);
     return (gaps || [])
       .map((gap) => {
-        let points = parsePointList(gap.gap_points);
-
-        // Fall back to the endpoint columns when no polyline was stored, so a gap
-        // with coordinates but no geometry still renders as a straight connector
-        // rather than vanishing.
-        if (points.length < 2) {
-          const start = [Number(gap.start_latitude), Number(gap.start_longitude)];
-          const end = [Number(gap.end_latitude), Number(gap.end_longitude)];
-          points = [start, end].filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-        }
-        if (points.length < 2) return null;
-
+        const geometry = resolve(gap);
+        if (geometry.points.length < 2) return null;
         const storedKm = Number(gap.gap_km);
         return {
           gap,
-          points,
-          km: Number.isFinite(storedKm) && storedKm > 0 ? storedKm : calculatePolylineDistanceKm(points),
+          geometry,
+          points: geometry.points,
+          km: Number.isFinite(storedKm) && storedKm > 0 ? storedKm : geometry.unpavedKm,
         };
       })
       .filter(Boolean);
-  }, [gaps]);
+  }, [gaps, projects, routesByProjectId]);
 
   if (!visible || segments.length === 0) return null;
 
   return (
     <>
-      {segments.map(({ gap, points, km }) => {
+      {segments.map(({ gap, geometry, points, km }) => {
         const isFocused = focusedGapId != null && focusedGapId === gap.id;
         const handlers = onFocusGap
           ? {
@@ -89,7 +86,7 @@ export default function GapSegmentLayer({
             >
               {zoom >= GAP_LABEL_ZOOM && (
                 <Tooltip permanent direction="center" className="kt-gap-label">
-                  <span className="text-[10px] font-bold text-red-700">GAP {km.toFixed(2)} km</span>
+                  <span className="text-[10px] font-bold text-red-700">TO CONCRETE {km.toFixed(2)} km</span>
                 </Tooltip>
               )}
 
@@ -97,7 +94,7 @@ export default function GapSegmentLayer({
                 <div className="p-1 space-y-1 text-xs text-slate-800 max-w-[260px]">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-bold text-[10px] uppercase">
-                      Road Network Gap
+                      Concreting need
                     </span>
                     <span
                       className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase ${
@@ -116,25 +113,29 @@ export default function GapSegmentLayer({
                     {gap.barangay_end ? ` → ${gap.barangay_end}` : ''}
                   </p>
                   <p>
-                    <span className="font-semibold text-slate-500">Unpaved length:</span>{' '}
-                    {km.toFixed(2)} km {gap.gap_type ? `(${gap.gap_type})` : ''}
+                    <span className="font-semibold text-slate-500">To concrete:</span>{' '}
+                    {km.toFixed(2)} km{showSurvey && gap.gap_type ? ` (${gap.gap_type})` : ''}
                   </p>
-                  {gap.surface_condition && (
+                  {showSurvey && gap.surface_condition && (
                     <p>
                       <span className="font-semibold text-slate-500">Condition:</span>{' '}
                       {gap.surface_condition}
                     </p>
                   )}
-                  {gap.source_surface_summary && (
+                  {showSurvey && gap.source_surface_summary && (
                     <p className="text-[11px] text-slate-600">
                       <span className="font-semibold text-slate-500">Surveyed surfaces:</span>{' '}
                       {gap.source_surface_summary}
                     </p>
                   )}
+                  <p className="text-[11px] text-slate-600">
+                    <span className="font-semibold text-slate-500">{PLACEMENT_LABELS[geometry.placement]}:</span>{' '}
+                    {geometry.note}
+                  </p>
                   {Number.isFinite(Number(gap.market_distance_km)) && (
                     <p>
-                      <span className="font-semibold text-slate-500">To Leon market:</span>{' '}
-                      {Number(gap.market_distance_km).toFixed(2)} km
+                      <span className="font-semibold text-slate-500">To Leon market (stored):</span>{' '}
+                      {Number(gap.market_distance_km).toFixed(2)} km, measured from the original gap line
                     </p>
                   )}
                   <p>

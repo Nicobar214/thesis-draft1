@@ -249,3 +249,15 @@ export async function saveCachedProjects(projects) {
 export async function loadCachedProjects() {
   return withStore(PROJECT_STORE, 'readonly', (store) => store.get('fmr_projects'));
 }
+
+/* Project road lines for the report map, cached beside the project list so the
+ * map still draws offline. */
+export async function saveCachedRoutes(routes) {
+  const record = { key: 'project_routes', updatedAt: new Date().toISOString(), data: routes || [] };
+  await withStore(PROJECT_STORE, 'readwrite', (store) => store.put(record));
+  return record;
+}
+
+export async function loadCachedRoutes() {
+  return withStore(PROJECT_STORE, 'readonly', (store) => store.get('project_routes'));
+}

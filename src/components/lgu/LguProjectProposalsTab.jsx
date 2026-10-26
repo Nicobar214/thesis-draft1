@@ -10,7 +10,8 @@ import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
 import MapSearchBox from '../map/MapSearchBox';
 import { getBarangays } from '../../data/iloiloLocations';
-import { boundsFromPoints, getMunicipalityCentroid, fetchRoadAlignedPolyline, getPendingDaysChip } from '../../lib/mapRouteUtils';
+import { boundsFromPoints, getMunicipalityCentroid, getPendingDaysChip, snapToRoad } from '../../lib/mapRouteUtils';
+import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../../lib/useRoadSnapPrefetch';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
 import { fetchProposalActivity, describeActionType, formatActivityActor } from '../../lib/proposalActivity';
 import { PROPOSAL_SLA_DAYS } from '../../lib/mapRouteUtils';
@@ -215,6 +216,12 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [pickMode, setPickMode] = useState('start');
   const [routeWaypoints, setRouteWaypoints] = useState([]);
   const [snapping, setSnapping] = useState(false);
+  // Fetch the road in the background while the route is set up, so Snap to Road answers at once.
+  useRoadSnapPrefetch([
+    [Number(form.start_latitude), Number(form.start_longitude)],
+    ...routeWaypoints.map((w) => [w.lat, w.lng]),
+    [Number(form.end_latitude), Number(form.end_longitude)],
+  ]);
   const [searchCenter, setSearchCenter] = useState(null);
   const [searchZoom, setSearchZoom] = useState(15);
   const [photoFile, setPhotoFile] = useState(null);
@@ -417,29 +424,25 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
 
     setSnapping(true);
     try {
-      const snappedPoints = await fetchRoadAlignedPolyline([
+      const snap = await snapToRoad([
         [sLat, sLng],
         ...routeWaypoints.map((w) => [w.lat, w.lng]),
         [eLat, eLng],
-      ], { smooth: false });
+      ], SNAP_BUTTON_OPTIONS);
+      const snappedPoints = snap.points;
 
-      if (snappedPoints && snappedPoints.length >= 2) {
-        const first = snappedPoints[0];
-        const last = snappedPoints[snappedPoints.length - 1];
+      if (snap.snapped) {
+        // The pins stay exactly where they were set; only the road between them changes.
         const middle = snappedPoints.slice(1, snappedPoints.length - 1).map((pt) => ({ lat: pt[0], lng: pt[1] }));
 
         setRouteWaypoints(middle);
         setForm((c) => ({
           ...c,
-          start_latitude: first[0].toFixed(6),
-          start_longitude: first[1].toFixed(6),
-          end_latitude: last[0].toFixed(6),
-          end_longitude: last[1].toFixed(6),
           estimated_length_km: polylineDistanceKm(snappedPoints).toFixed(2),
         }));
         notify('Snapped successfully to road alignment!');
       } else {
-        notify('Could not find a road connection between the coordinates.', 'warning');
+        notify(snap.reason === 'strayed' ? 'The nearest mapped road goes a different way, so the route was left as drawn. Add waypoints along the road and try again.' : 'Could not reach the road service. The route was left as drawn; please try again in a moment.', 'warning');
       }
     } catch (err) {
       notify(`Failed to connect coordinates to the road network: ${err.message}`);

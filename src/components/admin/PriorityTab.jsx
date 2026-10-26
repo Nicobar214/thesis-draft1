@@ -1,13 +1,15 @@
-import { CheckCircle2Icon, RotateCwIcon, ZapIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2Icon, RotateCwIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import { computePriority, PRIORITY_CRITERIA, PRIORITY_WEIGHTS, FARMER_RADIUS_M, REPORT_RADIUS_M } from '../../lib/priorityScoring';
+import { PLACEMENT_LABELS } from '../../lib/gapGeometry';
+import { normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import {
-  actionOwner, canEndorse, canMove, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, decisionFor, DEFAULT_VALIDATION_DAYS,
-  isFinal, loadDecisions, localDateISO, nextStatus, ONGOING_ACTIONS, resumeStatus, saveDecision, snapshotOf, STEP_ACTIONS,
+  actionOwner, canEndorse, canMove, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, decisionFor, DEFAULT_REPLY_DAYS, DEFAULT_VALIDATION_DAYS, finishedFollowUps,
+  isFinal, loadDecisions, localDateISO, nextStatus, ONGOING_ACTIONS, resumeStatus, saveDecision, skippedAhead, snapshotOf, STEP_ACTIONS,
 } from '../../lib/priorityDecisions';
 import { confirm as confirmDialog } from '../../lib/confirm';
 import { SentPhotos } from '../priority/PriorityTasksPanel';
@@ -53,7 +55,9 @@ function PriorityRoadMiniMap({ entry, onViewOnMap }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200">
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
-        <span className="text-xs font-medium text-slate-500">{isGap ? 'Unpaved section' : 'Project route'}</span>
+        <span className="text-xs font-medium text-slate-500">
+          {isGap ? (entry.geometry?.placement === 'partly-mapped' ? 'Road to concrete (mapped part only)' : 'Road to concrete') : 'Project route'}
+        </span>
         {onViewOnMap && (
           <button
             type="button"
@@ -84,8 +88,7 @@ function PriorityRoadMiniMap({ entry, onViewOnMap }) {
                   {gap?.barangay || project?.barangay || 'Barangay not resolved'}
                   {gap?.barangay_end || project?.barangay_end ? ` → ${gap?.barangay_end || project?.barangay_end}` : ''}, {entry.municipality}
                 </p>
-                {Number.isFinite(km) && <p>{km.toFixed(2)} km {isGap ? 'unpaved' : 'still to build'}</p>}
-                {gap?.source_surface_summary && <p className="text-slate-600">{gap.source_surface_summary}</p>}
+                {Number.isFinite(km) && <p>{km.toFixed(2)} km {isGap ? 'gap length' : 'still to build'}</p>}
               </div>
             </Popup>
           </Marker>
@@ -101,7 +104,7 @@ const pct = (w) => `${Math.round(w * 100)}%`;
 const FACTORS = PRIORITY_CRITERIA.map((c) => ({ ...c, weight: pct(PRIORITY_WEIGHTS[c.key]) }));
 
 const GROUPS = [
-  { key: 'newRoads', label: 'New road suggestions', hint: 'Surveyed unpaved gaps that are not FMR projects yet' },
+  { key: 'newRoads', label: 'New road suggestions', hint: 'Surveyed barangay roads with gravel/earth stretches to concrete, not FMR projects yet' },
   { key: 'ongoing', label: 'Ongoing projects', hint: 'FMR projects still under construction' },
 ];
 
@@ -112,6 +115,21 @@ function priorityTier(score) {
   if (score >= 40) return { label: 'Medium priority', cls: 'bg-amber-50 text-amber-700 ring-amber-200' };
   return { label: 'Low priority', cls: 'bg-slate-100 text-slate-600 ring-slate-200' };
 }
+
+/* A card opens its project only on a deliberate click on the card itself:
+ * not when the click comes from the mini-map (panning, its popup), a control,
+ * or the end of a drag / text selection, which browsers also report as a click. */
+const NO_OPEN = '.leaflet-container, button, a, input, select, textarea, label, [role="group"], [role="dialog"]';
+function isDeliberateCardClick(event, pressedAt) {
+  const inside = event.target instanceof Element ? event.target.closest(NO_OPEN) : null;
+  if (inside && event.currentTarget.contains(inside)) return false;
+  if (pressedAt && Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 6) return false;
+  const selection = typeof window !== 'undefined' ? window.getSelection?.() : null;
+  if (selection && String(selection).trim()) return false;
+  return true;
+}
+
+const formatDay = (iso) => new Date(`${iso}T00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
 
 function formatTimestamp(value) {
   if (!value) return 'Not calculated yet';
@@ -130,11 +148,24 @@ const STEP_REMINDERS = {
 
 /* The decision step for one ranked road: current status, and the one next
  * action (plus defer / resume). */
-function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
+/* "roads" / "projects", for the out-of-order wording. */
+const groupNoun = (kind) => (kind === 'gap' ? 'roads' : 'projects');
+const listSkipped = (skipped, max = 3) => {
+  const shown = skipped.slice(0, max).map((s) => `#${s.rank} ${s.title} (score ${s.score})`).join(', ');
+  return skipped.length > max ? `${shown}, and ${skipped.length - max} more` : shown;
+};
+
+/* "#1, #2, #4 +2" */
+const skippedRanks = (skipped, max = 4) =>
+  `${skipped.slice(0, max).map((s) => `#${s.rank}`).join(', ')}${skipped.length > max ? ` +${skipped.length - max}` : ''}`;
+
+function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [], skipped = [] }) {
   const [note, setNote] = useState('');
   const [action, setAction] = useState(ONGOING_ACTIONS[0]);
   const [engineerId, setEngineerId] = useState('');
   const [dueDate, setDueDate] = useState(() => localDateISO(new Date(), DEFAULT_VALIDATION_DAYS));
+  const [replyDue, setReplyDue] = useState(() => localDateISO(new Date(), DEFAULT_REPLY_DAYS));
+  const replyDeadline = deadlineStatus(decision?.reply_due_date);
   const today = localDateISO();
   const deadline = deadlineStatus(decision?.due_date);
   const status = decision?.status || 'ranked';
@@ -149,7 +180,9 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
   const blockedReason = next === 'endorsed' && !canEndorse(decision)
     ? (decision?.validation_result === 'not_confirmed' ? 'The engineer did not confirm this road. Defer it, or resume to send it again.' : 'Waiting for the site validation.')
     : next === 'for_validation' && !engineerId ? 'Choose a field engineer.'
-      : next === 'for_validation' && (!dueDate || dueDate < today) ? 'Set a visit deadline from today on.' : null;
+      : next === 'for_validation' && (!dueDate || dueDate < today) ? 'Set a visit deadline from today on.'
+      : next === 'action_recorded' && (!replyDue || replyDue < today) ? 'Set a reply date from today on.'
+        : skipped.length > 0 && !note.trim() ? `Write why this one goes ahead of higher-ranked ${groupNoun(entry.kind)}.` : null;
 
   const stop = (event) => event.stopPropagation();
 
@@ -191,7 +224,12 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
             <SentPhotos photos={decision.response_photos} />
           </div>
         ) : (
-          <p className="text-[11px] text-amber-700">Waiting for the {actionOwner(decision?.action) === 'site_engineer' ? 'site engineer' : 'contractor'} to reply.</p>
+          <div className="space-y-1">
+            <p className="text-[11px] text-amber-700">Waiting for the {actionOwner(decision?.action) === 'site_engineer' ? 'site engineer' : 'contractor'} to reply.</p>
+            {replyDeadline && (
+              <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${DEADLINE_TONES[replyDeadline.tone]}`}>Reply: {replyDeadline.text}</span>
+            )}
+          </div>
         )
       )}
 
@@ -241,16 +279,38 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
               {ONGOING_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           )}
+          {next === 'action_recorded' && (
+            <label className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <span>Reply by</span>
+              <input
+                type="date"
+                value={replyDue}
+                min={today}
+                onChange={(e) => setReplyDue(e.target.value)}
+                disabled={busy}
+                aria-label="Date the reply is due"
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+              />
+            </label>
+          )}
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             disabled={busy}
-            placeholder={deferred ? 'Why resume? (optional)' : 'Note (needed to defer)'}
-            aria-label="Decision note"
+            placeholder={deferred ? 'Why resume? (optional)' : skipped.length > 0 ? 'Reason (required)' : 'Note (needed to defer)'}
+            aria-label={skipped.length > 0 ? 'Reason for prioritizing out of rank order' : 'Decision note'}
             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
           />
-          {blockedReason && next !== 'for_validation' && <p className="text-[11px] text-slate-500">{blockedReason}</p>}
+          {skipped.length > 0 && !deferred && (
+            <div role="note" className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+              <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+              <span title={listSkipped(skipped, skipped.length)}>
+                {skipped.length} higher-ranked still waiting ({skippedRanks(skipped)}). Add a reason to continue.
+              </span>
+            </div>
+          )}
+          {blockedReason && next !== 'for_validation' && !(skipped.length > 0 && !note.trim()) && <p className="text-[11px] text-slate-500">{blockedReason}</p>}
           <div className="flex gap-2">
             {deferred ? (
               <button
@@ -271,7 +331,9 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
                   action: next === 'action_recorded' ? action : null,
                   assignedEngineerId: next === 'for_validation' ? engineerId : null,
                   dueDate: next === 'for_validation' ? dueDate : null,
+                  replyDueDate: next === 'action_recorded' ? replyDue : null,
                   engineerLabel: next === 'for_validation' ? engineerName(engineerId) : null,
+                  skipped,
                 }).then((ok) => ok && setNote(''))}
                 className="flex-1 rounded-md bg-teal-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
               >
@@ -297,7 +359,7 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [] }) {
 }
 
 export default function PriorityTab({
-  projects, roadGaps = [], reports, farmers = [], markets = [], routesByProjectId = {}, client, fieldEngineers = [],
+  projects, roadGaps = [], reports, farmers = [], markets = [], routesByProjectId = {}, client, fieldEngineers = [], proposals = [],
   onViewReports, onViewProjectDetail, onViewOnMap, onCreateProjectFromGap, showNotification,
 }) {
   const [group, setGroup] = useState('newRoads');
@@ -323,6 +385,56 @@ export default function PriorityTab({
 
   useEffect(() => { refreshDecisions(); }, [refreshDecisions]);
 
+  // Live: validations, replies and other admins' steps appear without a reload.
+  useEffect(() => {
+    if (!client?.channel) return undefined;
+    const channel = client
+      .channel('admin-priority-decisions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'priority_decisions' }, () => refreshDecisions())
+      .subscribe();
+    return () => { client.removeChannel(channel); };
+  }, [client, refreshDecisions]);
+
+  // Overdue site validations and replies: remind the assignee and the admins
+  // (at most once a day per item; the database also runs this every morning).
+  useEffect(() => {
+    if (!client?.rpc) return;
+    client.rpc('priority_notify_overdue').then(({ error }) => {
+      if (error && !/priority_notify_overdue/.test(error.message || '')) console.warn('[priority] overdue check:', error.message);
+    });
+  }, [client]);
+
+  const replyDueRef = useRef(null);
+  const pressAt = useRef(null); // where the last press on a card started (drag check)
+
+  // Follow-ups whose project finished meanwhile: no longer ranked, still open.
+  const finished = useMemo(
+    () => finishedFollowUps(decisions, projects, (p) => normalizeRouteStatus(p.status) === 'On-Going'),
+    [decisions, projects],
+  );
+  const closeFinished = async ({ decision, project }) => {
+    const ok = await confirmDialog({
+      title: `Close the follow-up on ${project.project_name}?`,
+      message: `The project is now ${project.status || 'no longer on-going'}, so it has left the ranking. Closing ends the follow-up (${DECISION_LABELS[decision.status]}). The contractor and the site engineer are told it is closed, and the decision stays in the record.`,
+      confirmLabel: 'Close follow-up',
+      tone: 'primary',
+    });
+    if (!ok) return;
+    setBusyKey(`project:${project.id}`);
+    try {
+      await saveDecision(client, {
+        kind: 'project', id: project.id, from: decision.status, to: 'closed', finishedClose: true,
+        note: `Closed: the project is now ${String(project.status || 'finished').toLowerCase()}.`,
+      });
+      await refreshDecisions();
+      showNotification?.(`${project.project_name}: follow-up closed.`);
+    } catch (err) {
+      showNotification?.(err?.message || 'Could not close the follow-up.', 'error');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   // A gap that became an FMR project leaves the New group.
   const convertedGapIds = useMemo(
     () => [...decisions.values()].filter((d) => d.candidate_kind === 'gap' && d.status === 'converted').map((d) => d.candidate_id),
@@ -330,10 +442,10 @@ export default function PriorityTab({
   );
 
   const result = useMemo(
-    () => computePriority({ gaps: roadGaps, projects, routesByProjectId, reports, farmers, markets, excludeGapIds: convertedGapIds }),
+    () => computePriority({ gaps: roadGaps, projects, routesByProjectId, reports, farmers, markets, proposals, excludeGapIds: convertedGapIds }),
     // calcTick re-runs it on "Recalculate"
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roadGaps, projects, routesByProjectId, reports, farmers, markets, convertedGapIds, calcTick],
+    [roadGaps, projects, routesByProjectId, reports, farmers, markets, proposals, convertedGapIds, calcTick],
   );
   const rankings = result[group];
 
@@ -348,14 +460,32 @@ export default function PriorityTab({
   const whoIsTold = (entry, to, action, engineerLabel, dueDate) => {
     if (to === 'for_validation') return `${engineerLabel || 'The field engineer'} is notified to check the road on site${dueDate ? ` by ${new Date(`${dueDate}T00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })}` : ''}. The date is shown on their task.`;
     if (to === 'flagged') return 'The contractor and the site engineer are notified.';
-    if (to === 'action_recorded') return `The ${actionOwner(action) === 'site_engineer' ? 'site engineer' : 'contractor'} is notified and asked to reply.`;
+    if (to === 'action_recorded') return `The ${actionOwner(action) === 'site_engineer' ? 'site engineer' : 'contractor'} is notified and asked to reply${replyDueRef.current ? ` by ${formatDay(replyDueRef.current)}` : ''}. If it is late, they and the admins get a daily reminder.`;
     if (to === 'closed') return 'The contractor and the site engineer are told it is closed.';
     return '';
   };
 
-  const handleStep = async ({ entry, from, to, note = '', action = null, assignedEngineerId = null, dueDate = null, engineerLabel = null }) => {
+  const handleStep = async ({ entry, from, to, note = '', action = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, engineerLabel = null, skipped = [] }) => {
     const label = to === 'deferred' ? 'Defer' : from === 'deferred' ? 'Resume' : STEP_ACTIONS[to];
-    const ok = await confirmDialog({
+    replyDueRef.current = replyDueDate;
+    // Out of rank order: a friendly warning, and the reason goes on record.
+    const outOfOrder = skipped.length > 0 && to !== 'deferred' && from === 'ranked';
+    const ok = outOfOrder ? await confirmDialog({
+      title: `Prioritize ahead of higher-ranked ${groupNoun(entry.kind)}?`,
+      message: `${entry.title} is rank #${entry.rank} (score ${entry.score}/100).
+
+Still waiting: ${listSkipped(skipped)}.
+
+`
+        + `The ranking is the DA's evidence-based order. You can go ahead, but your reason is saved with this decision for the audit trail: "${note.trim()}"`
+        + `${STEP_REMINDERS[to] ? `
+
+${STEP_REMINDERS[to]}` : ''}${whoIsTold(entry, to, action, engineerLabel, dueDate) ? `
+
+${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
+      confirmLabel: 'Prioritize anyway',
+      tone: 'warning',
+    }) : await confirmDialog({
       title: `${label}: ${entry.title}?`,
       message: `Rank #${entry.rank}, score ${entry.score}/100.${action ? ` Action: ${action}.` : ''}\n\n${
         to === 'deferred' ? `It leaves the active process until resumed. Reason: "${note.trim()}"` : (STEP_REMINDERS[to] || '')
@@ -376,7 +506,10 @@ export default function PriorityTab({
         });
         return true;
       }
-      await saveDecision(client, { kind: entry.kind, id: entry.id, from, to, note, action, assignedEngineerId, dueDate, snapshot: snapshotOf(entry) });
+      const snapshot = outOfOrder
+        ? { ...snapshotOf(entry), skipped_ahead_of: skipped.map(({ id, rank, title, score }) => ({ id, rank, title, score })) }
+        : snapshotOf(entry);
+      await saveDecision(client, { kind: entry.kind, id: entry.id, from, to, note, action, assignedEngineerId, dueDate, replyDueDate, snapshot });
       await refreshDecisions();
       showNotification?.(`${entry.title}: ${DECISION_LABELS[to]}.`);
       return true;
@@ -448,7 +581,9 @@ export default function PriorityTab({
           {decisionsError && <p className="text-xs text-amber-700">{decisionsError}</p>}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">Updated {formatTimestamp(lastCalculated)}</span>
+          <span className="inline-flex items-center gap-1.5 text-xs text-slate-400" title="Re-ranks by itself when projects, routes, reports, farmers, markets, proposals or decisions change">
+            <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden="true" />Live · updated {formatTimestamp(lastCalculated)}
+          </span>
           <button
             type="button"
             onClick={() => { setCalcTick((t) => t + 1); refreshDecisions(); }}
@@ -463,7 +598,7 @@ export default function PriorityTab({
       <div className="space-y-4">
         {rankings.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-            {group === 'newRoads' ? 'No surveyed road gaps left to rank.' : 'No ongoing projects to rank.'}
+            {group === 'newRoads' ? 'No surveyed roads left to concrete.' : 'No ongoing projects to rank.'}
           </div>
         )}
         {rankings.slice((currentPage - 1) * itemsPerPage, (currentPage - 1) * itemsPerPage + itemsPerPage).map((entry) => {
@@ -476,13 +611,16 @@ export default function PriorityTab({
           ].filter(Boolean).join(' · ');
           const decision = decisionFor(decisions, entry);
           const toMarket = entry.marketKm != null ? `${entry.marketKm.toFixed(1)} km` : '—';
+          const geo = entry.geometry;
 
           const facts = isGap
             ? [
-                { label: 'Unpaved length', value: `${Number(entry.lengthKm || 0).toFixed(2)} km` },
-                { label: 'To market', value: toMarket },
-                { label: 'Reports nearby', value: entry.reportCount },
-                { label: 'Farmers nearby', value: `${entry.farmersNear} (${entry.topCropFarmers} top crops)` },
+                // The 5 criteria, in PRIORITY_CRITERIA order.
+                { label: 'Gap length', value: Number.isFinite(entry.lengthKm) ? `${entry.lengthKm.toFixed(2)} km` : '—' },
+                { label: 'Market access', value: entry.marketKm != null ? `${toMarket} to market` : toMarket },
+                { label: 'Citizen reports', value: entry.reportCount },
+                { label: 'Top commodities', value: `${entry.topCropFarmers} farmers` },
+                { label: 'Farmer density', value: `${entry.farmersNear} farmers` },
               ]
             : [
                 { label: 'Still to build', value: Number.isFinite(entry.lengthKm) ? `${entry.lengthKm.toFixed(2)} km` : '—' },
@@ -503,9 +641,13 @@ export default function PriorityTab({
               key={`${entry.kind}-${entry.id}`}
               role="button"
               tabIndex={0}
-              onClick={() => canOpen && onViewProjectDetail && onViewProjectDetail(project)}
+              onPointerDown={(event) => { pressAt.current = { x: event.clientX, y: event.clientY }; }}
+              onClick={(event) => {
+                if (canOpen && onViewProjectDetail && isDeliberateCardClick(event, pressAt.current)) onViewProjectDetail(project);
+              }}
               onKeyDown={(event) => {
-                if ((event.key === 'Enter' || event.key === ' ') && canOpen && onViewProjectDetail) {
+                // Only when the card itself has focus, not a field or the map inside it.
+                if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget && canOpen && onViewProjectDetail) {
                   event.preventDefault();
                   onViewProjectDetail(project);
                 }
@@ -532,6 +674,26 @@ export default function PriorityTab({
                       </div>
                     ))}
                   </dl>
+
+                  {isGap && geo && (
+                    <div className="space-y-1.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
+                      <p>
+                        <span className={`mr-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+                          geo.placement === 'partly-mapped' || geo.placement === 'stored-line'
+                            ? 'bg-amber-50 text-amber-800 ring-amber-200'
+                            : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                        }`}>
+                          {PLACEMENT_LABELS[geo.placement]}
+                        </span>
+                        {geo.note}
+                      </p>
+                      {entry.pendingProposals?.length > 0 && (
+                        <p className="font-medium text-sky-800">
+                          LGU proposal pending: {entry.pendingProposals.map((pp) => `${pp.name} (${pp.status})`).join('; ')}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <p className="text-xs text-slate-500">{entry.reason}</p>
 
@@ -588,6 +750,7 @@ export default function PriorityTab({
                       fieldEngineers={fieldEngineers}
                       busy={busyKey === `${entry.kind}:${entry.id}`}
                       onStep={handleStep}
+                      skipped={skippedAhead(entry, rankings, decisions)}
                     />
                   )}
 
@@ -606,10 +769,36 @@ export default function PriorityTab({
             </article>
           );
         })}
+        {group === 'ongoing' && finished.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+            <p className="text-sm font-semibold text-amber-900">
+              {finished.length} open follow-up{finished.length > 1 ? 's' : ''} on project{finished.length > 1 ? 's' : ''} no longer on-going
+            </p>
+            <ul className="mt-2 space-y-2">
+              {finished.map(({ decision, project }) => (
+                <li key={project.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-amber-100">
+                  <span className="min-w-0">
+                    <span className="font-medium text-slate-900">{project.project_name}</span>
+                    <span className="text-slate-500"> · now {project.status || 'finished'} · {DECISION_LABELS[decision.status]}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busyKey === `project:${project.id}`}
+                    onClick={() => closeFinished({ decision, project })}
+                    className="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    Close follow-up
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {group === 'newRoads' && result.covered.length > 0 && (
           <details className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
             <summary className="cursor-pointer font-medium text-slate-700">
-              {result.covered.length} road gap{result.covered.length > 1 ? 's' : ''} not ranked: already covered by an FMR project
+              {result.covered.length} concreting need{result.covered.length > 1 ? 's' : ''} not ranked: already covered by an FMR project
             </summary>
             <ul className="mt-2 space-y-1 text-xs text-slate-600">
               {result.covered.map((c) => (

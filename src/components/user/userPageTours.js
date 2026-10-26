@@ -102,7 +102,7 @@ export const USER_PAGE_TOURS = {
     {
       target: t('map-layers'),
       title: 'Layers',
-      body: 'Turn markets, road gaps, farmer areas and your reports on or off, or change the map style.',
+      body: 'Turn markets, roads to concrete, farmer areas and your reports on or off, or change the map style.',
     },
     {
       target: t('map-legend'),

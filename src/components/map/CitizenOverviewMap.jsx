@@ -19,6 +19,7 @@ import ReportStatusLegend from './ReportStatusLegend';
 import { formatDistance, toPoint } from '../publicReports/routeGeometry';
 import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from './NearestRoads';
 import { useNearestRoads, useRoadGuide } from '../../lib/useNearestRoads';
+import { useRoadAlignedLines } from '../../lib/useRoadAlignedLines';
 
 const DEFAULT_CENTER = [10.89, 122.45];
 const ROAD_STATUSES = ['Completed', 'On-Going', 'Proposed'];
@@ -105,6 +106,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
     return () => { alive = false; };
   }, []);
 
+  const routesByProjectId = useMemo(() => Object.fromEntries(routes.map((r) => [r.project_id, r])), [routes]);
   const allRouteLines = useMemo(() => {
     const byProject = new Map(routes.map((r) => [r.project_id, r]));
     return projects
@@ -131,7 +133,9 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
     })
     .filter(Boolean), [reports]);
 
-  const nearestRoads = useNearestRoads(me, allRouteLines);
+  // Roads known only by two pins follow the real road around the citizen.
+  const nearestLines = useRoadAlignedLines(allRouteLines, me);
+  const nearestRoads = useNearestRoads(me, nearestLines);
   const nearestRoad = nearestRoads[0] || null;
   const focusedRoad = nearestRoads.find((r) => r.project.id === focusedRoadId) || null;
   const guide = useRoadGuide(me, focusedRoad);
@@ -186,7 +190,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
             </Fragment>
           ))}
           <RoadGuideLayer road={focusedRoad} guide={guide} onRoadClick={onProjectSelect} />
-          <GapSegmentLayer gaps={gaps} visible={layers.gaps} />
+          <GapSegmentLayer gaps={gaps} visible={layers.gaps} projects={projects} routesByProjectId={routesByProjectId} />
           {layers.markets && markets.filter((m) => Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))).map((m) => (
             <Marker key={`market-${m.id}`} position={[Number(m.latitude), Number(m.longitude)]} icon={marketIcon()}>
               <Popup>
@@ -223,7 +227,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
             {ROAD_STATUSES.filter((k) => layers.roads && roadStatusOn[k] && roadCounts[k] > 0).map((k) => (
               <LegendLine key={k} color={k === 'Completed' ? 'bg-emerald-500' : k === 'On-Going' ? 'bg-amber-500' : 'bg-blue-500'} label={k} count={roadCounts[k]} />
             ))}
-            {layers.gaps && <LegendLine color="border-red-500" dashed label="Unpaved gap" count={gaps.length} />}
+            {layers.gaps && <LegendLine color="border-red-500" dashed label="Road to concrete" count={gaps.length} />}
           </LegendGroup>
           <LegendGroup label="Markers">
             {layers.roads && layers.endpoints && <LegendDot style={{ background: '#16a34a' }} text="S" label="Route start" />}
@@ -238,7 +242,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
           <ControlGroup label="Layers">
             <LayerToggle checked={layers.roads} onChange={setLayer('roads')} label="FMR roads" />
             <LayerToggle checked={layers.endpoints} onChange={setLayer('endpoints')} label="Start / end pins" />
-            <LayerToggle checked={layers.gaps} onChange={setLayer('gaps')} label="Unpaved gaps" accent="text-red-600 focus:ring-red-500" />
+            <LayerToggle checked={layers.gaps} onChange={setLayer('gaps')} label="Roads to concrete" accent="text-red-600 focus:ring-red-500" />
             <LayerToggle checked={layers.markets} onChange={setLayer('markets')} label="Markets" />
             <LayerToggle checked={layers.reports} onChange={setLayer('reports')} label="My reports" />
           </ControlGroup>

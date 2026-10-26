@@ -14,7 +14,8 @@ import {
   actionOwner, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, MAX_PRIORITY_PHOTOS, needsPhotos, respondToAction, submitValidation,
 } from '../../lib/priorityDecisions';
 import { confirm as confirmDialog } from '../../lib/confirm';
-import { buildRoutePoints, parsePointList } from '../../lib/mapRouteUtils';
+import { buildRoutePoints } from '../../lib/mapRouteUtils';
+import { PLACEMENT_LABELS, resolveGapGeometry } from '../../lib/gapGeometry';
 import { MAX_DISTANCE_M } from '../../lib/onSiteLocation';
 import GeotagCamera from '../camera/GeotagCamera';
 import GeotagPhotoPreview from '../camera/GeotagPhotoPreview';
@@ -83,8 +84,7 @@ export function SentPhotos({ photos }) {
 
 /* Up to MAX_PRIORITY_PHOTOS KalsaTrack-camera photos for one answer. */
 function PhotoEvidence({ task, photos, setPhotos, busy }) {
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const place = task.kind === 'validation' ? 'the road gap' : 'the project road';
+  const place = task.kind === 'validation' ? 'the road to concrete' : 'the project road';
   const remove = (i) => setPhotos((list) => {
     if (list[i]?.preview) URL.revokeObjectURL(list[i].preview);
     return list.filter((_, j) => j !== i);
@@ -102,29 +102,16 @@ function PhotoEvidence({ task, photos, setPhotos, busy }) {
           ))}
         </div>
       )}
-      {cameraOpen ? (
+      {photos.length < MAX_PRIORITY_PHOTOS && (
         <GeotagCamera
           roadPoints={task.roadPoints}
           kind={task.kind === 'validation' ? 'priority_validation' : 'priority_inspection'}
-          label={`${task.kind === 'validation' ? 'Road gap validation' : 'Priority inspection'} · ${task.title}`}
+          label={`${task.kind === 'validation' ? 'Concreting need validation' : 'Priority inspection'} · ${task.title}`}
           place={place}
           disabled={busy}
-          captureText={`Capture photo ${photos.length + 1}`}
-          onCaptured={(photo) => {
-            setPhotos((list) => [...list, photo]);
-            setCameraOpen(false);
-          }}
+          captureText={photos.length ? `Add photo ${photos.length + 1}` : 'Open the KalsaTrack camera'}
+          onCaptured={(photo) => setPhotos((list) => [...list, photo])}
         />
-      ) : photos.length < MAX_PRIORITY_PHOTOS && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setCameraOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:opacity-50"
-        >
-          <CameraIcon className="size-4" aria-hidden="true" />
-          {photos.length ? 'Add another photo' : 'Open the KalsaTrack camera'}
-        </button>
       )}
     </div>
   );
@@ -157,12 +144,14 @@ function TaskCard({ task, role, busy, onValidate, onReply }) {
         </div>
         <span className="text-[11px] text-slate-400">{fmtDate(decision.updated_at)}</span>
       </div>
-      {kind === 'validation' && needsAnswer && deadlineStatus(decision.due_date) && (() => {
-        const deadline = deadlineStatus(decision.due_date);
+      {needsAnswer && (kind === 'validation' || kind === 'reply') && (() => {
+        // Validation: visit the road by due_date. Reply: answer the DA by reply_due_date.
+        const deadline = deadlineStatus(kind === 'validation' ? decision.due_date : decision.reply_due_date);
+        if (!deadline) return null;
         return (
           <p className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${DEADLINE_TONES[deadline.tone]}`}>
             <CalendarClockIcon className="size-3.5" aria-hidden="true" />
-            Visit the road: {deadline.text}
+            {kind === 'validation' ? 'Visit the road' : 'Reply'}: {deadline.text}
           </p>
         );
       })()}
@@ -264,19 +253,25 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       const gapIds = list.filter((d) => d.candidate_kind === 'gap').map((d) => d.candidate_id);
       const projectIds = list.filter((d) => d.candidate_kind === 'project').map((d) => d.candidate_id);
       const [g, p] = await Promise.all([
-        gapIds.length ? client.from('road_network_gaps').select('id, gap_code, source_road_name, municipality, barangay, barangay_end, gap_km, gap_type, source_surface_summary, gap_points, start_latitude, start_longitude, end_latitude, end_longitude, market_distance_km, surface_condition').in('id', gapIds) : { data: [] },
+        gapIds.length ? client.from('road_network_gaps').select('id, gap_code, source_road_name, municipality, barangay, barangay_end, gap_km, gap_type, source_surface_summary, gap_points, start_latitude, start_longitude, end_latitude, end_longitude, market_distance_km, surface_condition, from_project_id').in('id', gapIds) : { data: [] },
         projectIds.length ? client.from('fmr_projects').select('id, project_name, municipality, barangay, contractor_id, site_engineer_id, accomplishment, start_latitude, start_longitude, end_latitude, end_longitude, barangay_end, status, project_length_km, target_completion_date, year_funded').in('id', projectIds) : { data: [] },
       ]);
-      // Project road lines, to check where inspection photos were taken.
-      const routes = projectIds.length
-        ? (await client.from('project_routes').select('*').in('project_id', projectIds)).data || []
-        : [];
-      const routeById = new Map(routes.map((r) => [String(r.project_id), r]));
+      // A gap is shown on its own surveyed road (gapGeometry.js), so fetch those roads too.
+      const parentIds = [...new Set((g.data || []).map((x) => x.from_project_id).filter((id) => id != null))];
+      const [parents, routeRows] = await Promise.all([
+        parentIds.length ? client.from('fmr_projects').select('id, start_latitude, start_longitude, end_latitude, end_longitude').in('id', parentIds) : { data: [] },
+        // Project road lines, to check where inspection photos were taken.
+        [...projectIds, ...parentIds].length
+          ? client.from('project_routes').select('*').in('project_id', [...new Set([...projectIds, ...parentIds.map(String)])])
+          : { data: [] },
+      ]);
+      const routeById = new Map((routeRows.data || []).map((r) => [String(r.project_id), r]));
+      const parentById = new Map((parents.data || []).map((x) => [String(x.id), x]));
       setRows(list);
       setGaps(new Map((g.data || []).map((x) => {
-        let line = parsePointList(x.gap_points);
-        if (line.length < 2) line = [[x.start_latitude, x.start_longitude], [x.end_latitude, x.end_longitude]].filter(([a, b]) => a != null && b != null).map(([a, b]) => [Number(a), Number(b)]);
-        return [String(x.id), { ...x, line }];
+        const parent = parentById.get(String(x.from_project_id)) || null;
+        const geometry = resolveGapGeometry(x, parent, parent ? routeById.get(String(parent.id)) || null : null);
+        return [String(x.id), { ...x, line: geometry.points, geometry }];
       })));
       setProjects(new Map((p.data || []).map((x) => [String(x.id), { ...x, line: buildRoutePoints(x, routeById.get(String(x.id)) || null).points }])));
       setUnavailable(false);
@@ -299,15 +294,14 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
         roadPoints: gap.line || [],
         mapKind: 'gap',
         facts: [
-          { label: 'Unpaved length', value: num(gap.gap_km) ? `${num(gap.gap_km)} km` : null },
-          { label: 'Surface', value: [gap.gap_type, gap.surface_condition].filter(Boolean).join(' · ') || null },
+          { label: 'Gap length', value: num(gap.gap_km) ? `${num(gap.gap_km)} km` : null },
           { label: 'From → to', value: [gap.barangay, gap.barangay_end].filter(Boolean).join(' → ') || null },
-          { label: 'To market', value: num(gap.market_distance_km, 1) ? `${num(gap.market_distance_km, 1)} km` : null },
+          { label: 'Mapping', value: gap.geometry ? PLACEMENT_LABELS[gap.geometry.placement] : null },
         ],
         label: 'Site validation request',
         title: gap.source_road_name || gap.gap_code || 'Road gap',
         place: [gap.barangay, gap.barangay_end].filter(Boolean).join(' → ') || gap.municipality,
-        detail: `Confirm this unpaved road on site: ${gap.gap_km ?? '?'} km${gap.gap_type ? `, ${gap.gap_type}` : ''}${gap.source_surface_summary ? ` (${gap.source_surface_summary})` : ''}.`,
+        detail: `Confirm on site the gap length: ${gap.gap_km ?? '?'} km. ${gap.geometry?.note || ''}${gap.geometry && gap.geometry.placement !== 'whole-road' ? ' Your site photos and note show which part still needs concreting.' : ''}`.trim(),
         needsAnswer: !d.validated_at,
         answer: d.validated_at ? `You answered: ${d.validation_result === 'confirmed' ? 'Confirmed on site' : 'Not as described'} — “${d.validation_note}”.` : null,
       };

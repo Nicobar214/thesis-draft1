@@ -3,7 +3,7 @@ import { Button } from '../ui/Button';
 import { getStatusStyle, normalizeUserProjectStatus } from '../../lib/projectStatus';
 import { formatPercentage } from '../../lib/percentageFormat';
 
-const SURFACE_COLORS = { Concrete: '#0ea5e9', Asphalt: '#8b5cf6', Gravel: '#f59e0b', Earth: '#a8a29e' };
+import { SURFACE_COLORS } from '../../lib/roadTerms';
 
 function Fact({ label, value }) {
   return (
@@ -32,14 +32,14 @@ export default function RoadInventoryDetailDialog({ road, linkedProjects = [], o
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           <Fact label="Total length" value={km(road.lengthKm)} />
-          <Fact label="Paved" value={km(road.pavedKm)} />
-          <Fact label="Unpaved" value={km(road.unpavedKm)} />
+          <Fact label="Concrete" value={km(road.pavedKm)} />
+          <Fact label="To concrete" value={km(road.unpavedKm)} />
           <Fact label="Dominant surface" value={road.surfaceType || 'Unknown'} />
           <Fact label="Overall condition" value={road.condition || 'N/A'} />
           <Fact label="Right of way" value={road.row ? `${Number(road.row).toFixed(2)} m` : 'N/A'} />
           <Fact label="Year constructed" value={road.yearConstructed || 'N/A'} />
           {Number(road.unpavedKm) > 0 && (
-            <Fact label="Unpaved gap" value={[road.unpavedType, road.unpavedCondition].filter(Boolean).join(', ') || 'N/A'} />
+            <Fact label="Concreting need" value={[road.unpavedType, road.unpavedCondition].filter(Boolean).join(', ') || 'N/A'} />
           )}
         </div>
 

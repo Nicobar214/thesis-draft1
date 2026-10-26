@@ -547,7 +547,79 @@ export function createDisplayRoutePoints(points, routeKey, maxOffsetMeters = 8) 
 }
 
 const roadSnapCache = new Map();
-const KEEP_AS_DRAWN = Symbol('keep-as-drawn'); // cached: the snap strayed, use the drawn line
+const roadSnapInFlight = new Map(); // cache key -> pending request, shared by callers
+
+/* Snapped roads are also kept in the browser for a week, so opening a map again
+ * does not ask the free routers for every road again (the dashboard snaps ~130
+ * straight-line projects; the routers ask for about 1 request a second). Only
+ * real routes are stored, as in roadSnapCache. */
+const SNAP_STORE_KEY = 'roadSnapCache.v1';
+const SNAP_STORE_DAYS = 7;
+const SNAP_STORE_MAX = 400; // roads kept; the oldest go first
+let snapStore = null; // { [cacheKey]: { at, line } }
+
+function readSnapStore() {
+  if (snapStore) return snapStore;
+  snapStore = {};
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SNAP_STORE_KEY) : null;
+    const parsed = raw ? JSON.parse(raw) : {};
+    const fresh = Date.now() - SNAP_STORE_DAYS * 86400000;
+    Object.entries(parsed || {}).forEach(([key, v]) => {
+      if (v && v.at > fresh && Array.isArray(v.line) && v.line.length >= 2) snapStore[key] = v;
+    });
+  } catch {
+    // Storage blocked or corrupt: start empty; snapping still works.
+  }
+  return snapStore;
+}
+
+function storedRoad(cacheKey) {
+  return readSnapStore()[cacheKey]?.line || null;
+}
+
+function storeRoad(cacheKey, line) {
+  const store = readSnapStore();
+  store[cacheKey] = { at: Date.now(), line };
+  const keys = Object.keys(store);
+  if (keys.length > SNAP_STORE_MAX) {
+    keys.sort((a, b) => store[a].at - store[b].at).slice(0, keys.length - SNAP_STORE_MAX).forEach((k) => delete store[k]);
+  }
+  try {
+    localStorage.setItem(SNAP_STORE_KEY, JSON.stringify(store));
+  } catch {
+    // Storage full or blocked: the in-memory cache still has it.
+  }
+}
+
+/* At most SNAP_MAX_IN_FLIGHT router requests at once, so a map that snaps many
+ * roads does not fire them all in one burst (which gets the connection rate
+ * limited, and then the Snap to Road button fails too). Requests the user is
+ * waiting for (priority 'high': the button and its prefetch) go ahead of
+ * background map snapping. */
+const SNAP_MAX_IN_FLIGHT = 2;
+let snapRunning = 0;
+const snapQueue = { high: [], low: [] };
+
+function runQueued(task, priority) {
+  return new Promise((resolve) => {
+    snapQueue[priority === 'high' ? 'high' : 'low'].push({ task, resolve });
+    pumpSnapQueue();
+  });
+}
+
+function pumpSnapQueue() {
+  while (snapRunning < SNAP_MAX_IN_FLIGHT) {
+    const job = snapQueue.high.shift() || snapQueue.low.shift();
+    if (!job) return;
+    snapRunning += 1;
+    job.task().then(job.resolve, () => job.resolve(null)).finally(() => {
+      snapRunning -= 1;
+      pumpSnapQueue();
+    });
+  }
+}
+const strayWarned = new Set(); // cache keys already reported as strayed (warn once)
 
 const OSRM_MAX_WAYPOINTS = 15;
 
@@ -622,18 +694,55 @@ export function removeRouteSpikes(points, { returnM = SPIKE_RETURN_M, maxLengthM
 }
 
 /**
- * Make the snapped line start and end at the project's own pins. OSRM stops at
- * the nearest road it knows, which for a farm road is often short of the pin
- * (the last stretch is not on the map yet); a straight link covers that part.
+ * Make the snapped line start and end exactly at the project's own pins. OSRM
+ * stops at the nearest road it knows, which for a farm road is often short of
+ * the pin (the last stretch is not on the map yet); a straight link covers that
+ * part. A pin just beside the road is joined at a shallow angle (joinEndToPin).
  */
 export function connectToPins(line, start, end, minGapM = 3) {
-  const pts = toValidPairs(line);
+  let pts = toValidPairs(line);
   if (pts.length < 2) return pts;
   const s0 = coordPair(start);
   const e0 = coordPair(end);
-  if (isFinitePair(s0) && metersBetween(s0, pts[0]) > minGapM) pts.unshift(s0);
-  if (isFinitePair(e0) && metersBetween(e0, pts[pts.length - 1]) > minGapM) pts.push(e0);
+  // The pins are where the user put them and are never moved: the line always
+  // starts and ends exactly on them.
+  if (isFinitePair(e0)) pts = joinEndToPin(pts, e0, minGapM);
+  if (isFinitePair(s0)) pts = joinEndToPin(pts.reverse(), s0, minGapM).reverse();
   return pts;
+}
+
+/* OSRM stops on the road's centre line at the point nearest the pin, so a pin
+ * set on the road's edge (or a few metres off by GPS) was joined by a link at a
+ * right angle: an "L" hook at the end of the road. A pin that close is ON the
+ * road, so the line leaves the centre line a little earlier and runs into the
+ * pin at a shallow angle instead. A pin farther off is on a stretch the map
+ * does not have yet, and keeps its straight link. */
+const PIN_BESIDE_ROAD_M = 25; // pin this close to where OSRM stopped: it is on the road
+const PIN_TAPER_MIN_M = 15;
+const PIN_TAPER_MAX_M = 60;
+
+/** `pts` ending exactly on `pin`, approached at a shallow angle when the pin is beside the road. */
+function joinEndToPin(pts, pin, minGapM) {
+  const last = pts[pts.length - 1];
+  const offset = metersBetween(last, pin);
+  if (offset <= minGapM) return [...pts.slice(0, -1), pin];
+  if (offset > PIN_BESIDE_ROAD_M) return [...pts, pin];
+
+  // Walk back along the road ~3x the offset (never more than 40% of the line).
+  let total = 0;
+  for (let i = 1; i < pts.length; i += 1) total += metersBetween(pts[i - 1], pts[i]);
+  const taper = Math.min(Math.max(offset * 3, PIN_TAPER_MIN_M), PIN_TAPER_MAX_M, total * 0.4);
+  let left = taper;
+  for (let i = pts.length - 1; i > 0; i -= 1) {
+    const seg = metersBetween(pts[i - 1], pts[i]);
+    if (seg >= left) {
+      const u = seg > 0 ? (seg - left) / seg : 0; // from pts[i - 1] towards pts[i]
+      const cut = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u];
+      return [...pts.slice(0, i), cut, pin];
+    }
+    left -= seg;
+  }
+  return [pts[0], pin];
 }
 
 /**
@@ -675,10 +784,25 @@ export function maxDeviationMeters(line, reference) {
  * to the start and end pins, corners gently rounded. Falls back to the points
  * as given. Nothing is saved; pass { smooth: false } when the result is going
  * to be stored as waypoints (the "Snap to Road" buttons), to keep it compact.
+ *
+ * Pass { alongLine: true } when the points ARE the road (a project known only
+ * by its two pins) rather than a trip from A to B. OSRM returns the shortest
+ * drive between the pins, which for a farm road missing from the map can be a
+ * 7 km loop over other roads; with alongLine that is refused and the straight
+ * line kept, as it already is for a drawn route of 3+ points.
  */
-export async function fetchRoadAlignedPolyline(points, { smooth = true } = {}) {
-  if (!Array.isArray(points) || points.length < 2) return points || [];
-  const finish = (line) => (smooth ? smoothRouteCorners(line) : line);
+export async function fetchRoadAlignedPolyline(points, options = {}) {
+  return (await snapToRoad(points, options)).points;
+}
+
+/**
+ * Same as fetchRoadAlignedPolyline, but also says whether the road was found,
+ * so a "Snap to Road" button can tell the user instead of claiming success.
+ * @returns {Promise<{ points: [number, number][], snapped: boolean, reason?: 'failed' | 'strayed' }>}
+ */
+export async function snapToRoad(points, { smooth = true, alongLine = false, priority = 'low' } = {}) {
+  if (!Array.isArray(points) || points.length < 2) return { points: points || [], snapped: false, reason: 'failed' };
+  const finish = (line) => ({ points: smooth ? smoothRouteCorners(line) : line, snapped: true });
 
   // Keep requests lightweight and API-safe: OSRM is asked for at most
   // OSRM_MAX_WAYPOINTS via-points.
@@ -690,61 +814,218 @@ export async function fetchRoadAlignedPolyline(points, { smooth = true } = {}) {
   const clamped = decimatePoints(points, OSRM_MAX_WAYPOINTS)
     .map((point) => [Number(point[0]), Number(point[1])]);
   const valid = clamped.filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]));
-  if (valid.length < 2) return points;
+  if (valid.length < 2) return { points, snapped: false, reason: 'failed' };
 
   const cacheKey = valid.map((point) => `${point[0].toFixed(5)},${point[1].toFixed(5)}`).join('|');
-  if (roadSnapCache.has(cacheKey)) {
-    const cached = roadSnapCache.get(cacheKey);
-    return cached === KEEP_AS_DRAWN ? points : finish(cached);
-  }
-
-  try {
-    const coordString = valid.map((point) => `${point[1]},${point[0]}`).join(';');
-    // continue_straight=false: at a slightly-off via-point OSRM may turn back
-    // (a spike, cut out below) instead of looping around a whole block.
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=full&geometries=geojson&continue_straight=false`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Road snap request failed');
-
-    const json = await res.json();
-    const snapped = json?.routes?.[0]?.geometry?.coordinates
-      ?.map((coord) => {
-        if (!Array.isArray(coord) || coord.length < 2) return null;
-        const lng = Number(coord[0]);
-        const lat = Number(coord[1]);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return [lat, lng];
-      })
-      .filter(Boolean);
-
-    // Only a genuine route is worth remembering. Caching the straight-line
-    // fallback here would turn one bad response (a slow demo server, a
-    // momentary rate limit) into a permanent failure for these coordinates
-    // for the rest of the session, since nothing would ever retry them.
-    if (snapped && snapped.length >= 2) {
-      const cleaned = connectToPins(removeRouteSpikes(snapped), valid[0], valid[valid.length - 1]);
-      // A drawn route (3+ points) should be followed, not replaced: if the
-      // snapped line wanders far from it, OSRM picked another road, so keep
-      // the line as drawn. (Two points is plain A-to-B routing; any road goes.)
-      if (valid.length >= 3) {
-        let longestLegM = 0;
-        for (let i = 1; i < valid.length; i += 1) longestLegM = Math.max(longestLegM, metersBetween(valid[i - 1], valid[i]));
-        const allowedM = Math.max(SNAP_MIN_DEVIATION_M, longestLegM * 0.5);
-        if (maxDeviationMeters(cleaned, valid) > allowedM) {
-          console.warn('Road snap strayed from the drawn route; keeping it as drawn.', { cacheKey });
-          roadSnapCache.set(cacheKey, KEEP_AS_DRAWN);
-          return points;
-        }
-      }
-      roadSnapCache.set(cacheKey, cleaned);
-      return finish(cleaned);
+  // The cache holds the road OSRM gave; whether to use it depends on the
+  // caller (alongLine), so the stray check runs on every call, cached or not.
+  let cleaned = roadSnapCache.get(cacheKey) || storedRoad(cacheKey);
+  if (cleaned) roadSnapCache.set(cacheKey, cleaned);
+  if (!cleaned) {
+    // A request already on its way for these points (a prefetch, another map)
+    // is shared instead of sent again.
+    if (!roadSnapInFlight.has(cacheKey)) {
+      roadSnapInFlight.set(cacheKey, runQueued(() => requestRoad(valid), priority).finally(() => roadSnapInFlight.delete(cacheKey)));
     }
-    console.warn('Road snap returned no route; using a straight line.', { cacheKey });
-    return points;
-  } catch (err) {
-    console.warn('Road snap request failed; using a straight line.', err);
-    return points;
+    cleaned = await roadSnapInFlight.get(cacheKey);
+    if (!cleaned) return { points, snapped: false, reason: 'failed' };
+    roadSnapCache.set(cacheKey, cleaned);
+    storeRoad(cacheKey, cleaned);
   }
+
+  // A drawn route (3+ points), or a road given by its pins (alongLine), should
+  // be followed, not replaced: if the snapped line wanders far from it, OSRM
+  // took another road, so keep the line as drawn. Two points without alongLine
+  // is plain A-to-B routing (to a market, to a farm), where any road goes.
+  if (valid.length >= 3 || alongLine) {
+    let longestLegM = 0;
+    for (let i = 1; i < valid.length; i += 1) longestLegM = Math.max(longestLegM, metersBetween(valid[i - 1], valid[i]));
+    const allowedM = Math.max(SNAP_MIN_DEVIATION_M, longestLegM * 0.5);
+    if (maxDeviationMeters(cleaned, valid) > allowedM) {
+      if (!strayWarned.has(cacheKey)) {
+        strayWarned.add(cacheKey);
+        console.warn('Road snap strayed from the drawn route; keeping it as drawn.', { cacheKey });
+      }
+      return { points, snapped: false, reason: 'strayed' };
+    }
+  }
+  return finish(cleaned);
+}
+
+/* Three free public road routers, all on OpenStreetMap roads: the OSRM demo
+ * server, FOSSGIS's Valhalla, and FOSSGIS's OSRM. Each is fast (~0.7 s) most of
+ * the time, but any of them can hang for 15 s or stop answering for a while
+ * (a rate limit, maintenance). So the request is "hedged": the first router is
+ * asked, and if it has not answered within SNAP_HEDGE_MS (or fails) the next is
+ * asked too; whichever answers first wins and the others are cancelled. A router
+ * that failed or was too slow goes to the back of the line for
+ * ROUTER_COOLDOWN_MS, so the next snaps go straight to one that works.
+ * Nothing waits longer than SNAP_TIMEOUT_MS. */
+const SNAP_HEDGE_MS = 1200;
+const SNAP_TIMEOUT_MS = 8000;
+const ROUTER_COOLDOWN_MS = 2 * 60 * 1000;
+
+// continue_straight=false: at a slightly-off via-point OSRM may turn back
+// (a spike, cut out by removeRouteSpikes) instead of looping around a whole block.
+// (OSRM refuses unknown query parameters, so nothing else may be added here.)
+const osrmUrl = (base) => (points) =>
+  `${base}/${points.map(([lat, lng]) => `${lng},${lat}`).join(';')}?overview=full&geometries=geojson&continue_straight=false`;
+
+const ROUTERS = [
+  { name: 'osrm-demo', url: osrmUrl('https://router.project-osrm.org/route/v1/driving'), parse: routeFromOsrm },
+  {
+    name: 'valhalla-fossgis',
+    url: (points) => `https://valhalla1.openstreetmap.de/route?json=${encodeURIComponent(JSON.stringify({
+      locations: points.map(([lat, lng]) => ({ lat, lon: lng })),
+      costing: 'auto',
+      directions_type: 'none',
+    }))}`,
+    parse: routeFromValhalla,
+  },
+  { name: 'osrm-fossgis', url: osrmUrl('https://routing.openstreetmap.de/routed-car/route/v1/driving'), parse: routeFromOsrm },
+];
+const routerDownUntil = new Map(); // router name -> time it may lead again
+
+/** Routers in the order to ask them: ones that recently failed go last. */
+function routerOrder(now = Date.now()) {
+  const resting = (r) => (routerDownUntil.get(r.name) || 0) > now;
+  return [...ROUTERS.filter((r) => !resting(r)), ...ROUTERS.filter(resting)];
+}
+
+/** [lat, lng] points of the first route in an OSRM response, or null. */
+function routeFromOsrm(json) {
+  const line = json?.routes?.[0]?.geometry?.coordinates
+    ?.map((coord) => {
+      if (!Array.isArray(coord) || coord.length < 2) return null;
+      const lng = Number(coord[0]);
+      const lat = Number(coord[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return [lat, lng];
+    })
+    .filter(Boolean);
+  return line && line.length >= 2 ? line : null;
+}
+
+/** Google's encoded polyline format; Valhalla uses 6 decimal places. */
+export function decodePolyline(str, precision = 6) {
+  const factor = 10 ** precision;
+  const out = [];
+  let i = 0;
+  let lat = 0;
+  let lng = 0;
+  while (i < str.length) {
+    for (let k = 0; k < 2; k += 1) {
+      let shift = 0;
+      let result = 0;
+      let b;
+      do {
+        b = str.charCodeAt(i) - 63;
+        i += 1;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20 && i < str.length);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (k === 0) lat += delta; else lng += delta;
+    }
+    out.push([lat / factor, lng / factor]);
+  }
+  return out;
+}
+
+/** [lat, lng] points of a Valhalla route (one shape per leg, joined), or null. */
+function routeFromValhalla(json) {
+  const legs = json?.trip?.legs;
+  if (!Array.isArray(legs) || !legs.length) return null;
+  const line = [];
+  legs.forEach((leg) => {
+    const pts = typeof leg?.shape === 'string' ? decodePolyline(leg.shape, 6) : [];
+    line.push(...(line.length ? pts.slice(1) : pts)); // each leg starts where the last ended
+  });
+  return line.length >= 2 ? line : null;
+}
+
+/** The first route any router returns for `points`, or null (all failed / timed out). */
+function fetchRouteHedged(points) {
+  const order = routerOrder();
+  return new Promise((resolve) => {
+    const asked = []; // { router, controller, at }
+    let failed = 0;
+    let done = false;
+    let hedgeTimer = null;
+    const rest = (router) => routerDownUntil.set(router.name, Date.now() + ROUTER_COOLDOWN_MS);
+    const finish = (line, winner = null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(hedgeTimer);
+      clearTimeout(deadline);
+      const now = Date.now();
+      asked.forEach(({ router, controller, at }) => {
+        if (router === winner) { routerDownUntil.delete(router.name); return; }
+        controller.abort(); // cancel the slower ones
+        if (now - at >= SNAP_HEDGE_MS) rest(router); // it had its chance and said nothing
+      });
+      resolve(line);
+    };
+    const ask = () => {
+      if (done || asked.length >= order.length) return;
+      const router = order[asked.length];
+      const controller = new AbortController();
+      asked.push({ router, controller, at: Date.now() });
+      if (asked.length < order.length) hedgeTimer = setTimeout(ask, SNAP_HEDGE_MS);
+      fetch(router.url(points), { signal: controller.signal })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`${router.name}: road snap request failed (${res.status})`);
+          const line = router.parse(await res.json());
+          if (!line) throw new Error(`${router.name}: no route`);
+          finish(line, router);
+        })
+        .catch((err) => {
+          if (done) return;
+          rest(router);
+          failed += 1;
+          if (failed >= order.length) {
+            console.warn('Road snap failed on every router; using a straight line.', err?.message || err);
+            finish(null);
+          } else {
+            clearTimeout(hedgeTimer);
+            ask(); // this one failed: ask the next router now, without waiting
+          }
+        });
+    };
+    const deadline = setTimeout(() => {
+      console.warn('Road snap timed out; using a straight line.');
+      finish(null);
+    }, SNAP_TIMEOUT_MS);
+    ask();
+  });
+}
+
+/** The cleaned road through `valid`, or null if no router gave one. */
+async function requestRoad(valid) {
+  const snapped = await fetchRouteHedged(valid);
+  // Only a genuine route is returned (and cached by snapToRoad). Caching the
+  // straight-line fallback would turn one bad response (a slow demo server, a
+  // momentary rate limit) into a permanent failure for these coordinates
+  // for the rest of the session, since nothing would ever retry them.
+  return snapped ? connectToPins(removeRouteSpikes(snapped), valid[0], valid[valid.length - 1]) : null;
+}
+
+/** Tests only: forget every cached road, resting router and stored road. */
+export function resetRoadSnapState() {
+  roadSnapCache.clear();
+  roadSnapInFlight.clear();
+  routerDownUntil.clear();
+  strayWarned.clear();
+  snapStore = {};
+  try { localStorage.removeItem(SNAP_STORE_KEY); } catch { /* no storage */ }
+}
+
+/**
+ * Start snapping `points` in the background so a later snapToRoad with the
+ * same points (the Snap to Road button) answers at once from the cache.
+ */
+export function prefetchRoadSnap(points, options) {
+  snapToRoad(points, options).catch(() => {});
 }
 
 export const ILOILO_MUNICIPALITY_CENTROIDS = {
