@@ -1,7 +1,8 @@
 /*
  * projectDeadlines.js — "will this project make its deadline?", from data the
  * system already has (target_completion_date, accomplishment, progress updates).
- * Used by Project Management -> Deadlines.
+ * Used by Project Management -> Deadlines. Suspended / Terminated projects are left
+ * out: their deadline is on hold or no longer applies (see delayCases.js).
  *
  * Rules (kept deliberately simple so they can be explained to DA staff):
  *   Done        completed (status Completed, 100%, or a completion date)
@@ -17,6 +18,8 @@ export const DEADLINE_STATES = {
   on_track: { key: 'on_track', label: 'On track', rank: 2, pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
   no_target: { key: 'no_target', label: 'No target date', rank: 3, pill: 'bg-slate-100 text-slate-600 border-slate-200', dot: 'bg-slate-400' },
 };
+
+import { isHaltedStatus } from './delayCases';
 
 const DAY = 86400000;
 
@@ -63,7 +66,7 @@ export function buildDeadlineRows(projects, updates = [], today = new Date()) {
   const now = today.getTime();
 
   return (projects || [])
-    .filter((p) => p && !isDone(p))
+    .filter((p) => p && !isDone(p) && !isHaltedStatus(p.status))
     .map((p) => {
       const c = classifyDeadline(p, today);
       const last = lastUpdate.get(String(p.id));

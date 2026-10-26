@@ -1,10 +1,12 @@
+import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from './delayCases';
+
 export function normalizeRouteStatus(status) {
   if (!status) return '';
   const key = String(status).toLowerCase().replace(/[-\s]/g, '');
   if (key === 'ongoing') return 'On-Going';
   if (key === 'completed') return 'Completed';
   if (key === 'proposed') return 'Proposed';
-  return status;
+  return haltedStatusLabel(status) || status;
 }
 
 export function getRouteStatusTheme(status) {
@@ -15,6 +17,11 @@ export function getRouteStatusTheme(status) {
       return { line: '#f59e0b', stroke: '#d97706', badge: 'bg-amber-100 text-amber-700' };
     case 'Proposed':
       return { line: '#3b82f6', stroke: '#2563eb', badge: 'bg-sky-100 text-sky-700' };
+    case 'Suspended':
+    case 'Terminated': {
+      const h = HALTED_STATUS_STYLES[normalizeRouteStatus(status)];
+      return { line: h.fill, stroke: h.stroke, badge: h.badge };
+    }
     default:
       return { line: '#64748b', stroke: '#475569', badge: 'bg-slate-100 text-slate-700' };
   }
@@ -193,7 +200,7 @@ export function getPendingDaysChip(submittedAt, status) {
 
 export function isOverdueProject(project) {
   if (!project?.target_completion_date) return false;
-  if (normalizeRouteStatus(project.status) === 'Completed') return false;
+  if (normalizeRouteStatus(project.status) === 'Completed' || isHaltedStatus(project.status)) return false;
 
   const target = new Date(project.target_completion_date);
   if (Number.isNaN(target.getTime())) return false;

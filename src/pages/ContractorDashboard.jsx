@@ -32,8 +32,11 @@ import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
 import { resolveCategory, resolveSpecificProblem, workOrderStage, WORK_STAGES } from '../lib/publicReportStatus';
 import Icons from '../components/Icons';
 import PriorityTasksPanel from '../components/priority/PriorityTasksPanel';
+import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
 
 const statusKey = (s) => {
+  const halted = haltedStatusLabel(s);
+  if (halted) return halted;
   const v = String(s || '').toLowerCase();
   if (v.includes('complete')) return 'Completed';
   if (v.includes('going') || v.includes('progress')) return 'On-Going';
@@ -44,6 +47,8 @@ const STATUS_TONE = {
   Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   'On-Going': 'bg-amber-50 text-amber-700 border-amber-200',
   Proposed: 'bg-sky-50 text-sky-700 border-sky-200',
+  Suspended: HALTED_STATUS_STYLES.Suspended.border,
+  Terminated: HALTED_STATUS_STYLES.Terminated.border,
 };
 
 const DAY_MS = 86400000;
@@ -141,8 +146,8 @@ function DashboardBody() {
   const avgAccomplishment = projects.length
     ? projects.reduce((s, p) => s + Number(p.accomplishment || 0), 0) / projects.length
     : 0;
-  const byStatus = projects.reduce((acc, p) => { acc[statusKey(p.status)] += 1; return acc; }, { Completed: 0, 'On-Going': 0, Proposed: 0 });
-  const overdueProjects = projects.filter((p) => statusKey(p.status) !== 'Completed' && (daysUntil(p.target_completion_date) ?? 1) < 0);
+  const byStatus = projects.reduce((acc, p) => { const k = statusKey(p.status); if (k in acc) acc[k] += 1; return acc; }, { Completed: 0, 'On-Going': 0, Proposed: 0 });
+  const overdueProjects = projects.filter((p) => statusKey(p.status) !== 'Completed' && !isHaltedStatus(p.status) && (daysUntil(p.target_completion_date) ?? 1) < 0);
   const inReview = awaitingEngineer.length + awaitingAdmin.length;
 
   // Everything waiting on the contractor, most urgent first.

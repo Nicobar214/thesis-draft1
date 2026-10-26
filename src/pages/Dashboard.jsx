@@ -130,13 +130,15 @@ import { storeGlyph } from '../lib/mapMarkerIcons';
 import { confirm as confirmDialog, confirmSignOut } from '../lib/confirm';
 import ZoomablePhoto, { PhotoViewButton } from '../components/ui/ZoomablePhoto';
 import { lowerKeepAcronyms } from '../lib/textCase';
+import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus, friendlyDelayError, parseTargetDate, toISODate, caseBucket, manilaToday } from '../lib/delayCases';
+import OverdueProjectsPanel from '../components/admin/OverdueProjectsPanel';
 
 function normalizeFmrStatus(s) {
   if (!s) return '';
   const lower = s.toLowerCase().replace(/[-\s]/g, '');
   if (lower === 'ongoing') return 'On-Going';
   if (lower === 'proposed') return 'Proposed';
-  return s;
+  return haltedStatusLabel(s) || s;
 }
 
 function getFmrStatusColor(status) {
@@ -144,6 +146,8 @@ function getFmrStatusColor(status) {
     case 'Completed': return { fill: '#10b981', stroke: '#059669' };
     case 'On-Going': return { fill: '#f59e0b', stroke: '#d97706' };
     case 'Proposed': return { fill: '#3b82f6', stroke: '#2563eb' };
+    case 'Suspended': return { fill: HALTED_STATUS_STYLES.Suspended.fill, stroke: HALTED_STATUS_STYLES.Suspended.stroke };
+    case 'Terminated': return { fill: HALTED_STATUS_STYLES.Terminated.fill, stroke: HALTED_STATUS_STYLES.Terminated.stroke };
     default: return { fill: '#6b7280', stroke: '#4b5563' };
   }
 }
@@ -951,7 +955,8 @@ export default function Dashboard() {
   const [pmSubTab, setPmSubTab] = useState('budget');
   const [pmSearchInput, setPmSearchInput] = useState('');
   const [pmSearch, setPmSearch] = useState('');
-  const [pmMunicipalityFilter, setPmMunicipalityFilter] = useState('Leon');
+  // The DA admin oversees the whole province, so start on every municipality.
+  const [pmMunicipalityFilter, setPmMunicipalityFilter] = useState('All');
   const [pmModeFilter, setPmModeFilter] = useState('All');
   const [pmStatusFilter, setPmStatusFilter] = useState('On-Going');
   const [selectedFmrPmProject, setSelectedFmrPmProject] = useState(null);
@@ -3134,6 +3139,27 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
   const pendingPublicReportsCount = useMemo(() => publicReports.filter(r => r.status === 'pending').length, [publicReports]);
   // Sidebar badge: everything the admin personally owes an action on, not just
   // untriaged reports. A submitted inspection waiting on validation is work too.
+  // Overdue follow-ups waiting on the admin (the Overdue list's "Needs you"), for the
+  // red badges on Project Management and its Overdue tab. Kept live.
+  const [openDelayCases, setOpenDelayCases] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const loadOpenCases = async () => {
+      const { data, error } = await supabase.from('project_delay_cases').select('*').neq('status', 'closed');
+      if (alive && !error) setOpenDelayCases(data || []);
+    };
+    loadOpenCases();
+    const channel = supabase
+      .channel('admin-delay-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_delay_cases' }, loadOpenCases)
+      .subscribe();
+    return () => { alive = false; supabase.removeChannel(channel); };
+  }, []);
+  const delayNeedsYouCount = useMemo(() => {
+    const today = manilaToday();
+    return openDelayCases.filter((c) => ['needs_you', 'overdue_action'].includes(caseBucket(c, today))).length;
+  }, [openDelayCases]);
+
   const actionNeededPublicReportsCount = useMemo(
     () => countAdminBuckets(publicReports, repairActions).actionNeeded,
     [publicReports, repairActions]
@@ -3270,7 +3296,7 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
       const status = normalizeFmrStatus(p.status);
       const accomplishment = Number(p.accomplishment || 0);
       const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
-      const isDelayed = !isCompleted && isPastDate(p.target_completion_date, today);
+      const isDelayed = !isCompleted && !isHaltedStatus(p.status) && isPastDate(p.target_completion_date, today);
 
       if (status === 'Proposed' && !isCompleted) {
         pendingProjects.push(p);
@@ -3773,7 +3799,8 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
       end_latitude: project.end_latitude?.toString() || '',
       end_longitude: project.end_longitude?.toString() || '',
       date_completed: project.date_completed || '',
-      target_completion_date: project.target_completion_date || '',
+      // The date box needs YYYY-MM-DD; older rows say "Sept. 26, 2025".
+      target_completion_date: toISODate(parseTargetDate(project.target_completion_date)) || project.target_completion_date || '',
       date_started: project.date_started || '',
       contract_amount: project.contract_amount?.toString() || '',
       location: project.location || '',
@@ -3835,7 +3862,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
       showNotification('FMR project updated successfully!');
     } catch (err) {
       console.error('Failed to update FMR project:', err.message);
-      showNotification(`Failed to update FMR project: ${err.message}`, 'error');
+      showNotification(`Failed to update FMR project: ${friendlyDelayError(err)}`, 'error');
     }
   };
 
@@ -3946,7 +3973,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
     { id: 'projects', label: 'All Projects', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { id: 'analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
     { id: 'farmers', label: 'Farmer Beneficiaries', icon: 'M18 18.72a2.01 2.01 0 01-1.8 2.28H7.6a2.01 2.01 0 01-1.8-2.28l.75-5.4a3 3 0 012.97-2.58h4.96a3 3 0 012.97 2.58l.54 5.4zM12 13.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z' },
-    { id: 'project-mgmt', label: 'Project Management', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+    { id: 'project-mgmt', label: 'Project Management', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', badgeCount: delayNeedsYouCount },
     { id: 'priorities', label: 'Priorities', icon: 'M12 6.75a.75.75 0 01.75.75v3.75H16.5a.75.75 0 010 1.5h-3.75v3.75a.75.75 0 01-1.5 0v-3.75H7.5a.75.75 0 010-1.5h3.75V7.5a.75.75 0 01.75-.75z' },
     { id: 'reports', label: 'Reports', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { id: 'public-reports', label: 'Public Reports', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v2M12 13h.01', badgeCount: actionNeededPublicReportsCount },
@@ -5639,6 +5666,8 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
               'Completed': { col: 'completed', label: 'Completed', color: 'emerald', line: '#10b981', bg: 'bg-emerald-500', border: 'border-l-emerald-500', pill: 'bg-emerald-100 text-emerald-700' },
               'On-Going': { col: 'ongoing', label: 'On-Going', color: 'amber', line: '#f59e0b', bg: 'bg-amber-400', border: 'border-l-amber-400', pill: 'bg-amber-100 text-amber-700' },
               'Proposed': { col: 'proposed', label: 'Proposed', color: 'blue', line: '#3b82f6', bg: 'bg-blue-500', border: 'border-l-blue-500', pill: 'bg-blue-100 text-blue-700' },
+              'Suspended': { col: 'ongoing', label: 'Suspended', color: 'violet', line: HALTED_STATUS_STYLES.Suspended.fill, bg: HALTED_STATUS_STYLES.Suspended.bar, border: 'border-l-violet-500', pill: HALTED_STATUS_STYLES.Suspended.badge },
+              'Terminated': { col: 'completed', label: 'Terminated', color: 'slate', line: HALTED_STATUS_STYLES.Terminated.fill, bg: HALTED_STATUS_STYLES.Terminated.bar, border: 'border-l-slate-500', pill: HALTED_STATUS_STYLES.Terminated.badge },
             };
             const getPmStatus = (s) => {
               const n = normalizeFmrStatus(s);
@@ -5769,6 +5798,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
             const pmSubTabs = [
               { id: 'budget', label: 'Budget Audit', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
               { id: 'board', label: 'Board', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg> },
+              { id: 'overdue', label: 'Overdue', icon: (cls) => <TriangleAlertIcon className={cls} aria-hidden="true" /> },
               { id: 'deadlines', label: 'Deadlines', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
               { id: 'activity', label: 'Activity', icon: (cls) => <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg> },
             ];
@@ -5791,6 +5821,11 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                       >
                         {tab.icon(`w-4 h-4 ${pmSubTab === tab.id ? 'text-teal-600' : 'text-slate-400'}`)}
                         <span>{tab.label}</span>
+                        {tab.id === 'overdue' && delayNeedsYouCount > 0 && (
+                          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold leading-none text-white" aria-label={`${delayNeedsYouCount} need your decision`}>
+                            {delayNeedsYouCount}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -5851,7 +5886,14 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                   const ongoing = ongoingList.length;
                   const proposed = pmScopeByStatus('Proposed').length;
                   const overdue = ongoingList.filter((p) => isPastDate(p.target_completion_date, todayPm)).length;
-                  const toggleStatus = (status) => { setPmStatusFilter((cur) => (cur === status ? 'All' : status)); setPmBudgetPage(1); };
+                  // Overdue projects the municipality/search scope leaves out, so "0" never hides them.
+                  const overdueElsewhere = fmrProjects.filter((p) => normalizeFmrStatus(p.status) === 'On-Going' && isPastDate(p.target_completion_date, todayPm)).length - overdue;
+                  const onOverdue = pmSubTab === 'overdue';
+                  // The status cards filter the project lists; from the Overdue list they lead back to them.
+                  const toggleStatus = (status) => {
+                    if (onOverdue) { setPmStatusFilter(status); setPmSubTab('budget'); } else setPmStatusFilter((cur) => (cur === status ? 'All' : status));
+                    setPmBudgetPage(1);
+                  };
                   return (
                     <HierarchyKpis
                       ariaLabel="Project management summary"
@@ -5880,14 +5922,18 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                           hint: 'Under construction now',
                           chip: 'bg-amber-50 text-amber-700',
                           onClick: () => toggleStatus('On-Going'),
-                          active: pmStatusFilter === 'On-Going',
+                          active: !onOverdue && pmStatusFilter === 'On-Going',
                         },
                         {
                           icon: <TriangleAlertIcon className="size-4" aria-hidden="true" />,
                           label: 'Overdue',
                           value: overdue,
-                          hint: overdue ? 'On-going, past target date' : 'All on schedule',
+                          hint: overdue
+                            ? 'On-going, past target date · open follow-up'
+                            : overdueElsewhere > 0 ? `None here · ${overdueElsewhere} in other municipalities` : 'All on schedule',
                           chip: overdue ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-500',
+                          onClick: () => { setPmSubTab('overdue'); setPmBudgetPage(1); },
+                          active: pmSubTab === 'overdue',
                         },
                         {
                           icon: <CheckCircle2Icon className="size-4" aria-hidden="true" />,
@@ -5896,7 +5942,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                           hint: 'Finished and in use',
                           chip: 'bg-emerald-50 text-emerald-700',
                           onClick: () => toggleStatus('Completed'),
-                          active: pmStatusFilter === 'Completed',
+                          active: !onOverdue && pmStatusFilter === 'Completed',
                         },
                         {
                           icon: <ClockIcon className="size-4" aria-hidden="true" />,
@@ -5905,7 +5951,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                           hint: 'Planned, not yet started',
                           chip: 'bg-sky-50 text-sky-700',
                           onClick: () => toggleStatus('Proposed'),
-                          active: pmStatusFilter === 'Proposed',
+                          active: !onOverdue && pmStatusFilter === 'Proposed',
                         },
                       ]}
                     />
@@ -5998,6 +6044,22 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                 {/* PROJECT SCHEDULING (Calendar / Gantt / Table)         */}
                 {/* ════════════════════════════════════════════════════ */}
                 {/* Deadlines replaced the hand-entered Timeline (tasks/milestones had no data). */}
+                {pmSubTab === 'overdue' && (
+                  <OverdueProjectsPanel
+                    client={supabase}
+                    projects={fmrProjects}
+                    contractors={contractors}
+                    fieldEngineers={fieldEngineers}
+                    showNotification={showNotification}
+                    onOpenProject={openProjectDetailModal}
+                    onDataChanged={fetchFmrProjects}
+                    // Same scope as the cards above, so the list matches the Overdue count.
+                    scopeIds={pmMunicipalityFilter === 'All' && !pmSearch ? null : new Set(pmScopeProjects.map((p) => String(p.id)))}
+                    scopeLabel={[pmMunicipalityFilter !== 'All' ? pmMunicipalityFilter : '', pmSearch ? `"${pmSearch}"` : ''].filter(Boolean).join(', ')}
+                    onShowAll={() => { setPmMunicipalityFilter('All'); setPmSearch(''); setPmSearchInput(''); }}
+                  />
+                )}
+
                 {pmSubTab === 'deadlines' && (
                   <ProjectDeadlinesView
                     projects={filteredFmrProjects}
@@ -6505,7 +6567,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                               const status = normalizeFmrStatus(p.status);
                               const accomplishment = Number(p.accomplishment || 0);
                               const isCompleted = status === 'Completed' || accomplishment >= 100 || Boolean(p.date_completed);
-                              const isOverdue = !isCompleted && isPastDate(p.target_completion_date, today);
+                              const isOverdue = !isCompleted && !isHaltedStatus(p.status) && isPastDate(p.target_completion_date, today);
                               return (
                                 <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                                   <td className="px-6 py-4">
@@ -9666,11 +9728,15 @@ A new LGU account will be created with this email and password.`,
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Status *</label>
-                  <select name="status" value={fmrFormData.status} onChange={handleFmrInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200">
+                  <select name="status" value={fmrFormData.status} onChange={handleFmrInputChange} required disabled={isHaltedStatus(fmrFormData.status)} className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 disabled:bg-slate-50 disabled:text-slate-500">
                     <option value="Completed">Completed</option>
                     <option value="On-Going">On-Going</option>
                     <option value="Proposed">Proposed</option>
+                    {isHaltedStatus(fmrFormData.status) && <option value={fmrFormData.status}>{haltedStatusLabel(fmrFormData.status)}</option>}
                   </select>
+                  {isHaltedStatus(fmrFormData.status) && (
+                    <p className="mt-1.5 text-xs text-slate-500">Set by the delay follow-up. Change it in Project Management &gt; Overdue (Resume, Extend suspension or Terminate).</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Year Funded</label>

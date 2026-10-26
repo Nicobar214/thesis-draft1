@@ -28,6 +28,11 @@ describe('getStatusStyle', () => {
   });
 
   it('falls back to the proposed style for an unknown status', () => {
-    expect(getStatusStyle('Suspended')).toEqual(getStatusStyle('Proposed'));
+    expect(getStatusStyle('Cancelled')).toEqual(getStatusStyle('Proposed'));
+  });
+
+  it('has its own style for Suspended and Terminated (delay follow-up)', () => {
+    expect(getStatusStyle('Suspended').badge).toMatch(/violet/);
+    expect(getStatusStyle('Terminated').badge).toMatch(/slate/);
   });
 });

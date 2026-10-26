@@ -45,6 +45,7 @@ import Logo from '../components/Logo';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { storeGlyph, routeGlyph } from '../lib/mapMarkerIcons';
 import { normalizeUserProjectStatus } from '../lib/projectStatus';
+import { isHaltedStatus } from '../lib/delayCases';
 import { FmrProjectKpis } from '../components/fmrProjects/FmrProjectListParts';
 import HierarchyKpis from '../components/ui/HierarchyKpis';
 import SearchableSelect from '../components/ui/SearchableSelect';
@@ -809,7 +810,7 @@ export default function LguDashboard() {
 
       let matchesOverdue = true;
       if (lguMapShowOverdueOnly) {
-        const isCompleted = normalizedStatus === 'Completed' || status.toLowerCase() === 'completed';
+        const isCompleted = normalizedStatus === 'Completed' || status.toLowerCase() === 'completed' || isHaltedStatus(status);
         const target = p.target_completion_date ? new Date(p.target_completion_date) : null;
         const isOverdue = !isCompleted && target && target < new Date();
         if (!isOverdue) matchesOverdue = false;

@@ -17,6 +17,7 @@ import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta } from '../lib/progressWorkflow';
 import { formatPercentage } from '../lib/percentageFormat';
+import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
 
 const ROWS_PER_PAGE = 10;
 
@@ -30,6 +31,8 @@ const fmtShortDate = (value) => {
 
 // ── FMR status badge ─────────────────────────────────────────
 function normalizeFmrStatus(status) {
+  const halted = haltedStatusLabel(status);
+  if (halted) return halted;
   const s = (status || '').toLowerCase();
   if (s.includes('complet')) return 'Completed';
   if (s.includes('going') || s.includes('ongoing')) return 'On-Going';
@@ -40,6 +43,8 @@ const FMR_STATUS_BADGE_CLASS = {
   Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   'On-Going': 'bg-amber-50 text-amber-700 border-amber-200',
   Proposed: 'bg-sky-50 text-sky-700 border-sky-200',
+  Suspended: HALTED_STATUS_STYLES.Suspended.border,
+  Terminated: HALTED_STATUS_STYLES.Terminated.border,
 };
 
 function FmrStatusBadge({ status }) {
@@ -69,7 +74,7 @@ function WorkPlanStatusBadge({ status }) {
 
 /* Past its target date and not finished. */
 function isOverdueProject(project) {
-  if (normalizeFmrStatus(project.status) === 'Completed' || !project.target_completion_date) return false;
+  if (normalizeFmrStatus(project.status) === 'Completed' || isHaltedStatus(project.status) || !project.target_completion_date) return false;
   const target = new Date(`${String(project.target_completion_date).slice(0, 10)}T00:00:00`);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
