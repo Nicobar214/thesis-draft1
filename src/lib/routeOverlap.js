@@ -58,6 +58,25 @@ export function samplePolyline(line, stepM = SAMPLE_STEP_METERS) {
   return out;
 }
 
+/* Bounding box of a line in degrees, cached per line array (the existing roads
+ * are the same arrays on every check, so each box is computed once). */
+const boxCache = new WeakMap();
+function boxOf(line) {
+  let box = boxCache.get(line);
+  if (!box) {
+    box = { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity };
+    for (const p of line) {
+      if (!Number.isFinite(p?.[0]) || !Number.isFinite(p?.[1])) continue;
+      if (p[0] < box.minLat) box.minLat = p[0];
+      if (p[0] > box.maxLat) box.maxLat = p[0];
+      if (p[1] < box.minLng) box.minLng = p[1];
+      if (p[1] > box.maxLng) box.maxLng = p[1];
+    }
+    boxCache.set(line, box);
+  }
+  return box;
+}
+
 export function polylineLengthMeters(line) {
   let total = 0;
   for (let i = 1; i < (line || []).length; i += 1) total += segmentLength(line[i - 1], line[i], line[i - 1][0]);
@@ -78,8 +97,20 @@ export function findRouteOverlaps(route, projects = []) {
   const stepMeters = totalMeters / (samples.length - 1);
   const onAny = new Array(samples.length).fill(false);
 
+  // Only roads whose box comes within OVERLAP_METERS of the new route's box can
+  // overlap it; the rest (nearly all of them) are skipped before the per-point
+  // check, which was the slow part of the route editor (~300 roads x every sample).
+  const r = boxOf(route);
+  const padLat = OVERLAP_METERS / M_PER_DEG_LAT;
+  const padLng = padLat / Math.max(0.1, Math.cos((((r.minLat + r.maxLat) / 2) * Math.PI) / 180));
+  const near = (line) => {
+    const b = boxOf(line);
+    return b.minLat <= r.maxLat + padLat && b.maxLat >= r.minLat - padLat
+      && b.minLng <= r.maxLng + padLng && b.maxLng >= r.minLng - padLng;
+  };
+
   const overlaps = projects
-    .filter((p) => Array.isArray(p.line) && p.line.length >= 2)
+    .filter((p) => Array.isArray(p.line) && p.line.length >= 2 && near(p.line))
     .map((p) => {
       let hits = 0;
       samples.forEach((pt, i) => {

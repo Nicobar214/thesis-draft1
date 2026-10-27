@@ -1,4 +1,5 @@
-import { Polyline, Tooltip } from 'react-leaflet';
+import { memo, useEffect, useState } from 'react';
+import { Polyline, Tooltip, useMap } from 'react-leaflet';
 import { TriangleAlertIcon, CircleCheckIcon } from 'lucide-react';
 
 import RouteEndpointMarkers from './RouteEndpointMarkers';
@@ -18,7 +19,25 @@ const statusOf = (p) => (STATUSES.includes(normalizeRouteStatus(p.status)) ? nor
  * stretches the new route overlaps highlighted in red.
  * projects: [{ id, name, status, project, route, line }]
  */
-export function ExistingRoutesLayer({ projects = [], overlap, layers }) {
+/* The visible map area (padded), updated when the map stops moving. */
+function useViewBounds(padRatio = 0.3) {
+  const map = useMap();
+  const [bounds, setBounds] = useState(() => map.getBounds().pad(padRatio));
+  useEffect(() => {
+    const update = () => setBounds(map.getBounds().pad(padRatio));
+    map.on('moveend', update);
+    return () => { map.off('moveend', update); };
+  }, [map, padRatio]);
+  return bounds;
+}
+
+/* Memoized: the admin page re-renders on every keystroke in the form, and this
+ * layer has ~300 roads; it only needs to redraw when its own props change. S/E
+ * markers are drawn only for roads in (or near) view, which is where they can
+ * be seen anyway, instead of ~600 markers at once. */
+export const ExistingRoutesLayer = memo(function ExistingRoutesLayer({ projects = [], overlap, layers }) {
+  const view = useViewBounds();
+  const inView = (line) => line.some(([lat, lng]) => view.contains([lat, lng]));
   const overlapIds = new Set((overlap?.overlaps || []).map((o) => String(o.id)));
   const visible = layers?.existing === false
     ? []
@@ -34,7 +53,7 @@ export function ExistingRoutesLayer({ projects = [], overlap, layers }) {
             <Polyline positions={p.line} pathOptions={{ color: theme.line, weight: hit ? 5 : 3.4, opacity: hit ? 0.95 : 0.72 }}>
               <Tooltip sticky>{p.name}</Tooltip>
             </Polyline>
-            {layers?.endpoints !== false && (
+            {layers?.endpoints !== false && inView(p.line) && (
               <RouteEndpointMarkers
                 project={p.project}
                 routeData={{ ...p.route, startPoint: p.line[0], endPoint: p.line[p.line.length - 1] }}
@@ -51,7 +70,7 @@ export function ExistingRoutesLayer({ projects = [], overlap, layers }) {
       ))}
     </>
   );
-}
+});
 
 /* Legend + Layers panel, rendered next to the MapContainer (inside its
  * `relative` wrapper), same components as the main map. */
