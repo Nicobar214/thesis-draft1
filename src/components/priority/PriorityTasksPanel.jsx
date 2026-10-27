@@ -24,6 +24,7 @@ import GeotagCamera from '../camera/GeotagCamera';
 import GeotagPhotoPreview from '../camera/GeotagPhotoPreview';
 import ZoomablePhoto from '../ui/ZoomablePhoto';
 import PriorityTaskMap from './PriorityTaskMap';
+import { Modal } from '../ui/Modal';
 import { PRIORITY_CRITERIA } from '../../lib/priorityScoring';
 
 const num = (v, digits = 2) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v).toFixed(digits));
@@ -122,7 +123,70 @@ function PhotoEvidence({ task, photos, setPhotos, busy }) {
 
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
-function TaskCard({ task, role, busy, onValidate, onReply }) {
+/* "Visit the road: 3 days left" while an answer is due. */
+function TaskDeadline({ task }) {
+  const { decision, kind, needsAnswer } = task;
+  if (!needsAnswer || (kind !== 'validation' && kind !== 'reply')) return null;
+  // Validation: visit the road by due_date. Reply: answer the DA by reply_due_date.
+  const deadline = deadlineStatus(kind === 'validation' ? decision.due_date : decision.reply_due_date);
+  if (!deadline) return null;
+  return (
+    <p className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${DEADLINE_TONES[deadline.tone]}`}>
+      <CalendarClockIcon className="size-3.5" aria-hidden="true" />
+      {kind === 'validation' ? 'Visit the road' : 'Reply'}: {deadline.text}
+    </p>
+  );
+}
+
+/* Where the task stands, in one chip for the list. */
+function TaskState({ task }) {
+  if (task.result) {
+    const done = task.result.outcome === 'done';
+    return <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${done ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>Result: {done ? 'Done' : 'Not done'}</span>;
+  }
+  if (task.answer) return <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Answered</span>;
+  if (task.needsAnswer) return <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">To answer</span>;
+  return null;
+}
+
+/* One task in the list: what and where, its deadline and state. Opens the dialog. */
+function TaskCard({ task, onOpen }) {
+  const { kind, title, place, detail, needsAnswer } = task;
+  return (
+    <li className={`rounded-xl border bg-white p-4 shadow-xs ${needsAnswer ? 'border-amber-200' : 'border-slate-200'}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-700">{task.label}</p>
+          <h3 className="mt-0.5 font-semibold text-slate-900">{title}</h3>
+          {place && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+              <MapPinIcon className="size-3.5" aria-hidden="true" />{place}
+            </p>
+          )}
+        </div>
+        <TaskState task={task} />
+      </div>
+      {detail && <p className="mt-2 line-clamp-2 text-sm text-slate-600">{detail}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <TaskDeadline task={task} />
+        <button
+          type="button"
+          onClick={() => onOpen(task.id)}
+          className={`ml-auto rounded-lg px-4 py-2 text-sm font-semibold ${needsAnswer
+            ? 'bg-teal-600 text-white hover:bg-teal-700'
+            : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+        >
+          {needsAnswer ? (kind === 'validation' ? 'Open and validate' : 'Open and reply') : 'View'}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/* The whole task in a dialog: the DA's request, the facts and map, and the
+   answer (site photos, note, buttons in the footer). Clicking outside does not
+   close it, so photos already taken are not lost; the X, Close or Esc do. */
+function TaskDialog({ task, role, busy, onValidate, onReply, onClose }) {
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState([]);
   const [committedBy, setCommittedBy] = useState(() => localDateISO(new Date(), 14));
@@ -136,136 +200,128 @@ function TaskCard({ task, role, busy, onValidate, onReply }) {
     ? (photos.length === 0 ? 'Take at least one site photo first.' : 'Remove the photo that was not taken on site.')
     : null;
   const ready = note.trim() && photosReady && !commitIssue;
+  const answering = needsAnswer && !answer && !task.result;
+  const blocker = !answering ? null : photoProblem || (!note.trim() ? (kind === 'validation' ? 'Write what you found on site.' : 'Write your reply.') : commitIssue);
+  const send = async (fn) => { if (await fn()) onClose(); };
+
+  const footer = (
+    <>
+      {answering && blocker && <p className="mr-auto hidden text-xs text-slate-500 sm:block">{blocker}</p>}
+      <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+        Close
+      </button>
+      {answering && (kind === 'validation' ? (
+        <>
+          <button
+            type="button"
+            disabled={busy || !ready}
+            onClick={() => send(() => onValidate(task, 'not_confirmed', note, photos))}
+            className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+          >
+            Not as described
+          </button>
+          <button
+            type="button"
+            disabled={busy || !ready}
+            onClick={() => send(() => onValidate(task, 'confirmed', note, photos))}
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+          >
+            {busy ? 'Sending…' : 'Confirmed on site'}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || !ready}
+          onClick={() => send(() => onReply(task, note, photos, commits ? committedBy : null))}
+          className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+        >
+          {busy ? 'Sending…' : commits ? 'Send commitment' : 'Send reply'}
+        </button>
+      ))}
+    </>
+  );
 
   return (
-    <li className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-700">{task.label}</p>
-          <h3 className="mt-0.5 font-semibold text-slate-900">{title}</h3>
-          {place && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-              <MapPinIcon className="size-3.5" aria-hidden="true" />{place}
-            </p>
-          )}
+    <Modal onClose={busy ? () => {} : onClose} size="xl" title={title} description={[task.label, place].filter(Boolean).join(' · ')} closeOnBackdrop={false} footer={footer}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <TaskDeadline task={task} />
+          <span className="text-[11px] text-slate-400">Sent {fmtDate(decision.updated_at)}</span>
         </div>
-        <span className="text-[11px] text-slate-400">{fmtDate(decision.updated_at)}</span>
-      </div>
-      {needsAnswer && (kind === 'validation' || kind === 'reply') && (() => {
-        // Validation: visit the road by due_date. Reply: answer the DA by reply_due_date.
-        const deadline = deadlineStatus(kind === 'validation' ? decision.due_date : decision.reply_due_date);
-        if (!deadline) return null;
-        return (
-          <p className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${DEADLINE_TONES[deadline.tone]}`}>
-            <CalendarClockIcon className="size-3.5" aria-hidden="true" />
-            {kind === 'validation' ? 'Visit the road' : 'Reply'}: {deadline.text}
-          </p>
-        );
-      })()}
-      {detail && <p className="mt-2 text-sm text-slate-700">{detail}</p>}
-      {decision.note && <p className="mt-1 text-xs text-slate-500">DA note: “{decision.note}”</p>}
+        {detail && <p className="text-sm text-slate-700">{detail}</p>}
+        {decision.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">DA note: “{decision.note}”</p>}
 
-      <div className="mt-3 space-y-3">
         <Facts items={task.facts || []} />
         <PriorityWhy snapshot={decision.score_snapshot} />
-        <details open={needsAnswer} className="group rounded-lg border border-slate-200">
-          <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-slate-700">Map and directions</summary>
-          <div className="border-t border-slate-100 p-3">
-            <PriorityTaskMap points={task.roadPoints} title={title} kind={task.mapKind} status={task.status} />
-          </div>
-        </details>
-      </div>
+        <div className="rounded-lg border border-slate-200 p-3">
+          <p className="mb-2 text-xs font-semibold text-slate-700">Map and directions</p>
+          <PriorityTaskMap points={task.roadPoints} title={title} kind={task.mapKind} status={task.status} />
+        </div>
 
-      {task.result ? (
-        <div className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${task.result.outcome === 'done' ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
-          <p className="flex items-center gap-1.5 font-semibold">
-            {task.result.outcome === 'done'
-              ? <CheckCircle2Icon className="size-4 shrink-0" aria-hidden="true" />
-              : <XCircleIcon className="size-4 shrink-0" aria-hidden="true" />}
-            Result: {task.result.outcome === 'done' ? 'Done' : 'Not done'}
-            <span className="font-normal opacity-70">· {fmtDate(task.result.at)}</span>
-          </p>
-          {task.result.note && <p className="mt-1 text-xs">DA: “{task.result.note}”</p>}
-          {answer && <p className="mt-1 text-xs opacity-80">{answer}</p>}
-        </div>
-      ) : answer ? (
-        <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          <p className="flex items-start gap-1.5">
-            <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-            <span>{answer} The DA has been notified.</span>
-          </p>
-          {task.stage === 'decision_due' && (
-            <p className="mt-1 text-[11px] text-emerald-900/80">Your done-by date has passed. The DA will mark the result.</p>
-          )}
-          {task.stage === 'committed' && (
-            <p className="mt-1 text-[11px] text-emerald-900/80">Next: the DA marks the result (Done or Not done) and you are told.</p>
-          )}
-          <SentPhotos photos={kind === 'validation' ? decision.validation_photos : decision.response_photos} />
-        </div>
-      ) : needsAnswer && (
-        <div className="mt-3 space-y-2">
-          {photosNeeded && <PhotoEvidence task={task} photos={photos} setPhotos={setPhotos} busy={busy} />}
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            disabled={busy}
-            placeholder={kind === 'validation' ? 'What you found on site (length, surface, who uses it)…' : commits ? 'What you will do, e.g. "Add a second crew and finish the concrete pour."' : 'Your reply: what you will do and by when…'}
-            aria-label={commits ? 'What you will do' : 'Your answer'}
-            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
-          />
-          {commits && (
-            <label className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-              <span className="font-semibold text-slate-700">Done by</span>
-              <input
-                type="date"
-                value={committedBy}
-                min={localDateISO(new Date(), 1)}
-                max={localDateISO(new Date(), COMMIT_MAX_DAYS)}
-                onChange={(e) => setCommittedBy(e.target.value)}
+        {task.result ? (
+          <div className={`rounded-lg px-3 py-2.5 text-sm ${task.result.outcome === 'done' ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
+            <p className="flex items-center gap-1.5 font-semibold">
+              {task.result.outcome === 'done'
+                ? <CheckCircle2Icon className="size-4 shrink-0" aria-hidden="true" />
+                : <XCircleIcon className="size-4 shrink-0" aria-hidden="true" />}
+              Result: {task.result.outcome === 'done' ? 'Done' : 'Not done'}
+              <span className="font-normal opacity-70">· {fmtDate(task.result.at)}</span>
+            </p>
+            {task.result.note && <p className="mt-1 text-xs">DA: “{task.result.note}”</p>}
+            {answer && <p className="mt-1 text-xs opacity-80">{answer}</p>}
+          </div>
+        ) : answer ? (
+          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <p className="flex items-start gap-1.5">
+              <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>{answer} The DA has been notified.</span>
+            </p>
+            {task.stage === 'decision_due' && (
+              <p className="mt-1 text-[11px] text-emerald-900/80">Your done-by date has passed. The DA will mark the result.</p>
+            )}
+            {task.stage === 'committed' && (
+              <p className="mt-1 text-[11px] text-emerald-900/80">Next: the DA marks the result (Done or Not done) and you are told.</p>
+            )}
+            <SentPhotos photos={kind === 'validation' ? decision.validation_photos : decision.response_photos} />
+          </div>
+        ) : answering && (
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            <p className="text-sm font-semibold text-slate-900">{kind === 'validation' ? 'Your site validation' : commits ? 'Your commitment' : 'Your reply'}</p>
+            {photosNeeded && <PhotoEvidence task={task} photos={photos} setPhotos={setPhotos} busy={busy} />}
+            <label className="block text-xs font-semibold text-slate-700">
+              {kind === 'validation' ? 'What you found on site' : commits ? 'What you will do' : 'Your reply'} <span className="text-rose-500">*</span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
                 disabled={busy}
-                className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                placeholder={kind === 'validation' ? 'Length, surface, who uses it…' : commits ? 'e.g. "Add a second crew and finish the concrete pour."' : 'What you will do and by when…'}
+                className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
               />
-              <span className="text-slate-400">The DA checks the result after this date.</span>
             </label>
-          )}
-          {commits && note.trim() && commitIssue && <p className="text-[11px] text-amber-700">{commitIssue}</p>}
-          {photoProblem && photos.length > 0 && <p className="text-[11px] text-rose-600">{photoProblem}</p>}
-          {kind === 'validation' ? (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busy || !ready}
-                title={photoProblem || undefined}
-                onClick={() => onValidate(task, 'confirmed', note, photos)}
-                className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-              >
-                Confirmed on site
-              </button>
-              <button
-                type="button"
-                disabled={busy || !ready}
-                title={photoProblem || undefined}
-                onClick={() => onValidate(task, 'not_confirmed', note, photos)}
-                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-              >
-                Not as described
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={busy || !ready}
-              title={photoProblem || undefined}
-              onClick={() => onReply(task, note, photos, commits ? committedBy : null)}
-              className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-            >
-              {commits ? 'Send commitment' : 'Send reply'}
-            </button>
-          )}
-        </div>
-      )}
-    </li>
+            {commits && (
+              <label className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                <span className="font-semibold text-slate-700">Done by</span>
+                <input
+                  type="date"
+                  value={committedBy}
+                  min={localDateISO(new Date(), 1)}
+                  max={localDateISO(new Date(), COMMIT_MAX_DAYS)}
+                  onChange={(e) => setCommittedBy(e.target.value)}
+                  disabled={busy}
+                  className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+                />
+                <span className="text-slate-400">The DA checks the result after this date.</span>
+              </label>
+            )}
+            {commits && note.trim() && commitIssue && <p className="text-[11px] text-amber-700">{commitIssue}</p>}
+            {photoProblem && photos.length > 0 && <p className="text-[11px] text-rose-600">{photoProblem}</p>}
+            {blocker && <p className="text-xs text-slate-500 sm:hidden">{blocker}</p>}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -280,6 +336,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [openTaskId, setOpenTaskId] = useState(null);
 
   const load = useCallback(async () => {
     if (!client || !userId) return;
@@ -436,8 +493,10 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       await fn();
       showNotification?.(success);
       await load();
+      return true;
     } catch (err) {
       showNotification?.(err?.message || 'Could not send your answer.', 'error');
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -450,7 +509,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       confirmLabel: result === 'confirmed' ? 'Confirm' : 'Send answer',
       tone: result === 'confirmed' ? 'primary' : 'warning',
     });
-    if (ok) await run(task, () => submitValidation(client, task.id, result, note, photos), 'Your site validation was sent to the DA.');
+    return ok ? run(task, () => submitValidation(client, task.id, result, note, photos), 'Your site validation was sent to the DA.') : false;
   };
 
   const onReply = async (task, note, photos = [], committedBy = null) => {
@@ -461,7 +520,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
         : `${task.title}\n“${note.trim()}”`,
       confirmLabel: committedBy ? 'Send commitment' : 'Send reply',
     });
-    if (ok) await run(task, () => respondToAction(client, task.id, note, photos, committedBy), committedBy ? 'Your commitment was sent to the DA.' : 'Your reply was sent to the DA.');
+    return ok ? run(task, () => respondToAction(client, task.id, note, photos, committedBy), committedBy ? 'Your commitment was sent to the DA.' : 'Your reply was sent to the DA.') : false;
   };
 
   if (loading) return <div className="h-24 animate-pulse rounded-xl bg-slate-100" aria-hidden="true" />;
@@ -481,11 +540,23 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
         </p>
       ) : (
         <ul className="space-y-3">
-          {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} role={role} busy={busyId === t.id} onValidate={onValidate} onReply={onReply} />
-          ))}
+          {tasks.map((t) => <TaskCard key={t.id} task={t} onOpen={setOpenTaskId} />)}
         </ul>
       )}
+      {(() => {
+        const open = tasks.find((t) => t.id === openTaskId);
+        return open ? (
+          <TaskDialog
+            key={open.id}
+            task={open}
+            role={role}
+            busy={busyId === open.id}
+            onValidate={onValidate}
+            onReply={onReply}
+            onClose={() => setOpenTaskId(null)}
+          />
+        ) : null;
+      })()}
     </section>
   );
 }
