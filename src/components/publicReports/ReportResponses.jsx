@@ -25,11 +25,11 @@ function Row({ label, children }) {
   );
 }
 
-function Response({ icon: Icon, tone, who, role, date, children }) {
+function Response({ icon, tone, who, role, date, children }) {
   return (
     <li className={`rounded-xl border p-3.5 ${tone}`}>
       <p className="flex flex-wrap items-center gap-x-1.5 text-sm">
-        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        {icon}
         <span className="font-semibold text-slate-900">{who}</span>
         <span className="text-slate-500">· {role}</span>
         {date && <span className="ml-auto text-xs text-slate-500">{date}</span>}
@@ -53,7 +53,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
       <ol className="space-y-3">
         {finding && (
           <Response
-            icon={HardHatIcon}
+            icon={<HardHatIcon className="size-4 shrink-0" aria-hidden="true" />}
             tone="border-emerald-200 bg-emerald-50/40"
             who={responders?.engineer_name || finding.inspected_by_name || 'Field engineer'}
             role="DA field engineer"
@@ -74,7 +74,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
 
         {repairInfo && (
           <Response
-            icon={WrenchIcon}
+            icon={<WrenchIcon className="size-4 shrink-0" aria-hidden="true" />}
             tone="border-slate-200 bg-white"
             who={responders?.handler_name || repair.repaired_by_name || party}
             role={party}
@@ -94,7 +94,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
 
         {(resolution || closedReason) && (
           <Response
-            icon={ShieldCheckIcon}
+            icon={<ShieldCheckIcon className="size-4 shrink-0" aria-hidden="true" />}
             tone="border-sky-200 bg-sky-50/50"
             who="Department of Agriculture"
             role={resolution ? 'final decision' : 'closed'}
