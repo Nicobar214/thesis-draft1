@@ -1,13 +1,13 @@
 /* Who answered a road report and what they said, for anyone viewing it in
  * Community Feedback: the field engineer's finding (the cause on site and what
  * should be done), the contractor's or LGU's repair, and the DA's final word.
- * Only what the citizen views expose (submitted findings, never drafts).
+ * Only what the citizen views expose (submitted findings, never drafts). The
+ * photos are shown together in BeforeAfterCard, below this.
  *
  *   <ReportResponses client={supabase} report={report} finding={finding} repair={repair} resolution={resolution} /> */
 import { HardHatIcon, ShieldCheckIcon, WrenchIcon } from 'lucide-react';
 import useReportResponders from '../../lib/useReportResponders';
 import { repairCitizenLine, repairStatusInfo, responsiblePartyLabel, siteRatingLabel } from '../../lib/publicReportStatus';
-import ZoomablePhoto from '../ui/ZoomablePhoto';
 
 function fmtDate(value) {
   if (!value) return null;
@@ -30,11 +30,10 @@ function Response({ icon, tone, who, role, date, children }) {
     <li className={`flex flex-col rounded-xl border p-4 ${tone}`}>
       <div className="flex items-start gap-2.5 border-b border-slate-200/70 pb-3">
         <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-white text-slate-600 ring-1 ring-slate-200">{icon}</span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900" title={who}>{who}</p>
-          <p className="text-xs text-slate-500">{role}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-snug text-slate-900">{who}</p>
+          <p className="text-xs text-slate-500">{role}{date ? ` · ${date}` : ''}</p>
         </div>
-        {date && <span className="shrink-0 text-xs text-slate-500">{date}</span>}
       </div>
       <dl className="mt-3 space-y-2.5">{children}</dl>
     </li>
@@ -48,11 +47,10 @@ export default function ReportResponses({ client, report, finding, repair, resol
   if (!finding && !repairInfo && !resolution && !closedReason) return null;
 
   const party = repair ? responsiblePartyLabel(repair.responsible_party) || 'Contractor' : null;
-  const afterPhoto = repair ? repair.verification_photo_url || repair.work_photo_url : null;
   return (
     <section aria-label="Responses to this report" className="border-t border-slate-100 pt-5">
       <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">Responses</p>
-      <ol className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-3">
+      <ol className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
         {finding && (
           <Response
             icon={<HardHatIcon className="size-3.5" aria-hidden="true" />}
@@ -65,12 +63,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
             <Row label="Recommended action">{finding.recommended_action}</Row>
             <Row label="Road condition">{siteRatingLabel(finding.site_rating) && `${siteRatingLabel(finding.site_rating)} (${finding.site_rating} of 5)`}</Row>
             <Row label="Estimated repair cost">{finding.estimated_cost_range && `${finding.estimated_cost_range} (estimate only)`}</Row>
-            <div className="space-y-2">
-              {finding.field_photo_url && (
-                <ZoomablePhoto src={finding.field_photo_url} alt="Engineer's on-site photo" wrapperClassName="w-40 rounded-lg border border-emerald-200" className="aspect-[4/3] w-full object-cover" />
-              )}
-              <p className="text-xs text-slate-500">{finding.validated_at ? 'Checked and verified by the DA.' : 'Waiting for the DA to verify.'}</p>
-            </div>
+            <p className="text-xs text-slate-500">{finding.validated_at ? 'Checked and verified by the DA.' : 'Waiting for the DA to verify.'}</p>
           </Response>
         )}
 
@@ -86,11 +79,6 @@ export default function ReportResponses({ client, report, finding, repair, resol
             <Row label="Target date">{repair.status === 'planned' && fmtDate(repair.target_date)}</Row>
             <Row label="Recorded done">{fmtDate(repair.completed_at)}</Row>
             <Row label="Confirmed on site">{repair.verified_at && `${fmtDate(repair.verified_at)}${repair.verified_by_name ? ` by ${repair.verified_by_name}` : ''}`}</Row>
-            {afterPhoto && (
-              <div>
-                <ZoomablePhoto src={afterPhoto} alt="The site after the work" wrapperClassName="w-40 rounded-lg border border-slate-200" className="aspect-[4/3] w-full object-cover" />
-              </div>
-            )}
           </Response>
         )}
 

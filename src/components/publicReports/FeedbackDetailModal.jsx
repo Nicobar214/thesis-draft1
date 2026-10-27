@@ -286,14 +286,13 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
             </div>
           )}
 
-          {report && <BeforeAfterCard report={report} repair={repair} isMine={Boolean(item._isMine)} />}
-
         </div>
 
-        {/* Who answered, side by side under both columns. */}
+        {/* Then, under both columns: who answered, and last the photos that show the result. */}
         {report && (
-          <div className="lg:col-span-2">
+          <div className="space-y-6 lg:col-span-2">
             <ReportResponses client={client} report={report} finding={finding} repair={repair} resolution={resolution} />
+            <BeforeAfterCard report={report} repair={repair} finding={finding} isMine={Boolean(item._isMine)} />
           </div>
         )}
       </div>
