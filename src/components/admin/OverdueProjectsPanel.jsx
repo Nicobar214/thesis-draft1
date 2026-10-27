@@ -149,7 +149,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   const projectById = useMemo(() => new Map(projects.map((p) => [String(p.id), p])), [projects]);
   const inScope = useCallback((projectId) => !scopeIds || scopeIds.has(String(projectId)), [scopeIds]);
   const scopedCases = useMemo(() => cases.filter((c) => inScope(c.project_id)), [cases, inScope]);
-  const scopedProjects = useMemo(() => projects.filter((p) => inScope(p.id)), [projects, inScope]);
   // Open follow-ups the scope hides, for the "show all" note.
   const hiddenCount = useMemo(() => (scopeIds
     ? cases.filter((c) => c.status !== 'closed' && !inScope(c.project_id)).length
@@ -158,24 +157,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     const p = list.find((x) => x.id === id);
     return p ? (p.full_name || p.email || 'Unnamed') : null;
   }, []);
-
-  // The same summary the daily check sends: overdue without contractor, unreadable and blank dates.
-  const summary = useMemo(() => {
-    const ongoing = scopedProjects.filter((p) => String(p.status || '').trim().toLowerCase().replace(/\s/g, '') === 'on-going');
-    const unassigned = [];
-    const unreadable = [];
-    let blank = 0;
-    ongoing.forEach((p) => {
-      const raw = String(p.target_completion_date ?? '').trim();
-      if (!raw) { blank += 1; return; }
-      const t = parseTargetDate(raw);
-      if (!t) { unreadable.push(p); return; }
-      if (t < today && !p.contractor_id) unassigned.push({ p, daysLate: daysBetween(t, today) });
-    });
-    unassigned.sort((a, b) => b.daysLate - a.daysLate);
-    return { unassigned, unreadable, blank };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedProjects, today.getTime()]);
 
   // A project can have several follow-ups over time (one per round). Each list shows ONE card per project, its latest follow-up there;
   // the earlier ones are listed on that card (earlierCases).
@@ -526,24 +507,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
               Show all municipalities
             </button>
           )}
-        </div>
-      )}
-
-      {(summary.unassigned.length > 0 || summary.unreadable.length > 0 || summary.blank > 0) && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900">
-          <p className="flex items-center gap-2 font-semibold"><TriangleAlertIcon className="size-4" aria-hidden="true" /> Not followed up automatically</p>
-          {summary.unassigned.length > 0 && (
-            <p className="mt-1.5">
-              {summary.unassigned.length} overdue On-Going project(s) have no contractor, so no follow-up was opened. Assign a contractor to start one:{' '}
-              {summary.unassigned.map(({ p, daysLate }, i) => (
-                <span key={p.id}>{i > 0 && '; '}<button type="button" onClick={() => onOpenProject?.(p)} className="font-medium underline-offset-2 hover:underline">{p.project_name}</button> ({daysLate} day(s) late)</span>
-              ))}
-            </p>
-          )}
-          {summary.unreadable.length > 0 && (
-            <p className="mt-1.5">Target dates that could not be read: {summary.unreadable.map((p) => `${p.project_name} ("${p.target_completion_date}")`).join('; ')}.</p>
-          )}
-          {summary.blank > 0 && <p className="mt-1.5">{summary.blank} On-Going project(s) have no target date.</p>}
         </div>
       )}
 
