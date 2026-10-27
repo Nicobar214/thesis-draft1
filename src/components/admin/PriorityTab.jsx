@@ -10,8 +10,9 @@ import { normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import {
   actionOwner, canEndorse, canMove, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, decisionFor, DEFAULT_REPLY_DAYS, DEFAULT_VALIDATION_DAYS, finishedFollowUps,
   isFinal, loadDecisions, localDateISO, nextStatus, ONGOING_ACTIONS, resumeStatus, saveDecision, skippedAhead, snapshotOf, STEP_ACTIONS,
-  closeWithOutcome, OUTCOME_LABELS, priorityStage,
+  closeWithOutcome, OUTCOME_LABELS, priorityStage, canDrop, DROP_REASONS, MIN_REASON,
 } from '../../lib/priorityDecisions';
+import { completionTiming } from '../../lib/projectDeadlines';
 import { confirm as confirmDialog } from '../../lib/confirm';
 import { SentPhotos } from '../priority/PriorityTasksPanel';
 import { boundsFromPoints, getRouteStatusTheme } from '../../lib/mapRouteUtils';
@@ -131,6 +132,13 @@ function isDeliberateCardClick(event, pressedAt) {
 }
 
 const formatDay = (iso) => new Date(`${iso}T00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+/* "Nov 18, 2026" from a stored date ('YYYY-MM-DD' or written out); as stored if unreadable. */
+const plainDay = (value) => {
+  const s = String(value || '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  const d = iso ? new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])) : new Date(s);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 function formatTimestamp(value) {
   if (!value) return 'Not calculated yet';
@@ -138,13 +146,14 @@ function formatTimestamp(value) {
 }
 
 const STEP_REMINDERS = {
-  shortlisted: 'It joins the shortlist the DA will act on. Nothing is funded yet.',
-  for_validation: 'Send a field engineer to confirm the gap on the ground (length, surface, who it serves) before endorsing it.',
-  endorsed: 'Only endorse after the site validation confirms the gap. This marks it as recommended for funding.',
+  shortlisted: 'The DA evaluates this road next. Nothing is funded yet.',
+  for_validation: 'Send a field engineer to confirm the gap on the ground (length, surface, who it serves) before going further.',
+  endorsed: 'The site validation confirmed this road. The LGU is told that an FMR project will start in their municipality.',
   converted: 'Opens the Add Project form filled in from this gap. The project stays private until its Work Plan is finalized.',
-  flagged: 'Marks this ongoing project as needing DA attention.',
+  dropped: 'The road leaves the ranking for good. The reason, the engineer\'s answer and the photos stay in the record.',
+  flagged: 'The project becomes a DA priority: the contractor sees a DA PRIORITY badge and finds it under "Do These First". Nothing else is asked of them.',
   action_recorded: 'Records the action the DA decided for this project.',
-  closed: 'Ends the follow-up for this project. The decision stays in the record.',
+  closed: 'Ends the DA priority on this project. The decision stays in the record.',
 };
 
 /* The decision step for one ranked road: current status, and the one next
@@ -162,6 +171,7 @@ const skippedRanks = (skipped, max = 4) =>
 
 function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineers = [], skipped = [] }) {
   const [note, setNote] = useState('');
+  const [dropReason, setDropReason] = useState('');
   const [action, setAction] = useState(ONGOING_ACTIONS[0]);
   const [engineerId, setEngineerId] = useState('');
   const [dueDate, setDueDate] = useState(() => localDateISO(new Date(), DEFAULT_VALIDATION_DAYS));
@@ -177,13 +187,17 @@ function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineer
     const e = fieldEngineers.find((x) => x.id === id);
     return e?.full_name || e?.email || 'the field engineer';
   };
-  // Endorsing needs the engineer's on-site confirmation first.
+  // Notifying the LGU needs the engineer's on-site confirmation first.
+  const droppable = entry.kind === 'gap' && canDrop(decision);
   const blockedReason = next === 'endorsed' && !canEndorse(decision)
-    ? (decision?.validation_result === 'not_confirmed' ? 'The engineer did not confirm this road. Defer it, or resume to send it again.' : 'Waiting for the site validation.')
+    ? (droppable ? 'The engineer did not confirm this road. Drop it with a reason, or put it on hold.' : 'Waiting for the site validation.')
     : next === 'for_validation' && !engineerId ? 'Choose a field engineer.'
       : next === 'for_validation' && (!dueDate || dueDate < today) ? 'Set a visit deadline from today on.'
       : next === 'action_recorded' && (!replyDue || replyDue < today) ? 'Set a reply date from today on.'
-        : skipped.length > 0 && !note.trim() ? `Write why this one goes ahead of higher-ranked ${groupNoun(entry.kind)}.` : null;
+        : entry.kind === 'project' && next === 'closed' && note.trim().length < MIN_REASON ? `Write why the priority ends (at least ${MIN_REASON} characters).`
+          : skipped.length > 0 && !note.trim() ? `Write why this one goes ahead of higher-ranked ${groupNoun(entry.kind)}.` : null;
+  const dropBlocked = !dropReason ? 'Choose a reason.' : note.trim().length < MIN_REASON ? `Write a note (at least ${MIN_REASON} characters).` : null;
+  const prioritized = priorityStage(decision);
 
   // The END of a project's action: the DA marks the result (supabase_priority_commitment_outcome.sql).
   const awaitingResult = entry.kind === 'project' && status === 'action_recorded';
@@ -197,13 +211,18 @@ function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineer
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium text-slate-500">Decision</span>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-          finished ? 'bg-emerald-100 text-emerald-800' : deferred ? 'bg-slate-200 text-slate-700' : status === 'ranked' ? 'bg-white text-slate-600 ring-1 ring-slate-200' : 'bg-teal-100 text-teal-800'
+          status === 'dropped' ? 'bg-rose-100 text-rose-800' : finished ? 'bg-emerald-100 text-emerald-800' : deferred ? 'bg-slate-200 text-slate-700' : status === 'ranked' ? 'bg-white text-slate-600 ring-1 ring-slate-200' : 'bg-teal-100 text-teal-800'
         }`}>
           {DECISION_LABELS[status]}
         </span>
       </div>
 
       {decision?.action && <p className="text-[11px] text-slate-600">Action: <span className="font-semibold">{decision.action}</span></p>}
+      {prioritized?.stage === 'priority' && (
+        <p className="text-[11px] text-teal-800">
+          The contractor sees this as <span className="font-semibold">DA priority{prioritized.rank ? ` #${prioritized.rank}` : ''}</span> under &ldquo;Do These First&rdquo;.
+        </p>
+      )}
       {decision?.note && <p className="line-clamp-2 text-[11px] text-slate-500">“{decision.note}”</p>}
 
       {/* What the field engineer / contractor did with it */}
@@ -243,15 +262,63 @@ function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineer
         )
       )}
 
-      {finished ? (
+      {status === 'dropped' ? (
+        <p className="flex items-start gap-1 text-[11px] font-medium text-rose-700">
+          <XCircleIcon className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          Dropped: {DROP_REASONS[decision?.drop_reason] || 'no reason recorded'}. This road&rsquo;s decision is final.
+        </p>
+      ) : finished ? (
         <p className="flex items-center gap-1 text-[11px] font-medium text-emerald-700">
           <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
           {entry.kind === 'gap'
             ? `FMR project${decision?.fmr_project_id ? ` #${decision.fmr_project_id}` : ''} created. Next: its Work Plan.`
             : decision?.outcome
               ? `Result: ${OUTCOME_LABELS[decision.outcome]}${decision.outcome_note ? ` · “${decision.outcome_note}”` : ''}`
-              : 'Follow-up closed.'}
+              : `DA priority ended${decision?.outcome_note || decision?.note ? `: ${decision.outcome_note || decision.note}` : '.'}`}
         </p>
+      ) : droppable ? (
+        <div className="space-y-2">
+          <p className="text-[11px] text-slate-600">The engineer found this road not as described. Drop it, or put it on hold to look at it again later.</p>
+          <select
+            value={dropReason}
+            onChange={(e) => setDropReason(e.target.value)}
+            disabled={busy}
+            aria-label="Why the road is dropped"
+            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
+          >
+            <option value="">Reason for dropping…</option>
+            {Object.entries(DROP_REASONS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={busy}
+            placeholder={`Note (at least ${MIN_REASON} characters)`}
+            aria-label="Note on the decision"
+            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy || Boolean(dropBlocked)}
+              title={dropBlocked || undefined}
+              onClick={() => onStep({ entry, from: status, to: 'dropped', note, dropReason, decision }).then((ok) => { if (ok) { setNote(''); setDropReason(''); } })}
+              className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            >
+              <XCircleIcon className="size-3.5" aria-hidden="true" /> {STEP_ACTIONS.dropped}
+            </button>
+            <button
+              type="button"
+              disabled={busy || note.trim().length === 0}
+              title={note.trim() ? 'Put on hold with this note' : 'Write a note first'}
+              onClick={() => onStep({ entry, from: status, to: 'deferred', note }).then((ok) => ok && setNote(''))}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Put on hold
+            </button>
+          </div>
+        </div>
       ) : awaitingResult ? (
         <div className="space-y-2">
           <input
@@ -344,7 +411,9 @@ function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineer
             value={note}
             onChange={(e) => setNote(e.target.value)}
             disabled={busy}
-            placeholder={deferred ? 'Why resume? (optional)' : skipped.length > 0 ? 'Reason (required)' : 'Note (needed to defer)'}
+            placeholder={deferred ? 'Why resume? (optional)'
+              : entry.kind === 'project' && next === 'closed' ? `Why the priority ends (at least ${MIN_REASON} characters)`
+                : skipped.length > 0 ? 'Reason (required)' : 'Note (needed to put on hold)'}
             aria-label={skipped.length > 0 ? 'Reason for prioritizing out of rank order' : 'Decision note'}
             className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
           />
@@ -390,11 +459,11 @@ function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineer
               <button
                 type="button"
                 disabled={busy || !note.trim()}
-                title={note.trim() ? 'Defer with this note' : 'Write a note first'}
+                title={note.trim() ? 'Put on hold with this note' : 'Write a note first'}
                 onClick={() => onStep({ entry, from: status, to: 'deferred', note }).then((ok) => ok && setNote(''))}
                 className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
-                Defer
+                Put on hold
               </button>
             )}
           </div>
@@ -458,38 +527,61 @@ export default function PriorityTab({
     () => finishedFollowUps(decisions, projects, (p) => normalizeRouteStatus(p.status) === 'On-Going'),
     [decisions, projects],
   );
+  // Days added to a project's target by approved extensions (for "target extended by").
+  const extensionDays = async (projectId) => {
+    try {
+      const { data, error } = await client.from('project_time_extensions').select('days_granted').eq('project_id', projectId);
+      if (error) return 0;
+      return (data || []).reduce((sum, r) => sum + (Number(r.days_granted) || 0), 0);
+    } catch {
+      return 0;
+    }
+  };
+
   const closeFinished = async ({ decision, project }) => {
     const ok = await confirmDialog({
-      title: `Close the follow-up on ${project.project_name}?`,
-      message: `The project is now ${project.status || 'no longer on-going'}, so it has left the ranking. Closing ends the follow-up (${DECISION_LABELS[decision.status]}). The contractor and the site engineer are told it is closed, and the decision stays in the record.`,
-      confirmLabel: 'Close follow-up',
+      title: `End the DA priority on ${project.project_name}?`,
+      message: `The project is now ${project.status || 'no longer on-going'}, so it has left the ranking. This ends the DA priority (${DECISION_LABELS[decision.status]})${normalizeRouteStatus(project.status) === 'Completed' ? ' and records whether it finished ahead of schedule' : ''}. The contractor and the site engineer are told, and the decision stays in the record.`,
+      confirmLabel: 'End priority',
       tone: 'primary',
     });
     if (!ok) return;
     setBusyKey(`project:${project.id}`);
     try {
-      const reason = `Closed: the project is now ${String(project.status || 'finished').toLowerCase()}.`;
+      const completed = normalizeRouteStatus(project.status) === 'Completed';
       if (decision.status === 'action_recorded') {
         // A recorded action ends with a result: a completed project counts as done.
-        const completed = normalizeRouteStatus(project.status) === 'Completed';
+        const reason = `Closed: the project is now ${String(project.status || 'finished').toLowerCase()}.`;
         await closeWithOutcome(client, decision.id, completed ? 'done' : 'not_done', reason);
       } else {
-        await saveDecision(client, { kind: 'project', id: project.id, from: decision.status, to: 'closed', finishedClose: true, note: reason });
+        // A prioritized project ends with its schedule result, kept on the record.
+        const timing = completed ? completionTiming(project, await extensionDays(project.id)) : null;
+        const reason = completed
+          ? `Project completed${project.date_completed ? ` ${plainDay(project.date_completed)}` : ''}${timing ? `, ${timing.text.replace(/^Completed /, '')}` : ''}.`
+          : `The project is now ${String(project.status || 'no longer on-going').toLowerCase()}.`;
+        await saveDecision(client, { kind: 'project', id: project.id, from: decision.status, to: 'closed', finishedClose: true, note: reason, outcomeNote: reason });
       }
       await refreshDecisions();
-      showNotification?.(`${project.project_name}: follow-up closed.`);
+      showNotification?.(`${project.project_name}: DA priority ended.`);
     } catch (err) {
-      showNotification?.(err?.message || 'Could not close the follow-up.', 'error');
+      showNotification?.(err?.message || 'Could not end the priority.', 'error');
     } finally {
       setBusyKey(null);
     }
   };
 
-  // A gap that became an FMR project leaves the New group.
+  // A gap that became an FMR project, or was dropped, leaves the New group.
   const convertedGapIds = useMemo(
-    () => [...decisions.values()].filter((d) => d.candidate_kind === 'gap' && d.status === 'converted').map((d) => d.candidate_id),
+    () => [...decisions.values()].filter((d) => d.candidate_kind === 'gap' && (d.status === 'converted' || d.status === 'dropped')).map((d) => d.candidate_id),
     [decisions],
   );
+  const droppedRoads = useMemo(() => {
+    const byId = new Map((roadGaps || []).map((g) => [String(g.id), g]));
+    return [...decisions.values()]
+      .filter((d) => d.candidate_kind === 'gap' && d.status === 'dropped')
+      .map((d) => ({ decision: d, gap: byId.get(String(d.candidate_id)) || null }));
+  }, [decisions, roadGaps]);
+  const lguCountRef = useRef(null); // LGU accounts the "Notify LGU" notice reaches
 
   const result = useMemo(
     () => computePriority({ gaps: roadGaps, projects, routesByProjectId, reports, farmers, markets, proposals, excludeGapIds: convertedGapIds }),
@@ -509,15 +601,26 @@ export default function PriorityTab({
   // Who hears about each step (supabase_priority_roles.sql sends the notifications).
   const whoIsTold = (entry, to, action, engineerLabel, dueDate) => {
     if (to === 'for_validation') return `${engineerLabel || 'The field engineer'} is notified to check the road on site${dueDate ? ` by ${new Date(`${dueDate}T00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' })}` : ''}. The date is shown on their task.`;
+    if (to === 'endorsed') {
+      const town = entry.municipality || 'Leon';
+      const count = lguCountRef.current;
+      if (count === 0) return `No LGU account is set up for ${town}, so nobody will be notified. You can still continue.`;
+      return `The LGU of ${town}${count ? ` (${count} account${count === 1 ? '' : 's'})` : ''} is notified that an FMR project will start in their municipality.`;
+    }
     if (to === 'flagged') return 'The contractor and the site engineer are notified.';
     if (to === 'action_recorded') return `The ${actionOwner(action) === 'site_engineer' ? 'site engineer' : 'contractor'} is notified and asked to reply${replyDueRef.current ? ` by ${formatDay(replyDueRef.current)}` : ''}. If it is late, they and the admins get a daily reminder.`;
-    if (to === 'closed') return 'The contractor and the site engineer are told it is closed.';
+    if (to === 'closed') return 'The contractor and the site engineer are told the DA priority ended.';
     return '';
   };
 
-  const handleStep = async ({ entry, from, to, note = '', action = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, engineerLabel = null, skipped = [] }) => {
-    const label = to === 'deferred' ? 'Defer' : from === 'deferred' ? 'Resume' : STEP_ACTIONS[to];
+  const handleStep = async ({ entry, from, to, note = '', action = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, engineerLabel = null, skipped = [], dropReason = null, decision = null }) => {
+    const label = to === 'deferred' ? 'Put on hold' : from === 'deferred' ? 'Resume' : STEP_ACTIONS[to];
     replyDueRef.current = replyDueDate;
+    if (to === 'endorsed') {
+      // How many LGU accounts the notice reaches (null when it cannot be checked).
+      const { data, error } = await client.rpc('priority_lgu_recipients', { p_municipality: entry.municipality || 'Leon' });
+      lguCountRef.current = error || typeof data !== 'number' ? null : data;
+    }
     // Out of rank order: a friendly warning, and the reason goes on record.
     const outOfOrder = skipped.length > 0 && to !== 'deferred' && from === 'ranked';
     const ok = outOfOrder ? await confirmDialog({
@@ -538,10 +641,12 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
     }) : await confirmDialog({
       title: `${label}: ${entry.title}?`,
       message: `Rank #${entry.rank}, score ${entry.score}/100.${action ? ` Action: ${action}.` : ''}\n\n${
-        to === 'deferred' ? `It leaves the active process until resumed. Reason: "${note.trim()}"` : (STEP_REMINDERS[to] || '')
+        to === 'deferred' ? `It leaves the active process until resumed. Reason: "${note.trim()}"`
+          : to === 'dropped' ? `${STEP_REMINDERS.dropped}\n\nReason: ${DROP_REASONS[dropReason] || '—'}. "${note.trim()}"`
+            : (STEP_REMINDERS[to] || '')
       }${whoIsTold(entry, to, action, engineerLabel, dueDate) ? `\n\n${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
       confirmLabel: label,
-      tone: to === 'deferred' ? 'warning' : 'primary',
+      tone: to === 'deferred' ? 'warning' : to === 'dropped' ? 'danger' : 'primary',
     });
     if (!ok) return false;
 
@@ -559,7 +664,9 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
       const snapshot = outOfOrder
         ? { ...snapshotOf(entry), skipped_ahead_of: skipped.map(({ id, rank, title, score }) => ({ id, rank, title, score })) }
         : snapshotOf(entry);
-      await saveDecision(client, { kind: entry.kind, id: entry.id, from, to, note, action, assignedEngineerId, dueDate, replyDueDate, snapshot });
+      // Ending a priority by hand: the reason is also what the contractor sees for a while.
+      const outcomeNote = entry.kind === 'project' && to === 'closed' ? `Priority removed: ${note.trim()}` : null;
+      await saveDecision(client, { kind: entry.kind, id: entry.id, from, to, note, action, assignedEngineerId, dueDate, replyDueDate, snapshot, decision, dropReason, outcomeNote });
       await refreshDecisions();
       showNotification?.(`${entry.title}: ${DECISION_LABELS[to]}.`);
       return true;
@@ -584,7 +691,7 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
       title: done ? `Mark "${entry.title}" as done?` : `Mark "${entry.title}" as not done?`,
       message: done
         ? `The "${decision?.action}" follow-up is finished and the contractor is told it is done.`
-        : `The follow-up is finished as not done. The contractor is told why: “${note.trim()}”. You can record a new action on this project afterwards.`,
+        : `The follow-up ends here as not done. The contractor is told why: “${note.trim()}”. If the project falls behind its schedule, the Overdue process takes over.`,
       confirmLabel: done ? 'Mark as done' : 'Mark as not done',
       tone: done ? 'primary' : 'danger',
     });
@@ -873,7 +980,7 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
         {group === 'ongoing' && finished.length > 0 && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
             <p className="text-sm font-semibold text-amber-900">
-              {finished.length} open follow-up{finished.length > 1 ? 's' : ''} on project{finished.length > 1 ? 's' : ''} no longer on-going
+              {finished.length} DA priorit{finished.length > 1 ? 'ies' : 'y'} on project{finished.length > 1 ? 's' : ''} no longer on-going: end {finished.length > 1 ? 'them' : 'it'} to record the result
             </p>
             <ul className="mt-2 space-y-2">
               {finished.map(({ decision, project }) => (
@@ -881,6 +988,9 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                   <span className="min-w-0">
                     <span className="font-medium text-slate-900">{project.project_name}</span>
                     <span className="text-slate-500"> · now {project.status || 'finished'} · {DECISION_LABELS[decision.status]}</span>
+                    {completionTiming(project) && (
+                      <span className="block text-xs text-slate-500">{completionTiming(project).text}</span>
+                    )}
                   </span>
                   <button
                     type="button"
@@ -888,7 +998,7 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                     onClick={() => closeFinished({ decision, project })}
                     className="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
                   >
-                    Close follow-up
+                    End priority
                   </button>
                 </li>
               ))}
@@ -906,6 +1016,28 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                 <li key={c.id}>
                   <span className="font-medium text-slate-800">{c.title}</span>
                   {' '}is {Math.round(c.coveredBy.share * 100)}% on <span className="font-medium">{c.coveredBy.name}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {group === 'newRoads' && droppedRoads.length > 0 && (
+          <details className="rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium text-rose-800">
+              {droppedRoads.length} road{droppedRoads.length > 1 ? 's' : ''} dropped after site validation
+            </summary>
+            <ul className="mt-2 space-y-2 text-xs text-slate-600">
+              {droppedRoads.map(({ decision: d, gap }) => (
+                <li key={d.id} className="rounded-lg bg-rose-50/50 px-3 py-2 ring-1 ring-rose-100">
+                  <span className="font-medium text-slate-800">{gap?.source_road_name || gap?.gap_code || `Road gap #${d.candidate_id}`}</span>
+                  {gap?.barangay && <span className="text-slate-500"> · {[gap.barangay, gap.barangay_end].filter(Boolean).join(' → ')}</span>}
+                  <span className="block">
+                    <span className="font-semibold text-rose-700">{DROP_REASONS[d.drop_reason] || 'Dropped'}</span>
+                    {d.note && <> · &ldquo;{d.note}&rdquo;</>}
+                    {d.updated_at && <span className="text-slate-400"> · {plainDay(d.updated_at)}</span>}
+                  </span>
+                  {d.validation_note && <span className="block text-slate-500">Engineer: &ldquo;{d.validation_note}&rdquo;</span>}
+                  <SentPhotos photos={d.validation_photos} />
                 </li>
               ))}
             </ul>
