@@ -14,6 +14,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import ProjectProgressTimeline from './ProjectProgressTimeline';
 import ProjectExtensions from './fmrProjects/ProjectExtensions';
+import CompletionTiming from './fmrProjects/CompletionTiming';
 import ContractorHistory from './fmrProjects/ContractorHistory';
 import ProjectRouteMiniMap from './map/ProjectRouteMiniMap';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
@@ -86,6 +87,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
           {project.date_completed && (
             <DetailItem icon={<Icons.Calendar />} label="Date Completed" value={project.date_completed} />
           )}
+          <CompletionTiming project={project} className="self-center justify-self-start sm:col-span-2 lg:col-span-3" />
           {project.project_length_km > 0 && (
             <DetailItem icon={<Icons.Ruler />} label="Road Length" value={`${project.project_length_km} km`} />
           )}

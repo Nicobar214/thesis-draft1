@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { supabaseContractor as supabase } from '../../lib/supabase';
 import ProjectExtensions from '../fmrProjects/ProjectExtensions';
+import CompletionTiming from '../fmrProjects/CompletionTiming';
 import ContractorHistory from '../fmrProjects/ContractorHistory';
 import ProjectPriorityCard from '../priority/ProjectPriorityCard';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
@@ -177,6 +178,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], p
             <Row label="Date started" value={fmtDate(project.date_started)} />
             <Row label="Target completion" value={project.target_completion_date || '—'} />
             <Row label="Date completed" value={project.date_completed || '—'} />
+            <CompletionTiming project={project} client={supabase} className="col-span-2 sm:col-span-3 justify-self-start" />
             <Row label="Location" value={project.location} />
             <Row label="Funding source" value={project.funding_source} />
             <Row label="Contract amount" value={project.contract_amount ? formatPeso(project.contract_amount) : '—'} />
