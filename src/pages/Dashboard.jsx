@@ -68,6 +68,7 @@ import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectDeadlinesView from '../components/admin/ProjectDeadlinesView';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
 import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
+import TargetCompletionNote from '../components/fmrProjects/TargetCompletionNote';
 import CompletionTiming from '../components/fmrProjects/CompletionTiming';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
@@ -10187,6 +10188,7 @@ A new LGU account will be created with this email and password.`,
                       <div className="rounded-xl bg-slate-50 p-3">
                         <p className="text-xs uppercase tracking-wider text-slate-500">Target Completion</p>
                         <p className="mt-1 text-sm font-semibold text-slate-900">{formatProjectDetailDate(detailValue('target_completion_date', 'targetCompletionDate'))}</p>
+                        {isFmrProject && rawProject.id != null && <TargetCompletionNote projectId={rawProject.id} client={supabase} />}
                       </div>
                       <div className="rounded-xl bg-slate-50 p-3">
                         <p className="text-xs uppercase tracking-wider text-slate-500">Date Completed</p>
