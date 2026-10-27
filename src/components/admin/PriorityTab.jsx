@@ -1,5 +1,5 @@
 import { CheckCircle2Icon, RotateCwIcon, TriangleAlertIcon, XCircleIcon, ZapIcon } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -47,11 +47,55 @@ function FitBoundsComponent({ points }) {
   return null;
 }
 
+/* A mini map that fails (Leaflet throws while many maps mount at once, e.g.
+   switching to "Ongoing projects") stays inside its card instead of taking the
+   whole tab down; React's retry of the crashed map was what then reported
+   "Map container is being reused by another instance". */
+class MiniMapBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('Priority mini map failed', error);
+  }
+
+  render() {
+    if (this.state.failed) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+/* True once the element is near the screen. The ongoing list has a map per card
+   (20+); drawing them as they scroll in keeps a group switch from starting every
+   Leaflet map at once. */
+function useNearScreen() {
+  const ref = useRef(null);
+  // Without IntersectionObserver (old browsers, tests) every map is drawn at once.
+  const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || near) return undefined;
+    const io = new IntersectionObserver((items) => {
+      if (items.some((i) => i.isIntersecting)) { setNear(true); io.disconnect(); }
+    }, { rootMargin: '300px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  return [ref, near];
+}
+
 /* The candidate's line: a gap's surveyed unpaved section (dashed red), or an
  * ongoing project's route (its status color). Nothing is drawn without real
  * geometry. */
 function PriorityRoadMiniMap({ entry, onViewOnMap }) {
   const { points, gap, project, kind } = entry;
+  const [frameRef, near] = useNearScreen();
   if (!points || points.length < 2) {
     return (
       <div className="rounded-xl border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-500">
@@ -79,7 +123,15 @@ function PriorityRoadMiniMap({ entry, onViewOnMap }) {
         )}
       </div>
 
-      <div className="h-44 w-full relative z-0">
+      <div ref={frameRef} className="h-44 w-full relative z-0 bg-slate-100">
+        {near && (
+        <MiniMapBoundary
+          fallback={(
+            <div className="grid h-full place-items-center px-3 text-center text-xs text-slate-500">
+              Map could not load here.{onViewOnMap ? ' Use "View on map" above.' : ''}
+            </div>
+          )}
+        >
         <MapContainer center={points[0]} zoom={14} style={{ width: '100%', height: '100%' }} scrollWheelZoom={false} className="z-0">
           <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Polyline positions={points} pathOptions={{ color: '#ffffff', weight: 7, opacity: 0.75 }} />
@@ -104,6 +156,8 @@ function PriorityRoadMiniMap({ entry, onViewOnMap }) {
           </Marker>
           <FitBoundsComponent points={points} />
         </MapContainer>
+        </MiniMapBoundary>
+        )}
       </div>
     </div>
   );
