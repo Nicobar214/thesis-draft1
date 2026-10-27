@@ -6,7 +6,7 @@
  *   <TargetCompletionNote projectId={project.id} client={supabase} /> */
 import { useEffect, useState } from 'react';
 import { supabase as defaultClient } from '../../lib/supabase';
-import { causeLabel, fmtDay } from '../../lib/delayCases';
+import { causeLabel, daysBetween, fmtDay, parseTargetDate } from '../../lib/delayCases';
 
 export default function TargetCompletionNote({ projectId, client = defaultClient, className = '' }) {
   const [rows, setRows] = useState([]);
@@ -21,7 +21,7 @@ export default function TargetCompletionNote({ projectId, client = defaultClient
 
   if (!rows.length) return null;
   const latest = rows[rows.length - 1];
-  const totalDays = rows.reduce((sum, r) => sum + (Number(r.days_added) || 0), 0);
+  const totalDays = daysBetween(parseTargetDate(rows[0].previous_target), parseTargetDate(latest.new_target));
   const reason = latest.contractor_explanation || latest.da_reason;
   return (
     <div className={`mt-1.5 space-y-0.5 text-xs text-slate-600 ${className}`}>
