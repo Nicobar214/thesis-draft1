@@ -5,6 +5,7 @@ import { resolveLoginEmail } from "../lib/farmerAuth";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
+import ForgotPasswordNote from "../components/auth/ForgotPasswordNote";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -163,6 +164,8 @@ export default function FarmerAuth() {
                 )}
               </button>
             </form>
+
+            <ForgotPasswordNote who="your Municipal Agriculture Office or the DA administrator" />
 
             <div className="mt-6 text-center">
               <Link to="/" className="text-xs sm:text-sm text-slate-500 hover:text-emerald-600 transition font-semibold inline-flex items-center gap-1">

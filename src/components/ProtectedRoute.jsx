@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { getSupabaseForRole } from '../lib/supabase';
 import { isConnectionError, getCurrentUser, rememberRole, rememberedRole } from '../lib/offlineCache';
 import Logo from './Logo';
+import ForcePasswordChange from './auth/ForcePasswordChange';
 import { PortalPageSkeleton } from './PageSkeletons';
 import {
   LguPageSkeleton,
@@ -61,6 +62,9 @@ export default function ProtectedRoute({ children, requiredRole }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+  // The DA admin reset this account's password: a new one must be set first
+  // (supabase_admin_password_reset.sql). False when offline or before that SQL.
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -98,6 +102,8 @@ export default function ProtectedRoute({ children, requiredRole }) {
             const confirmed = normalizeRole(profile.role) || 'user';
             rememberRole(currentUser.id, confirmed);
             setRole(confirmed);
+            const { data: pending } = await client.rpc('my_password_reset_pending');
+            setMustChangePassword(pending === true);
           } else {
             setRole('user');
           }
@@ -146,6 +152,10 @@ export default function ProtectedRoute({ children, requiredRole }) {
     }
     // User trying to access admin/engineer pages → send to user dashboard
     return <Navigate to="/user" replace />;
+  }
+
+  if (mustChangePassword) {
+    return <ForcePasswordChange client={getSupabaseForRole(requiredRole)} onDone={() => setMustChangePassword(false)} />;
   }
 
   return <Suspense fallback={loadingFallback}>{children}</Suspense>;

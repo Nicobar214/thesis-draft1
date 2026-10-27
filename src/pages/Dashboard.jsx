@@ -69,6 +69,7 @@ import ProjectDeadlinesView from '../components/admin/ProjectDeadlinesView';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
 import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
 import TargetCompletionNote from '../components/fmrProjects/TargetCompletionNote';
+import AccountPasswordReset from '../components/admin/AccountPasswordReset';
 import CompletionTiming from '../components/fmrProjects/CompletionTiming';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
@@ -8569,6 +8570,7 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                 { label: 'LGU accounts', value: lgus.length },
               ]}
             />
+            <AccountPasswordReset client={supabase} />
             <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
               <div className="p-8 space-y-8">
                 {/* Field Engineers Management */}

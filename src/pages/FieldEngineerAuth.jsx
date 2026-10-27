@@ -4,6 +4,7 @@ import { supabaseFieldEngineer as supabase } from "../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "../components/Logo";
 import AuthBackground from "../components/AuthBackground";
+import ForgotPasswordNote from "../components/auth/ForgotPasswordNote";
 
 function normalizeRole(role) {
   return String(role || "")
@@ -185,6 +186,8 @@ export default function FieldEngineerAuth() {
                 )}
               </button>
             </form>
+
+            <ForgotPasswordNote who="the DA administrator" />
 
             <div className="mt-6 text-center">
               <Link to="/" className="text-xs sm:text-sm text-slate-500 hover:text-cyan-600 transition font-semibold inline-flex items-center gap-1">

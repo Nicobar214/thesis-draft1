@@ -482,13 +482,21 @@ export default function AuthPage({ mode = "signin" }) {
               )}
 
               {isForgot ? (
-                <button
-                  type="button"
-                  onClick={() => switchMode("signin")}
-                  className="mt-5 w-full text-sm font-semibold text-slate-600 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 rounded-lg py-2"
-                >
-                  ← Back to sign in
-                </button>
+                <>
+                  {accountType !== "farmer" && (
+                    <p className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-relaxed text-slate-600">
+                      Cannot open that email inbox? Ask the DA administrator to reset your password. You will get a temporary
+                      password; sign in with it and you will be asked to choose your own.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => switchMode("signin")}
+                    className="mt-5 w-full text-sm font-semibold text-slate-600 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 rounded-lg py-2"
+                  >
+                    ← Back to sign in
+                  </button>
+                </>
               ) : (
                 <>
                   {isFarmerSignin ? (
