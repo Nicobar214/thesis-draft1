@@ -383,13 +383,18 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
                   {c.window_max_date ? ` · limit ${fmtDay(c.window_max_date)}` : ''}
                   {project?.accomplishment != null ? ` · on record: ${Number(project.accomplishment)}%` : ''}
                 </p>
+                {evidenceByCase[c.id]?.length > 0 && (
+                  <div className="mt-3">
+                    <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Supporting evidence" />
+                  </div>
+                )}
               </Fact>
             )}
             {c.verdict && (
               <Fact label={`Field check${verifier ? ` by ${verifier}` : ''}`}>
                 <p><span className={`font-semibold ${c.verdict === 'agree' ? 'text-emerald-700' : 'text-red-700'}`}>{c.verdict === 'agree' ? 'Agrees' : 'Disagrees'}</span>{c.verification_note ? `: ${c.verification_note}` : ''}</p>
                 {c.verification_photo_url && (
-                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-2 block w-32 overflow-hidden rounded-lg border border-slate-200" aria-label="Open the engineer's site photo full size">
+                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-3 block w-40 overflow-hidden rounded-xl border border-slate-200" aria-label="Open the engineer's site photo full size">
                     <img src={c.verification_photo_url} alt="Engineer's site photo" className="aspect-[4/3] w-full object-cover" loading="lazy" />
                   </a>
                 )}
@@ -405,7 +410,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
           </div>
         )}
 
-        {evidenceByCase[c.id]?.length > 0 && (
+        {!c.cause && evidenceByCase[c.id]?.length > 0 && (
           <div className="mt-3 rounded-xl border border-slate-200 p-3">
             <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Contractor's supporting evidence" />
           </div>
