@@ -527,7 +527,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
 
       <div className="mt-5">
         <p className="mb-2 text-sm font-medium text-slate-700">
-          {nature ? 'Proof' : 'Supporting evidence'}
+          Supporting evidence
           {!nature && <span className="font-normal text-slate-400"> (optional · photos or PDFs, up to 8)</span>}
         </p>
         <EvidenceGrid items={form.evidence} onChange={(evidence) => onDraft({ ...form, evidence })} />
