@@ -385,7 +385,11 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
             {c.verdict && (
               <Fact label={`Field check${verifier ? ` by ${verifier}` : ''}`}>
                 <p><span className={`font-semibold ${c.verdict === 'agree' ? 'text-emerald-700' : 'text-red-700'}`}>{c.verdict === 'agree' ? 'Agrees' : 'Disagrees'}</span>{c.verification_note ? `: ${c.verification_note}` : ''}</p>
-                {c.verification_photo_url && <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-teal-700 hover:underline">View site photo</a>}
+                {c.verification_photo_url && (
+                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-2 block w-full max-w-xs overflow-hidden rounded-xl border border-slate-200" aria-label="Open the engineer's site photo full size">
+                    <img src={c.verification_photo_url} alt="Engineer's site photo" className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                  </a>
+                )}
               </Fact>
             )}
             {c.status === 'awaiting_verification' && verifier && <Fact label="Field check">Waiting for {verifier}</Fact>}
