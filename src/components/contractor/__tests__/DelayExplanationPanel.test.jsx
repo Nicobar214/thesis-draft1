@@ -53,14 +53,15 @@ describe('DelayExplanationPanel', () => {
     expect(date.getAttribute('min')).toBe(iso(1));
     expect(date.getAttribute('max')).toBe(iso(45));     // Offense 2: 45 days, no later
 
-    // One day past the limit: refused, nothing sent.
+    // The latest allowed date is filled in; an earlier one can be picked, and one
+    // past the limit falls back to the latest allowed date.
+    expect(date.value).toBe(iso(45));
+    fireEvent.change(date, { target: { value: iso(20) } });
+    expect(date.value).toBe(iso(20));
     fireEvent.change(date, { target: { value: iso(46) } });
-    fireEvent.change(screen.getByPlaceholderText(/second crew/), { target: { value: 'Short of six workers; second crew Monday.' } });
-    fireEvent.click(screen.getByRole('button', { name: /Send commitment/ }));
-    expect(await screen.findByText(/must be from .* \(45 days max\)/)).toBeTruthy();
-    expect(rpc).not.toHaveBeenCalled();
+    expect(date.value).toBe(iso(45));
 
-    fireEvent.change(date, { target: { value: iso(45) } });
+    fireEvent.change(screen.getByPlaceholderText(/second crew/), { target: { value: 'Short of six workers; second crew Monday.' } });
     fireEvent.click(screen.getByRole('button', { name: /Send commitment/ }));
     expect(await screen.findByText('Send this commitment to the DA?')).toBeTruthy();
     expect(rpc).not.toHaveBeenCalled();
