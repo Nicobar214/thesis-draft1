@@ -4,13 +4,17 @@ import {
   buildDisbursementTranches,
   realTranchesToScheduleShape,
   formatPeso,
+  formatReleaseMoment,
 } from '../../lib/budgetEstimate';
 import { formatPercentage } from '../../lib/percentageFormat';
+import { confirm as confirmDialog } from '../../lib/confirm';
 
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/* Today in Manila, "YYYY-MM-DD". Only sent for older databases: the server sets
+ * the release date itself (supabase_tranche_release_time.sql). */
+function manilaTodayISO() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
+const manilaTodayLabel = () => new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
 /**
  * Renders a project's 4-stage disbursement schedule. If real
@@ -28,7 +32,7 @@ export default function ProjectTrancheTimeline({
   onRelease = null,
 }) {
   const [releasingId, setReleasingId] = useState(null);
-  const [releaseForm, setReleaseForm] = useState({ amount: '', date: todayISO(), notes: '' });
+  const [releaseForm, setReleaseForm] = useState({ amount: '', notes: '' });
   const [submitting, setSubmitting] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [error, setError] = useState('');
@@ -44,7 +48,7 @@ export default function ProjectTrancheTimeline({
   const openReleaseForm = (tranche) => {
     setError('');
     setReleasingId(tranche.id);
-    setReleaseForm({ amount: String(tranche.amount), date: todayISO(), notes: '' });
+    setReleaseForm({ amount: String(tranche.amount), notes: '' });
   };
 
   const cancelReleaseForm = () => {
@@ -52,17 +56,24 @@ export default function ProjectTrancheTimeline({
     setError('');
   };
 
-  const confirmRelease = async (trancheId) => {
+  const confirmRelease = async (tranche) => {
     if (!onRelease) return;
     const amount = Number(releaseForm.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       setError('Enter a valid released amount.');
       return;
     }
+    // Money leaves the budget and cannot be taken back here: say exactly what happens.
+    if (!(await confirmDialog({
+      title: `Release ${formatPeso(amount)}?`,
+      message: `${tranche.name} of ${project?.project_name || 'this project'}. It is recorded as released today, ${manilaTodayLabel()}, at the time you confirm, and added to the project's funds released. This cannot be undone.`,
+      confirmLabel: 'Yes, release it',
+      cancelLabel: 'Go back',
+    }))) return;
     setSubmitting(true);
     setError('');
     try {
-      await onRelease(trancheId, { amount, date: releaseForm.date, notes: releaseForm.notes.trim() });
+      await onRelease(tranche.id, { amount, date: manilaTodayISO(), notes: releaseForm.notes.trim() });
       setReleasingId(null);
     } catch (err) {
       setError(err.message || 'Failed to release tranche.');
@@ -125,16 +136,20 @@ export default function ProjectTrancheTimeline({
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    t.released ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                    t.released && hasReal ? 'bg-emerald-100 text-emerald-700' : t.released ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
-                  {t.released ? 'Released' : 'Pending'}
+                  {t.released && hasReal ? 'Released' : t.released ? 'Due (estimate)' : 'Pending'}
                 </span>
               </div>
 
-              {t.released && (
+              {t.released && !hasReal && (
+                <p className="mt-2 text-xs text-amber-700">Progress has reached {formatPercentage(t.requiredProgress)}, so this would be due. No release is recorded yet.</p>
+              )}
+
+              {t.released && hasReal && (
                 <div className="mt-2 text-xs text-slate-500 space-y-0.5">
-                  {t.date && <p>Released {t.date.toLocaleDateString()}{t.releasedByName ? ` by ${t.releasedByName}` : ''}</p>}
+                  {(t.releasedAt || t.date) && <p>Released {formatReleaseMoment(t)}{t.releasedByName ? ` by ${t.releasedByName}` : ''}</p>}
                   {t.notes && <p className="italic">"{t.notes}"</p>}
                 </div>
               )}
@@ -154,13 +169,10 @@ export default function ProjectTrancheTimeline({
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-600 mb-0.5">Date</label>
-                          <input
-                            type="date"
-                            value={releaseForm.date}
-                            onChange={(e) => setReleaseForm((f) => ({ ...f, date: e.target.value }))}
-                            className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
-                          />
+                          <p className="block text-[11px] font-medium text-slate-600 mb-0.5">Release date</p>
+                          <p className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700" title="Set automatically to the moment you confirm">
+                            {manilaTodayLabel()} <span className="text-slate-400">· set on confirm</span>
+                          </p>
                         </div>
                       </div>
                       <textarea
@@ -176,7 +188,7 @@ export default function ProjectTrancheTimeline({
                         </button>
                         <button
                           type="button"
-                          onClick={() => confirmRelease(t.id)}
+                          onClick={() => confirmRelease(t)}
                           disabled={submitting}
                           className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                         >

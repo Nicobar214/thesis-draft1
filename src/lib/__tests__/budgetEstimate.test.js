@@ -4,6 +4,9 @@ import {
   estimateProjectBudget,
   formatPeso,
   getProjectBudgetSummary,
+  buildDisbursementTranches,
+  formatReleaseMoment,
+  realTranchesToScheduleShape,
 } from '../budgetEstimate';
 
 describe('estimateProjectBudget', () => {
@@ -82,5 +85,24 @@ describe('formatPeso', () => {
   it('treats bad input as zero', () => {
     expect(formatPeso(undefined)).toBe('₱0');
     expect(formatPeso('abc')).toBe('₱0');
+  });
+});
+
+describe('release dates', () => {
+  it('shows a release on the day it was saved, not a day early', () => {
+    const [t] = realTranchesToScheduleShape([{ id: 1, tranche_order: 1, tranche_name: 'Mobilization Advance', percentage: 15, amount: 100, required_progress: 0, status: 'Released', released_amount: 100, released_date: '2026-09-08' }]);
+    expect([t.date.getFullYear(), t.date.getMonth() + 1, t.date.getDate()]).toEqual([2026, 9, 8]);
+    expect(formatReleaseMoment(t)).toMatch(/Sep 8, 2026/);
+  });
+
+  it('adds the exact time when the release moment is known (Manila time)', () => {
+    const [t] = realTranchesToScheduleShape([{ id: 1, tranche_order: 1, tranche_name: 'x', percentage: 15, amount: 100, required_progress: 0, status: 'Released', released_date: '2026-09-08', released_at: '2026-09-08T12:01:00Z' }]);
+    expect(formatReleaseMoment(t)).toMatch(/Sep 8, 2026.*8:01/);
+  });
+
+  it('never dates an estimate (nothing was actually released)', () => {
+    const est = buildDisbursementTranches(1000, { accomplishment: 80, created_at: '2026-01-01T00:00:00Z' });
+    expect(est.every((t) => t.date === null && t.isReal === false)).toBe(true);
+    expect(est.filter((t) => t.released).length).toBe(3); // still "due" by progress, for the totals
   });
 });

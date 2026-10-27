@@ -28,10 +28,10 @@ export function estimateProjectBudget(project) {
   return { amount: Math.round(length * DA_FMR_RATE_PER_KM), isEstimated: true };
 }
 
+/* An estimate is never dated: nothing was actually released, so it has no
+ * release date (it used to show created_at + 15/60/120 days as if it had). */
 export function buildDisbursementTranches(totalBudget, project) {
   const progress = Number(project?.accomplishment) || 0;
-  const dayMs = 24 * 60 * 60 * 1000;
-  const baseDate = project?.created_at ? new Date(project.created_at) : new Date();
 
   return TRANCHE_SCHEDULE.map((t) => ({
     id: t.id,
@@ -41,10 +41,23 @@ export function buildDisbursementTranches(totalBudget, project) {
     requiredProgress: t.releaseAtProgress,
     released: progress >= t.releaseAtProgress,
     liquidated: t.id === 4 ? progress === 100 : progress > t.liquidateAfterProgress,
-    date: t.dayOffset === null
-      ? (project?.date_completed ? new Date(project.date_completed) : project?.target_completion_date ? new Date(project.target_completion_date) : new Date())
-      : new Date(baseDate.getTime() + t.dayOffset * dayMs),
+    date: null,
+    isReal: false,
   }));
+}
+
+/** "2026-09-08" -> that calendar day in local time (new Date() would read it as UTC midnight: a day early west of UTC). */
+function localDay(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
+
+/** "Sep 8, 2026, 8:01 PM" (with the time when the moment is known), else "Sep 8, 2026". */
+export function formatReleaseMoment({ releasedAt, date }) {
+  if (releasedAt instanceof Date && !Number.isNaN(releasedAt.getTime())) {
+    return releasedAt.toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  return date ? date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 }
 
 /**
@@ -65,7 +78,8 @@ export function realTranchesToScheduleShape(tranches) {
       requiredProgress: Number(t.required_progress),
       released: t.status === 'Released',
       liquidated: t.status === 'Released',
-      date: t.released_date ? new Date(t.released_date) : null,
+      date: localDay(t.released_date),
+      releasedAt: t.released_at ? new Date(t.released_at) : null, // the exact moment (supabase_tranche_release_time.sql)
       releasedByName: t.released_by_name || null,
       notes: t.notes || null,
       isReal: true,

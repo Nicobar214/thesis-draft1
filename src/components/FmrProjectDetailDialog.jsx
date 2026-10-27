@@ -9,7 +9,7 @@
 import { createPortal } from 'react-dom';
 import Icons from './Icons';
 import { normalizeProjectName } from '../lib/projectHelpers';
-import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
+import { getProjectBudgetSummary, formatPeso, formatReleaseMoment, realTranchesToScheduleShape } from '../lib/budgetEstimate';
 import { formatPercentage } from '../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import ProjectProgressTimeline from './ProjectProgressTimeline';
@@ -38,6 +38,8 @@ function ProjectDetailBody({ project, tranches = [] }) {
   const style = getStatusStyle(project.status);
   const hasCoords = project.start_latitude && project.start_longitude;
   const budget = getProjectBudgetSummary(project, tranches);
+  // The official releases (real project_tranches rows only), oldest first.
+  const releases = realTranchesToScheduleShape(tranches).filter((t) => t.released);
   const utilizationPct = budget.totalBudget > 0 ? Math.min((budget.released / budget.totalBudget) * 100, 100) : 0;
   // Assigned contractor's name (supabase_public_project_contractors.sql), or
   // "Not indicated" when the DA data doesn't name one.
@@ -168,6 +170,24 @@ function ProjectDetailBody({ project, tranches = [] }) {
             <div className="h-full rounded-full bg-amber-500 transition-all" style={{ width: `${utilizationPct}%` }} />
           </div>
         </div>
+
+        {/* Official releases, each on the day the DA released it (supabase_tranche_release_time.sql). */}
+        {releases.length > 0 && (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Budget releases · {releases.length}</p>
+            <ol className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+              {releases.map((t) => (
+                <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm">
+                  <span className="font-medium text-slate-800">{t.name}</span>
+                  <span className="text-slate-600">
+                    <span className="font-semibold text-slate-900">{formatPeso(t.amount)}</span>
+                    {(t.releasedAt || t.date) && <span className="text-slate-500"> · released {formatReleaseMoment(t)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         {(budget.budgetIsEstimated || budget.utilizationIsEstimated) && (
           <p className="text-xs text-slate-500 leading-relaxed">
