@@ -71,6 +71,7 @@ import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
 import TargetCompletionNote from '../components/fmrProjects/TargetCompletionNote';
 import AccountPasswordReset from '../components/admin/AccountPasswordReset';
 import { findDuplicateProject } from '../lib/projectHelpers';
+import { localDateISO } from '../lib/priorityDecisions';
 import { SwaLink } from '../components/progress/SubmissionEvidence';
 import CompletionTiming from '../components/fmrProjects/CompletionTiming';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
@@ -187,6 +188,39 @@ function parseDateOnly(dateValue) {
 }
 
 /* The fmr_projects columns the Edit Project form saves, from its form values. */
+/* New project dates: start today or later, end on or after the start. */
+function projectDateProblem(start, end) {
+  if (start && start < localDateISO()) return 'The start date cannot be before today.';
+  if (start && end && end < start) return 'The expected end date cannot be before the start date.';
+  return null;
+}
+
+/* Beside the end date: how long the project is planned to take. */
+function ProjectDurationNote({ start, end }) {
+  const s = start ? new Date(`${start}T00:00:00`) : null;
+  const e = end ? new Date(`${end}T00:00:00`) : null;
+  const days = s && e ? Math.round((e - s) / 86400000) : null;
+  return (
+    <div className="flex flex-col justify-end">
+      <p className="block text-sm font-semibold text-slate-700 mb-2">Project duration</p>
+      <div className={`rounded-xl border px-5 py-3 ${days == null ? 'border-dashed border-slate-200 text-slate-400' : days < 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-teal-200 bg-teal-50 text-teal-900'}`}>
+        {days == null ? (
+          <span className="text-sm">Set the start and end dates</span>
+        ) : days < 0 ? (
+          <span className="text-sm font-semibold">The end date is before the start date</span>
+        ) : (
+          <span className="text-sm">
+            <strong className="text-lg tabular-nums">{days.toLocaleString()}</strong> day{days === 1 ? '' : 's'}
+            <span className="ml-1.5 text-teal-700/80">
+              {days >= 60 ? `(about ${Math.round(days / 30.44)} months)` : days >= 14 ? `(about ${Math.round(days / 7)} weeks)` : ''}
+            </span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function fmrPayloadFromForm(form) {
   return {
     project_name: form.project_name,
@@ -3426,6 +3460,12 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
     if (!enteredCode || getExistingFmrCodes().has(enteredCode.toUpperCase())) {
       enteredCode = generateNextProjectCode();
       setFormData((prev) => ({ ...prev, projectCode: enteredCode }));
+    }
+
+    const dateProblem = projectDateProblem(formData.startDate, formData.expectedEndDate);
+    if (dateProblem) {
+      showNotification(dateProblem, 'error');
+      return false;
     }
 
     const startLat = parseCoordinate(formData.startLatitude);
@@ -9512,12 +9552,15 @@ A new LGU account will be created with this email and password.`,
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Start Date *</label>
-                  <input type="date" name="startDate" value={formData.startDate} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  {/* A new project starts today or later. */}
+                  <input type="date" name="startDate" value={formData.startDate} min={localDateISO()} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <p className="text-xs text-slate-500 mt-1.5">Today or later.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Expected End Date *</label>
-                  <input type="date" name="expectedEndDate" value={formData.expectedEndDate} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
+                  <input type="date" name="expectedEndDate" value={formData.expectedEndDate} min={formData.startDate || localDateISO()} onChange={handleInputChange} required className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200" />
                 </div>
+                <ProjectDurationNote start={formData.startDate} end={formData.expectedEndDate} />
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Description</label>
                   <textarea name="description" value={formData.description} onChange={handleInputChange} rows="3" className="w-full px-5 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all duration-200 resize-none" placeholder="Project description..." />
