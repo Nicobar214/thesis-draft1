@@ -12,6 +12,7 @@ import { buttonClass } from '../components/ui/Button';
 import FieldEngineerWorkflowPanel from '../components/publicReports/FieldEngineerWorkflowPanel';
 import FieldEngineerReportDetails from '../components/publicReports/FieldEngineerReportDetails';
 import PriorityTasksPanel from '../components/priority/PriorityTasksPanel';
+import DelayFieldChecks from '../components/delay/DelayFieldChecks';
 import Logo from '../components/Logo';
 import SidebarEdgeToggle from '../components/ui/SidebarEdgeToggle';
 import NotificationBell from '../components/NotificationBell';
@@ -128,6 +129,7 @@ export default function FieldEngineerDashboard() {
   const [activeReportTab, setActiveReportTab] = useState('assigned');
   const [certifyCount, setCertifyCount] = useState(0);
   const [priorityCount, setPriorityCount] = useState(0);
+  const [delayCheckCount, setDelayCheckCount] = useState(0); // overdue site checks (supabase_overdue_v2.sql)
 
   /* Left Sidebar Collapsible & Mobile States */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -582,7 +584,8 @@ export default function FieldEngineerDashboard() {
     { label: 'Report status', value: String(report.status || '—').replace(/_/g, ' ') },
   ];
 
-  const isPriorityNotification = (n) => String(n.type || '').startsWith('priority_');
+  // Priority tasks, and overdue-project site checks (shown on the same page).
+  const isPriorityNotification = (n) => String(n.type || '').startsWith('priority_') || n.type === 'delay_verification_requested';
 
   const resolveNotificationTarget = (n) => {
     if (isProgressNotification(n)) return { actionLabel: 'Open certification queue' };
@@ -628,7 +631,7 @@ export default function FieldEngineerDashboard() {
     { id: 'overview', description: 'Your assignments at a glance', label: 'Overview', icon: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25zM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25z' },
     { id: 'gis-map', description: 'Assigned reports on the map', label: 'GIS Field Map', icon: 'M9 6.75V15m6-6v8.25m.503-14.33 4.243 1.93a1.125 1.125 0 0 1 .63 1.018v12.923a1.125 1.125 0 0 1-1.567 1.03l-4.512-2.05a1.125 1.125 0 0 0-.918 0l-4.75 2.16a1.125 1.125 0 0 1-.918 0l-4.512-2.05A1.125 1.125 0 0 1 2.25 18.06V5.137c0-.472.296-.893.74-1.054l4.243-1.543a1.125 1.125 0 0 1 .74 0l4.512 1.64c.298.109.623.109.92 0z' },
     { id: 'certify', description: 'Check contractor progress', label: 'Certify Progress', count: certifyCount, icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
-    { id: 'priority', description: 'Requests from the DA prioritization', label: 'Priority Tasks', count: priorityCount, icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z' },
+    { id: 'priority', description: 'Requests from the DA prioritization', label: 'Priority Tasks', count: priorityCount + delayCheckCount, icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z' },
     { id: 'reports', description: 'Inspect reported road damage', label: 'Damage Reports', count: metrics.actionable, icon: 'M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9z' },
     { id: 'profile', description: 'Your account details', label: 'Engineer Profile', icon: 'M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0zM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632z' },
   ];
@@ -1446,6 +1449,7 @@ export default function FieldEngineerDashboard() {
           {/* Priority tasks: site validations and inspections from the DA prioritization.
               Kept mounted (hidden) so the sidebar count stays current. */}
           <div className={activeNav === 'priority' ? 'space-y-5 animate-fadeIn' : 'hidden'}>
+            <DelayFieldChecks client={supabase} userId={user?.id} onCountChange={setDelayCheckCount} />
             <PriorityTasksPanel
               client={supabase}
               userId={user?.id}

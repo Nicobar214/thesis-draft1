@@ -9,7 +9,6 @@ import {
   findNearbyProjects,
   findNearbyRoads,
   isSuspectLine,
-  distanceToLine,
   friendlySubmitError,
   fmtDist,
   hasArrived,

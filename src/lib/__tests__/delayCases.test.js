@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseTargetDate, isHaltedStatus, haltedStatusLabel, manilaToday, toISODate,
-  caseDue, adminActions, caseBucket, friendlyDelayError, reasonOk, explanationProblems,
+  caseDue, adminActions, caseBucket, friendlyDelayError, reasonOk, commitmentProblems, commitWindow,
+  offenseWindow, offenseLabel, needsFieldCheck, toISODate as iso,
 } from '../delayCases';
 
 const day = (s) => parseTargetDate(s);
@@ -57,33 +58,64 @@ describe('caseDue', () => {
 
 describe('adminActions (mirrors the database rules)', () => {
   const project = { contractor_id: 'c1' };
-  it('new case: ask, or close directly', () => {
-    const a = adminActions({ status: 'awaiting_request' }, project);
-    expect(a).toMatchObject({ ask: true, extend: false, verify: false, completedLate: true, suspend: true, terminate: true });
+  const committed = (extra) => ({ status: 'awaiting_decision', proposed_date: '2026-11-20', kind: 'offense', offense_no: 1, ...extra });
+  it('new case: ask, or close as completed late', () => {
+    expect(adminActions({ status: 'awaiting_request', offense_no: 1 }, project))
+      .toMatchObject({ ask: true, approve: false, completedLate: true, reassign: false });
   });
-  it('no contractor: ask disabled with a reason, can still close', () => {
+  it('no contractor: ask disabled with a reason', () => {
     const a = adminActions({ status: 'awaiting_request' }, { contractor_id: null });
     expect(a.ask).toBe(false);
     expect(a.reasons.ask).toBe('Assign a contractor first');
-    expect(a.completedLate).toBe(true);
   });
-  it('ready to decide: everything except asking again', () => {
-    expect(adminActions({ status: 'awaiting_decision', revision_count: 0 }, project, 0))
-      .toMatchObject({ ask: false, verify: true, revise: true, finalNotice: true, extend: true, completedLate: true });
+  it('Offense 1 and 2: approve directly, send back once', () => {
+    expect(adminActions(committed(), project)).toMatchObject({ approve: true, sendBack: true, verify: true, rejectNature: false });
+    const used = adminActions(committed({ offense_no: 2, revision_count: 1 }), project);
+    expect(used.sendBack).toBe(false);
+    expect(used.reasons.sendBack).toMatch(/once/);
   });
-  it('one revision and two extensions at most', () => {
-    const a = adminActions({ status: 'awaiting_decision', revision_count: 1 }, project, 2);
-    expect(a.revise).toBe(false);
-    expect(a.extend).toBe(false);
-    expect(a.reasons.extend).toMatch(/2 extensions/);
+  it('Offense 3 and act of nature: approve only after a confirmed field check', () => {
+    for (const c of [committed({ offense_no: 3 }), committed({ kind: 'act_of_nature' })]) {
+      expect(adminActions(c, project).approve).toBe(false);
+      expect(adminActions(c, project).reasons.approve).toMatch(/field engineer/);
+      expect(adminActions({ ...c, verdict: 'disagree' }, project).approve).toBe(false);
+      expect(adminActions({ ...c, verdict: 'agree' }, project).approve).toBe(true);
+    }
+    expect(adminActions(committed({ kind: 'act_of_nature' }), project).rejectNature).toBe(true);
   });
-  it('missed final notice: only Suspend or Terminate', () => {
-    const a = adminActions({ status: 'awaiting_decision', final_notice_issued: true, final_notice_missed: true }, project, 0);
-    expect(a).toMatchObject({ verify: false, revise: false, finalNotice: false, extend: false, completedLate: false, suspend: true, terminate: true });
+  it('Offense 4: only terminate & reassign (an act of nature is still decided first)', () => {
+    expect(adminActions({ status: 'awaiting_request', offense_no: 4 }, project)).toMatchObject({ reassign: true, ask: true });
+    expect(adminActions({ status: 'no_response', offense_no: 4, kind: 'offense' }, project)).toMatchObject({ reassign: true, approve: false });
+    expect(adminActions(committed({ offense_no: 4, kind: 'act_of_nature' }), project).reassign).toBe(false);
+    expect(adminActions(committed({ offense_no: 3 }), project).reassign).toBe(false);
   });
   it('waiting on someone else: no admin buttons', () => {
-    const a = adminActions({ status: 'awaiting_explanation' }, project);
+    const a = adminActions({ status: 'awaiting_explanation', offense_no: 1 }, project);
     expect(Object.values(a).filter((v) => v === true)).toHaveLength(0);
+  });
+});
+
+describe('offense windows (same numbers as _delay_window)', () => {
+  const today = day('2026-11-01');
+  it('60 / 45 / 30 days, then none', () => {
+    expect([1, 2, 3, 4].map(offenseWindow)).toEqual([60, 45, 30, 0]);
+    expect(iso(commitWindow({ offense_no: 1 }, 'manpower', null, today).max)).toBe('2026-12-31');
+    expect(iso(commitWindow({ offense_no: 2 }, 'manpower', null, today).max)).toBe('2026-12-16');
+    expect(commitWindow({ offense_no: 4 }, 'manpower', null, today)).toBeNull();
+    expect(iso(commitWindow({ offense_no: 1 }, 'manpower', null, today).min)).toBe('2026-11-02');
+  });
+  it('act of nature: the days work stopped, at most 30, at any offense', () => {
+    expect(commitWindow({ offense_no: 4 }, 'act_of_nature', 5, today).days).toBe(5);
+    expect(commitWindow({ offense_no: 1 }, 'act_of_nature', 45, today).days).toBe(30);
+    expect(commitWindow({ offense_no: 1 }, 'act_of_nature', 0, today)).toBeNull();
+  });
+  it('labels and field-check rule', () => {
+    expect(offenseLabel({ offense_no: 2 })).toBe('Offense 2 of 3');
+    expect(offenseLabel({ offense_no: 4 })).toMatch(/no chances/);
+    expect(offenseLabel({ kind: 'act_of_nature', offense_no: 2 })).toBe('Act of nature');
+    expect(needsFieldCheck({ offense_no: 3 })).toBe(true);
+    expect(needsFieldCheck({ offense_no: 2 })).toBe(false);
+    expect(needsFieldCheck({ kind: 'act_of_nature', offense_no: 1 })).toBe(true);
   });
 });
 
@@ -101,29 +133,38 @@ describe('caseBucket / reasons / errors', () => {
   });
   it('explains the target-date lock in plain words', () => {
     expect(friendlyDelayError({ message: 'This project has an open delay case. Its target date can only be changed with Grant extension (Project Management > Overdue).' }))
-      .toMatch(/Grant extension/);
+      .toMatch(/Project Management > Overdue/);
+    expect(friendlyDelayError({ message: 'Could not find the function public.delay_submit_commitment(p_case, ...) in the schema cache' }))
+      .toMatch(/supabase_overdue_v2\.sql/);
     expect(friendlyDelayError({ message: 'Only one revision is allowed per case' })).toBe('Only one revision is allowed per case');
   });
 });
 
-describe('explanationProblems (same checks as delay_submit_explanation)', () => {
-  const today = day('2026-10-26');
-  const ok = { cause: 'weather', explanation: 'Rain for two weeks.', proposedDate: '2026-11-20', claimedPercent: '60' };
-  it('accepts a complete reply', () => {
-    expect(explanationProblems(ok, today)).toEqual([]);
+describe('commitmentProblems (same checks as delay_submit_commitment)', () => {
+  const today = day('2026-11-01');
+  const c = { offense_no: 2 };
+  const ok = { cause: 'manpower', explanation: 'Short of six workers.', newDate: '2026-12-16' };
+  it('accepts a commitment inside the window', () => {
+    expect(commitmentProblems(c, ok, today)).toEqual([]);
   });
-  it('needs a cause and 10+ characters for every cause', () => {
-    expect(explanationProblems({ ...ok, cause: '' }, today)).toHaveLength(1);
-    expect(explanationProblems({ ...ok, explanation: '  short  ' }, today)[0]).toMatch(/10 characters/);
-    expect(explanationProblems({ ...ok, cause: 'materials', explanation: '' }, today)).toHaveLength(1);
+  it('is strict about the window: no day past the max', () => {
+    expect(commitmentProblems(c, { ...ok, newDate: '2026-12-17' }, today)[0]).toMatch(/45 days max/);
+    expect(commitmentProblems(c, { ...ok, newDate: '2026-11-01' }, today)).toHaveLength(1);
   });
-  it('proposed date must be after today (Manila)', () => {
-    expect(explanationProblems({ ...ok, proposedDate: '2026-10-26' }, today)).toHaveLength(1);
-    expect(explanationProblems({ ...ok, proposedDate: '2026-10-27' }, today)).toEqual([]);
+  it('needs a cause and 10+ characters', () => {
+    expect(commitmentProblems(c, { ...ok, cause: '' }, today)[0]).toMatch(/Act of nature or Manpower/);
+    expect(commitmentProblems(c, { ...ok, explanation: ' short ' }, today)[0]).toMatch(/10 characters/);
   });
-  it('accomplishment is optional, 0-100', () => {
-    expect(explanationProblems({ ...ok, claimedPercent: '' }, today)).toEqual([]);
-    expect(explanationProblems({ ...ok, claimedPercent: '101' }, today)).toHaveLength(1);
-    expect(explanationProblems({ ...ok, claimedPercent: '-1' }, today)).toHaveLength(1);
+  it('act of nature needs the event, the days stopped and proof', () => {
+    const nature = { cause: 'act_of_nature', explanation: 'Typhoon flooded the site.', newDate: '2026-11-06', eventName: 'Typhoon Kristine', stoppedDays: '5' };
+    expect(commitmentProblems(c, { ...nature, hasProof: true }, today)).toEqual([]);
+    expect(commitmentProblems(c, { ...nature, hasProof: false }, today)[0]).toMatch(/proof/i);
+    expect(commitmentProblems(c, { ...nature, hasProof: true, newDate: '2026-11-07' }, today)[0]).toMatch(/5 days max/);
+    expect(commitmentProblems(c, { ...nature, hasProof: true, stoppedDays: '31' }, today).some((p) => /1 to 30/.test(p))).toBe(true);
+  });
+  it('no manpower after 3 offenses, and no act of nature after a rejected claim', () => {
+    expect(commitmentProblems({ offense_no: 4 }, ok, today).some((p) => /3 chances/.test(p))).toBe(true);
+    expect(commitmentProblems({ offense_no: 2, kind: 'offense' }, { ...ok, cause: 'act_of_nature', eventName: 'Flood', stoppedDays: '3', hasProof: true, newDate: '2026-11-03' }, today)
+      .some((p) => /not accepted/.test(p))).toBe(true);
   });
 });

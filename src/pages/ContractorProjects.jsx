@@ -21,6 +21,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
 import { priorityStage } from '../lib/priorityDecisions';
 import PriorityBadge from '../components/priority/PriorityBadge';
+import PastProjects from '../components/contractor/PastProjects';
 
 const ROWS_PER_PAGE = 10;
 // Order of DA priority stages in the list: the contractor's turn first.
@@ -662,6 +663,7 @@ export default function ContractorProjects() {
             </div>
           </div>
         )}
+        {user && <PastProjects client={supabase} />}
         {/* Progress history: collapsed by default (opens from a notification
             or ?history=1), so this page stays on the projects. */}
         <ProgressSubmissionHistory

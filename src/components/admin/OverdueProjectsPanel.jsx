@@ -1,37 +1,37 @@
 /* OverdueProjectsPanel.jsx — Project Management -> Overdue.
- * The admin side of the delay follow-up (supabase_project_delay_cases.sql): every
- * overdue On-Going project with a contractor has one case that ends in exactly one
- * outcome (extended / completed late / suspended / terminated). Every button calls a
- * database function that checks the rules again; this screen only shows what is allowed.
- * Rules mirrored in lib/delayCases.js.
+ * The admin side of the overdue process (supabase_overdue_v2.sql):
+ *   Ask -> the contractor commits (Act of nature: not counted / Manpower: an offense)
+ *   -> field check (act of nature, Offense 3) -> Approve the date (locked).
+ *   Offense 4 -> Terminate & reassign. Every button calls a database function that
+ * checks the rules again; this screen only shows what is allowed (lib/delayCases.js).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeftIcon, BellRingIcon, CalendarCheckIcon, CalendarClockIcon, ChevronDownIcon, ChevronUpIcon, CircleAlertIcon, RotateCwIcon, ShieldCheckIcon, TriangleAlertIcon } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import EvidenceGallery from '../evidence/EvidenceGallery';
 import {
-  addDays, adminActions, CASE_STATES, caseBucket, caseDue, causeLabel, daysBetween, fmtDay, friendlyDelayError,
-  HALTED_STATUS_STYLES, manilaToday, MAX_EXTENSIONS, MAX_REPLY_DAYS, MAX_SUSPENSION_EXTENSIONS,
-  MIN_REASON, OUTCOMES, parseTargetDate, reasonOk, toISODate, DEFAULT_REPLY_DAYS,
+  addDays, adminActions, CASE_STATES, caseBucket, caseDue, causeLabel, commitWindow, daysBetween, fmtDay, friendlyDelayError,
+  manilaToday, MAX_OFFENSES, MAX_REPLY_DAYS, MIN_REASON, needsFieldCheck, offenseLabel, OUTCOMES, parseTargetDate,
+  REASSIGN_START_MAX_DAYS, reasonOk, toISODate, DEFAULT_REPLY_DAYS,
 } from '../../lib/delayCases';
 
 const FILTERS = [
   { key: 'needs_you', label: 'Needs you' },
   { key: 'overdue_action', label: 'Action overdue' },
   { key: 'waiting', label: 'Waiting on others' },
-  { key: 'suspended', label: 'Suspended' },
   { key: 'closed', label: 'Closed' },
   { key: 'all', label: 'All' },
 ];
 
 const EVENT_LABELS = {
   case_opened: 'Follow-up opened',
-  explanation_requested: 'Contractor asked to explain',
-  explanation_submitted: 'Contractor explained',
+  explanation_requested: 'Contractor asked to commit',
+  explanation_submitted: 'Contractor committed a date',
+  nature_claim_rejected: 'Act-of-nature claim not accepted',
   verification_requested: 'Field check requested',
   verification_submitted: 'Field check submitted',
   verification_timed_out: 'Field check not received in time',
-  revision_requested: 'Revision asked',
+  revision_requested: 'Sent back to the contractor',
   final_notice_issued: 'Final notice sent',
   final_notice_missed: 'Final notice not answered',
   no_response: 'No reply by the deadline',
@@ -44,24 +44,20 @@ const EVENT_LABELS = {
 
 /* Which form each action opens, and which database function it calls. */
 const ACTIONS = {
-  ask: { title: 'Ask the contractor to explain', button: 'Send request', fields: ['replyBy', 'noteOptional'] },
-  verify: { title: 'Ask a field engineer to check', button: 'Send to engineer', fields: ['verifier', 'noteOptional'] },
-  revise: { title: 'Ask for a revised explanation', button: 'Ask for revision', fields: ['replyBy', 'note'], hint: 'Allowed once per follow-up.' },
-  finalNotice: { title: 'Send a final notice', button: 'Send final notice', fields: ['replyBy', 'note'], hint: 'Allowed once. If it is not answered by the date, only Suspend or Terminate remain.', danger: true },
-  extend: { title: 'Grant an extension', button: 'Grant extension', fields: ['newTarget', 'reason'], hint: `At most ${MAX_EXTENSIONS} extensions per project. Saves the new target date, records the extension and closes this follow-up.` },
+  ask: { title: 'Ask the contractor to commit a new date', button: 'Send request', fields: ['replyBy', 'noteOptional'] },
+  verify: { title: 'Ask a field engineer to check on site', button: 'Send to engineer', fields: ['verifier', 'noteOptional'] },
+  approve: { title: 'Approve the new finish date', button: 'Approve date', fields: ['newDate', 'noteOptional'], hint: 'The date is then locked. Missing it opens the next round.' },
+  sendBack: { title: 'Send the commitment back', button: 'Send back', fields: ['replyBy', 'note'], hint: 'Allowed once. The contractor commits again within the same offense window.' },
+  rejectNature: { title: 'Reject the act-of-nature claim', button: 'Reject claim', fields: ['replyBy', 'note'], hint: 'The delay then counts as the next offense (manpower), and the contractor commits a date within that window.', danger: true },
   completedLate: { title: 'Close as completed late', button: 'Close as completed late', fields: ['reason'], hint: 'Marks the project Completed and records how many days late it finished.' },
-  suspend: { title: 'Suspend the project', button: 'Suspend project', fields: ['resumeDate', 'reason'], hint: 'The deadline is put on hold. You will be reminded when the expected resume date passes.', danger: true },
-  terminate: { title: 'Terminate the project', button: 'Terminate project', fields: ['reason'], hint: 'This cannot be undone from this screen.', danger: true },
-  resume: { title: 'Resume the project', button: 'Resume project', fields: ['newTarget', 'reason'], hint: 'Back to On-Going with a new target date. Does not count toward the extension limit.' },
-  extendSuspension: { title: 'Extend the suspension', button: 'Extend suspension', fields: ['resumeDate', 'reason'], hint: `At most ${MAX_SUSPENSION_EXTENSIONS} per project, counting every suspension it has had.` },
-  terminateSuspended: { title: 'Terminate the suspended project', button: 'Terminate project', fields: ['reason'], hint: 'This cannot be undone from this screen.', danger: true },
+  reassign: { title: 'Terminate & reassign', button: 'Terminate & reassign', fields: ['newContractor', 'startDate', 'targetDate', 'reason'], hint: 'Ends this contractor\'s period on the project at the current %. The new contractor continues from the same %, with their own target date and 0 offenses. This cannot be undone.', danger: true },
 };
 
 /* "What happens next" for the actions that set a reply-by date. */
 const REPLY_NEXT = {
-  ask: (due) => `The contractor is notified right away and reminded on ${due}. If no explanation comes in by the end of that day, the follow-up is marked "No reply" and you decide within 5 days.`,
-  revise: (due) => `The contractor sees your note and must send a revised explanation by ${due}. A revision can be asked only once per follow-up.`,
-  finalNotice: (due) => `This is the last request. If it is not answered by the end of ${due}, only Suspend or Terminate remain.`,
+  ask: (due) => `The contractor is notified right away and reminded on ${due}. No commitment by the end of that day counts as an offense, and the next round opens.`,
+  sendBack: (due) => `The contractor sees your note and must commit again by ${due}. This can be done only once.`,
+  rejectNature: (due) => `The contractor must commit a manpower date by ${due}. No reply counts as an offense.`,
 };
 const QUICK_REPLY_DAYS = [3, 7, 14, 30];
 /* The reply-by rule (the database checks it again in _delay_check_reply_by):
@@ -94,9 +90,7 @@ function Fact({ label, children }) {
  * match the Overdue card; `onShowAll` widens it. */
 export default function OverdueProjectsPanel({ client, projects = [], contractors = [], fieldEngineers = [], showNotification, onOpenProject, onDataChanged, scopeIds = null, scopeLabel = '', onShowAll }) {
   const [cases, setCases] = useState([]);
-  const [suspensions, setSuspensions] = useState([]);
   const [evidenceByCase, setEvidenceByCase] = useState({}); // case id -> evidence the contractor sent
-  const [suspensionExtensions, setSuspensionExtensions] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState('needs_you');
@@ -115,11 +109,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   const load = useCallback(async () => {
     if (!client) return;
     try {
-      const [casesRes, suspRes, extRes] = await Promise.all([
-        client.from('project_delay_cases').select('*').order('opened_at', { ascending: false }),
-        client.from('project_suspensions').select('id, project_id, suspension_start, suspension_end, expected_resume_date, reason').is('suspension_end', null),
-        client.from('project_delay_case_events').select('case_id').eq('event_type', 'suspension_extended'),
-      ]);
+      const casesRes = await client.from('project_delay_cases').select('*').order('opened_at', { ascending: false });
       if (casesRes.error) throw casesRes.error;
       setCases(casesRes.data || []);
       // Evidence is optional (supabase_delay_evidence_and_extensions.sql): skip quietly if not set up.
@@ -127,13 +117,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
       const byCase = {};
       (ev.error ? [] : ev.data || []).forEach((r) => { (byCase[r.case_id] = byCase[r.case_id] || []).push(r); });
       setEvidenceByCase(byCase);
-      setSuspensions(suspRes.error ? [] : suspRes.data || []);
-      // Suspension extensions per PROJECT, across all its suspensions (the limit
-      // is per project: supabase_suspension_extension_limit.sql).
-      const projectOfCase = new Map((casesRes.data || []).map((c) => [c.id, String(c.project_id)]));
-      const counts = {};
-      (extRes.data || []).forEach((e) => { const id = projectOfCase.get(e.case_id); if (id) counts[id] = (counts[id] || 0) + 1; });
-      setSuspensionExtensions(counts);
       setLoadError('');
     } catch (err) {
       setLoadError(/project_delay_cases/.test(err?.message || '')
@@ -155,7 +138,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_delay_case_events' }, (payload) => {
         const caseId = payload.new?.case_id;
         if (caseId) setHistory((h) => (h[caseId] ? { ...h, [caseId]: [...h[caseId], payload.new] } : h));
-        if (payload.new?.event_type === 'suspension_extended') load();
       })
       .subscribe();
     return () => { client.removeChannel(channel); };
@@ -165,30 +147,14 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   const inScope = useCallback((projectId) => !scopeIds || scopeIds.has(String(projectId)), [scopeIds]);
   const scopedCases = useMemo(() => cases.filter((c) => inScope(c.project_id)), [cases, inScope]);
   const scopedProjects = useMemo(() => projects.filter((p) => inScope(p.id)), [projects, inScope]);
-  // Open follow-ups and suspended projects the scope hides, for the "show all" note.
+  // Open follow-ups the scope hides, for the "show all" note.
   const hiddenCount = useMemo(() => (scopeIds
     ? cases.filter((c) => c.status !== 'closed' && !inScope(c.project_id)).length
-      + projects.filter((p) => String(p.status || '').trim().toLowerCase() === 'suspended' && !inScope(p.id)).length
-    : 0), [cases, projects, inScope, scopeIds]);
+    : 0), [cases, inScope, scopeIds]);
   const nameOf = useCallback((list, id) => {
     const p = list.find((x) => x.id === id);
     return p ? (p.full_name || p.email || 'Unnamed') : null;
   }, []);
-
-  const extensionsUsed = useCallback(
-    (projectId) => cases.filter((c) => String(c.project_id) === String(projectId) && c.outcome === 'extended').length,
-    [cases],
-  );
-
-  // Suspended projects: their latest suspended case + open suspension row.
-  const suspendedRows = useMemo(() => scopedProjects
-    .filter((p) => String(p.status || '').trim().toLowerCase() === 'suspended')
-    .map((p) => {
-      const susp = suspensions.find((s) => String(s.project_id) === String(p.id)) || null;
-      const lastCase = cases.find((c) => String(c.project_id) === String(p.id) && c.outcome === 'suspended') || null;
-      const resumeBy = parseTargetDate(susp?.expected_resume_date || lastCase?.resume_date);
-      return { project: p, suspension: susp, lastCase, resumeBy, extensions: suspensionExtensions[String(p.id)] || 0 };
-    }), [scopedProjects, suspensions, cases, suspensionExtensions]);
 
   // The same summary the daily check sends: overdue without contractor, unreadable and blank dates.
   const summary = useMemo(() => {
@@ -208,8 +174,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedProjects, today.getTime()]);
 
-  // A project can have several follow-ups over time (suspended, resumed, late
-  // again). Each list shows ONE card per project, its latest follow-up there;
+  // A project can have several follow-ups over time (one per round). Each list shows ONE card per project, its latest follow-up there;
   // the earlier ones are listed on that card (earlierCases).
   const onePerProject = (list) => {
     const seen = new Set();
@@ -221,17 +186,16 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   );
   const byFilter = useCallback((key) => {
     if (key === 'all') return onePerProject(scopedCases);
-    if (key === 'suspended') return [];
     if (key === 'needs_you') return onePerProject(scopedCases.filter((c) => ['needs_you', 'overdue_action'].includes(caseBucket(c, today))));
     return onePerProject(scopedCases.filter((c) => caseBucket(c, today) === key));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedCases, today.getTime()]);
 
   const counts = useMemo(() => {
-    const c = { suspended: suspendedRows.length };
-    FILTERS.forEach((f) => { if (f.key !== 'suspended') c[f.key] = byFilter(f.key).length; });
+    const c = {};
+    FILTERS.forEach((f) => { c[f.key] = byFilter(f.key).length; });
     return c;
-  }, [byFilter, suspendedRows]);
+  }, [byFilter]);
 
   const shown = useMemo(() => byFilter(filter), [byFilter, filter]);
 
@@ -260,33 +224,28 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   };
 
   // ── action dialog ─────────────────────────────────────────────────────
-  const openAction = (kind, { c = null, row = null } = {}) => {
-    const project = projectById.get(String(c?.project_id ?? row?.project?.id)) || row?.project || null;
-    const current = parseTargetDate(project?.target_completion_date);
-    const floor = current && current > today ? current : today;
+  const openAction = (kind, { c = null } = {}) => {
+    const project = projectById.get(String(c?.project_id)) || null;
     const defaults = { replyBy: toISODate(addDays(today, DEFAULT_REPLY_DAYS)), note: '', reason: '', verifier: project?.site_engineer_id || '' };
-    if (kind === 'extend') {
+    if (kind === 'approve') {
+      const cap = approveCap(c, today);
       const proposed = parseTargetDate(c?.proposed_date);
-      defaults.newTarget = toISODate(proposed && proposed > floor ? proposed : addDays(floor, 30));
+      defaults.newDate = toISODate(proposed && cap && proposed > cap ? cap : proposed);
     }
-    if (kind === 'suspend') defaults.resumeDate = toISODate(addDays(today, 30));
-    if (kind === 'extendSuspension') defaults.resumeDate = toISODate(addDays(row?.resumeBy && row.resumeBy > today ? row.resumeBy : today, 30));
-    if (kind === 'resume') {
-      // Default: old target + the days the project was suspended.
-      const start = parseTargetDate(row?.suspension?.suspension_start);
-      const pushed = current && start ? addDays(current, Math.max(0, daysBetween(start, today))) : null;
-      defaults.newTarget = toISODate(pushed && pushed > floor ? pushed : addDays(floor, 30));
+    if (kind === 'reassign') {
+      defaults.newContractor = '';
+      defaults.startDate = toISODate(today);
+      defaults.targetDate = '';
     }
     setForm(defaults);
     setStep('form');
-    setDialog({ kind, c, row, project });
+    setDialog({ kind, c, project });
   };
 
   const problems = useMemo(() => {
     if (!dialog) return [];
     const spec = ACTIONS[dialog.kind];
     const out = [];
-    const current = parseTargetDate(dialog.project?.target_completion_date);
     if (spec.fields.includes('replyBy')) {
       const problem = replyByProblem(form.replyBy, today);
       if (problem) out.push(problem);
@@ -294,14 +253,21 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     if (spec.fields.includes('note') && !reasonOk(form.note)) out.push(`Write a note of at least ${MIN_REASON} characters.`);
     if (spec.fields.includes('reason') && !reasonOk(form.reason)) out.push(`Write a reason of at least ${MIN_REASON} characters.`);
     if (spec.fields.includes('verifier') && !form.verifier) out.push('Choose a field engineer.');
-    if (spec.fields.includes('newTarget')) {
-      const d = parseTargetDate(form.newTarget);
-      if (!d || d <= today || (current && d <= current)) out.push(`The new target date must be after today${current ? ` and after ${fmtDay(current)}` : ''}.`);
+    if (spec.fields.includes('newDate')) {
+      const cap = approveCap(dialog.c, today);
+      const d = parseTargetDate(form.newDate);
+      if (!cap) out.push('No date can be approved for this round.');
+      else if (!d || d <= today || d > cap) out.push(`The approved date must be from ${fmtDay(addDays(today, 1))} to ${fmtDay(cap)} (never later than the contractor's date or the limit).`);
     }
-    if (spec.fields.includes('resumeDate')) {
-      const d = parseTargetDate(form.resumeDate);
-      const prev = dialog.kind === 'extendSuspension' ? dialog.row?.resumeBy : null;
-      if (!d || d <= today || (prev && d <= prev)) out.push(`The expected resume date must be after today${prev ? ` and after ${fmtDay(prev)}` : ''}.`);
+    if (spec.fields.includes('newContractor') && !form.newContractor) out.push('Choose the new contractor.');
+    if (spec.fields.includes('startDate')) {
+      const d = parseTargetDate(form.startDate);
+      if (!d || d < today || d > addDays(today, REASSIGN_START_MAX_DAYS)) out.push(`The start date must be from today up to ${REASSIGN_START_MAX_DAYS} days from today.`);
+    }
+    if (spec.fields.includes('targetDate')) {
+      const start = parseTargetDate(form.startDate);
+      const d = parseTargetDate(form.targetDate);
+      if (!d || (start && d <= start)) out.push('The new target date must be after the start date.');
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,22 +277,20 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     if (!dialog || problems.length) return;
     // The review step is the confirmation: nothing is sent from the form itself.
     if (step === 'form') { setStep('review'); return; }
-    const { kind, c, project } = dialog;
+    const { kind, c } = dialog;
     const spec = ACTIONS[kind];
     const note = form.note?.trim() || null;
     const reason = form.reason?.trim();
     const calls = {
       ask: ['delay_request_explanation', { p_case: c?.id, p_reply_by: form.replyBy, p_note: note }],
       verify: ['delay_request_verification', { p_case: c?.id, p_verifier: form.verifier, p_note: note }],
-      revise: ['delay_request_revision', { p_case: c?.id, p_note: note, p_reply_by: form.replyBy }],
-      finalNotice: ['delay_issue_final_notice', { p_case: c?.id, p_note: note, p_reply_by: form.replyBy }],
-      extend: ['delay_grant_extension', { p_case: c?.id, p_new_target_date: form.newTarget, p_reason: reason }],
+      approve: ['delay_approve', { p_case: c?.id, p_new_date: form.newDate, p_note: note }],
+      sendBack: ['delay_send_back', { p_case: c?.id, p_note: note, p_reply_by: form.replyBy }],
+      rejectNature: ['delay_reject_nature_claim', { p_case: c?.id, p_note: note, p_reply_by: form.replyBy }],
       completedLate: ['delay_close_completed_late', { p_case: c?.id, p_reason: reason }],
-      suspend: ['delay_suspend', { p_case: c?.id, p_reason: reason, p_resume_date: form.resumeDate }],
-      terminate: ['delay_terminate', { p_case: c?.id, p_reason: reason }],
-      resume: ['delay_resume_project', { p_project: project?.id, p_new_target_date: form.newTarget, p_reason: reason }],
-      extendSuspension: ['delay_end_suspension', { p_project: project?.id, p_action: 'extend', p_new_resume_date: form.resumeDate, p_reason: reason }],
-      terminateSuspended: ['delay_end_suspension', { p_project: project?.id, p_action: 'terminate', p_new_resume_date: null, p_reason: reason }],
+      reassign: ['delay_terminate_and_reassign', {
+        p_case: c?.id, p_reason: reason, p_new_contractor: form.newContractor, p_start_date: form.startDate, p_target_date: form.targetDate,
+      }],
     };
     const [fn, args] = calls[kind];
     setSaving(true);
@@ -346,7 +310,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
   };
 
   // ── render ────────────────────────────────────────────────────────────
-  const ActionButton = ({ kind, allowed, reason, c, row, tone = 'default' }) => {
+  const ActionButton = ({ kind, allowed, reason, c, tone = 'default' }) => {
     const styles = {
       default: 'border-slate-200 text-slate-700 hover:bg-slate-50',
       primary: 'border-teal-600 bg-teal-600 text-white hover:bg-teal-700',
@@ -357,7 +321,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
         type="button"
         disabled={!allowed}
         title={!allowed ? reason || 'Not available in this step' : undefined}
-        onClick={() => openAction(kind, { c, row })}
+        onClick={() => openAction(kind, { c })}
         className={`inline-flex h-9 items-center rounded-xl border px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${styles[tone]}`}
       >
         {ACTIONS[kind].button}
@@ -369,8 +333,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     const project = projectById.get(String(c.project_id));
     const state = CASE_STATES[c.status] || CASE_STATES.closed;
     const due = caseDue(c, today);
-    const used = extensionsUsed(c.project_id);
-    const a = adminActions(c, project, used);
+    const a = adminActions(c, project);
     const contractor = nameOf(contractors, project?.contractor_id);
     const verifier = nameOf(fieldEngineers, c.verifier_id);
     const daysLate = daysBetween(parseTargetDate(c.target_date_at_open), c.status === 'closed' ? parseTargetDate(c.closed_at?.slice(0, 10)) || today : today);
@@ -387,7 +350,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
             <p className="mt-0.5 text-sm text-slate-500">
               Target {fmtDay(c.target_date_at_open)} · <span className="font-semibold text-red-700">{Math.max(0, daysLate)} day(s) late</span>
               {' · '}Contractor: {contractor || <span className="text-amber-700">none assigned</span>}
-              {' · '}Extensions {used}/{MAX_EXTENSIONS}
+              {' · '}<span className="font-semibold text-slate-700">{offenseLabel(c)}</span>
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -399,18 +362,23 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
                 {due.label} {fmtDay(due.date)}
               </Pill>
             )}
-            {c.final_notice_missed && <Pill tone="bg-red-50 text-red-700 border-red-200">Final notice missed</Pill>}
+            {c.status !== 'closed' && needsFieldCheck(c) && c.proposed_date && c.verdict !== 'agree' && <Pill tone="bg-sky-50 text-sky-700 border-sky-200">Field check required</Pill>}
           </div>
         </div>
 
         {(c.cause || c.verdict || c.status === 'closed') && (
           <div className="mt-3 grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-2">
             {c.cause && (
-              <Fact label="Contractor's explanation">
-                <p><span className="font-semibold">{causeLabel(c.cause)}</span>{c.explanation ? `: ${c.explanation}` : ''}</p>
+              <Fact label="Contractor's commitment">
+                <p>
+                  <span className="font-semibold">{causeLabel(c.cause)}</span>
+                  {c.kind === 'act_of_nature' && c.event_name ? ` (${c.event_name}, ${c.stopped_days} day(s) stopped)` : ''}
+                  {c.explanation ? `: ${c.explanation}` : ''}
+                </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Proposed new date {fmtDay(c.proposed_date)}
-                  {project?.accomplishment != null ? ` (on record: ${Number(project.accomplishment)}%)` : ''}
+                  New finish date {fmtDay(c.proposed_date)}
+                  {c.window_max_date ? ` · limit ${fmtDay(c.window_max_date)}` : ''}
+                  {project?.accomplishment != null ? ` · on record: ${Number(project.accomplishment)}%` : ''}
                 </p>
               </Fact>
             )}
@@ -423,7 +391,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
             {c.status === 'awaiting_verification' && verifier && <Fact label="Field check">Waiting for {verifier}</Fact>}
             {c.status === 'closed' && (
               <Fact label="Outcome">
-                <p>{OUTCOMES[c.outcome]?.label}{c.new_target_date ? ` to ${fmtDay(c.new_target_date)}` : ''}{c.resume_date ? ` (resume by ${fmtDay(c.resume_date)})` : ''}{c.days_late != null ? ` · ${c.days_late} day(s) late` : ''}</p>
+                <p>{OUTCOMES[c.outcome]?.label}{c.new_target_date ? ` to ${fmtDay(c.new_target_date)}` : ''}{c.kind === 'act_of_nature' && c.outcome === 'extended' ? ' (act of nature, not counted)' : c.offense_no && c.outcome !== 'completed_late' ? ` · ${offenseLabel(c)}` : ''}{c.days_late != null ? ` · ${c.days_late} day(s) late` : ''}</p>
                 {c.outcome_reason && <p className="mt-1 text-xs text-slate-500">{c.outcome_reason}</p>}
               </Fact>
             )}
@@ -439,18 +407,17 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
         {c.status !== 'closed' && (
           <div className="mt-3 flex flex-wrap gap-2">
             {!anyAction && <p className="text-sm text-slate-500">Waiting for the {state.who === 'field_engineer' ? 'field engineer' : 'contractor'}. Nothing to do yet.</p>}
-            {(a.ask || a.reasons.ask) && <ActionButton kind="ask" allowed={a.ask} reason={a.reasons.ask} c={c} tone="primary" />}
-            {c.status === 'awaiting_decision' && (
+            {a.reassign && <ActionButton kind="reassign" allowed c={c} tone="danger" />}
+            {(a.ask || a.reasons.ask) && <ActionButton kind="ask" allowed={a.ask} reason={a.reasons.ask} c={c} tone={a.reassign ? 'default' : 'primary'} />}
+            {c.status === 'awaiting_decision' && c.proposed_date && (
               <>
-                <ActionButton kind="extend" allowed={a.extend} reason={a.reasons.extend} c={c} tone="primary" />
-                <ActionButton kind="verify" allowed={a.verify} c={c} />
-                <ActionButton kind="revise" allowed={a.revise} reason={a.reasons.revise} c={c} />
+                {(a.approve || a.reasons.approve) && <ActionButton kind="approve" allowed={a.approve} reason={a.reasons.approve} c={c} tone="primary" />}
+                {a.verify && <ActionButton kind="verify" allowed c={c} tone={needsFieldCheck(c) && c.verdict !== 'agree' ? 'primary' : 'default'} />}
+                {c.kind === 'act_of_nature' && <ActionButton kind="rejectNature" allowed={a.rejectNature} c={c} tone="danger" />}
+                {c.kind !== 'act_of_nature' && Number(c.offense_no) <= MAX_OFFENSES && <ActionButton kind="sendBack" allowed={a.sendBack} reason={a.reasons.sendBack} c={c} />}
               </>
             )}
-            {['awaiting_decision', 'no_response'].includes(c.status) && <ActionButton kind="finalNotice" allowed={a.finalNotice} reason={a.reasons.finalNotice} c={c} />}
             {anyAction && <ActionButton kind="completedLate" allowed={a.completedLate} c={c} />}
-            {anyAction && <ActionButton kind="suspend" allowed={a.suspend} c={c} tone="danger" />}
-            {anyAction && <ActionButton kind="terminate" allowed={a.terminate} c={c} tone="danger" />}
           </div>
         )}
 
@@ -482,33 +449,6 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
             ))}
           </ol>
         )}
-      </article>
-    );
-  };
-
-  const renderSuspended = (row) => {
-    const { project, resumeBy, extensions, suspension } = row;
-    const passed = resumeBy && resumeBy < today;
-    return (
-      <article key={project.id} className="rounded-2xl border border-violet-200/70 bg-white p-4 shadow-xs">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <button type="button" onClick={() => onOpenProject?.(project)} className="text-left text-base font-semibold text-slate-900 hover:text-teal-700">{project.project_name}</button>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Suspended since {fmtDay(suspension?.suspension_start)} · Suspension extensions {extensions}/{MAX_SUSPENSION_EXTENSIONS}
-            </p>
-            {suspension?.reason && <p className="mt-1 text-xs text-slate-500">{suspension.reason}</p>}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Pill tone={HALTED_STATUS_STYLES.Suspended.border}>Suspended</Pill>
-            {resumeBy && <Pill tone={passed ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-700 border-slate-200'}>{passed ? 'Resume date passed' : 'Resume by'} {fmtDay(resumeBy)}</Pill>}
-          </div>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <ActionButton kind="resume" allowed={Boolean(suspension)} reason="No open suspension record" row={row} tone="primary" />
-          <ActionButton kind="extendSuspension" allowed={Boolean(suspension && row.lastCase) && extensions < MAX_SUSPENSION_EXTENSIONS} reason={extensions >= MAX_SUSPENSION_EXTENSIONS ? `Already extended ${MAX_SUSPENSION_EXTENSIONS} times for this project. Resume or terminate it.` : 'Not suspended through the delay follow-up'} row={row} />
-          <ActionButton kind="terminateSuspended" allowed={Boolean(suspension && row.lastCase)} reason="Not suspended through the delay follow-up" row={row} tone="danger" />
-        </div>
       </article>
     );
   };
@@ -587,9 +527,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
       {loading && <p className="text-sm text-slate-500">Loading follow-ups…</p>}
 
       {!loading && !loadError && (
-        filter === 'suspended'
-          ? (suspendedRows.length ? suspendedRows.map(renderSuspended) : <EmptyState text="No suspended projects." />)
-          : (shown.length ? shown.map(renderCase) : <EmptyState text={filter === 'needs_you' ? 'Nothing needs your decision right now.' : 'No follow-ups here.'} />)
+        shown.length ? shown.map(renderCase) : <EmptyState text={filter === 'needs_you' ? 'Nothing needs your decision right now.' : 'No follow-ups here.'} />
       )}
 
       {dialog && spec && (
@@ -629,6 +567,8 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
               today={today}
               contractor={nameOf(contractors, dialog.project?.contractor_id)}
               engineer={nameOf(fieldEngineers, form.verifier)}
+              newContractor={nameOf(contractors, form.newContractor)}
+              project={dialog.project}
             />
           ) : (
           <div className="space-y-5">
@@ -664,21 +604,40 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
                 onChange={(v) => setForm((f) => ({ ...f, replyBy: v }))}
               />
             )}
-            {spec.fields.includes('newTarget') && (
+            {spec.fields.includes('newDate') && (
               <DateField
-                label={`New target date${dialog.project?.target_completion_date ? ` (now ${fmtDay(dialog.project.target_completion_date)})` : ''}`}
-                value={form.newTarget}
+                label={`Approved finish date (contractor asked for ${fmtDay(dialog.c?.proposed_date)})`}
+                value={form.newDate}
                 min={toISODate(addDays(today, 1))}
-                onChange={(v) => setForm((f) => ({ ...f, newTarget: v }))}
+                max={toISODate(approveCap(dialog.c, today))}
+                help={`Allowed: ${fmtDay(addDays(today, 1))} – ${fmtDay(approveCap(dialog.c, today))}. You can approve the same date or an earlier one, never a later one.`}
+                onChange={(v) => setForm((f) => ({ ...f, newDate: v }))}
               />
             )}
-            {spec.fields.includes('resumeDate') && (
-              <DateField label="Expected resume date" value={form.resumeDate} min={toISODate(addDays(today, 1))} onChange={(v) => setForm((f) => ({ ...f, resumeDate: v }))} />
+            {spec.fields.includes('newContractor') && (
+              <label className="block text-sm">
+                <span className="font-medium text-slate-700">New contractor</span>
+                <select value={form.newContractor} onChange={(e) => setForm((f) => ({ ...f, newContractor: e.target.value }))} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3">
+                  <option value="">Choose…</option>
+                  {contractors.filter((x) => x.id !== dialog.project?.contractor_id).map((x) => (
+                    <option key={x.id} value={x.id}>{x.full_name || x.email}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">
+                  They continue from {Number(dialog.project?.accomplishment || 0)}% with 0 offenses. The days late so far stay with the current contractor.
+                </span>
+              </label>
+            )}
+            {spec.fields.includes('startDate') && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <DateField label="New contractor starts on" value={form.startDate} min={toISODate(today)} max={toISODate(addDays(today, REASSIGN_START_MAX_DAYS))} onChange={(v) => setForm((f) => ({ ...f, startDate: v }))} />
+                <DateField label="Their target date" value={form.targetDate} min={toISODate(addDays(parseTargetDate(form.startDate) || today, 1))} onChange={(v) => setForm((f) => ({ ...f, targetDate: v }))} />
+              </div>
             )}
             {(spec.fields.includes('note') || spec.fields.includes('noteOptional')) && (
               <TextField
                 label={spec.fields.includes('note') ? 'Note to the contractor' : 'Note to the contractor (optional)'}
-                placeholder={dialog.kind === 'verify' ? 'What should the engineer check on site?' : 'e.g. Please explain the delay and attach your revised schedule.'}
+                placeholder={dialog.kind === 'verify' ? 'What should the engineer check on site?' : dialog.kind === 'rejectNature' ? 'Why the claim is not accepted, e.g. the site was not flooded on those days.' : dialog.kind === 'sendBack' ? 'What to change, e.g. the date is not realistic for the remaining work.' : 'e.g. Please commit a realistic finish date.'}
                 value={form.note}
                 required={spec.fields.includes('note')}
                 onChange={(v) => setForm((f) => ({ ...f, note: v }))}
@@ -713,6 +672,15 @@ const FIELD_CLS = 'mt-1.5 w-full rounded-xl border bg-white px-3 text-sm text-sl
 const fieldTone = (error) => (error ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20' : 'border-slate-200 focus:border-teal-500 focus:ring-teal-500/20');
 
 /* The project the action is about, so the admin does not act on the wrong one. */
+/* The latest date the DA may approve: the contractor's date, within the round's limit. */
+function approveCap(c, today) {
+  if (!c?.proposed_date) return null;
+  const proposed = parseTargetDate(c.proposed_date);
+  const win = commitWindow(c, c.kind === 'act_of_nature' ? 'act_of_nature' : 'manpower', c.stopped_days, today);
+  if (!proposed || !win) return null;
+  return proposed < win.max ? proposed : win.max;
+}
+
 function CaseContext({ project, targetAtOpen, contractor, today }) {
   const target = parseTargetDate(targetAtOpen || project?.target_completion_date);
   const late = target ? Math.max(0, daysBetween(target, today)) : null;
@@ -786,14 +754,17 @@ function ReplyByField({ value, today, error, next, onChange }) {
 }
 
 /* Step 2: everything that will be sent, read back before it is final. */
-function ReviewStep({ spec, kind, form, today, contractor, engineer }) {
+function ReviewStep({ spec, kind, form, today, contractor, engineer, newContractor, project }) {
   const replyBy = parseTargetDate(form.replyBy);
   const rows = [
     spec.fields.includes('replyBy') && { label: 'Send to', value: contractor ? `${contractor} (contractor)` : 'The assigned contractor' },
     spec.fields.includes('verifier') && { label: 'Send to', value: engineer ? `${engineer} (field engineer)` : '—' },
     spec.fields.includes('replyBy') && { label: 'Reply by', value: <><span className="font-semibold">{longDay(replyBy)}</span><span className="text-slate-500"> · in {daysBetween(today, replyBy)} days</span></> },
-    spec.fields.includes('newTarget') && { label: 'New target date', value: <span className="font-semibold">{longDay(parseTargetDate(form.newTarget))}</span> },
-    spec.fields.includes('resumeDate') && { label: 'Expected resume', value: <span className="font-semibold">{longDay(parseTargetDate(form.resumeDate))}</span> },
+    spec.fields.includes('newDate') && { label: 'Approved date', value: <span className="font-semibold">{longDay(parseTargetDate(form.newDate))}</span> },
+    spec.fields.includes('newContractor') && { label: 'Terminate', value: contractor ? `${contractor} (at ${Number(project?.accomplishment || 0)}%)` : '—' },
+    spec.fields.includes('newContractor') && { label: 'Reassign to', value: <span className="font-semibold">{newContractor || '—'}</span> },
+    spec.fields.includes('startDate') && { label: 'Starts on', value: longDay(parseTargetDate(form.startDate)) },
+    spec.fields.includes('targetDate') && { label: 'Their target', value: <span className="font-semibold">{longDay(parseTargetDate(form.targetDate))}</span> },
     (spec.fields.includes('note') || spec.fields.includes('noteOptional')) && { label: 'Note', value: form.note?.trim() ? <span className="whitespace-pre-line">{form.note.trim()}</span> : <span className="italic text-slate-400">No note</span> },
     spec.fields.includes('reason') && { label: 'Reason', value: <span className="whitespace-pre-line">{form.reason?.trim()}</span> },
   ].filter(Boolean);
@@ -822,11 +793,12 @@ function ReviewStep({ spec, kind, form, today, contractor, engineer }) {
   );
 }
 
-function DateField({ label, value, min, max, onChange }) {
+function DateField({ label, value, min, max, help, onChange }) {
   return (
     <label className="block text-sm">
       <span className="font-medium text-slate-700">{label}</span>
       <input type="date" value={value || ''} min={min} max={max} onChange={(e) => onChange(e.target.value)} className={`${FIELD_CLS} h-11 ${fieldTone(false)}`} />
+      {help && <span className="mt-1 block text-xs text-slate-500">{help}</span>}
     </label>
   );
 }

@@ -14,7 +14,7 @@ const NAV_GROUPS = [
   { label: 'Work', items: [
     { to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road },
     { to: '/contractor/priority', label: 'Priority Tasks', description: 'Requests from the DA prioritization', icon: Icons.ShieldCheck },
-    { to: '/contractor/delays', label: 'Delay Follow-ups', description: 'Explain late projects to the DA', icon: Icons.Clock },
+    { to: '/contractor/delays', label: 'Delay Follow-ups', description: 'Commit dates for late projects', icon: Icons.Clock },
   ] },
   { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', description: 'Citizen reports and repairs', icon: Icons.Document }] },
   { label: 'Account', items: [{ to: '/contractor/profile', label: 'My Profile', description: 'Your account details', icon: Icons.UserCircle }] },

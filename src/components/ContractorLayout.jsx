@@ -21,7 +21,7 @@ const PAGE_DESCRIPTIONS = {
   '/contractor': 'Your assigned projects and what needs attention',
   '/contractor/projects': 'Roads assigned to you, their progress and your submission history',
   '/contractor/reports': 'Citizen reports on your roads and the repairs assigned to you',
-  '/contractor/delays': 'Explain late projects to the DA and see its decisions',
+  '/contractor/delays': 'Commit new finish dates for late projects and see the DA decisions',
   '/contractor/priority': 'What the DA prioritization asks of you, and your replies',
   '/contractor/profile': 'Your photo, contact number and account details',
 };
@@ -78,12 +78,12 @@ export default function ContractorLayout({ children }) {
   // A notification opens the thing it is about.
   const isPriority = (n) => String(n.type || '').startsWith('priority_');
   // Delay follow-up notices that ask the contractor to reply (the rest are news).
-  const DELAY_NEEDS_REPLY = ['delay_explanation_requested', 'delay_final_notice', 'delay_reply_due'];
+  const DELAY_NEEDS_REPLY = ['delay_explanation_requested', 'delay_revision_requested', 'delay_nature_rejected', 'delay_reply_due'];
   const needsDelayReply = (n) => DELAY_NEEDS_REPLY.includes(n.type);
 
   // Each notification opens the exact thing it is about, not just a page.
   const resolveNotificationTarget = (n) => {
-    if (needsDelayReply(n)) return { actionLabel: n.type === 'delay_final_notice' ? 'Reply to the final notice' : 'Send my explanation' };
+    if (needsDelayReply(n)) return { actionLabel: 'Commit a new finish date' };
     if (String(n.type || '').startsWith('delay_')) return { actionLabel: 'Open Delay Follow-ups' };
     if (isPriority(n)) return { actionLabel: 'Open Priority Tasks' };
     if (n.progress_update_id) return { actionLabel: 'View this update' };

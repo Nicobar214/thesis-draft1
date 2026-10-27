@@ -1,10 +1,9 @@
-/* DelayExplanationPanel.jsx — the contractor's side of the delay follow-up
- * (supabase_project_delay_cases.sql), shown on Delay Follow-ups (/contractor/delays).
- * When one of their projects passes its target date, the DA asks why; the
- * contractor answers with a cause, an explanation and a proposed completion date
- * (progress itself comes from their certified progress updates). The answer goes through delay_submit_explanation, which
- * checks everything again (only this project's contractor, only while it is their
- * turn, 10+ characters, date after today). Text only: no photos (Phase 1).
+/* DelayExplanationPanel.jsx — the contractor's side of the overdue process
+ * (supabase_overdue_v2.sql), shown on Delay Follow-ups (/contractor/delays).
+ * When one of their projects passes its target date, the DA asks; the contractor
+ * picks the cause (Act of nature: not counted, needs proof / Manpower: an offense)
+ * and commits a new finish date inside the allowed window (60 / 45 / 30 days by
+ * offense, or the days work stopped). delay_submit_commitment checks it all again.
  *
  * Layout: a list (To answer / Waiting on the DA / Decided, most urgent first) and
  * the selected project beside it, so many late projects stay one short list
@@ -22,8 +21,9 @@ import { evidenceSummary, uploadEvidence } from '../../lib/evidence';
 
 const EVIDENCE_BUCKET = 'delay-evidence';
 import {
-  addDays, caseDue, causeLabel, CONTRACTOR_TURN, CONTRACTOR_WAITING, DELAY_CAUSES, daysBetween, explanationProblems,
-  fmtDay, friendlyDelayError, manilaToday, MIN_REASON, OUTCOMES, parseTargetDate, REQUEST_EVENT, toISODate,
+  addDays, caseDue, causeLabel, commitmentProblems, commitWindow, CONTRACTOR_TURN, CONTRACTOR_WAITING, DELAY_CAUSES, daysBetween,
+  fmtDay, friendlyDelayError, manilaToday, MAX_OFFENSES, MIN_REASON, NATURE_CAP_DAYS, offenseLabel, offenseWindow, OUTCOMES,
+  parseTargetDate, REQUEST_EVENT, toISODate,
 } from '../../lib/delayCases';
 
 const RECENT_CLOSED_DAYS = 30;
@@ -138,7 +138,7 @@ export default function DelayExplanationPanel({ client, userId, focusProjectId =
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center">
         <CheckCircle2Icon className="size-8 text-emerald-500" aria-hidden="true" />
         <p className="font-semibold text-slate-800">None of your projects is late</p>
-        <p className="max-w-sm text-sm text-slate-500">If a project passes its target date, the DA&rsquo;s request to explain will appear here.</p>
+        <p className="max-w-sm text-sm text-slate-500">If a project passes its target date, the DA&rsquo;s request to commit a new finish date will appear here.</p>
       </div>
     );
   }
@@ -257,12 +257,13 @@ function CaseRow({ c, project, today, active, onPick }) {
       aria-current={active ? 'true' : undefined}
       className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${active ? 'bg-teal-50' : 'hover:bg-slate-50'}`}
     >
-      <span className={`h-9 w-1 shrink-0 rounded-full ${c.status === 'final_notice' ? 'bg-red-600' : turn ? 'bg-amber-400' : c.status === 'closed' ? 'bg-slate-300' : 'bg-sky-400'}`} aria-hidden="true" />
+      <span className={`h-9 w-1 shrink-0 rounded-full ${turn && Number(c.offense_no) >= MAX_OFFENSES && c.kind !== 'act_of_nature' ? 'bg-red-600' : turn ? 'bg-amber-400' : c.status === 'closed' ? 'bg-slate-300' : 'bg-sky-400'}`} aria-hidden="true" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-slate-900">{project?.project_name || `Project #${c.project_id}`}</span>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
           {project?.municipality && <span>{project.municipality}</span>}
           {c.status !== 'closed' && late != null && <span className="font-medium text-red-700">{late} day{late === 1 ? '' : 's'} late</span>}
+          {c.status !== 'closed' && <span className="font-semibold text-slate-600">{offenseLabel(c)}</span>}
           {turn ? <DueChip c={c} today={today} /> : c.status === 'closed' ? (
             <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${OUTCOMES[c.outcome]?.tone || ''}`}>{OUTCOMES[c.outcome]?.label || 'Closed'}</span>
           ) : <span>With the DA</span>}
@@ -296,14 +297,18 @@ function Sent({ c }) {
   if (!c.explanation) return null;
   return (
     <dl className="mt-4 grid gap-x-4 gap-y-2 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-[9rem_1fr]">
-      <dt className="text-slate-500">Your cause</dt><dd className="text-slate-800">{causeLabel(c.cause)}</dd>
+      <dt className="text-slate-500">Your cause</dt>
+      <dd className="text-slate-800">
+        {causeLabel(c.cause)}
+        {c.kind === 'act_of_nature' && c.event_name && <span className="text-slate-500"> · {c.event_name}, {c.stopped_days} day(s) stopped</span>}
+      </dd>
       <dt className="text-slate-500">What you said</dt><dd className="whitespace-pre-line text-slate-800">{c.explanation}</dd>
-      {c.proposed_date && <><dt className="text-slate-500">Proposed finish</dt><dd className="text-slate-800">{fmtDay(c.proposed_date)}</dd></>}
+      {c.proposed_date && <><dt className="text-slate-500">New finish date</dt><dd className="text-slate-800">{fmtDay(c.proposed_date)}</dd></>}
     </dl>
   );
 }
 
-/** The evidence sent with a follow-up (empty until supabase_delay_evidence_and_extensions.sql is run). */
+/** The evidence sent with a follow-up. */
 function useCaseEvidence(client, caseId) {
   const [rows, setRows] = useState([]);
   useEffect(() => {
@@ -321,13 +326,14 @@ function StatusCard({ c, project, today, client }) {
   const evidence = useCaseEvidence(client, c.id);
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-      <DetailHead c={c} project={project} today={today} />
+      <DetailHead c={c} project={project} today={today} right={<OffenseChip c={c} />} />
       {closed ? (
         <div className="mt-4 rounded-xl border border-slate-200 p-4 text-sm">
           <span className={`inline-flex rounded-lg border px-2 py-0.5 text-xs font-semibold ${OUTCOMES[c.outcome]?.tone || ''}`}>{OUTCOMES[c.outcome]?.label || 'Closed'}</span>
           <p className="mt-2 text-slate-700">
-            {c.outcome === 'extended' && c.new_target_date && <>New target date: <span className="font-semibold">{fmtDay(c.new_target_date)}</span>. </>}
-            {c.outcome === 'suspended' && c.resume_date && <>Expected to resume about <span className="font-semibold">{fmtDay(c.resume_date)}</span>. </>}
+            {c.outcome === 'extended' && c.new_target_date && <>New finish date: <span className="font-semibold">{fmtDay(c.new_target_date)}</span>{c.kind === 'act_of_nature' ? ' (act of nature, not counted as an offense)' : ` (${offenseLabel(c)})`}. </>}
+            {c.outcome === 'no_reply' && <>No commitment was sent by the reply date, so it was counted as Offense {c.offense_no} of {MAX_OFFENSES}. </>}
+            {c.outcome === 'terminated' && <>Your contract on this project was terminated after 3 offenses. </>}
             {c.outcome_reason}
           </p>
         </div>
@@ -343,22 +349,46 @@ function StatusCard({ c, project, today, client }) {
   );
 }
 
+function OffenseChip({ c }) {
+  const nature = c.kind === 'act_of_nature';
+  const n = Number(c.offense_no) || 1;
+  const tone = nature ? 'border-sky-200 bg-sky-50 text-sky-800'
+    : n >= MAX_OFFENSES ? 'border-red-200 bg-red-50 text-red-700'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
+  return <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide ${tone}`}>{offenseLabel(c)}</span>;
+}
+
+/* What each offense round means, in one line. */
+function roundRule(c) {
+  const n = Number(c.offense_no) || 1;
+  if (c.kind === 'offense') return `Your act-of-nature claim was not accepted, so this counts as Offense ${n} of ${MAX_OFFENSES} (manpower). Choose a finish date within ${offenseWindow(n)} days.`;
+  if (n > MAX_OFFENSES) return 'Your 3 chances are used. Only an act of nature (with proof and a field check) can still be accepted; otherwise the DA terminates and reassigns the project.';
+  if (n === MAX_OFFENSES) return `FINAL CHANCE. If the cause is manpower, this is Offense 3 of 3: finish within ${offenseWindow(n)} days, and a field engineer checks first. A 4th delay ends your contract on this project.`;
+  return `If the cause is manpower, this is Offense ${n} of ${MAX_OFFENSES}: finish within ${offenseWindow(n)} days. An act of nature is not counted.`;
+}
+
 function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) {
   const turn = CONTRACTOR_TURN[c.status];
-  const finalNotice = c.status === 'final_notice';
-  const target = parseTargetDate(c.target_date_at_open);
+  const n = Number(c.offense_no) || 1;
+  const strict = c.kind !== 'act_of_nature' && n >= MAX_OFFENSES;
+  const lockedManpower = c.kind === 'offense';
   const form = draft || {
-    // A revision starts from what was sent before.
-    cause: c.cause || '',
+    // A send-back starts from what was sent before.
+    cause: lockedManpower ? 'manpower' : (c.cause === 'act_of_nature' || c.cause === 'manpower' ? c.cause : ''),
     explanation: c.explanation || '',
-    proposedDate: c.proposed_date || toISODate(addDays(target && target > today ? target : today, 30)),
+    newDate: c.proposed_date || '',
+    eventName: c.event_name || '',
+    stoppedDays: c.stopped_days ? String(c.stopped_days) : '',
     evidence: [],
   };
   const [touched, setTouched] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [sending, setSending] = useState(false);
-  const problems = explanationProblems(form, today);
+  const nature = form.cause === 'act_of_nature';
+  const win = form.cause ? commitWindow(c, form.cause, form.stoppedDays, today) : null;
+  const problems = commitmentProblems(c, { ...form, hasProof: form.evidence.length > 0 }, today);
   const set = (key) => (e) => onDraft({ ...form, [key]: e.target.value });
+  const causes = DELAY_CAUSES.filter((x) => (lockedManpower ? x.value === 'manpower' : n > MAX_OFFENSES ? x.value === 'act_of_nature' : true));
 
   const review = () => {
     setTouched(true);
@@ -369,29 +399,28 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
     setSending(true);
     try {
       // Evidence first (it can only be added while it is the contractor's turn),
-      // then the explanation that the DA reviews with it.
+      // then the commitment the DA reviews with it.
       if (form.evidence.length) {
         let rows;
         try {
           rows = await uploadEvidence(client, { bucket: EVIDENCE_BUCKET, prefix: c.id, items: form.evidence });
         } catch (err) {
-          throw new Error(/bucket|not found/i.test(err?.message || '')
-            ? 'Evidence uploads are not set up yet. Ask the DA administrator to run supabase_delay_evidence_and_extensions.sql, or send without evidence.'
-            : `The evidence could not be uploaded (${err?.message || 'network error'}). Nothing was sent; please try again.`);
+          throw new Error(`The evidence could not be uploaded (${err?.message || 'network error'}). Nothing was sent; please try again.`);
         }
         const { error: evErr } = await client.from('project_delay_evidence')
           .insert(rows.map((r) => ({ ...r, case_id: c.id, project_id: c.project_id })));
         if (evErr) throw evErr;
       }
-      const { error } = await client.rpc('delay_submit_explanation', {
+      const { error } = await client.rpc('delay_submit_commitment', {
         p_case: c.id,
         p_cause: form.cause,
         p_explanation: form.explanation.trim(),
-        p_proposed_date: form.proposedDate,
-        p_claimed_percent: null, // not asked here: progress comes from certified progress updates
+        p_new_date: form.newDate,
+        p_event_name: nature ? form.eventName.trim() : null,
+        p_stopped_days: nature ? Number(form.stoppedDays) : null,
       });
       if (error) throw error;
-      notify('Your explanation was sent to the DA.', 'success');
+      notify('Your commitment was sent to the DA.', 'success');
       setReviewing(false);
       await onSent?.();
     } catch (err) {
@@ -401,17 +430,17 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
     }
   };
 
-  const n = form.explanation.trim().length;
+  const chars = form.explanation.trim().length;
   const inputCls = 'mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20';
   return (
-    <article className={`rounded-2xl border bg-white p-5 shadow-xs ${finalNotice ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
+    <article className={`rounded-2xl border bg-white p-5 shadow-xs ${strict ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
       <DetailHead
         c={c}
         project={project}
         today={today}
         right={(
           <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-            <DueChip c={c} today={today} />
+            <div className="flex flex-wrap gap-1.5"><OffenseChip c={c} /><DueChip c={c} today={today} /></div>
             <EvidenceActions
               items={form.evidence}
               onChange={(evidence) => onDraft({ ...form, evidence })}
@@ -422,43 +451,86 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
         )}
       />
 
-      <div className={`mt-4 rounded-xl p-4 text-sm ${finalNotice ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900'}`}>
+      <div className={`mt-4 rounded-xl p-4 text-sm ${strict ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900'}`}>
         <p className="flex items-center gap-1.5 font-semibold">
-          {finalNotice ? <TriangleAlertIcon className="size-4" aria-hidden="true" /> : <CalendarClockIcon className="size-4" aria-hidden="true" />}
+          {strict ? <TriangleAlertIcon className="size-4" aria-hidden="true" /> : <CalendarClockIcon className="size-4" aria-hidden="true" />}
           {turn.title}
         </p>
-        <p className="mt-1">
-          {finalNotice
-            ? 'This is the last request. Without a reply by the date, the DA can only suspend or terminate the project.'
-            : c.status === 'revision_requested'
-              ? 'The DA asked you to revise your explanation. This is the only revision.'
-              : 'Tell the DA why the project is late and when it will be finished.'}
-        </p>
+        <p className="mt-1">{roundRule(c)}</p>
+        {c.status === 'revision_requested' && <p className="mt-1">The DA sent your commitment back. This is the only time.</p>}
         {note && <p className="mt-2 border-l-2 border-current/30 pl-2 italic">DA: “{note}”</p>}
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+      <fieldset className="mt-5">
+        <legend className="text-sm font-medium text-slate-700">Cause of the delay</legend>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          {causes.map((x) => {
+            const on = form.cause === x.value;
+            return (
+              <label
+                key={x.value}
+                className={`flex cursor-pointer gap-3 rounded-xl border p-3.5 transition ${on ? 'border-teal-500 bg-teal-50/60 ring-2 ring-teal-500/20' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                <input type="radio" name={`cause-${c.id}`} value={x.value} checked={on} onChange={set('cause')} className="mt-1 accent-teal-600" />
+                <span>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    {x.label}
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${x.offense ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'}`}>
+                      {x.offense ? `Offense ${Math.min(n, MAX_OFFENSES)} · up to ${offenseWindow(n)} days` : 'Not counted'}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-500">{x.hint}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      {nature && (
+        <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_12rem]">
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">Event</span>
+            <input type="text" value={form.eventName} onChange={set('eventName')} placeholder='e.g. "Typhoon Kristine"' className={`${inputCls} h-11`} />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">Days work stopped</span>
+            <input type="number" inputMode="numeric" min={1} max={NATURE_CAP_DAYS} value={form.stoppedDays} onChange={set('stoppedDays')} placeholder={`1–${NATURE_CAP_DAYS}`} className={`${inputCls} h-11`} />
+          </label>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
-          <span className="font-medium text-slate-700">Main cause</span>
-          <select value={form.cause} onChange={set('cause')} className={`${inputCls} h-11`}>
-            <option value="">Choose…</option>
-            {DELAY_CAUSES.map((cause) => <option key={cause.value} value={cause.value}>{cause.label}</option>)}
-          </select>
+          <span className="font-medium text-slate-700">New finish date</span>
+          <input
+            type="date"
+            value={form.newDate}
+            min={win ? toISODate(win.min) : undefined}
+            max={win ? toISODate(win.max) : undefined}
+            disabled={!win}
+            onChange={set('newDate')}
+            className={`${inputCls} h-11 disabled:bg-slate-50 disabled:text-slate-400`}
+          />
+          <span className="mt-1 block text-xs text-slate-500">
+            {win
+              ? <>Allowed: <span className="font-semibold text-slate-700">{fmtDay(win.min)} – {fmtDay(win.max)}</span> ({win.days} days max). Later dates cannot be chosen.</>
+              : form.cause ? 'Enter the days work stopped first.' : 'Choose the cause first.'}
+          </span>
         </label>
-        <label className="block text-sm">
-          <span className="font-medium text-slate-700">Proposed completion date</span>
-          <input type="date" value={form.proposedDate} min={toISODate(addDays(today, 1))} onChange={set('proposedDate')} className={`${inputCls} h-11`} />
-        </label>
-        <label className="block text-sm sm:col-span-2">
-          <span className="font-medium text-slate-700">What happened</span>
-          <textarea value={form.explanation} onChange={set('explanation')} rows={4} placeholder="e.g. Two weeks of heavy rain stopped the concrete pour; a second crew starts Monday." className={`${inputCls} resize-y py-2.5`} />
-          <span className={`mt-1 block text-right text-xs ${n >= MIN_REASON ? 'text-emerald-700' : 'text-slate-400'}`}>{n}/{MIN_REASON} characters minimum</span>
+        <label className="block text-sm sm:row-span-2">
+          <span className="font-medium text-slate-700">What happened and your plan</span>
+          <textarea value={form.explanation} onChange={set('explanation')} rows={4} placeholder={nature ? 'e.g. The typhoon flooded the site for 5 days; work restarts Monday.' : 'e.g. Short of 6 workers; a second crew starts Monday.'} className={`${inputCls} resize-y py-2.5`} />
+          <span className={`mt-1 block text-right text-xs ${chars >= MIN_REASON ? 'text-emerald-700' : 'text-slate-400'}`}>{chars}/{MIN_REASON} characters minimum</span>
         </label>
       </div>
 
       <div className="mt-5">
         <p className="mb-2 text-sm font-medium text-slate-700">
-          Supporting evidence <span className="font-normal text-slate-400">(optional · photos or PDFs, up to 8)</span>
+          {nature ? 'Proof' : 'Supporting evidence'}{' '}
+          <span className="font-normal text-slate-400">
+            {nature ? '(required · PAGASA/NDRRMC advisory, LGU notice or photos of the damage)' : '(optional · photos or PDFs, up to 8)'}
+          </span>
         </p>
         <EvidenceGrid items={form.evidence} onChange={(evidence) => onDraft({ ...form, evidence })} />
       </div>
@@ -473,7 +545,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
         <button
           type="button"
           onClick={review}
-          className={`inline-flex h-11 items-center gap-2 rounded-xl px-5 text-sm font-semibold text-white shadow-sm ${finalNotice ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'}`}
+          className={`inline-flex h-11 items-center gap-2 rounded-xl px-5 text-sm font-semibold text-white shadow-sm ${strict ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'}`}
         >
           <SendIcon className="size-4" aria-hidden="true" />
           {turn.button}
@@ -483,7 +555,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
       {reviewing && (
         <Modal
           onClose={() => !sending && setReviewing(false)}
-          title={finalNotice ? 'Send your reply to the final notice?' : 'Send this explanation to the DA?'}
+          title="Send this commitment to the DA?"
           description={project?.project_name}
           size="md"
           footer={(
@@ -496,7 +568,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
                 onClick={send}
                 disabled={sending}
                 data-autofocus
-                className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-70 ${finalNotice ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'}`}
+                className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-70 ${strict ? 'bg-red-600 hover:bg-red-700' : 'bg-teal-600 hover:bg-teal-700'}`}
               >
                 <SendIcon className="size-4" aria-hidden="true" />
                 {sending ? 'Sending…' : 'Yes, send it'}
@@ -507,10 +579,10 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
           <div className="space-y-4">
             <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 text-sm">
               {[
-                ['Main cause', causeLabel(form.cause)],
+                ['Cause', nature ? `Act of nature · ${form.eventName.trim()}, ${form.stoppedDays} day(s) stopped` : `Manpower · Offense ${n} of ${MAX_OFFENSES}`],
+                ['New finish date', fmtDay(form.newDate)],
                 ['What happened', form.explanation.trim()],
-                ['Proposed finish', fmtDay(form.proposedDate)],
-                ['Evidence', evidenceSummary(form.evidence)],
+                [nature ? 'Proof' : 'Evidence', evidenceSummary(form.evidence)],
               ].map(([label, value]) => (
                 <div key={label} className="grid grid-cols-[8rem_1fr] gap-3 px-4 py-2.5">
                   <dt className="text-slate-500">{label}</dt>
@@ -519,10 +591,13 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
               ))}
             </dl>
             {form.evidence.length > 0 && <EvidenceGrid items={form.evidence} />}
-            <p className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${finalNotice ? 'bg-red-50 text-red-800' : 'bg-slate-50 text-slate-600'}`}>
-              {finalNotice
-                ? 'This is your answer to the final notice. The DA decides next; you cannot change it after sending.'
-                : 'The DA will review it and may ask a field engineer to check on site. You cannot change it after sending.'}
+            <p className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${strict ? 'bg-red-50 text-red-800' : 'bg-slate-50 text-slate-600'}`}>
+              {nature
+                ? 'A field engineer checks the damage on site before the DA approves. If the claim is not accepted, it counts as an offense.'
+                : n >= MAX_OFFENSES
+                  ? 'This is your final chance. A field engineer checks first. Once approved, the date is locked; missing it ends your contract on this project.'
+                  : 'Once the DA approves it, the date is locked. Missing it becomes the next offense, with less time.'}
+              {' '}You cannot change it after sending.
             </p>
           </div>
         </Modal>

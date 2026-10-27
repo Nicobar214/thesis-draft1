@@ -14,6 +14,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import ProjectProgressTimeline from './ProjectProgressTimeline';
 import ProjectExtensions from './fmrProjects/ProjectExtensions';
+import ContractorHistory from './fmrProjects/ContractorHistory';
 import ProjectRouteMiniMap from './map/ProjectRouteMiniMap';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
@@ -64,6 +65,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
       {project.status !== 'Proposed' && <ProjectProgressTimeline key={project.id} projectId={project.id} />}
 
       {/* Why the deadline moved: DA and contractor reasons (only when extended). */}
+      {project.id != null && <ContractorHistory projectId={project.id} />}
       {project.id != null && <ProjectExtensions projectId={project.id} />}
 
       {/* Specifications Grid Card */}

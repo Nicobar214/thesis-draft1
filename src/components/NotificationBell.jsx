@@ -62,8 +62,13 @@ const TYPE_META = {
   project_assigned:                   { label: 'Assigned',    accent: 'bg-blue-500' },
   site_engineer_assigned:             { label: 'Assigned',    accent: 'bg-blue-500' },
   project_site_engineer_set:          { label: 'Engineer set', accent: 'bg-indigo-500' },
-  // Overdue-project follow-up (supabase_project_delay_cases.sql)
-  delay_explanation_requested:        { label: 'Explain delay', accent: 'bg-red-500' },
+  // Overdue process (supabase_overdue_v2.sql)
+  delay_explanation_requested:        { label: 'Commit date',   accent: 'bg-red-500' },
+  delay_revision_requested:           { label: 'Commit again',  accent: 'bg-amber-500' },
+  delay_nature_rejected:              { label: 'Claim rejected', accent: 'bg-red-600' },
+  delay_verification_requested:       { label: 'Site check',    accent: 'bg-sky-500' },
+  project_reassigned_to_you:          { label: 'Reassigned',    accent: 'bg-blue-500' },
+  project_reassigned:                 { label: 'Reassigned',    accent: 'bg-slate-500' },
   delay_final_notice:                 { label: 'Final notice',  accent: 'bg-red-600' },
   delay_reply_due:                    { label: 'Reply due',     accent: 'bg-amber-500' },
   delay_case_closed:                  { label: 'Decision',      accent: 'bg-slate-500' },
