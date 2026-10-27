@@ -19,7 +19,8 @@ import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { getWorkflowMeta } from '../../lib/progressWorkflow';
 import { formatPercentage } from '../../lib/percentageFormat';
 import QuantityCertificationReview from './QuantityCertificationReview';
-import ZoomablePhoto from '../ui/ZoomablePhoto';
+import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../ui/Modal';
+import SubmissionEvidence from './SubmissionEvidence';
 import CertificationPhotoCapture from './CertificationPhotoCapture';
 import { attachCertificationPhoto } from '../../lib/progressCertificationPhoto';
 
@@ -38,6 +39,29 @@ const fmtDate = (value) => {
 const statusBadge = (update) => getWorkflowMeta(update);
 const isQuantitySubmission = (update) => Array.isArray(update.progress_update_items)
   && update.progress_update_items.length > 0;
+
+/* The review opens in a dialog over the list, so the engineer does not lose
+   their place. Clicking outside does not close it (a half-filled review would
+   be lost); the X, Cancel or Esc do. */
+function ReviewDialog({ title, subtitle, onClose, children }) {
+  return (
+    <div className={MODAL_OVERLAY} role="presentation">
+      <ModalEffects onClose={onClose} />
+      <div className={`${MODAL_PANEL_SCROLL} max-w-5xl`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">{title}</h2>
+            {subtitle && <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">{subtitle}</p>}
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close review" className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <XIcon className="size-5" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="px-4 py-5 sm:px-6">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * focusUpdateId: optional. When set (e.g. from a notification), the panel finds
@@ -215,7 +239,8 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     // onFocusHandled() re-renders the parent, which would cancel the timer, and
     // scrolling to a row that no longer exists is a harmless no-op.
     setTimeout(() => {
-      document.getElementById(`progress-row-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const target = window.matchMedia('(min-width: 768px)').matches ? `progress-row-${row.id}` : `progress-card-${row.id}`;
+      document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 60);
     onFocusHandled?.();
   }, [focusUpdateId, loading, rows, showNotification, onFocusHandled]);
@@ -548,8 +573,57 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm space-y-4">
+          {/* Phones: one card per submission, every detail visible without scrolling sideways. */}
+          <ul className="space-y-3 md:hidden">
+            {paginatedRows.map((row) => {
+              const badge = statusBadge(row);
+              const project = row.fmr_projects || {};
+              const isAwaiting = row.status === 'pending' && row.certification_status !== 'certified';
+              const certified = row.certified_accomplishment;
+              return (
+                <li key={row.id} id={`progress-card-${row.id}`} className={`rounded-2xl border p-4 ${isAwaiting ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`font-bold leading-snug ${isAwaiting ? 'text-amber-900' : 'text-slate-900'}`}>{project.project_name || `Project #${row.fmr_project_id}`}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{project.municipality || '—'} · {fmtDate(row.period_start)} – {fmtDate(row.period_end)}</p>
+                    </div>
+                    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-semibold ${badge.tone}`}>
+                      <span className={`size-1.5 rounded-full ${badge.dot}`} />
+                      {badge.label}
+                    </span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-white px-2 py-2 ring-1 ring-slate-200">
+                      <dt className="text-[10px] font-semibold uppercase text-slate-400">Claimed</dt>
+                      <dd className="font-mono text-sm font-bold text-slate-800">{formatPercentage(Number(row.reported_accomplishment ?? 0))}</dd>
+                    </div>
+                    <div className="rounded-lg bg-white px-2 py-2 ring-1 ring-slate-200">
+                      <dt className="text-[10px] font-semibold uppercase text-slate-400">Certified</dt>
+                      <dd className={`font-mono text-sm font-bold ${certified == null ? 'text-slate-300' : 'text-teal-700'}`}>{formatPercentage(certified)}</dd>
+                    </div>
+                    <div className="rounded-lg bg-white px-2 py-2 ring-1 ring-slate-200">
+                      <dt className="text-[10px] font-semibold uppercase text-slate-400">Billed</dt>
+                      <dd className="truncate font-mono text-sm font-bold text-slate-700">
+                        {row.amount_this_billing != null ? `₱${Number(row.amount_this_billing).toLocaleString('en-PH', { maximumFractionDigits: 0 })}` : '—'}
+                      </dd>
+                    </div>
+                  </dl>
+                  {activeTab === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => openRow(row)}
+                      className="mt-3 w-full rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-700"
+                    >
+                      {isQuantitySubmission(row) ? 'Review quantities' : 'Review & certify'}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
           {/* Tabular Table */}
-          <div className="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs">
+          <div className="hidden overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-xs md:block">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -644,33 +718,27 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
           {openId && (() => {
             const row = rows.find(r => r.id === openId);
             if (!row) return null;
+            const title = row.fmr_projects?.project_name || `Project #${row.fmr_project_id}`;
+            const subtitle = `${row.fmr_projects?.municipality ? `${row.fmr_projects.municipality} · ` : ''}Period ${fmtDate(row.period_start)} – ${fmtDate(row.period_end)}`;
             if (isQuantitySubmission(row)) {
               return (
-                <QuantityCertificationReview
-                  key={row.id}
-                  row={row}
-                  onClose={() => setOpenId(null)}
-                  onSaved={fetchRows}
-                  showNotification={showNotification}
-                />
+                <ReviewDialog title={`Validate quantities: ${title}`} subtitle={subtitle} onClose={() => setOpenId(null)}>
+                  <QuantityCertificationReview
+                    key={row.id}
+                    row={row}
+                    onClose={() => setOpenId(null)}
+                    onSaved={fetchRows}
+                    showNotification={showNotification}
+                  />
+                </ReviewDialog>
               );
             }
             const reported = Number(row.reported_accomplishment ?? 0);
             const workItems = Array.isArray(row.work_items) ? row.work_items : [];
 
             return (
-              <div className="border border-slate-200 rounded-2xl p-5 bg-slate-50/70 space-y-4 shadow-sm animate-fadeIn">
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      Certify: {row.fmr_projects?.project_name || `Project #${row.fmr_project_id}`}
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Period: {fmtDate(row.period_start)} – {fmtDate(row.period_end)} &middot; Contractor Claim: <strong className="text-slate-800">{formatPercentage(reported)}</strong>
-                    </p>
-                  </div>
-                  <button onClick={() => setOpenId(null)} aria-label="Close" className="p-1 text-slate-400 hover:text-slate-600"><XIcon className="size-4" aria-hidden="true" /></button>
-                </div>
+              <ReviewDialog title={`Certify: ${title}`} subtitle={`${subtitle} · Contractor claim ${formatPercentage(reported)}`} onClose={() => setOpenId(null)}>
+              <div className="space-y-4">
 
                 {row.remarks && (
                   <div>
@@ -714,15 +782,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                   </div>
                 )}
 
-                {row.photo_url && (
-                  <ZoomablePhoto
-                    src={row.photo_url}
-                    alt="Site"
-                    label="Contractor's progress photo"
-                    wrapperClassName="w-full rounded-xl"
-                    className="w-full max-h-56 object-cover rounded-xl border border-slate-200"
-                  />
-                )}
+                <SubmissionEvidence client={supabase} update={row} />
 
                 {row.status !== 'pending' ? (
                   <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-3 py-2">
@@ -829,7 +889,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                     </div>
 
                     {/* Submit Actions */}
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:items-center">
                       {!isDisputing ? (
                         <button
                           type="button"
@@ -861,12 +921,13 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
                   </div>
                 )}
               </div>
+              </ReviewDialog>
             );
           })()}
 
           {/* Pagination Controls Footer */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs text-slate-500">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               <span>
                 Showing <strong className="text-slate-800">{Math.min((currentPage - 1) * pageSize + 1, filteredAndSortedRows.length)}</strong> to{' '}
                 <strong className="text-slate-800">{Math.min(currentPage * pageSize, filteredAndSortedRows.length)}</strong> of{' '}
@@ -887,7 +948,7 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
             </div>
 
             {/* Pagination Page Number Buttons */}
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center justify-center gap-1">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}

@@ -3,6 +3,7 @@ import { supabaseFieldEngineer as supabase } from '../../lib/supabase';
 import { formatPercentage } from '../../lib/percentageFormat';
 import { attachCertificationPhoto } from '../../lib/progressCertificationPhoto';
 import CertificationPhotoCapture from './CertificationPhotoCapture';
+import SubmissionEvidence from './SubmissionEvidence';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono ' +
@@ -229,23 +230,18 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
   };
 
   return (
-    <div className="border border-slate-200 rounded-lg p-5 bg-slate-50/70 space-y-4 shadow-sm animate-fadeIn">
-      <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 pb-3">
-        <div className="min-w-0">
-          <h4 className="text-sm font-bold text-slate-900">
-            Validate quantities: {row.fmr_projects?.project_name || `Project #${row.fmr_project_id}`}
-          </h4>
-          <p className="text-xs text-slate-500 mt-1">
-            Contractor-reported accomplishment: <strong className="text-slate-800">{formatPercentage(row.reported_accomplishment)}</strong>
+    // Shown inside the review dialog (ProgressCertificationPanel), which carries the title.
+    <div className="space-y-4">
+      <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+        <p className="text-xs text-slate-500">
+          Contractor-reported accomplishment: <strong className="text-slate-800">{formatPercentage(row.reported_accomplishment)}</strong>
+        </p>
+        {Number(row.fmr_projects?.work_plan_adoption_baseline || 0) > 0 && (
+          <p className="text-xs text-sky-700 mt-1">
+            Post-adoption quantities; historical baseline:{' '}
+            <strong>{formatPercentage(row.fmr_projects.work_plan_adoption_baseline)}</strong>
           </p>
-          {Number(row.fmr_projects?.work_plan_adoption_baseline || 0) > 0 && (
-            <p className="text-xs text-sky-700 mt-1">
-              Post-adoption quantities; historical baseline:{' '}
-              <strong>{formatPercentage(row.fmr_projects.work_plan_adoption_baseline)}</strong>
-            </p>
-          )}
-        </div>
-        <button type="button" onClick={onClose} aria-label="Close quantity review" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white">x</button>
+        )}
       </div>
 
       {row.remarks && (
@@ -254,6 +250,8 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
           <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200">{row.remarks}</p>
         </div>
       )}
+
+      <SubmissionEvidence client={supabase} update={row} />
 
       {loading ? (
         <div className="py-10 text-center">
@@ -273,8 +271,48 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
             </div>
           </div>
 
-          <div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
-            <table className="w-full min-w-[1100px] text-xs">
+          {/* Phones: one card per activity, nothing hidden off to the side. */}
+          <ul className="space-y-2 md:hidden">
+            {previewRows.map((item) => {
+              const exceedsPlan = item.cumulative > Number(item.plan.planned_quantity);
+              const unit = item.plan.unit ? ` ${item.plan.unit}` : '';
+              return (
+                <li key={item.id} className={`rounded-lg border p-3 ${exceedsPlan ? 'border-red-200 bg-red-50/60' : 'border-slate-200 bg-white'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-800">{item.plan.activity_name}</p>
+                    <p className={`shrink-0 font-mono text-sm font-bold ${exceedsPlan ? 'text-red-700' : 'text-teal-700'}`}>{formatPercentage(item.percent)}</p>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                    <dt className="text-slate-500">Planned</dt><dd className="text-right font-mono">{formatQuantity(item.plan.planned_quantity)}{unit}</dd>
+                    <dt className="text-slate-500">Previously approved</dt><dd className="text-right font-mono">{formatQuantity(item.previous)}{unit}</dd>
+                    <dt className="text-slate-500">Contractor, this period</dt><dd className="text-right font-mono font-semibold text-amber-700">{formatQuantity(item.contractor_reported_quantity)}{unit}</dd>
+                  </dl>
+                  <label className="mt-2 block text-xs font-semibold text-slate-700">
+                    Your measurement, this period{unit && <span className="font-normal text-slate-400"> ({item.plan.unit})</span>}
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.0001"
+                      value={quantities[item.work_plan_item_id] ?? ''}
+                      onChange={(event) => setQuantities((values) => ({
+                        ...values,
+                        [item.work_plan_item_id]: event.target.value,
+                      }))}
+                      disabled={disputeMode || saving}
+                      className={`mt-1 ${inputCls} ${exceedsPlan ? 'border-red-300 focus:border-red-500' : ''}`}
+                    />
+                  </label>
+                  <p className={`mt-1.5 text-right text-xs ${exceedsPlan ? 'font-semibold text-red-700' : 'text-slate-500'}`}>
+                    Cumulative: <span className="font-mono">{formatQuantity(item.cumulative)}{unit}</span>{exceedsPlan ? ' · over the plan' : ''}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="hidden overflow-x-auto bg-white rounded-lg border border-slate-200 md:block">
+            <table className="w-full min-w-[860px] text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
                   <th className="text-left font-semibold py-2.5 px-3">Activity</th>
@@ -323,7 +361,7 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
           </div>
           <p className="text-[11px] text-slate-400">The server calculates the authoritative certified accomplishment from all activity quantities.</p>
 
-          <div className="flex items-center justify-between gap-3 p-3 bg-white border border-slate-200 rounded-lg">
+          <div className="flex flex-col gap-3 p-3 bg-white border border-slate-200 rounded-lg sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold text-slate-700">Review decision</p>
               <p className="text-[11px] text-slate-400">A dispute rejects this submission and preserves the contractor's reported quantities.</p>
@@ -384,7 +422,7 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-lg text-xs">{error}</div>}
 
-      <div className="flex justify-end gap-2 pt-1">
+      <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
         <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 text-slate-700 bg-white hover:bg-slate-100 disabled:opacity-50">Cancel</button>
         <button
           type="button"
