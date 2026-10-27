@@ -11,7 +11,8 @@
  *
  * Answered items stay visible (with the answer) until the DA moves them on. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClockIcon, CameraIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon, XCircleIcon } from 'lucide-react';
+import { CalendarClockIcon, CameraIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon, PlusIcon, XCircleIcon } from 'lucide-react';
+import { progressSubmitBlock } from '../../lib/progressWorkflow';
 import {
   commitmentProblem, COMMIT_MAX_DAYS, localDateISO, priorityStage,
   actionOwner, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, MAX_PRIORITY_PHOTOS, needsPhotos, respondToAction, submitValidation,
@@ -150,8 +151,32 @@ function TaskState({ task }) {
   return null;
 }
 
+/* Contractor, on a live DA priority: send a progress update for that project
+   right here, under the same rule as My Projects (progressSubmitBlock). When it
+   cannot take one, says why instead. */
+function SubmitProgressAction({ task, onSubmitProgress, className = '' }) {
+  if (!task.project || !onSubmitProgress) return null;
+  const block = progressSubmitBlock(task.project);
+  if (block) {
+    return (
+      <span title={block.hint} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${block.key === 'completed' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500'} ${className}`}>
+        {block.label}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onSubmitProgress(task.project)}
+      className={`inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 ${className}`}
+    >
+      <PlusIcon className="size-4" aria-hidden="true" /> Submit progress update
+    </button>
+  );
+}
+
 /* One task in the list: what and where, its deadline and state. Opens the dialog. */
-function TaskCard({ task, onOpen }) {
+function TaskCard({ task, onOpen, onSubmitProgress }) {
   const { kind, title, place, detail, needsAnswer } = task;
   return (
     <li className={`rounded-xl border bg-white p-4 shadow-xs ${needsAnswer ? 'border-amber-200' : 'border-slate-200'}`}>
@@ -170,10 +195,11 @@ function TaskCard({ task, onOpen }) {
       {detail && <p className="mt-2 line-clamp-2 text-sm text-slate-600">{detail}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <TaskDeadline task={task} />
+        <SubmitProgressAction task={task} onSubmitProgress={onSubmitProgress} className="ml-auto" />
         <button
           type="button"
           onClick={() => onOpen(task.id)}
-          className={`ml-auto rounded-lg px-4 py-2 text-sm font-semibold ${needsAnswer
+          className={`${task.project && onSubmitProgress ? '' : 'ml-auto'} rounded-lg px-4 py-2 text-sm font-semibold ${needsAnswer
             ? 'bg-teal-600 text-white hover:bg-teal-700'
             : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
         >
@@ -187,7 +213,7 @@ function TaskCard({ task, onOpen }) {
 /* The whole task in a dialog: the DA's request, the facts and map, and the
    answer (site photos, note, buttons in the footer). Clicking outside does not
    close it, so photos already taken are not lost; the X, Close or Esc do. */
-function TaskDialog({ task, role, busy, onValidate, onReply, onClose }) {
+function TaskDialog({ task, role, busy, onValidate, onReply, onClose, onSubmitProgress }) {
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState([]);
   const [committedBy, setCommittedBy] = useState(() => localDateISO(new Date(), 14));
@@ -211,6 +237,7 @@ function TaskDialog({ task, role, busy, onValidate, onReply, onClose }) {
       <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
         Close
       </button>
+      <SubmitProgressAction task={task} onSubmitProgress={onSubmitProgress && ((project) => { onClose(); onSubmitProgress(project); })} />
       {answering && (kind === 'validation' ? (
         <>
           <button
@@ -330,7 +357,8 @@ function TaskDialog({ task, role, busy, onValidate, onReply, onClose }) {
  * role: 'field_engineer' | 'contractor'. client: that portal's Supabase client.
  * onCountChange(n): how many items still need this user's answer.
  */
-export default function PriorityTasksPanel({ client, userId, role, showNotification, onCountChange, compact = false }) {
+// onSubmitProgress(project): contractor only; shows "Submit progress update" on live DA priorities.
+export default function PriorityTasksPanel({ client, userId, role, showNotification, onCountChange, compact = false, onSubmitProgress }) {
   const [rows, setRows] = useState([]);
   const [gaps, setGaps] = useState(new Map());
   const [projects, setProjects] = useState(new Map());
@@ -353,7 +381,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       const projectIds = list.filter((d) => d.candidate_kind === 'project').map((d) => d.candidate_id);
       const [g, p] = await Promise.all([
         gapIds.length ? client.from('road_network_gaps').select('id, gap_code, source_road_name, municipality, barangay, barangay_end, gap_km, gap_type, source_surface_summary, gap_points, start_latitude, start_longitude, end_latitude, end_longitude, market_distance_km, surface_condition, from_project_id').in('id', gapIds) : { data: [] },
-        projectIds.length ? client.from('fmr_projects').select('id, project_name, municipality, barangay, contractor_id, site_engineer_id, accomplishment, start_latitude, start_longitude, end_latitude, end_longitude, barangay_end, status, project_length_km, target_completion_date, year_funded').in('id', projectIds) : { data: [] },
+        projectIds.length ? client.from('fmr_projects').select('id, project_name, municipality, barangay, contractor_id, site_engineer_id, accomplishment, start_latitude, start_longitude, end_latitude, end_longitude, barangay_end, status, project_length_km, target_completion_date, year_funded, work_plan_status, work_plan_adoption_baseline').in('id', projectIds) : { data: [] },
       ]);
       // A gap is shown on its own surveyed road (gapGeometry.js), so fetch those roads too.
       const parentIds = [...new Set((g.data || []).map((x) => x.from_project_id).filter((id) => id != null))];
@@ -416,6 +444,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       const live = daPriority.stage === 'priority';
       return {
         id: d.id, decision: d, kind: 'info', daRank: live ? (daPriority.rank ?? 999) : 1000,
+        project: live ? project : null,
         roadPoints: project.line || [], mapKind: 'project', status: project.status,
         label: live ? `★ ${DECISION_LABELS.flagged}${daPriority.rank ? ` #${daPriority.rank}` : ''}` : 'DA priority ended',
         title: project.project_name, place: project.municipality,
@@ -541,7 +570,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
         </p>
       ) : (
         <ul className="space-y-3">
-          {tasks.map((t) => <TaskCard key={t.id} task={t} onOpen={setOpenTaskId} />)}
+          {tasks.map((t) => <TaskCard key={t.id} task={t} onOpen={setOpenTaskId} onSubmitProgress={role === 'contractor' ? onSubmitProgress : undefined} />)}
         </ul>
       )}
       {(() => {
@@ -555,6 +584,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
             onValidate={onValidate}
             onReply={onReply}
             onClose={() => setOpenTaskId(null)}
+            onSubmitProgress={role === 'contractor' ? onSubmitProgress : undefined}
           />
         ) : null;
       })()}
