@@ -6,6 +6,7 @@ import ViewToggle, { useViewMode } from '../ui/ViewToggle';
 import { useIsPhone } from '../../lib/useIsPhone';
 import FmrProjectDetailDialog from '../FmrProjectDetailDialog';
 import RoadInventoryDetailDialog from './RoadInventoryDetailDialog';
+import { SortableTh, PlainTh } from '../fmrProjects/FmrProjectListParts';
 
 function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || value === '') return 'N/A';
@@ -15,13 +16,30 @@ function formatNumber(value, digits = 2) {
   });
 }
 
-function getSurfaceBadgeTone(surfaceType) {
-  if (surfaceType === 'Concrete') return 'bg-sky-50 border-sky-200 text-sky-700';
-  if (surfaceType === 'Asphalt') return 'bg-violet-50 border-violet-200 text-violet-700';
-  if (surfaceType === 'Gravel') return 'bg-amber-50 border-amber-200 text-amber-700';
-  if (surfaceType === 'Earth') return 'bg-stone-50 border-stone-200 text-stone-700';
-  return 'bg-slate-50 border-slate-200 text-slate-700';
-}
+// Worst first when sorting by condition.
+const CONDITION_RANK = { critical: 0, poor: 1, fair: 2, good: 3, excellent: 4 };
+const conditionRank = (c) => CONDITION_RANK[String(c || '').toLowerCase()] ?? 5;
+
+// Same sort keys as the admin projects table: '<field>-asc' | '<field>-desc'.
+const SORT_OPTIONS = [
+  { value: 'name-asc', label: 'Road name A-Z' },
+  { value: 'name-desc', label: 'Road name Z-A' },
+  { value: 'barangay-asc', label: 'Barangay A-Z' },
+  { value: 'length-desc', label: 'Longest first' },
+  { value: 'length-asc', label: 'Shortest first' },
+  { value: 'condition-asc', label: 'Worst condition first' },
+  { value: 'condition-desc', label: 'Best condition first' },
+  { value: 'year-desc', label: 'Newest built first' },
+  { value: 'year-asc', label: 'Oldest built first' },
+];
+const SORT_VALUE = {
+  name: (r) => String(r.roadName || '').toLowerCase(),
+  barangay: (r) => String(r.barangay || '').toLowerCase(),
+  length: (r) => Number(r.lengthKm) || 0,
+  condition: (r) => conditionRank(r.condition),
+  row: (r) => Number(r.row) || 0,
+  year: (r) => Number(r.yearConstructed) || 0,
+};
 
 function getConditionBadgeTone(condition) {
   const cond = String(condition || '').toLowerCase();
@@ -50,7 +68,8 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
   }, [projects]);
   const linkedProjectsFor = (road) => projectsByRoad.get(String(road?.roadName || '').trim()) || [];
   const [barangayFilter, setBarangayFilter] = useState('all');
-  const [surfaceFilter, setSurfaceFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState('all'); // all | with | without
+  const [sortBy, setSortBy] = useState('name-asc');
   const [conditionFilter, setConditionFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [savedViewMode, setViewMode] = useViewMode('lgu-road-inventory-view');
@@ -65,10 +84,6 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
     return ['all', ...Array.from(new Set(inventory.map((row) => row.barangay).filter(Boolean))).sort((a, b) => a.localeCompare(b))];
   }, [inventory]);
 
-  const surfaceTypes = useMemo(() => {
-    return ['all', ...Array.from(new Set(inventory.map((row) => row.surfaceType).filter(Boolean))).sort((a, b) => a.localeCompare(b))];
-  }, [inventory]);
-
   const conditions = useMemo(() => {
     return ['all', ...Array.from(new Set(inventory.map((row) => row.condition).filter(Boolean))).sort((a, b) => a.localeCompare(b))];
   }, [inventory]);
@@ -78,15 +93,17 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
 
     return inventory.filter((row) => {
       if (barangayFilter !== 'all' && row.barangay !== barangayFilter) return false;
-      if (surfaceFilter !== 'all' && row.surfaceType !== surfaceFilter) return false;
       if (conditionFilter !== 'all' && row.condition !== conditionFilter) return false;
+      if (projectFilter !== 'all') {
+        const hasProject = projectsByRoad.has(String(row.roadName || '').trim());
+        if ((projectFilter === 'with') !== hasProject) return false;
+      }
 
       if (!normalizedQuery) return true;
 
       const haystack = [
         row.roadName,
         row.barangay,
-        row.surfaceType,
         row.condition,
         row.classification,
         String(row.yearConstructed || ''),
@@ -97,7 +114,19 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
 
       return haystack.includes(normalizedQuery);
     });
-  }, [inventory, query, barangayFilter, surfaceFilter, conditionFilter]);
+  }, [inventory, query, barangayFilter, conditionFilter, projectFilter, projectsByRoad]);
+
+  const sortedRows = useMemo(() => {
+    const [field, dir] = sortBy.split('-');
+    const value = SORT_VALUE[field] || SORT_VALUE.name;
+    const sign = dir === 'desc' ? -1 : 1;
+    return [...filteredRows].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      const cmp = typeof x === 'string' ? x.localeCompare(y) : x - y;
+      return cmp * sign || String(a.roadName || '').localeCompare(String(b.roadName || ''));
+    });
+  }, [filteredRows, sortBy]);
 
   const summary = useMemo(() => {
     const totalKm = filteredRows.reduce((sum, row) => sum + (Number(row.lengthKm) || 0), 0);
@@ -105,22 +134,22 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
     return {
       totalRoads: filteredRows.length,
       totalKm,
-      concrete: filteredRows.filter((row) => row.surfaceType === 'Concrete').length,
+      withProject: filteredRows.filter((row) => projectsByRoad.has(String(row.roadName || '').trim())).length,
       poor: filteredRows.filter((row) => String(row.condition || '').toLowerCase() === 'poor' || String(row.condition || '').toLowerCase() === 'critical').length,
     };
-  }, [filteredRows]);
+  }, [filteredRows, projectsByRoad]);
 
-  const hasFilters = query || barangayFilter !== 'all' || surfaceFilter !== 'all' || conditionFilter !== 'all';
+  const hasFilters = query || barangayFilter !== 'all' || conditionFilter !== 'all' || projectFilter !== 'all';
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, barangayFilter, surfaceFilter, conditionFilter, viewMode]);
+  }, [query, barangayFilter, conditionFilter, projectFilter, sortBy, viewMode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
   const paginatedRows = useMemo(() => {
-    return filteredRows.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
-  }, [filteredRows, safePage, itemsPerPage]);
+    return sortedRows.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
+  }, [sortedRows, safePage, itemsPerPage]);
 
   return (
     <div className="space-y-4">
@@ -130,7 +159,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             <p className="text-xs uppercase tracking-[0.24em] text-emerald-700 font-semibold">Road Inventory</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-900">Leon barangay roads inventory</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Browse the road records provided in the CSV. Surface type and condition are summarized from the dominant surfaced segment so staff can scan the inventory quickly.
+              Every barangay road in the inventory, with its condition and whether it already has an FMR project. Filter and sort to find the roads that need one.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[46rem]">
@@ -143,8 +172,8 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
               <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalKm.toFixed(2)}</p>
             </div>
             <div className="rounded-2xl border border-white/70 bg-white/80 backdrop-blur p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Concrete</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.concrete}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">With FMR project</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.withProject}</p>
             </div>
             <div className="rounded-2xl border border-white/70 bg-white/80 backdrop-blur p-3">
               <p className="text-xs uppercase tracking-wide text-slate-500">Needs Attention</p>
@@ -175,17 +204,6 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             ))}
           </select>
           <select
-            value={surfaceFilter}
-            onChange={(e) => setSurfaceFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none"
-          >
-            {surfaceTypes.map((value) => (
-              <option key={value} value={value}>
-                {value === 'all' ? 'All Surface Types' : value}
-              </option>
-            ))}
-          </select>
-          <select
             value={conditionFilter}
             onChange={(e) => setConditionFilter(e.target.value)}
             className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none"
@@ -195,6 +213,16 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                 {value === 'all' ? 'All Conditions' : value}
               </option>
             ))}
+          </select>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            aria-label="FMR project"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none"
+          >
+            <option value="all">FMR project: All</option>
+            <option value="with">With FMR project</option>
+            <option value="without">No FMR project yet</option>
           </select>
         </div>
 
@@ -206,14 +234,22 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                 onClick={() => {
                   setQuery('');
                   setBarangayFilter('all');
-                  setSurfaceFilter('all');
                   setConditionFilter('all');
+                  setProjectFilter('all');
                 }}
                 className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
               >
                 Clear Filters
               </button>
             )}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              aria-label="Sort roads"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:border-emerald-400 focus:outline-none"
+            >
+              {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+            </select>
             {!isPhone && <ViewToggle mode={viewMode} onChange={setViewMode} />}
           </div>
         </div>
@@ -224,16 +260,17 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
           </div>
         ) : viewMode === 'table' ? (
           <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full min-w-[52rem] text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+            <table className="w-full min-w-[48rem] text-sm">
+              <thead className="bg-slate-50 text-left">
                 <tr>
-                  <th scope="col" className="px-4 py-3">Road Name</th>
-                  <th scope="col" className="px-4 py-3">Barangay</th>
-                  <th scope="col" className="px-4 py-3 text-right">Length (km)</th>
-                  <th scope="col" className="px-4 py-3">Surface</th>
-                  <th scope="col" className="px-4 py-3">Condition</th>
-                  <th scope="col" className="px-4 py-3 text-right">Right of Way (m)</th>
-                  <th scope="col" className="px-4 py-3 text-right">Year Built</th>
+                  {/* Click a header to sort, as in the admin projects table. */}
+                  <SortableTh label="Road Name" asc="name-asc" desc="name-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <SortableTh label="Barangay" asc="barangay-asc" desc="barangay-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <SortableTh label="Length (km)" asc="length-asc" desc="length-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <SortableTh label="Condition" asc="condition-asc" desc="condition-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <SortableTh label="Right of Way (m)" asc="row-asc" desc="row-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <SortableTh label="Year Built" asc="year-asc" desc="year-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
+                  <PlainTh label="FMR project" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -251,24 +288,9 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                       >
                         {row.roadName || 'N/A'}
                       </button>
-                      {linkedProjectsFor(row).length > 0 && (
-                        <span className="ml-2 inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-emerald-700">
-                          FMR project
-                        </span>
-                      )}
-                      {row.surfaceSummary && (
-                        <p className="mt-0.5 max-w-sm truncate text-xs text-slate-500" title={row.surfaceSummary}>
-                          {row.surfaceSummary}
-                        </p>
-                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.barangay || 'N/A'}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatNumber(row.lengthKm)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded border px-1.5 py-0.5 text-[11px] font-semibold ${getSurfaceBadgeTone(row.surfaceType)}`}>
-                        {row.surfaceType || 'Unknown'}
-                      </span>
-                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize ${getConditionBadgeTone(row.condition)}`}>
                         {row.condition || 'N/A'}
@@ -276,6 +298,15 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatNumber(row.row, 2)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-slate-700">{row.yearConstructed || 'N/A'}</td>
+                    <td className="px-4 py-3">
+                      {linkedProjectsFor(row).length > 0 ? (
+                        <span className="inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          {linkedProjectsFor(row).length === 1 ? 'Has project' : `${linkedProjectsFor(row).length} projects`}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">None yet</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -314,10 +345,10 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                     <p className="mt-0.5 font-bold text-slate-800">{formatNumber(row.lengthKm)} km</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-2.5">
-                    <p className="text-slate-500 font-medium">Surface Type</p>
-                    <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold border ${getSurfaceBadgeTone(row.surfaceType)}`}>
-                      {row.surfaceType || 'Unknown'}
-                    </span>
+                    <p className="text-slate-500 font-medium">FMR project</p>
+                    <p className={`mt-0.5 font-bold ${linkedProjectsFor(row).length ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {linkedProjectsFor(row).length ? `${linkedProjectsFor(row).length} on this road` : 'None yet'}
+                    </p>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-2.5">
                     <p className="text-slate-500 font-medium">Right of Way</p>
@@ -330,19 +361,6 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                 </div>
               </div>
 
-              {row.surfaceSummary && (
-                <div className="mt-4 border-t border-slate-100 pt-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Surface Breakdown</p>
-                  <p className="mt-1 text-xs text-slate-600 leading-relaxed line-clamp-3">
-                    {row.surfaceSummary}
-                  </p>
-                </div>
-              )}
-              {linkedProjectsFor(row).length > 0 && (
-                <p className="mt-3 text-[11px] font-semibold text-emerald-700">
-                  {linkedProjectsFor(row).length} FMR project{linkedProjectsFor(row).length === 1 ? '' : 's'} on this road
-                </p>
-              )}
             </button>
           ))}
         </div>

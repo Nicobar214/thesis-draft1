@@ -10,6 +10,7 @@ import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
 import MapSearchBox from '../map/MapSearchBox';
 import BaseTiles from '../map/BaseTiles';
+import RouteEndpointMarkers from '../map/RouteEndpointMarkers';
 import { BasemapSwitch, ControlGroup, LayerToggle, LegendDot, LegendGroup, LegendLine, MapControlPanel, MapLegend } from '../map/MapPanels';
 import { useBasemap } from '../../lib/basemaps';
 import { buildRoutePoints, getRouteStatusTheme, normalizeRouteStatus } from '../../lib/mapRouteUtils';
@@ -261,7 +262,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   // Drawing map: what is already on the ground, so a proposal is drawn in context.
   const [markets, setMarkets] = useState([]);
   const [existingRoutes, setExistingRoutes] = useState({}); // project id -> saved route (road-shaped)
-  const [mapLayers, setMapLayers] = useState({ roads: true, markets: false });
+  const [mapLayers, setMapLayers] = useState({ roads: true, endpoints: true, markets: false });
   const [basemap, setBasemap] = useBasemap();
   useEffect(() => {
     let alive = true;
@@ -279,7 +280,10 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     return () => { alive = false; };
   }, [existingProjects]);
   const existingRoadLines = useMemo(() => existingProjects
-    .map((p) => ({ project: p, points: buildRoutePoints(p, existingRoutes[p.id] || null).points, status: normalizeRouteStatus(p.status) }))
+    .map((p) => {
+      const data = buildRoutePoints(p, existingRoutes[p.id] || null);
+      return { project: p, data, points: data.points, status: normalizeRouteStatus(p.status) };
+    })
     .filter((r) => r.points.length >= 2), [existingProjects, existingRoutes]);
   useEffect(() => {
     let alive = true;
@@ -1033,10 +1037,21 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
                       <BaseTiles basemap={basemap} />
                       {/* Existing FMR roads (thin, under the drawing): clicks still reach the map to place points. */}
-                      {mapLayers.roads && existingRoadLines.map(({ project, points }) => (
-                        <Polyline key={`fmr-${project.id}`} positions={points} pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.6 }}>
-                          <Tooltip sticky>{project.project_name} · {project.status}</Tooltip>
-                        </Polyline>
+                      {mapLayers.roads && existingRoadLines.map(({ project, points, data }) => (
+                        <Fragment key={`fmr-${project.id}`}>
+                          <Polyline positions={points} pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.6 }}>
+                            <Tooltip sticky>{project.project_name} · {project.status}</Tooltip>
+                          </Polyline>
+                          {mapLayers.endpoints && (
+                            <RouteEndpointMarkers
+                              project={project}
+                              routeData={{ ...data, startPoint: points[0], endPoint: points[points.length - 1] }}
+                              displayPoints={points}
+                              lineColor={getRouteStatusTheme(project.status).line}
+                              showArrow={false}
+                            />
+                          )}
+                        </Fragment>
                       ))}
                       {mapLayers.markets && markets.filter((m) => Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))).map((m) => (
                         <CircleMarker key={`mkt-${m.id}`} center={[Number(m.latitude), Number(m.longitude)]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#4338ca', fillOpacity: 1 }}>
@@ -1111,6 +1126,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                           const n = existingRoadLines.filter((r) => r.status === k).length;
                           return n ? <LegendLine key={k} color={k === 'Completed' ? 'bg-emerald-500' : k === 'On-Going' ? 'bg-amber-500' : 'bg-blue-500'} label={`${k} FMR road`} count={n} /> : null;
                         })}
+                        {mapLayers.roads && mapLayers.endpoints && <LegendDot color="bg-emerald-600" text="S" label="Road start" />}
+                        {mapLayers.roads && mapLayers.endpoints && <LegendDot color="bg-orange-500" text="E" label="Road end" />}
                         {mapLayers.markets && markets.length > 0 && <LegendDot style={{ background: '#4338ca' }} label="Market" count={markets.length} />}
                         {searchCenter && <LegendDot color="bg-sky-500" label="Searched place" />}
                       </LegendGroup>
@@ -1118,6 +1135,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     <MapControlPanel compact>
                       <ControlGroup label="Layers">
                         <LayerToggle checked={mapLayers.roads} onChange={(v) => setMapLayers((l) => ({ ...l, roads: v }))} label={`Existing FMR roads (${existingRoadLines.length})`} />
+                        <LayerToggle checked={mapLayers.endpoints} onChange={(v) => setMapLayers((l) => ({ ...l, endpoints: v }))} label="Start / end of existing roads" />
                         <LayerToggle checked={mapLayers.markets} onChange={(v) => setMapLayers((l) => ({ ...l, markets: v }))} label={`Markets (${markets.length})`} />
                       </ControlGroup>
                       <ControlGroup label="Basemap">
