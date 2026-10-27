@@ -198,6 +198,7 @@ export default function UserLayout({
             online={online}
             pendingCount={pendingReports}
             offlineText="You're offline. Showing information saved on this phone. Reports you submit are saved and sent when you reconnect."
+            showSending={false}
             className={showHeader ? 'sticky top-20 sm:top-24 z-10' : ''}
           />
         )}

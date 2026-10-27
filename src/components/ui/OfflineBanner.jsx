@@ -6,8 +6,9 @@ import { RefreshCwIcon, WifiOffIcon } from 'lucide-react';
  * Back online with items still waiting: teal "Sending…" strip.
  * Online with nothing waiting: renders nothing.
  */
-export default function OfflineBanner({ online, pendingCount = 0, offlineText, className = '' }) {
-  if (online && pendingCount === 0) return null;
+// showSending=false: no teal "Sending…" strip once back online (the queue still sends).
+export default function OfflineBanner({ online, pendingCount = 0, offlineText, className = '', showSending = true }) {
+  if (online && (pendingCount === 0 || !showSending)) return null;
   const waiting = pendingCount > 0
     ? ` ${pendingCount} ${pendingCount === 1 ? 'item' : 'items'} waiting to send.`
     : '';
