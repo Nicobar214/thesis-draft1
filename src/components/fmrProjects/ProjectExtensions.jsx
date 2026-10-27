@@ -29,9 +29,11 @@ export default function ProjectExtensions({ projectId, client = defaultClient, c
       // order (closed_at). Row-level security returns none to citizens.
       const cases = await client.from('project_delay_cases').select('id')
         .eq('project_id', Number(projectId)).eq('outcome', 'extended').order('closed_at', { ascending: true });
+      if (cases.error) console.warn('Extension evidence: cases', cases.error);
       const ids = (cases.data || []).map((c) => c.id);
       if (!alive || !ids.length) return;
       const ev = await client.from('project_delay_evidence').select('*').in('case_id', ids).order('created_at', { ascending: true });
+      if (ev.error) console.warn('Extension evidence: files', ev.error);
       if (alive) setEvidence(ids.map((id) => (ev.data || []).filter((e) => e.case_id === id)));
     })();
     return () => { alive = false; };
