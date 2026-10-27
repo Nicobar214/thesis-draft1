@@ -2362,10 +2362,13 @@ Reminder: check that the site engineer certified it and the photos match the cla
 
   // The only path allowed to set status: 'resolved'. Requires a DA-validated
   // field finding and a mandatory resolution summary (see AdminWorkflowControls).
+  // Minor LGU jobs skip the engineer: the LGU's after-photo is enough (the
+  // database checks the LGU job exists and is done, as resolve_public_report does).
   const finalizeResolution = async (reportId, summary, resolutionType = 'other') => {
     if (!reportId || !summary?.trim()) return;
     const report = publicReports.find(r => r.id === reportId);
-    if (report?.engineer_status !== 'validated') {
+    const lguJob = report?.handled_by === 'lgu' && !report?.engineer_status;
+    if (report?.engineer_status !== 'validated' && !lguJob) {
       showNotification('Resolution requires DA validation of field findings first', 'error');
       return;
     }
