@@ -49,7 +49,6 @@ describe('roles in the process', () => {
   it('sends inspections to the site engineer and everything else to the contractor', () => {
     expect(actionOwner('Schedule site inspection')).toBe('site_engineer');
     expect(actionOwner('Expedite contractor')).toBe('contractor');
-    expect(actionOwner('Prioritize fund release')).toBe('contractor');
   });
 });
 

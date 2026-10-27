@@ -5,7 +5,7 @@
  *                   and reply to a "Schedule site inspection" action on a
  *                   project where they are the site engineer.
  *   Contractor:     see that their project was flagged, and reply to
- *                   "Expedite contractor" / "Prioritize fund release".
+ *                   "Expedite contractor".
  *
  * Answered items stay visible (with the answer) until the DA moves them on. */
 import { useCallback, useEffect, useMemo, useState } from 'react';

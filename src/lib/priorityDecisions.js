@@ -42,7 +42,7 @@ export const STEP_ACTIONS = {
 };
 
 /** What the DA can decide for an ongoing project at the "Record action" step. */
-export const ONGOING_ACTIONS = ['Expedite contractor', 'Schedule site inspection', 'Prioritize fund release'];
+export const ONGOING_ACTIONS = ['Expedite contractor', 'Schedule site inspection'];
 
 /** Who has to reply to an ongoing-project action (supabase_priority_roles.sql). */
 export const actionOwner = (action) => (action === 'Schedule site inspection' ? 'site_engineer' : 'contractor');
