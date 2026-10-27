@@ -813,9 +813,11 @@ export async function fetchRoadAlignedPolyline(points, options = {}) {
 /**
  * Same as fetchRoadAlignedPolyline, but also says whether the road was found,
  * so a "Snap to Road" button can tell the user instead of claiming success.
- * @returns {Promise<{ points: [number, number][], snapped: boolean, reason?: 'failed' | 'strayed' }>}
+ * declaredKm: the project's official length; with alongLine, a snapped road
+ * longer than twice that (+0.5 km) is refused (reason 'too_long').
+ * @returns {Promise<{ points: [number, number][], snapped: boolean, reason?: 'failed' | 'strayed' | 'too_long' }>}
  */
-export async function snapToRoad(points, { smooth = true, alongLine = false, priority = 'low' } = {}) {
+export async function snapToRoad(points, { smooth = true, alongLine = false, priority = 'low', declaredKm = null } = {}) {
   if (!Array.isArray(points) || points.length < 2) return { points: points || [], snapped: false, reason: 'failed' };
   const finish = (line) => ({ points: smooth ? smoothRouteCorners(line) : line, snapped: true });
 
@@ -863,6 +865,15 @@ export async function snapToRoad(points, { smooth = true, alongLine = false, pri
       }
       return { points, snapped: false, reason: 'strayed' };
     }
+  }
+  // A project road given by its pins (alongLine) with a known length: a snapped
+  // road much longer than that is the drive between two far-apart pins (a pin
+  // is wrong), not the road itself, e.g. 19.8 km for a 0.72 km FMR.
+  const declared = Number(declaredKm);
+  if (alongLine && declared > 0) {
+    let snappedKm = 0;
+    for (let i = 1; i < cleaned.length; i += 1) snappedKm += haversineKm(cleaned[i - 1], cleaned[i]);
+    if (snappedKm > declared * 2 + 0.5) return { points, snapped: false, reason: 'too_long' };
   }
   return finish(cleaned);
 }

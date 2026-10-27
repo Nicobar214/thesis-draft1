@@ -2923,7 +2923,7 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
       const snappedEntries = await Promise.all(
         toSnap.map(async (project) => {
           const route = buildRoutePoints(project, routeByProjectId[project.id]);
-          const snapped = await fetchRoadAlignedPolyline(route.points, { alongLine: true });
+          const snapped = await fetchRoadAlignedPolyline(route.points, { alongLine: true, declaredKm: route.declaredLengthKm });
           return [project.id, snapped];
         })
       );

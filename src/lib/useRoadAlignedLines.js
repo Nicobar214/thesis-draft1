@@ -48,6 +48,7 @@ export function useRoadAlignedLines(lines, me, options) {
 
   useEffect(() => {
     const byId = new Map((lines || []).map((l) => [l.project.id, l.points]));
+    const kmById = new Map((lines || []).map((l) => [l.project.id, l.project?.project_length_km]));
     const todo = wanted.filter((id) => !requested.current.has(id) && byId.has(id));
     if (todo.length === 0) return undefined;
     todo.forEach((id) => requested.current.add(id));
@@ -58,7 +59,7 @@ export function useRoadAlignedLines(lines, me, options) {
         const batch = todo.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async (id) => {
           const original = byId.get(id);
-          const road = await fetchRoadAlignedPolyline(original, { smooth: false, alongLine: true });
+          const road = await fetchRoadAlignedPolyline(original, { smooth: false, alongLine: true, declaredKm: kmById.get(id) });
           return [id, road !== original && road.length > 2 ? road : null];
         }));
         if (!alive.current) return;

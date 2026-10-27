@@ -470,7 +470,7 @@ export default function UserMapView({ embedded = false } = {}) {
       const candidates = mappable.filter((entity) => entity.route.hasPolyline && !entity.route.hasRouteRecord).slice(0, 50);
       const snappedEntries = await Promise.all(
         candidates.map(async (entity) => {
-          const snapped = await fetchRoadAlignedPolyline(entity.route.points, { alongLine: true });
+          const snapped = await fetchRoadAlignedPolyline(entity.route.points, { alongLine: true, declaredKm: entity.route.declaredLengthKm });
           return [entity.project.id, snapped];
         })
       );

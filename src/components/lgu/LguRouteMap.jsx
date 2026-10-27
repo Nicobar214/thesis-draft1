@@ -269,7 +269,7 @@ export default function LguRouteMap({
       if (routeData.hasRouteRecord || isAlreadyRoadAligned(routeRecord)) return;
 
       if (routeData.points && routeData.points.length >= 2) {
-        fetchRoadAlignedPolyline(routeData.points, { alongLine: true }).then((snapped) => {
+        fetchRoadAlignedPolyline(routeData.points, { alongLine: true, declaredKm: routeData.declaredLengthKm }).then((snapped) => {
           if (active && snapped && snapped.length >= 2) {
             setSnappedProjectRoutes((prev) => ({
               ...prev,
