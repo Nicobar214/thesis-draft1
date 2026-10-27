@@ -1,10 +1,10 @@
 /* "Deadline extensions" on a project's page: every extension granted through the
  * delay follow-up, with the old and new target, the days added, the DA's reason
  * and the contractor's reason (project_extension_history, from
- * supabase_delay_evidence_and_extensions.sql). "N evidence" opens the files sent
- * with that request for users allowed to see them (admin, the contractor, the
- * verifier); others just see the count. Shows nothing when there are none, or
- * before that SQL is run.
+ * supabase_delay_evidence_and_extensions.sql). "View N evidence" opens the files
+ * sent with that request, for everyone once supabase_extension_evidence_public.sql
+ * is run (before that, staff only; others just see the count). Shows nothing when
+ * there are none, or before the first SQL is run.
  *
  *   <ProjectExtensions projectId={project.id} client={supabase} /> */
 import { useEffect, useState } from 'react';
@@ -25,8 +25,17 @@ export default function ProjectExtensions({ projectId, client = defaultClient, c
       const { data, error } = await client.rpc('project_extension_history', { p_project: Number(projectId) });
       if (!alive) return;
       setRows(error ? [] : data || []);
-      // The history has no case ids; the extended cases come back in the same
-      // order (closed_at). Row-level security returns none to citizens.
+      // Files of granted extensions are public (supabase_extension_evidence_public.sql),
+      // numbered like the history above.
+      const pub = await client.rpc('project_extension_evidence', { p_project: Number(projectId) });
+      if (!alive) return;
+      if (!pub.error) {
+        const n = (data || []).length;
+        setEvidence(Array.from({ length: n }, (_, i) => (pub.data || []).filter((e) => e.extension_no === i + 1)));
+        return;
+      }
+      // Before that SQL is run: staff only. The history has no case ids; the
+      // extended cases come back in the same order (closed_at).
       const cases = await client.from('project_delay_cases').select('id')
         .eq('project_id', Number(projectId)).eq('outcome', 'extended').order('closed_at', { ascending: true });
       if (cases.error) console.warn('Extension evidence: cases', cases.error);
