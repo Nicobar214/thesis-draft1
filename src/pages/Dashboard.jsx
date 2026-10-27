@@ -71,6 +71,7 @@ import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
 import TargetCompletionNote from '../components/fmrProjects/TargetCompletionNote';
 import AccountPasswordReset from '../components/admin/AccountPasswordReset';
 import { findDuplicateProject } from '../lib/projectHelpers';
+import { SwaLink } from '../components/progress/SubmissionEvidence';
 import CompletionTiming from '../components/fmrProjects/CompletionTiming';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
@@ -8490,6 +8491,11 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
                                       Engineer's photo
                                     </PhotoViewButton>
                                   )}
+                                  <SwaLink
+                                    client={supabase}
+                                    update={upd}
+                                    className="mt-1 ml-3 inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium"
+                                  />
                                 </td>
                                 <td className="px-5 py-4">
                                   {(() => {

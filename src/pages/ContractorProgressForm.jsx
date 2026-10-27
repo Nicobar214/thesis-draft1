@@ -1,5 +1,6 @@
 /* ContractorProgressForm.jsx - quantity-based contractor progress reporting.
- * New submissions are created atomically by submit_progress_update_with_quantities.
+ * New submissions are created atomically by submit_progress_update_with_swa
+ * (the quantities, a geotagged site photo and the SWA file; supabase_progress_swa.sql).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabaseContractor as supabase } from '../lib/supabase';
@@ -71,6 +72,9 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
   const [photoAttestation, setPhotoAttestation] = useState(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  // Statement of Work Accomplished: required, kept private (supabase_progress_swa.sql).
+  const [swaFile, setSwaFile] = useState(null);
+  const [swaError, setSwaError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
@@ -249,6 +253,14 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
       setError('Amount billed must be zero or greater.');
       return;
     }
+    if (!photoFile) {
+      setError('Take a geotagged site photo first.');
+      return;
+    }
+    if (!swaFile) {
+      setError('Attach the Statement of Work Accomplished (SWA).');
+      return;
+    }
     if (!certified) {
       setError('You must certify that the reported data is true and correct before submitting.');
       return;
@@ -273,6 +285,7 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
 
     setSubmitting(true);
     let uploadedPath = null;
+    let swaPath = null;
 
     try {
       const { data: existingPending, error: pendingError } = await supabase
@@ -299,13 +312,19 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
         photoUrl = urlData.publicUrl;
       }
 
+      swaPath = `${user.id}/${project.id}/${Date.now()}_${swaFile.name.replace(/[^\w.-]+/g, '_')}`;
+      const { error: swaUploadError } = await supabase.storage
+        .from('progress-documents')
+        .upload(swaPath, swaFile, { contentType: swaFile.type || 'application/pdf' });
+      if (swaUploadError) throw swaUploadError;
+
       const payload = previewRows.map((row) => ({
         work_plan_item_id: row.id,
         contractor_reported_quantity: Number(quantities[row.id]),
       }));
 
       const { data: progressUpdateId, error: rpcError } = await supabase.rpc(
-        'submit_progress_update_with_quantities',
+        'submit_progress_update_with_swa',
         {
           p_fmr_project_id: project.id,
           p_period_start: periodStart,
@@ -316,6 +335,8 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
           p_photo_url: photoUrl,
           p_amount_this_billing: amountBilled === '' ? null : Number(amountBilled),
           p_remaining_scope: remainingScope.trim() || null,
+          p_swa_path: swaPath,
+          p_swa_file_name: swaFile.name,
         }
       );
       if (rpcError) throw rpcError;
@@ -328,6 +349,10 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
       if (uploadedPath) {
         const { error: cleanupError } = await supabase.storage.from('progress-photos').remove([uploadedPath]);
         if (cleanupError) console.error('Failed to clean up unreferenced progress photo', cleanupError);
+      }
+      if (swaPath) {
+        const { error: cleanupError } = await supabase.storage.from('progress-documents').remove([swaPath]);
+        if (cleanupError) console.error('Failed to clean up unreferenced SWA file', cleanupError);
       }
       console.error('Progress update submit error:', submitError);
       setError(friendlySubmitError(submitError));
@@ -470,7 +495,7 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Site Photo <span className="font-normal text-slate-400">(optional · geotagged)</span></label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Site Photo <span className="text-red-500">*</span> <span className="font-normal text-slate-400">(geotagged)</span></label>
                 {photoPreview ? (
                   <div className="relative max-w-md">
                     <img src={photoPreview} alt="Site evidence preview" className="w-full h-48 object-cover rounded-lg border border-slate-200" />
@@ -486,6 +511,40 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
                   </label>
                 )}
                 {photoError && <p className="mt-2 max-w-md text-sm text-red-600">{photoError}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  Statement of Work Accomplished <span className="text-red-500">*</span>{' '}
+                  <span className="font-normal text-slate-400">(PDF or photo, up to 10 MB)</span>
+                </label>
+                {swaFile ? (
+                  <div className="flex max-w-md items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800" title={swaFile.name}>{swaFile.name}</span>
+                    <span className="shrink-0 text-xs text-slate-500">{(swaFile.size / 1048576).toFixed(1)} MB</span>
+                    <button type="button" onClick={() => setSwaFile(null)} className="shrink-0 text-xs font-semibold text-red-600 hover:underline">Remove</button>
+                  </div>
+                ) : (
+                  <label className="flex w-full max-w-md cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-200 py-5 hover:border-teal-400 hover:bg-teal-50/30">
+                    <span className="text-sm font-medium text-slate-600">Attach the signed SWA</span>
+                    <span className="text-xs text-slate-400">The DA and your site engineer check it against the quantities above.</span>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (!file) return;
+                        if (file.size > 10 * 1048576) { setSwaError('The file is larger than 10 MB.'); return; }
+                        if (!/^(application\/pdf|image\/(jpeg|png|webp))$/.test(file.type)) { setSwaError('Use a PDF, JPG or PNG file.'); return; }
+                        setSwaError('');
+                        setSwaFile(file);
+                      }}
+                    />
+                  </label>
+                )}
+                {swaError && <p className="mt-2 max-w-md text-sm text-red-600">{swaError}</p>}
               </div>
 
               <label className="flex items-start gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50 cursor-pointer">
