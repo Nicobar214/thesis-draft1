@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLinkIcon, FileTextIcon, MapPinIcon, ShieldCheckIcon } from 'lucide-react';
 
-export default function EvidenceGallery({ client, bucket, items = [], title = 'Supporting evidence' }) {
+export default function EvidenceGallery({ client, bucket, items = [], title = 'Supporting evidence', gridClassName = 'grid grid-cols-2 gap-2 sm:grid-cols-4' }) {
   const [urls, setUrls] = useState({});
   const key = items.map((i) => i.storage_path).join('|');
 
@@ -27,7 +27,7 @@ export default function EvidenceGallery({ client, bucket, items = [], title = 'S
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title} · {items.length}</p>
-      <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <ul className={gridClassName}>
         {items.map((it) => {
           const url = urls[it.storage_path];
           const isImage = String(it.mime_type || '').startsWith('image/');

@@ -76,6 +76,9 @@ function Pill({ tone, children }) {
   return <span className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-semibold ${tone}`}>{children}</span>;
 }
 
+// Contractor's evidence and the engineer's site photo, same size side by side.
+const PHOTO_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(0,14rem))] gap-2';
+
 function Fact({ label, children }) {
   return (
     <div>
@@ -385,7 +388,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
                 </p>
                 {evidenceByCase[c.id]?.length > 0 && (
                   <div className="mt-3">
-                    <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Supporting evidence" />
+                    <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Supporting evidence" gridClassName={PHOTO_GRID} />
                   </div>
                 )}
               </Fact>
@@ -393,10 +396,19 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
             {c.verdict && (
               <Fact label={`Field check${verifier ? ` by ${verifier}` : ''}`}>
                 <p><span className={`font-semibold ${c.verdict === 'agree' ? 'text-emerald-700' : 'text-red-700'}`}>{c.verdict === 'agree' ? 'Agrees' : 'Disagrees'}</span>{c.verification_note ? `: ${c.verification_note}` : ''}</p>
+                {/* Laid out like the commitment beside it, so the two photos line up. */}
+                {c.verified_at && <p className="mt-1 text-xs text-slate-500">Checked {fmtDay(manilaToday(new Date(c.verified_at)))}</p>}
                 {c.verification_photo_url && (
-                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-3 block w-40 overflow-hidden rounded-xl border border-slate-200" aria-label="Open the engineer's site photo full size">
-                    <img src={c.verification_photo_url} alt="Engineer's site photo" className="aspect-[4/3] w-full object-cover" loading="lazy" />
-                  </a>
+                  <div className="mt-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Site photo</p>
+                    <ul className={PHOTO_GRID}>
+                      <li className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="block bg-slate-50" aria-label="Open the engineer's site photo full size">
+                          <img src={c.verification_photo_url} alt="Engineer's site photo" className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
                 )}
               </Fact>
             )}
