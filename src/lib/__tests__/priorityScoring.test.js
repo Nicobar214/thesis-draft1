@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  ONGOING_WEIGHTS,
   PRIORITY_WEIGHTS,
   computePriority,
   isNewWorkFor,
@@ -167,5 +168,42 @@ describe('isNewWorkFor', () => {
   it('is not the surveyed road itself or an older existing road', () => {
     expect(isNewWorkFor({ id: 7, status: 'On-Going' }, g)).toBe(false);
     expect(isNewWorkFor({ id: 9, status: 'Completed', created_at: '2026-07-19' }, g)).toBe(false);
+  });
+});
+
+describe('ongoing projects', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const project = (id, lat, extra = {}) => ({
+    id, project_name: `Road ${id}`, status: 'On-Going', municipality: 'Pavia', project_length_km: 1, accomplishment: 0,
+    start_latitude: lat, start_longitude: 122.40, end_latitude: lat, end_longitude: 122.41, ...extra,
+  });
+
+  it('are ranked without gap length, with weights adding up to 100%', () => {
+    expect(Object.values(ONGOING_WEIGHTS).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
+    expect('G' in ONGOING_WEIGHTS).toBe(false);
+    const { ongoing } = computePriority({ projects: [project(1, 11.0), project(2, 11.1)] });
+    expect(ongoing[0].G).toBeUndefined();
+    expect(ongoing[0].reason).not.toMatch(/still to build/);
+  });
+
+  it('score no farmer data as 0 (new roads keep the neutral 50)', () => {
+    const { ongoing, newRoads } = computePriority({
+      projects: [project(1, 11.0)],
+      gaps: [gap(9, 11.2, 1, 2, { municipality: 'Pavia' })],
+    });
+    expect(ongoing[0].C).toBe(0);
+    expect(ongoing[0].F).toBe(0);
+    expect(newRoads[0].C).toBe(50);
+  });
+
+  it('list the ids of the reports they counted', () => {
+    const { ongoing } = computePriority({
+      projects: [project(1, 11.0)],
+      reports: [
+        { id: 'near', latitude: 11.0, longitude: 122.405, created_at: new Date().toISOString(), description: 'pothole' },
+        { id: 'far', latitude: 11.5, longitude: 122.405, created_at: new Date().toISOString(), description: 'pothole' },
+      ],
+    });
+    expect(ongoing[0].reportIds).toEqual(['near']);
   });
 });

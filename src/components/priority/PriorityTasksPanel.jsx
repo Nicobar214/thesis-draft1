@@ -38,7 +38,8 @@ function PriorityWhy({ snapshot }) {
         DA priority: rank #{snapshot.rank} · score {snapshot.score}/100
       </p>
       <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-5">
-        {PRIORITY_CRITERIA.map((c) => {
+        {/* Only the criteria this road was ranked with (ongoing projects have no gap length). */}
+        {PRIORITY_CRITERIA.filter((c) => snapshot[c.key] != null).map((c) => {
           const v = Math.max(0, Math.min(100, Number(snapshot[c.key]) || 0));
           return (
             <div key={c.key}>

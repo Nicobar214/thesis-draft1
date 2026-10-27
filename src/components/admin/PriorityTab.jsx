@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { computePriority, PRIORITY_CRITERIA, PRIORITY_WEIGHTS, FARMER_RADIUS_M, REPORT_RADIUS_M } from '../../lib/priorityScoring';
+import { computePriority, criteriaFor, FARMER_RADIUS_M, REPORT_RADIUS_M } from '../../lib/priorityScoring';
 import { PLACEMENT_LABELS } from '../../lib/gapGeometry';
 import { normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import {
@@ -165,7 +165,11 @@ function PriorityRoadMiniMap({ entry, onViewOnMap }) {
 
 // One definition of the five criteria and their weights, from the scorer.
 const pct = (w) => `${Math.round(w * 100)}%`;
-const FACTORS = PRIORITY_CRITERIA.map((c) => ({ ...c, weight: pct(PRIORITY_WEIGHTS[c.key]) }));
+// Each group's criteria with their weights (ongoing projects have no gap length).
+const factorsFor = (group) => {
+  const { criteria, weights } = criteriaFor(group);
+  return criteria.map((c) => ({ ...c, weight: pct(weights[c.key]) }));
+};
 
 const GROUPS = [
   { key: 'newRoads', label: 'New road suggestions', hint: 'Surveyed barangay roads with gravel/earth stretches to concrete, not FMR projects yet' },
@@ -652,6 +656,7 @@ export default function PriorityTab({
     [roadGaps, projects, routesByProjectId, reports, farmers, markets, proposals, convertedGapIds, calcTick],
   );
   const rankings = result[group];
+  const FACTORS = factorsFor(group);
 
   useEffect(() => {
     setLastCalculated(new Date());
@@ -1028,7 +1033,8 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onViewReports && onViewReports(project);
+                      // The reports counted for this road (within REPORT_RADIUS_M), not only linked ones.
+                      onViewReports && onViewReports(project, entry.reportIds || []);
                     }}
                     className="mt-auto w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                   >

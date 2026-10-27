@@ -108,6 +108,22 @@ export const PRIORITY_CRITERIA = [
   { key: 'F', label: 'Farmer density' },
 ];
 
+/**
+ * Ongoing projects are ranked without gap length (they are already funded and
+ * being built; what is left to build is shown, not scored). Citizen reports
+ * weigh most: people using a road under construction say where it hurts.
+ * New road suggestions keep PRIORITY_WEIGHTS.
+ */
+export const ONGOING_WEIGHTS = { M: 0.25, R: 0.30, C: 0.25, F: 0.20 };
+export const ONGOING_CRITERIA = PRIORITY_CRITERIA.filter((c) => c.key in ONGOING_WEIGHTS);
+
+/** The criteria and weights a group is ranked with: 'newRoads' or 'ongoing'. */
+export function criteriaFor(group) {
+  return group === 'ongoing'
+    ? { criteria: ONGOING_CRITERIA, weights: ONGOING_WEIGHTS }
+    : { criteria: PRIORITY_CRITERIA, weights: PRIORITY_WEIGHTS };
+}
+
 export const REPORT_RADIUS_M = 500;    // citizen reports counted around the road
 export const FARMER_RADIUS_M = 2000;   // farms counted as served by the road
 export const TOP_COMMODITY_COUNT = 5;  // the municipality's top crops that count
@@ -244,6 +260,7 @@ function measure(candidate, { reports, farmers, markets, topCommodities }) {
   // R: citizen reports near the road, weighted by issue type and recency.
   let reportWeight = 0;
   let reportCount = 0;
+  const reportIds = [];
   const bySeverity = { structural: 0, obstruction: 0, road_damage: 0, roadside: 0 };
   if (hasLine) {
     (reports || []).filter(reportCounts).forEach((r) => {
@@ -252,6 +269,7 @@ function measure(candidate, { reports, farmers, markets, topCommodities }) {
       bySeverity[type] = (bySeverity[type] || 0) + 1;
       reportWeight += (SEVERITY_WEIGHTS[type] ?? 0.5) * getRecencyMultiplier(r.created_at);
       reportCount += 1;
+      reportIds.push(r.id);
     });
   }
 
@@ -285,6 +303,7 @@ function measure(candidate, { reports, farmers, markets, topCommodities }) {
     hasRegistry,
     marketKm: Number.isFinite(marketKm) ? marketKm : null,
     reportCount,
+    reportIds,
     reportWeight,
     bySeverity,
     farmersNear,
@@ -304,9 +323,7 @@ function shortCrops(crops) {
 
 function buildReason(row, rank) {
   const parts = [];
-  if (Number.isFinite(row.lengthKm)) {
-    parts.push(row.kind === 'gap' ? `${row.lengthKm.toFixed(2)} km gap length` : `${row.lengthKm.toFixed(2)} km still to build`);
-  }
+  if (row.kind === 'gap' && Number.isFinite(row.lengthKm)) parts.push(`${row.lengthKm.toFixed(2)} km gap length`);
   if (row.marketKm != null) parts.push(`${row.marketKm.toFixed(1)} km to market`);
   parts.push(`${row.reportCount} citizen report${row.reportCount === 1 ? '' : 's'} nearby`);
   if (row.topCropFarmers > 0) parts.push(`${row.topCropFarmers} ${shortCrops(row.topCrops)} farmers within ${FARMER_RADIUS_M / 1000} km`);
@@ -314,8 +331,13 @@ function buildReason(row, rank) {
   return `Rank #${rank} — ${parts.join(', ')}.`;
 }
 
-/** Normalize the five criteria within one group, score, rank. */
-function scoreGroup(rows) {
+/**
+ * Normalize the group's criteria, score, rank. profile: { weights, missing }.
+ * missing: what C and F score when there is no farmer data -- NEUTRAL for new
+ * roads (unknown, not zero), 0 for ongoing projects (no registered farmers
+ * means no farmer evidence for that road).
+ */
+function scoreGroup(rows, { weights = PRIORITY_WEIGHTS, missing = NEUTRAL } = {}) {
   const max = (pick) => Math.max(0, ...rows.map(pick).filter(Number.isFinite));
   const maxLen = max((r) => r.lengthKm);
   const maxMarket = max((r) => (r.marketKm == null ? NaN : r.marketKm));
@@ -331,21 +353,18 @@ function scoreGroup(rows) {
       M = (MARKET_PROXIMITY_SCORES_HIGHER ? proximity : 1 - proximity) * 100;
     }
     const R = r.hasLine ? pctOfMax(r.reportWeight, maxReports) : NEUTRAL;
-    const C = r.hasLine && r.hasRegistry ? pctOfMax(r.commodityWeight, maxCommodity) : NEUTRAL;
-    const F = r.farmerDensity != null ? pctOfMax(r.farmerDensity, maxDensity) : NEUTRAL;
-    const score = G * PRIORITY_WEIGHTS.G + M * PRIORITY_WEIGHTS.M + R * PRIORITY_WEIGHTS.R
-      + C * PRIORITY_WEIGHTS.C + F * PRIORITY_WEIGHTS.F;
-    return {
-      ...r,
-      score: Math.round(score),
-      G: Math.round(G), M: Math.round(M), R: Math.round(R), C: Math.round(C), F: Math.round(F),
-    };
+    const C = r.hasLine && r.hasRegistry ? pctOfMax(r.commodityWeight, maxCommodity) : missing;
+    const F = r.farmerDensity != null ? pctOfMax(r.farmerDensity, maxDensity) : missing;
+    const values = { G, M, R, C, F };
+    const score = Object.entries(weights).reduce((sum, [k, w]) => sum + values[k] * w, 0);
+    const rounded = Object.fromEntries(Object.keys(weights).map((k) => [k, Math.round(values[k])]));
+    return { ...r, score: Math.round(score), ...rounded };
   });
 
   // A criterion with one value across the group cannot change the order,
   // whatever its weight: say so instead of letting it hide.
   if (scored.length > 1) {
-    const inert = PRIORITY_CRITERIA.map((c) => c.key).filter((k) => distinctCount(scored.map((r) => r[k])) < 2);
+    const inert = Object.keys(weights).filter((k) => distinctCount(scored.map((r) => r[k])) < 2);
     if (inert.length) {
       console.warn(`[priorityScoring] ${inert.join(', ')} constant across ${scored.length} candidates; their weight has no effect on this group's order.`);
     }
@@ -476,7 +495,7 @@ export function computePriority({ gaps = [], projects = [], routesByProjectId = 
 
   return {
     newRoads: scoreGroup(withMeasures(newRoads.filter((c) => !skip.has(String(c.id)) && !covered.has(String(c.id))))),
-    ongoing: scoreGroup(withMeasures(ongoing)),
+    ongoing: scoreGroup(withMeasures(ongoing), { weights: ONGOING_WEIGHTS, missing: 0 }),
     // Shown under the New list so it is clear why these gaps are not ranked.
     covered: newRoads
       .filter((c) => covered.has(String(c.id)))

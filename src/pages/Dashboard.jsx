@@ -2409,16 +2409,18 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
   };
 
   // Fetch all public reports linked to a specific project
-  const openProjectFeedbackModal = async (project) => {
+  // reportIds: show exactly these reports (Priorities counts the ones near the
+  // road); otherwise the reports linked to the project ("fmr-<id>").
+  const openProjectFeedbackModal = async (project, reportIds = null) => {
     setProjectFeedbackModal(project);
     setProjectFeedbackLoading(true);
     setProjectLinkedReports([]);
     try {
-      const { data, error } = await supabase
-        .from('public_reports')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: false });
+      let query = supabase.from('public_reports').select('*');
+      query = Array.isArray(reportIds)
+        ? query.in('id', reportIds.length ? reportIds : ['00000000-0000-0000-0000-000000000000'])
+        : query.in('project_id', [`fmr-${project.id}`, String(project.id)]);
+      const { data, error } = await query.order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setProjectLinkedReports(data);
     } catch (err) {
@@ -6453,13 +6455,13 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
               onCreateProjectFromGap={openAddProjectFromGap}
               fieldEngineers={fieldEngineers}
               proposals={lguProposals}
-              onViewReports={(project) => {
+              onViewReports={(project, reportIds) => {
                 openProjectFeedbackModal({
                   projectName: project.project_name,
                   barangay: project.barangay,
                   municipality: project.municipality,
                   id: project.id,
-                });
+                }, reportIds);
               }}
               onViewProjectDetail={(project) => {
                 openProjectDetailModal(project);
