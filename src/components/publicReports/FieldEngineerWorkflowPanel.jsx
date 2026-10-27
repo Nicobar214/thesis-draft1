@@ -14,6 +14,7 @@ import { haversineMeters as distanceBetween, toPoint as asPoint } from './routeG
 import { cacheGet, cacheSet, isConnectionError } from '../../lib/offlineCache';
 import { sendInspection, enqueueInspection, listQueuedInspections, discardQueuedInspection, INSPECTION_QUEUE_EVENT } from '../../lib/offlineInspections';
 import ZoomablePhoto from '../ui/ZoomablePhoto';
+import { confirm as confirmDialog } from '../../lib/confirm';
 
 function fmtCountdown(deadlineIso) {
   if (!deadlineIso) return 'No deadline set';
@@ -307,6 +308,11 @@ export default function FieldEngineerWorkflowPanel({ report, currentUser, onSave
       if (onSaved) onSaved('Certification is required before submitting findings.', 'error');
       return;
     }
+    if (!(await confirmDialog({
+      title: 'Submit your inspection findings?',
+      message: `${report.project_name || 'This report'}\nCondition: ${conditionObserved.trim()}\nRecommended: ${recommendedAction.trim()}\n\nThe DA reviews them next. You cannot edit them after sending.`,
+      confirmLabel: 'Submit findings',
+    }))) return;
 
     const item = {
       engineerId: currentUser.id,

@@ -8,6 +8,8 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
 import { attestPhoto, registerAttestation } from '../lib/photoAttestation';
+import { formatQuantity, hasUnsupportedPrecision, limitDecimals, QUANTITY_STEP } from '../lib/quantityInput';
+import { confirm as confirmDialog } from '../lib/confirm';
 
 const inputCls =
   'w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm ' +
@@ -35,13 +37,6 @@ const asNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
-
-const hasUnsupportedPrecision = (value) =>
-  Math.abs(Number(value) * 10000 - Math.round(Number(value) * 10000)) > 1e-8;
-
-const formatQuantity = (value) => Number(value || 0).toLocaleString('en-PH', {
-  maximumFractionDigits: 4,
-});
 
 const friendlySubmitError = (error) => {
   const message = error?.message || '';
@@ -274,7 +269,7 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
         return;
       }
       if (hasUnsupportedPrecision(quantity)) {
-        setError(`Use no more than four decimal places for "${row.activity_name}".`);
+        setError(`Use no more than two decimal places for "${row.activity_name}".`);
         return;
       }
       if (row.cumulative > Number(row.planned_quantity)) {
@@ -282,6 +277,12 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
         return;
       }
     }
+
+    if (!(await confirmDialog({
+      title: 'Submit this progress update?',
+      message: `${projectName}\nPeriod ${periodStart} to ${periodEnd} · overall preview ${formatPercentage(overallPreview)}\nSWA: ${swaFile.name}\n\nIt goes to your site engineer to check on site, then to the DA. You cannot edit it after sending.`,
+      confirmLabel: 'Submit update',
+    }))) return;
 
     setSubmitting(true);
     let uploadedPath = null;
@@ -464,9 +465,9 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
                               <input
                                 type="number"
                                 min="0"
-                                step="0.0001"
+                                step={QUANTITY_STEP}
                                 value={quantities[row.id] ?? ''}
-                                onChange={(event) => setQuantities((values) => ({ ...values, [row.id]: event.target.value }))}
+                                onChange={(event) => setQuantities((values) => ({ ...values, [row.id]: limitDecimals(event.target.value) }))}
                                 aria-label={`Quantity accomplished this period for ${row.activity_name}`}
                                 className={`${inputCls} ${exceedsPlan ? 'border-red-300 focus:border-red-500' : ''}`}
                                 required

@@ -4,6 +4,8 @@ import { formatPercentage } from '../../lib/percentageFormat';
 import { attachCertificationPhoto } from '../../lib/progressCertificationPhoto';
 import CertificationPhotoCapture from './CertificationPhotoCapture';
 import SubmissionEvidence from './SubmissionEvidence';
+import { formatQuantity, hasUnsupportedPrecision, limitDecimals, QUANTITY_STEP } from '../../lib/quantityInput';
+import { confirm as confirmDialog } from '../../lib/confirm';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono ' +
@@ -14,13 +16,6 @@ const asNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
-
-const hasUnsupportedPrecision = (value) =>
-  Math.abs(Number(value) * 10000 - Math.round(Number(value) * 10000)) > 1e-8;
-
-const formatQuantity = (value) => Number(value || 0).toLocaleString('en-PH', {
-  maximumFractionDigits: 4,
-});
 
 const friendlyRpcError = (error) => {
   const message = error?.message || '';
@@ -158,7 +153,7 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
         return `Enter a quantity of zero or greater for "${item.plan.activity_name}".`;
       }
       if (hasUnsupportedPrecision(quantity)) {
-        return `Use no more than four decimal places for "${item.plan.activity_name}".`;
+        return `Use no more than two decimal places for "${item.plan.activity_name}".`;
       }
       if (item.cumulative > Number(item.plan.planned_quantity)) {
         return `The cumulative validated quantity for "${item.plan.activity_name}" cannot exceed its planned quantity.`;
@@ -195,6 +190,19 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
       setError(certPhoto?.check?.problem || 'Take a geotagged site photo as evidence before you certify or dispute.');
       return;
     }
+
+    if (!(await confirmDialog(disputeMode
+      ? {
+        title: 'Dispute these quantities?',
+        message: `${row.fmr_projects?.project_name || 'This project'}\n“${remarks.trim()}”\n\nThe update is sent back to the contractor with your reason. This cannot be undone.`,
+        confirmLabel: 'Submit dispute',
+        tone: 'danger',
+      }
+      : {
+        title: 'Certify these quantities?',
+        message: `${row.fmr_projects?.project_name || 'This project'} · certified ${formatPercentage(overallPreview)}\n\nYou confirm you measured them on site. The DA uses your figures for payment. This cannot be undone.`,
+        confirmLabel: 'Certify',
+      }))) return;
 
     setSaving(true);
     try {
@@ -293,11 +301,11 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
                       type="number"
                       inputMode="decimal"
                       min="0"
-                      step="0.0001"
+                      step={QUANTITY_STEP}
                       value={quantities[item.work_plan_item_id] ?? ''}
                       onChange={(event) => setQuantities((values) => ({
                         ...values,
-                        [item.work_plan_item_id]: event.target.value,
+                        [item.work_plan_item_id]: limitDecimals(event.target.value),
                       }))}
                       disabled={disputeMode || saving}
                       className={`mt-1 ${inputCls} ${exceedsPlan ? 'border-red-300 focus:border-red-500' : ''}`}
@@ -339,11 +347,11 @@ export default function QuantityCertificationReview({ row, onClose, onSaved, sho
                         <input
                           type="number"
                           min="0"
-                          step="0.0001"
+                          step={QUANTITY_STEP}
                           value={quantities[item.work_plan_item_id] ?? ''}
                           onChange={(event) => setQuantities((values) => ({
                             ...values,
-                            [item.work_plan_item_id]: event.target.value,
+                            [item.work_plan_item_id]: limitDecimals(event.target.value),
                           }))}
                           disabled={disputeMode || saving}
                           aria-label={`Engineer validated quantity for ${item.plan.activity_name}`}

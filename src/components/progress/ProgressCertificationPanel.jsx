@@ -23,6 +23,7 @@ import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../ui/Modal';
 import SubmissionEvidence from './SubmissionEvidence';
 import CertificationPhotoCapture from './CertificationPhotoCapture';
 import { attachCertificationPhoto } from '../../lib/progressCertificationPhoto';
+import { confirm as confirmDialog } from '../../lib/confirm';
 
 const inputCls =
   'w-full px-3 py-2 border border-slate-200 rounded-xl text-sm ' +
@@ -277,6 +278,19 @@ export default function ProgressCertificationPanel({ onCountChange, showNotifica
     const formattedRemarks = remarks.trim()
       ? `[Site Rating: ${ratingText}] ${remarks.trim()}`
       : `[Site Rating: ${ratingText}] Verified on site.`;
+
+    if (!(await confirmDialog(disputeMode
+      ? {
+        title: 'Dispute this accomplishment?',
+        message: `${row.fmr_projects?.project_name || 'This project'}\nYou measured ${Number(measured)}% (contractor claimed ${formatPercentage(row.reported_accomplishment)}).\n“${remarks.trim()}”\n\nThis cannot be undone.`,
+        confirmLabel: 'Submit dispute',
+        tone: 'danger',
+      }
+      : {
+        title: 'Certify this accomplishment?',
+        message: `${row.fmr_projects?.project_name || 'This project'} · ${formatPercentage(row.reported_accomplishment)}\n\nYou confirm you checked it on site. The DA uses it for payment. This cannot be undone.`,
+        confirmLabel: 'Certify',
+      }))) return;
 
     setSaving(true);
     try {
