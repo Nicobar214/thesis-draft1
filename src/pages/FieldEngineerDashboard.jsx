@@ -611,6 +611,15 @@ export default function FieldEngineerDashboard() {
   const openNotification = (n) => {
     if (isPriorityNotification(n)) {
       setActiveNav('priority');
+      // A site check sits at the top of Priority Tasks; bring it into view, since
+      // the engineer may already be on that page, scrolled down.
+      if (n.type === 'delay_verification_requested') {
+        requestAnimationFrame(() => {
+          const section = document.getElementById('delay-field-checks');
+          if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          else showNotification('This site check is already done or no longer assigned to you.', 'info');
+        });
+      }
       return;
     }
     if (isProgressNotification(n)) {

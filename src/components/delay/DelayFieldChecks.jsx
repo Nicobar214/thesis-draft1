@@ -64,7 +64,7 @@ export default function DelayFieldChecks({ client, userId, onCountChange }) {
 
   if (loading || !items.length) return null;
   return (
-    <section aria-label="Overdue project site checks" className="space-y-3">
+    <section id="delay-field-checks" aria-label="Overdue project site checks" className="scroll-mt-24 space-y-3">
       <div>
         <h2 className="text-base font-bold text-slate-900">Overdue project site checks</h2>
         <p className="text-sm text-slate-500">The DA needs your on-site check before deciding. Your answer is final for this round.</p>
