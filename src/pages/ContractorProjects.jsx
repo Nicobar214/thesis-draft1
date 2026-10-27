@@ -16,7 +16,7 @@ import ContractorProjectDetailModal from '../components/contractor/ContractorPro
 import ProgressSubmissionHistory from '../components/contractor/ProgressSubmissionHistory';
 import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { getPaginationRange } from '../lib/paginationUtils';
-import { getWorkflowMeta } from '../lib/progressWorkflow';
+import { getWorkflowMeta, progressSubmitBlock } from '../lib/progressWorkflow';
 import { formatPercentage } from '../lib/percentageFormat';
 import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
 import { priorityStage } from '../lib/priorityDecisions';
@@ -312,7 +312,7 @@ export default function ContractorProjects() {
   /* Opening the submit form from inside the detail modal: close the detail
      first so the two dialogs never stack. */
   const handleSubmitFromDetail = (project) => {
-    if (project.work_plan_status !== 'finalized' || !project.site_engineer_id) return;
+    if (progressSubmitBlock(project)) return;
     closeDetail();
     setSelectedProject(project);
   };
@@ -580,7 +580,23 @@ export default function ContractorProjects() {
                         </td>
 
                         <td className="px-5 py-4 text-right">
-                          {hasPendingUpdate ? (
+                          {/* A finished or halted project takes no more updates (the database refuses them too). */}
+                          {progressSubmitBlock(project)?.key === 'completed' ? (
+                            <span className="inline-flex flex-col items-end gap-0.5">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                                <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
+                                Completed
+                              </span>
+                              {project.date_completed && <span className="text-[11px] text-slate-400">on {fmtShortDate(project.date_completed)}</span>}
+                            </span>
+                          ) : isHaltedStatus(project.status) ? (
+                            <span
+                              title={progressSubmitBlock(project).hint}
+                              className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold border whitespace-nowrap ${HALTED_STATUS_STYLES[haltedStatusLabel(project.status)]?.border || 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                            >
+                              {haltedStatusLabel(project.status)}
+                            </span>
+                          ) : hasPendingUpdate ? (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />

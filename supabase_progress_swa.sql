@@ -8,7 +8,8 @@
 --     update's site engineer and the DA admin can open it.
 --  3. submit_progress_update_with_swa(...): the same as
 --     submit_progress_update_with_quantities plus the SWA. It refuses a
---     submission without the photo or the SWA file, and saves the update and the
+--     submission without the photo or the SWA file, or for a project that is
+--     completed (or at 100%), suspended or terminated, and saves the update and the
 --     SWA together (one transaction). The old function is left as it was.
 -- =============================================================================
 
@@ -66,6 +67,14 @@ begin
   end if;
   if coalesce(btrim(p_swa_path), '') = '' then
     raise exception 'Attach the Statement of Work Accomplished';
+  end if;
+  -- A finished or halted project takes no more progress updates.
+  if exists (select 1 from public.fmr_projects p
+              where p.id = p_fmr_project_id
+                and (lower(coalesce(p.status, '')) like '%complet%'
+                     or lower(coalesce(p.status, '')) in ('suspended', 'terminated')
+                     or coalesce(p.accomplishment, 0) >= 100)) then
+    raise exception 'This project is already completed or on hold, so no more progress updates can be submitted';
   end if;
   if split_part(p_swa_path, '/', 1) <> auth.uid()::text
      or not exists (select 1 from storage.objects o where o.bucket_id = 'progress-documents' and o.name = p_swa_path) then

@@ -158,3 +158,26 @@ export function isLegacyUncertified(update) {
     update.certified_accomplishment === null
   );
 }
+
+/**
+ * Why a contractor cannot send a progress update for this project right now, or
+ * null when they can. Finished (Completed or at 100%) and halted (Suspended,
+ * Terminated) projects take no more updates; submit_progress_update_with_swa
+ * refuses them too (supabase_progress_swa.sql).
+ */
+export function progressSubmitBlock(project) {
+  const status = String(project?.status || '').trim().toLowerCase();
+  if (status.includes('complet') || Number(project?.accomplishment) >= 100) {
+    return { key: 'completed', label: 'Completed', hint: 'This project is finished. No more progress updates are needed.' };
+  }
+  if (status === 'suspended' || status === 'terminated') {
+    return { key: 'halted', label: status === 'suspended' ? 'Suspended' : 'Terminated', hint: 'The DA put this project on hold. Progress updates resume if it is restarted.' };
+  }
+  if (project?.work_plan_status !== 'finalized') {
+    return { key: 'work_plan', label: 'Work Plan required', hint: "The Admin must finalize this project's Work Plan before progress can be submitted." };
+  }
+  if (!project?.site_engineer_id) {
+    return { key: 'engineer', label: 'Awaiting site engineer', hint: 'The DA office has not assigned a site engineer yet. Your progress is checked by that engineer, so it cannot be submitted until one is assigned.' };
+  }
+  return null;
+}

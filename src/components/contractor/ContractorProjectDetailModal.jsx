@@ -15,7 +15,7 @@ import CompletionTiming from '../fmrProjects/CompletionTiming';
 import ContractorHistory from '../fmrProjects/ContractorHistory';
 import ProjectPriorityCard from '../priority/ProjectPriorityCard';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
-import { getWorkflowMeta, officialAccomplishmentOf } from '../../lib/progressWorkflow';
+import { getWorkflowMeta, officialAccomplishmentOf, progressSubmitBlock } from '../../lib/progressWorkflow';
 import { formatPercentage } from '../../lib/percentageFormat';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
@@ -98,7 +98,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], p
   const contract = Number(project.contract_amount || project.total_budget || 0);
   const financialPct = contract > 0 ? Math.min(100, (Number(budget.released || 0) / contract) * 100) : null;
   const hasPending = history.some((h) => h.status === 'pending');
-  const hasFinalizedWorkPlan = project.work_plan_status === 'finalized';
+  const submitBlock = progressSubmitBlock(project);
 
   return (
     <div
@@ -289,12 +289,12 @@ export default function ContractorProjectDetailModal({ project, tranches = [], p
             <span className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200">
               Pending review
             </span>
-          ) : !hasFinalizedWorkPlan ? (
+          ) : submitBlock ? (
             <span
-              title="The Admin must finalize this project's Work Plan before progress can be submitted."
-              className="flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-50 text-slate-500 border border-slate-200 text-center"
+              title={submitBlock.hint}
+              className={`flex-1 inline-flex items-center justify-center px-4 py-2.5 rounded-xl text-sm font-semibold border text-center ${submitBlock.key === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
             >
-              Finalized Work Plan required
+              {submitBlock.key === 'work_plan' ? 'Finalized Work Plan required' : submitBlock.label}
             </span>
           ) : (
             <button
