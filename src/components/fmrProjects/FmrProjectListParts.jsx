@@ -181,7 +181,7 @@ export function FMRProjectCard({ project, onClick, tranches = [] }) {
   );
 }
 
-const thClass = 'px-6 py-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
+const thClass = 'px-4 py-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap';
 
 export function SortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSortChange }) {
   const isAsc = sortBy === asc;
@@ -193,8 +193,8 @@ export function SortableTh({ label, asc, desc, defaultDir = 'asc', sortBy, onSor
       <button
         type="button"
         onClick={() => onSortChange(next)}
-        title={`Sort by ${label}`}
-        className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-700 transition-colors"
+        aria-label={`Sort by ${label}`}
+        className="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-wider hover:text-slate-700 transition-colors"
       >
         {label}
         {(isAsc || isDesc) && <span className="text-teal-600">{isAsc ? '↑' : '↓'}</span>}
@@ -230,17 +230,17 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
             {loading
               ? Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-4">
                       <div className="h-4 w-56 bg-zinc-200 rounded mb-2" />
                       <div className="h-3 w-36 bg-zinc-200 rounded" />
                     </td>
-                    <td className="px-6 py-4"><div className="h-5 w-20 bg-zinc-200 rounded-full" /></td>
-                    <td className="px-6 py-4"><div className="h-2 w-24 bg-zinc-200 rounded-full" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-12 bg-zinc-200 rounded" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-14 bg-zinc-200 rounded" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
-                    <td className="px-6 py-4"><div className="h-4 w-28 bg-zinc-200 rounded" /></td>
+                    <td className="px-4 py-4"><div className="h-5 w-20 bg-zinc-200 rounded-full" /></td>
+                    <td className="px-4 py-4"><div className="h-2 w-24 bg-zinc-200 rounded-full" /></td>
+                    <td className="px-4 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
+                    <td className="px-4 py-4"><div className="h-4 w-12 bg-zinc-200 rounded" /></td>
+                    <td className="px-4 py-4"><div className="h-4 w-14 bg-zinc-200 rounded" /></td>
+                    <td className="px-4 py-4"><div className="h-4 w-24 bg-zinc-200 rounded" /></td>
+                    <td className="px-4 py-4"><div className="h-4 w-28 bg-zinc-200 rounded" /></td>
                   </tr>
                 ))
               : projects.map((project) => {
@@ -268,20 +268,20 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
                       title="Click to view project details"
                       className="cursor-pointer transition-colors hover:bg-slate-50/60 focus:outline-none focus:bg-slate-50"
                     >
-                      <td className="px-6 py-4 max-w-[320px]">
+                      <td className="px-4 py-4 min-w-[220px] max-w-[300px]">
                         <p className="text-sm font-semibold text-slate-900 line-clamp-2 leading-snug">{name}</p>
                         <p className="mt-0.5 text-xs text-slate-500 truncate">
                           {project.location ? `${project.location}, ` : ''}{project.municipality || 'Leon'}, {project.province || 'Iloilo'}
                         </p>
                       </td>
 
-                      <td className="px-6 py-4">
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${style.badge}`}>
+                      <td className="px-4 py-4">
+                        <span className={`inline-block whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${style.badge}`}>
                           {normalizedStatus}
                         </span>
                       </td>
 
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-4">
                         <div className="flex items-center gap-2 min-w-[120px]">
                           <div className="h-2 flex-1 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                             <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.min(accomplishment, 100)}%` }} />
@@ -290,22 +290,22 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <span className="text-sm font-bold text-slate-800 tabular-nums">{formatPeso(budget.totalBudget)}</span>
                         <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${budget.budgetIsEstimated ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                           {budget.budgetIsEstimated ? 'Est.' : 'Official'}
                         </span>
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                      <td className="px-4 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
                         {project.year_funded ? `FY ${project.year_funded}` : <span className="text-slate-300">—</span>}
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
+                      <td className="px-4 py-4 text-sm text-slate-700 tabular-nums whitespace-nowrap">
                         {project.project_length_km > 0 ? `${project.project_length_km} km` : <span className="text-slate-300">—</span>}
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         {project.target_completion_date && (
                           <p className="text-xs text-slate-600 tabular-nums">{project.target_completion_date}</p>
                         )}
@@ -322,7 +322,7 @@ export function FMRProjectTable({ projects, loading, onSelect, tranchesByProject
                         ) : null}
                       </td>
 
-                      <td className="px-6 py-4 text-sm text-slate-700 max-w-[200px]">
+                      <td className="px-4 py-4 text-sm text-slate-700 min-w-[160px] max-w-[220px]">
                         {contractorName
                           ? <span className="line-clamp-2">{contractorName}</span>
                           : <span className="text-xs italic text-slate-400">{contractorNames ? CONTRACTOR_NOT_INDICATED : '…'}</span>}
