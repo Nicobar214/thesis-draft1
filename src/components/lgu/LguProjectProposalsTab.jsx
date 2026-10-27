@@ -260,6 +260,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [existingProjects, setExistingProjects] = useState([]);
   // Drawing map: what is already on the ground, so a proposal is drawn in context.
   const [markets, setMarkets] = useState([]);
+  const [existingRoutes, setExistingRoutes] = useState({}); // project id -> saved route (road-shaped)
   const [mapLayers, setMapLayers] = useState({ roads: true, markets: false });
   const [basemap, setBasemap] = useBasemap();
   useEffect(() => {
@@ -269,9 +270,17 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     query.then(({ data, error }) => { if (alive && !error) setMarkets(data || []); });
     return () => { alive = false; };
   }, [municipalityScope]);
+  useEffect(() => {
+    const ids = existingProjects.map((p) => p.id);
+    if (!ids.length) return undefined;
+    let alive = true;
+    supabase.from('project_routes').select('*').in('project_id', ids)
+      .then(({ data, error }) => { if (alive && !error) setExistingRoutes(Object.fromEntries((data || []).map((r) => [r.project_id, r]))); });
+    return () => { alive = false; };
+  }, [existingProjects]);
   const existingRoadLines = useMemo(() => existingProjects
-    .map((p) => ({ project: p, points: buildRoutePoints(p, null).points, status: normalizeRouteStatus(p.status) }))
-    .filter((r) => r.points.length >= 2), [existingProjects]);
+    .map((p) => ({ project: p, points: buildRoutePoints(p, existingRoutes[p.id] || null).points, status: normalizeRouteStatus(p.status) }))
+    .filter((r) => r.points.length >= 2), [existingProjects, existingRoutes]);
   useEffect(() => {
     let alive = true;
     (async () => {
