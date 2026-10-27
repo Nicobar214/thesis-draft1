@@ -24,6 +24,26 @@ export function useReportRepair(client, reportId) {
   return repair;
 }
 
+/** The report's latest submitted field finding and DA resolution (citizen views): { finding, resolution }. */
+export function useReportOutcome(client, reportId) {
+  const [outcome, setOutcome] = useState({ finding: null, resolution: null });
+  useEffect(() => {
+    if (!client || !reportId) return undefined;
+    let alive = true;
+    (async () => {
+      const [findingRes, resolutionRes] = await Promise.allSettled([
+        client.from('public_report_field_findings_citizen_view').select('*').eq('report_id', reportId).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
+        client.from('public_report_resolutions_citizen_view').select('*').eq('report_id', reportId).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!alive) return;
+      const row = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || null : null);
+      setOutcome({ finding: row(findingRes), resolution: row(resolutionRes) });
+    })();
+    return () => { alive = false; };
+  }, [client, reportId]);
+  return outcome;
+}
+
 /** Who repaired it: the contractor's name, "LGU of <town>", or the DA. */
 export function repairerName(report, repair) {
   if (!repair) return null;

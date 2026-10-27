@@ -9,7 +9,7 @@ import BaseTiles from '../map/BaseTiles';
 import CitizenReportTimeline from './CitizenReportTimeline';
 import BeforeAfterCard from './BeforeAfterCard';
 import ReportResponses from './ReportResponses';
-import { accountabilityDetails, useReportRepair } from './reportAccountability';
+import { accountabilityDetails, useReportOutcome, useReportRepair } from './reportAccountability';
 import SupportReportControl from './SupportReportControl';
 import { supabase } from '../../lib/supabase';
 import { getCitizenStatus, resolveCategory, resolveSpecificProblem, SEVERITY_TAXONOMY } from '../../lib/publicReportStatus';
@@ -63,27 +63,11 @@ function Fact({ label, children }) {
  */
 // basePath: the portal the modal is shown in ('/user' or '/farmer').
 export default function FeedbackDetailModal({ item, report, support = null, onSupportChange, items = [], onSelect, onClose, client = supabase, basePath = '/user' }) {
-  const [finding, setFinding] = useState(null);
-  const [resolution, setResolution] = useState(null);
   const [photoIndex, setPhotoIndex] = useState(0);
 
   const reportId = report?.id || null;
   const repair = useReportRepair(client, reportId);
-  useEffect(() => {
-    if (!reportId) return undefined;
-    let alive = true;
-    (async () => {
-      const [findingRes, resolutionRes] = await Promise.allSettled([
-        client.from('public_report_field_findings_citizen_view').select('*').eq('report_id', reportId).order('submitted_at', { ascending: false }).limit(1).maybeSingle(),
-        client.from('public_report_resolutions_citizen_view').select('*').eq('report_id', reportId).order('resolved_at', { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      if (!alive) return;
-      const row = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || null : null);
-      setFinding(row(findingRes));
-      setResolution(row(resolutionRes));
-    })();
-    return () => { alive = false; };
-  }, [reportId, client]);
+  const { finding, resolution } = useReportOutcome(client, reportId);
 
   const index = items.findIndex((x) => x.id === item.id);
   const prev = index > 0 ? items[index - 1] : null;

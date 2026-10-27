@@ -16,6 +16,7 @@ import ProjectProgressTimeline from './ProjectProgressTimeline';
 import ProjectExtensions from './fmrProjects/ProjectExtensions';
 import CompletionTiming from './fmrProjects/CompletionTiming';
 import ContractorHistory from './fmrProjects/ContractorHistory';
+import ProjectReports from './publicReports/ProjectReports';
 import ProjectRouteMiniMap from './map/ProjectRouteMiniMap';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
@@ -199,6 +200,9 @@ function ProjectDetailBody({ project, tranches = [] }) {
           </div>
         </div>
       )}
+
+      {/* Reports the public filed on this road, with who answered and the before/after photos. */}
+      {project.id != null && <ProjectReports projectId={project.id} />}
 
       {/* Source Info */}
       <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
