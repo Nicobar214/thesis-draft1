@@ -24,8 +24,8 @@ import PriorityBadge from '../components/priority/PriorityBadge';
 import PastProjects from '../components/contractor/PastProjects';
 
 const ROWS_PER_PAGE = 10;
-// Order of DA priority stages in the list: the contractor's turn first.
-const PRIORITY_RANK = { action: 0, decision_due: 1, committed: 2, not_done: 3, done: 4 };
+// Order of DA priority stages in the list: DA priority projects first, then older follow-ups.
+const PRIORITY_RANK = { priority: 0, action: 1, decision_due: 2, committed: 3, ended: 4, not_done: 5, done: 6 };
 
 const thClass = 'px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
 
@@ -194,7 +194,7 @@ export default function ContractorProjects() {
           .select('*')
           .eq('candidate_kind', 'project')
           .in('candidate_id', ids.map(String))
-          .in('status', ['action_recorded', 'closed'])
+          .in('status', ['flagged', 'action_recorded', 'closed'])
           .order('updated_at', { ascending: false });
         const pMap = {};
         (decisions || []).forEach((d) => {
@@ -250,8 +250,8 @@ export default function ContractorProjects() {
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = projects.filter((p) => {
-      if (priorityFilter === 'open' && !['action', 'committed', 'decision_due'].includes(stageOf(p)?.stage)) return false;
-      if (priorityFilter === 'finished' && !['done', 'not_done'].includes(stageOf(p)?.stage)) return false;
+      if (priorityFilter === 'open' && !['priority', 'action', 'committed', 'decision_due'].includes(stageOf(p)?.stage)) return false;
+      if (priorityFilter === 'finished' && !['ended', 'done', 'not_done'].includes(stageOf(p)?.stage)) return false;
       if (statusFilter === 'Overdue') {
         if (!isOverdueProject(p)) return false;
       } else if (statusFilter !== 'All' && normalizeFmrStatus(p.status) !== statusFilter) return false;
@@ -272,10 +272,11 @@ export default function ContractorProjects() {
       'progress-desc': (a, b) => Number(b.accomplishment || 0) - Number(a.accomplishment || 0),
       deadline: (a, b) => targetTime(a) - targetTime(b),
     };
-    // Open DA priority follow-ups go first, then the chosen order.
+    // DA priority projects go first (best DA rank first), then the chosen order.
     const rank = (p) => PRIORITY_RANK[stageOf(p)?.stage] ?? 9;
+    const daRank = (p) => stageOf(p)?.rank ?? Infinity;
     const sorter = sorters[sortBy] || sorters.name;
-    return [...list].sort((a, b) => rank(a) - rank(b) || sorter(a, b));
+    return [...list].sort((a, b) => rank(a) - rank(b) || (daRank(a) - daRank(b)) || sorter(a, b));
   }, [projects, statusFilter, municipalityFilter, workPlanFilter, engineerFilter, priorityFilter, search, sortBy, stageOf]);
 
   // Any filter change starts the table again from page 1.
@@ -428,7 +429,7 @@ export default function ContractorProjects() {
               },
               {
                 key: 'priority', label: 'DA priority', value: priorityFilter, onChange: setPriorityFilter, allLabel: 'Any priority',
-                options: [{ value: 'open', label: 'Priority · in progress' }, { value: 'finished', label: 'Priority · result in' }],
+                options: [{ value: 'open', label: 'DA priority now' }, { value: 'finished', label: 'DA priority ended' }],
               },
               {
                 key: 'sort', label: 'Sort', value: sortBy, onChange: setSortBy, allValue: 'name', allLabel: 'Name A–Z', chip: false,

@@ -1,7 +1,7 @@
-/* ContractorPriority.jsx — Priority Tasks: what the DA's prioritization asks of
- * this contractor (e.g. "Expedite contractor"), with the reply form, on its own
- * page and menu item (red count of tasks waiting for a reply), so it is not
- * buried in the dashboard. */
+/* ContractorPriority.jsx — Do These First: this contractor's projects that the DA
+ * prioritized, best DA rank first, on its own page and menu item so it is not
+ * buried in the dashboard. Nothing to answer; older rows that still ask for a
+ * reply show their form here too. */
 import { useEffect, useState } from 'react';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
@@ -21,8 +21,9 @@ export default function ContractorPriority() {
     <ContractorLayout>
       <div className="space-y-5">
         <p className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-600 shadow-xs">
-          The DA ranks roads and projects by need. When it decides something about one of your projects, it shows here.
-          Reply with what you will do and by when; the DA is notified.
+          The DA ranks on-going projects by how much farmers gain when they are finished (road still to build, market
+          access, citizen reports, main crops, farmers nearby). Your projects the DA made a priority are listed here,
+          most important first. Please work on these first.
         </p>
         <PriorityTasksPanel client={supabase} userId={userId} role="contractor" showNotification={notify} />
       </div>

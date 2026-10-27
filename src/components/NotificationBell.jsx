@@ -74,6 +74,10 @@ const TYPE_META = {
   delay_case_closed:                  { label: 'Decision',      accent: 'bg-slate-500' },
   delay_resumed:                      { label: 'Resumed',       accent: 'bg-emerald-500' },
   delay_suspension_extended:          { label: 'Suspended',     accent: 'bg-violet-500' },
+  // FMR prioritization
+  priority_lgu_upcoming:              { label: 'Upcoming project', accent: 'bg-teal-500' },
+  priority_flagged:                   { label: 'DA priority',   accent: 'bg-amber-500' },
+  priority_closed:                    { label: 'Priority ended', accent: 'bg-slate-500' },
 };
 
 // Columns a notification can use to point at what it is about. Each came from a

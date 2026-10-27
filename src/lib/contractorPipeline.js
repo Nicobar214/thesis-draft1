@@ -77,7 +77,7 @@ export function useContractorSummary(client, userId) {
   const [updates, setUpdates] = useState([]);
   const [repairsToDo, setRepairsToDo] = useState(0);
   const [delayReplies, setDelayReplies] = useState(0); // overdue projects the DA asked about, waiting for this contractor
-  const [priorityActions, setPriorityActions] = useState([]); // DA priority actions not yet answered: { candidate_id, action }
+  const [priorityActions, setPriorityActions] = useState([]); // DA priorities and older actions: { candidate_id, action, status, responded_at }
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -104,13 +104,12 @@ export function useContractorSummary(client, userId) {
         .from('project_delay_cases')
         .select('id', { count: 'exact', head: true })
         .in('status', Object.keys(CONTRACTOR_TURN)),
-      // DA prioritization actions waiting for a reply (filtered to this contractor's projects below).
+      // DA priorities, and older actions waiting for a reply (filtered to this contractor's projects below).
       client
         .from('priority_decisions')
-        .select('candidate_id, action')
+        .select('candidate_id, action, status, responded_at')
         .eq('candidate_kind', 'project')
-        .eq('status', 'action_recorded')
-        .is('responded_at', null),
+        .in('status', ['flagged', 'action_recorded']),
     ]);
     const rows = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || [] : null);
     const pr = rows(p);
@@ -179,9 +178,10 @@ export function useContractorSummary(client, userId) {
       approvedThisMonth: approvedThisMonthCount,
       repairsToDo,
       delayReplies,
-      // The contractor's own projects only, and only actions that are theirs (not the site engineer's).
-      priorityReplies: priorityActions.filter((a) => actionOwner(a.action) === 'contractor'
-        && projects.some((p) => String(p.id) === String(a.candidate_id))).length,
+      // The contractor's own projects only: DA priorities to work on first, plus older
+      // actions that are theirs (not the site engineer's) and still unanswered.
+      priorityReplies: priorityActions.filter((a) => projects.some((p) => String(p.id) === String(a.candidate_id))
+        && (a.status === 'flagged' || (!a.responded_at && actionOwner(a.action) === 'contractor'))).length,
     };
   }, [projects, updates, repairsToDo, delayReplies, priorityActions, loading, load]);
 }

@@ -4,7 +4,9 @@
  *   Field engineer: confirm a road gap on site (Confirmed / Not as described),
  *                   and reply to a "Schedule site inspection" action on a
  *                   project where they are the site engineer.
- *   Contractor:     see that their project was flagged, and reply to
+ *   Contractor:     "Do these first": their projects the DA prioritized, best
+ *                   DA rank first (nothing to answer), and how each ended.
+ *                   Rows from before 2026-10-28 may still ask for a reply to
  *                   "Expedite contractor".
  *
  * Answered items stay visible (with the answer) until the DA moves them on. */
@@ -350,9 +352,28 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
     const mine = role === 'contractor' ? project.contractor_id === userId : project.site_engineer_id === userId;
     if (!mine) return null;
     const mineToAnswer = actionOwner(d.action) === (role === 'contractor' ? 'contractor' : 'site_engineer');
+    // A DA priority (nothing to answer): why it matters, and later how it ended.
+    const daPriority = priorityStage(d);
+    if (daPriority?.stage === 'priority' || daPriority?.stage === 'ended') {
+      const live = daPriority.stage === 'priority';
+      return {
+        id: d.id, decision: d, kind: 'info', daRank: live ? (daPriority.rank ?? 999) : 1000,
+        roadPoints: project.line || [], mapKind: 'project', status: project.status,
+        label: live ? `★ ${DECISION_LABELS.flagged}${daPriority.rank ? ` #${daPriority.rank}` : ''}` : 'DA priority ended',
+        title: project.project_name, place: project.municipality,
+        facts: live ? [
+          { label: 'Accomplishment', value: project.accomplishment != null ? `${Math.round(Number(project.accomplishment))}%` : null },
+          { label: 'Target completion', value: project.target_completion_date || null },
+        ] : undefined,
+        detail: live
+          ? `The DA ranked this among the most valuable roads to finish. Please give it priority in your work.${daPriority.reason ? ` ${daPriority.reason.replace(/^Rank #\d+ — /, 'Why: ')}` : ''}`
+          : daPriority.note,
+        needsAnswer: false, answer: null,
+      };
+    }
     // A finished action shows its result for a while (priorityStage), then leaves the list.
     if (d.status === 'closed') {
-      const stage = priorityStage(d)?.stage;
+      const stage = daPriority?.stage;
       if (!mineToAnswer || (stage !== 'done' && stage !== 'not_done')) return null;
     }
     const ownsAction = d.status === 'action_recorded' && mineToAnswer;
@@ -401,7 +422,10 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       needsAnswer: d.status === 'action_recorded' && !d.responded_at,
       answer: commitment,
     };
-  }).filter(Boolean), [rows, gaps, projects, role, userId]);
+  }).filter(Boolean)
+    // Things to answer first, then DA priorities in the DA's order.
+    .sort((a, b) => Number(b.needsAnswer) - Number(a.needsAnswer) || (a.daRank ?? 2000) - (b.daRank ?? 2000)),
+  [rows, gaps, projects, role, userId]);
 
   const openCount = tasks.filter((t) => t.needsAnswer).length;
   useEffect(() => { onCountChange?.(openCount); }, [openCount, onCountChange]);
@@ -448,12 +472,12 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
     <section className="space-y-3" aria-label="Priority tasks">
       <div className="flex items-center gap-2">
         <ClipboardCheckIcon className="size-4 text-teal-700" aria-hidden="true" />
-        <h2 className="text-sm font-semibold text-slate-900">Priority tasks from the DA</h2>
+        <h2 className="text-sm font-semibold text-slate-900">{role === 'contractor' ? 'Do these first' : 'Priority tasks from the DA'}</h2>
         {openCount > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{openCount} to answer</span>}
       </div>
       {tasks.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          Nothing from the DA&rsquo;s prioritization needs you right now.
+          {role === 'contractor' ? 'None of your projects is a DA priority right now.' : 'Nothing from the DA’s prioritization needs you right now.'}
         </p>
       ) : (
         <ul className="space-y-3">

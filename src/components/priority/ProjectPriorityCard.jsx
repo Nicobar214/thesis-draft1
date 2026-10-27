@@ -21,6 +21,29 @@ function Step({ label, done, children }) {
 export default function ProjectPriorityCard({ decision }) {
   const stage = priorityStage(decision);
   if (!stage) return null;
+
+  // A DA priority: nothing to answer, only why it matters and how it ended.
+  if (stage.stage === 'priority' || stage.stage === 'ended') {
+    return (
+      <section className={`rounded-xl border p-4 ${stage.stage === 'priority' ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-slate-50/60'}`}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-slate-900">DA priority project</h3>
+          <PriorityBadge stage={stage} />
+        </div>
+        {stage.stage === 'priority' ? (
+          <>
+            <p className="text-sm text-slate-700">
+              The DA ranked this among the most valuable roads to finish. Please give it priority in your work.
+            </p>
+            {stage.reason && <p className="mt-1 text-xs text-slate-600">{stage.reason.replace(/^Rank #\d+ — /, 'Why: ')}</p>}
+            {decision.note && <p className="mt-1 text-xs text-slate-500">DA: &ldquo;{decision.note}&rdquo;</p>}
+          </>
+        ) : (
+          <p className="text-sm text-slate-700">{stage.note}</p>
+        )}
+      </section>
+    );
+  }
   const replied = Boolean(decision.responded_at);
   const outcome = decision.outcome;
 
@@ -42,7 +65,7 @@ export default function ProjectPriorityCard({ decision }) {
               {decision.committed_by && <span className="block text-xs font-semibold text-slate-600">Done by {fmtDay(decision.committed_by)}</span>}
             </>
           ) : (
-            <Link to="/contractor/priority" className="font-semibold text-teal-700 hover:underline">Reply on Priority Tasks →</Link>
+            <Link to="/contractor/priority" className="font-semibold text-teal-700 hover:underline">Reply on Do These First →</Link>
           )}
         </Step>
         <Step label="Result" done={Boolean(outcome)}>

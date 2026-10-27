@@ -31,7 +31,7 @@ const PAGE_TITLES = {
   '/contractor/projects': 'My Projects',
   '/contractor/reports': 'Reports',
   '/contractor/delays': 'Delay Follow-ups',
-  '/contractor/priority': 'Priority Tasks',
+  '/contractor/priority': 'Do These First',
   '/contractor/profile': 'My Profile',
 };
 
@@ -85,7 +85,7 @@ export default function ContractorLayout({ children }) {
   const resolveNotificationTarget = (n) => {
     if (needsDelayReply(n)) return { actionLabel: 'Commit a new finish date' };
     if (String(n.type || '').startsWith('delay_')) return { actionLabel: 'Open Delay Follow-ups' };
-    if (isPriority(n)) return { actionLabel: 'Open Priority Tasks' };
+    if (isPriority(n)) return { actionLabel: 'Open Do These First' };
     if (n.progress_update_id) return { actionLabel: 'View this update' };
     if (n.project_id) return { actionLabel: 'Open this project' };
     if (n.report_id) return { actionLabel: 'Open this report' };

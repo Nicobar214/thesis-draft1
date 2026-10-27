@@ -13,7 +13,7 @@ const NAV_GROUPS = [
   { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', description: 'Your projects at a glance', icon: Icons.Dashboard, exact: true }] },
   { label: 'Work', items: [
     { to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road },
-    { to: '/contractor/priority', label: 'Priority Tasks', description: 'Requests from the DA prioritization', icon: Icons.ShieldCheck },
+    { to: '/contractor/priority', label: 'Do These First', description: 'Your projects the DA made a priority', icon: Icons.ShieldCheck },
     { to: '/contractor/delays', label: 'Delay Follow-ups', description: 'Commit dates for late projects', icon: Icons.Clock },
   ] },
   { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', description: 'Citizen reports and repairs', icon: Icons.Document }] },

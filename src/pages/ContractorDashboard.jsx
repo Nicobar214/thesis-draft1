@@ -196,7 +196,7 @@ function DashboardBody() {
       {/* Overdue projects: a reminder only; the replies are on Delay Follow-ups. */}
       <DelayRepliesBanner />
 
-      {/* DA prioritization: a reminder only; the tasks are on Priority Tasks. */}
+      {/* DA prioritization: a reminder only; the list is on Do These First. */}
       <PriorityRepliesBanner />
 
       {/* 1. Headline numbers */}
