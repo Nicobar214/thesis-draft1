@@ -5,6 +5,10 @@ import { formatPercentage } from '../../lib/percentageFormat';
 
 import { SURFACE_COLORS } from '../../lib/roadTerms';
 
+// The survey's surface, condition and right-of-way facts are kept in the data but
+// hidden on this dialog; set to true to show them again.
+const SHOW_SURVEY_DETAILS = false;
+
 function Fact({ label, value }) {
   return (
     <div className="rounded-xl bg-slate-50 px-3 py-2.5">
@@ -32,14 +36,18 @@ export default function RoadInventoryDetailDialog({ road, linkedProjects = [], o
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           <Fact label="Total length" value={km(road.lengthKm)} />
-          <Fact label="Concrete" value={km(road.pavedKm)} />
-          <Fact label="To concrete" value={km(road.unpavedKm)} />
-          <Fact label="Dominant surface" value={road.surfaceType || 'Unknown'} />
-          <Fact label="Overall condition" value={road.condition || 'N/A'} />
-          <Fact label="Right of way" value={road.row ? `${Number(road.row).toFixed(2)} m` : 'N/A'} />
           <Fact label="Year constructed" value={road.yearConstructed || 'N/A'} />
-          {Number(road.unpavedKm) > 0 && (
-            <Fact label="Concreting need" value={[road.unpavedType, road.unpavedCondition].filter(Boolean).join(', ') || 'N/A'} />
+          {SHOW_SURVEY_DETAILS && (
+            <>
+              <Fact label="Concrete" value={km(road.pavedKm)} />
+              <Fact label="To concrete" value={km(road.unpavedKm)} />
+              <Fact label="Dominant surface" value={road.surfaceType || 'Unknown'} />
+              <Fact label="Overall condition" value={road.condition || 'N/A'} />
+              <Fact label="Right of way" value={road.row ? `${Number(road.row).toFixed(2)} m` : 'N/A'} />
+              {Number(road.unpavedKm) > 0 && (
+                <Fact label="Concreting need" value={[road.unpavedType, road.unpavedCondition].filter(Boolean).join(', ') || 'N/A'} />
+              )}
+            </>
           )}
         </div>
 

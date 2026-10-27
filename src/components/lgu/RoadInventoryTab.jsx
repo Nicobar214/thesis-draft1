@@ -7,6 +7,26 @@ import { useIsPhone } from '../../lib/useIsPhone';
 import FmrProjectDetailDialog from '../FmrProjectDetailDialog';
 import RoadInventoryDetailDialog from './RoadInventoryDetailDialog';
 import { SortableTh, PlainTh } from '../fmrProjects/FmrProjectListParts';
+import { getStatusStyle, normalizeUserProjectStatus } from '../../lib/projectStatus';
+
+/* A road's status from its FMR project(s): On-Going while one is being built,
+   Completed once one is done, Pending when there is none yet (or only a proposal). */
+const ROAD_STATUSES = ['On-Going', 'Pending', 'Completed'];
+function roadStatusOf(projects) {
+  const statuses = projects.map((p) => normalizeUserProjectStatus(p.status));
+  if (statuses.includes('On-Going')) return 'On-Going';
+  if (statuses.includes('Completed')) return 'Completed';
+  return 'Pending';
+}
+// Same pill as the admin FMR projects table; Pending uses the Proposed colors.
+function StatusPill({ status }) {
+  const style = getStatusStyle(status === 'Pending' ? 'Proposed' : status);
+  return (
+    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ${style.badge}`}>
+      {status}
+    </span>
+  );
+}
 
 function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || value === '') return 'N/A';
@@ -51,8 +71,9 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
     return map;
   }, [projects]);
   const linkedProjectsFor = (road) => projectsByRoad.get(String(road?.roadName || '').trim()) || [];
+  const statusFor = (road) => roadStatusOf(linkedProjectsFor(road));
   const [barangayFilter, setBarangayFilter] = useState('all');
-  const [projectFilter, setProjectFilter] = useState('all'); // all | with | without
+  const [statusFilter, setStatusFilter] = useState('all'); // all | On-Going | Pending | Completed
   const [sortBy, setSortBy] = useState('name-asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [savedViewMode, setViewMode] = useViewMode('lgu-road-inventory-view');
@@ -72,10 +93,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
 
     return inventory.filter((row) => {
       if (barangayFilter !== 'all' && row.barangay !== barangayFilter) return false;
-      if (projectFilter !== 'all') {
-        const hasProject = projectsByRoad.has(String(row.roadName || '').trim());
-        if ((projectFilter === 'with') !== hasProject) return false;
-      }
+      if (statusFilter !== 'all' && roadStatusOf(projectsByRoad.get(String(row.roadName || '').trim()) || []) !== statusFilter) return false;
 
       if (!normalizedQuery) return true;
 
@@ -91,7 +109,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
 
       return haystack.includes(normalizedQuery);
     });
-  }, [inventory, query, barangayFilter, projectFilter, projectsByRoad]);
+  }, [inventory, query, barangayFilter, statusFilter, projectsByRoad]);
 
   const sortedRows = useMemo(() => {
     const [field, dir] = sortBy.split('-');
@@ -111,16 +129,16 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
     return {
       totalRoads: filteredRows.length,
       totalKm,
-      withProject: filteredRows.filter((row) => projectsByRoad.has(String(row.roadName || '').trim())).length,
-      withoutProject: filteredRows.filter((row) => !projectsByRoad.has(String(row.roadName || '').trim())).length,
+      onGoing: filteredRows.filter((row) => roadStatusOf(projectsByRoad.get(String(row.roadName || '').trim()) || []) === 'On-Going').length,
+      completed: filteredRows.filter((row) => roadStatusOf(projectsByRoad.get(String(row.roadName || '').trim()) || []) === 'Completed').length,
     };
   }, [filteredRows, projectsByRoad]);
 
-  const hasFilters = query || barangayFilter !== 'all' || projectFilter !== 'all';
+  const hasFilters = query || barangayFilter !== 'all' || statusFilter !== 'all';
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, barangayFilter, projectFilter, sortBy, viewMode]);
+  }, [query, barangayFilter, statusFilter, sortBy, viewMode]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage));
   const safePage = Math.min(currentPage, totalPages);
@@ -136,7 +154,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             <p className="text-xs uppercase tracking-[0.24em] text-emerald-700 font-semibold">Road Inventory</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-900">Leon barangay roads inventory</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Every barangay road in the inventory, with its length, year built and whether it already has an FMR project. Filter and sort to find the roads that need one.
+              Every FMR road in the inventory, with its project status, length and year built. Filter by status and sort as in the FMR projects list.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[46rem]">
@@ -149,12 +167,12 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
               <p className="mt-1 text-2xl font-bold text-slate-900">{summary.totalKm.toFixed(2)}</p>
             </div>
             <div className="rounded-2xl border border-white/70 bg-white/80 backdrop-blur p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">With FMR project</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.withProject}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">On-Going</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.onGoing}</p>
             </div>
             <div className="rounded-2xl border border-white/70 bg-white/80 backdrop-blur p-3">
-              <p className="text-xs uppercase tracking-wide text-slate-500">No FMR project yet</p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.withoutProject}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Completed</p>
+              <p className="mt-1 text-2xl font-bold text-slate-900">{summary.completed}</p>
             </div>
           </div>
         </div>
@@ -181,14 +199,13 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             ))}
           </select>
           <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            aria-label="FMR project"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Status"
             className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-emerald-400 focus:outline-none"
           >
-            <option value="all">FMR project: All</option>
-            <option value="with">With FMR project</option>
-            <option value="without">No FMR project yet</option>
+            <option value="all">All statuses</option>
+            {ROAD_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
           </select>
         </div>
 
@@ -200,7 +217,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                 onClick={() => {
                   setQuery('');
                   setBarangayFilter('all');
-                  setProjectFilter('all');
+                  setStatusFilter('all');
                 }}
                 className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-100"
               >
@@ -224,50 +241,41 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
             No roads match the current filters.
           </div>
         ) : viewMode === 'table' ? (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="w-full min-w-[40rem] text-sm">
-              <thead className="bg-slate-50 text-left">
-                <tr>
-                  {/* Click a header to sort, as in the admin projects table. */}
-                  <SortableTh label="Road Name" asc="name-asc" desc="name-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
-                  <SortableTh label="Barangay" asc="barangay-asc" desc="barangay-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
-                  <SortableTh label="Length (km)" asc="length-asc" desc="length-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
-                  <SortableTh label="Year Built" asc="year-asc" desc="year-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
-                  <PlainTh label="FMR project" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {paginatedRows.map((row) => (
-                  <tr
-                    key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
-                    onClick={() => setSelectedRoad(row)}
-                    className="cursor-pointer align-top transition-colors hover:bg-emerald-50/40"
-                  >
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setSelectedRoad(row); }}
-                        className="text-left font-semibold text-slate-900 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded"
-                      >
-                        {row.roadName || 'N/A'}
-                      </button>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">{row.barangay || 'N/A'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{formatNumber(row.lengthKm)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">{row.yearConstructed || 'N/A'}</td>
-                    <td className="px-4 py-3">
-                      {linkedProjectsFor(row).length > 0 ? (
-                        <span className="inline-flex rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                          {linkedProjectsFor(row).length === 1 ? 'Has project' : `${linkedProjectsFor(row).length} projects`}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">None yet</span>
-                      )}
-                    </td>
+          <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem]">
+                <thead>
+                  <tr className="border-b border-slate-200/70 bg-slate-50/60">
+                    {/* Click a header to sort, as in the admin FMR projects table. */}
+                    <SortableTh label="Road" asc="name-asc" desc="name-desc" defaultDir="asc" sortBy={sortBy} onSortChange={setSortBy} />
+                    <PlainTh label="Status" />
+                    <SortableTh label="Length" asc="length-asc" desc="length-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
+                    <SortableTh label="Year Built" asc="year-asc" desc="year-desc" defaultDir="desc" sortBy={sortBy} onSortChange={setSortBy} />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedRows.map((row) => (
+                    <tr
+                      key={`${row.roadName}-${row.yearConstructed}-${row.lengthKm}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedRoad(row)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedRoad(row); } }}
+                      title="Click to view road details"
+                      className="cursor-pointer transition-colors hover:bg-slate-50/60 focus:bg-slate-50 focus:outline-none"
+                    >
+                      <td className="max-w-[360px] px-4 py-4">
+                        <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-900">{row.roadName || 'N/A'}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">{row.barangay || 'N/A'}, Leon, Iloilo</p>
+                      </td>
+                      <td className="px-4 py-4"><StatusPill status={statusFor(row)} /></td>
+                      <td className="whitespace-nowrap px-4 py-4 text-sm tabular-nums text-slate-700">{formatNumber(row.lengthKm)} km</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-sm tabular-nums text-slate-700">{row.yearConstructed || <span className="text-slate-300">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -283,6 +291,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                   <h3 className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors duration-200 line-clamp-2">
                     {row.roadName || 'N/A'}
                   </h3>
+                  <span className="shrink-0"><StatusPill status={statusFor(row)} /></span>
                 </div>
 
                 <p className="mt-1.5 text-xs font-semibold text-slate-500 flex items-center gap-1">
@@ -297,12 +306,6 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                   <div className="rounded-xl bg-slate-50 p-2.5">
                     <p className="text-slate-500 font-medium">Length</p>
                     <p className="mt-0.5 font-bold text-slate-800">{formatNumber(row.lengthKm)} km</p>
-                  </div>
-                  <div className="rounded-xl bg-slate-50 p-2.5">
-                    <p className="text-slate-500 font-medium">FMR project</p>
-                    <p className={`mt-0.5 font-bold ${linkedProjectsFor(row).length ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {linkedProjectsFor(row).length ? `${linkedProjectsFor(row).length} on this road` : 'None yet'}
-                    </p>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-2.5">
                     <p className="text-slate-500 font-medium">Year Built</p>
