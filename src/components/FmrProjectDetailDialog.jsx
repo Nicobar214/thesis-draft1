@@ -62,72 +62,7 @@ function ProjectDetailBody({ project, tranches = [] }) {
         </div>
       )}
 
-      {/* Approved progress updates over time */}
-      {project.status !== 'Proposed' && <ProjectProgressTimeline key={project.id} projectId={project.id} />}
-
-      {/* Why the deadline moved: DA and contractor reasons (only when extended). */}
-      {project.id != null && <ContractorHistory projectId={project.id} />}
-      {project.id != null && <ProjectExtensions projectId={project.id} />}
-
-      {/* Specifications Grid Card */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Specifications</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
-          <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
-          <DetailItem icon={<HardHatIcon className="size-4" aria-hidden="true" />} label="Contractor" value={contractorName || CONTRACTOR_NOT_INDICATED} />
-          <DetailItem icon={<Icons.MapPinLg />} label="Province" value={`${project.province}, ${project.region}`} />
-
-          {project.year_funded && (
-            <DetailItem icon={<Icons.Calendar />} label="Year Funded" value={project.year_funded} />
-          )}
-          {project.target_completion_date && (
-            <DetailItem icon={<Icons.Calendar />} label="Target Completion" value={project.target_completion_date} />
-          )}
-          {project.date_completed && (
-            <DetailItem icon={<Icons.Calendar />} label="Date Completed" value={project.date_completed} />
-          )}
-          <CompletionTiming project={project} className="self-center justify-self-start sm:col-span-2 lg:col-span-3" />
-          {project.project_length_km > 0 && (
-            <DetailItem icon={<Icons.Ruler />} label="Road Length" value={`${project.project_length_km} km`} />
-          )}
-          {project.remarks && (
-            <DetailItem icon={<Icons.Lightbulb />} label="Remarks" value={project.remarks} />
-          )}
-        </div>
-      </div>
-
-      {/* Route map: the road with its start (S) and end (E) */}
-      {hasCoords && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-3">
-          <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
-            <Icons.MapPinLg /> Project Route
-          </h2>
-          <ProjectRouteMiniMap project={project} />
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="grid size-4 place-items-center rounded-full bg-green-600 text-[9px] font-bold text-white">S</span>
-              <span className="font-mono">{Number(project.start_latitude).toFixed(6)}, {Number(project.start_longitude).toFixed(6)}</span>
-            </span>
-            {project.end_latitude != null && (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="grid size-4 place-items-center rounded-full bg-orange-500 text-[9px] font-bold text-white">E</span>
-                <span className="font-mono">{Number(project.end_latitude).toFixed(6)}, {Number(project.end_longitude).toFixed(6)}</span>
-              </span>
-            )}
-            <a
-              href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude ?? project.start_latitude},${project.end_longitude ?? project.start_longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto inline-flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
-            >
-              <Icons.ExternalLink /> Open in Google Maps
-            </a>
-          </div>
-        </div>
-      )}
-
-      {/* Project Budget */}
+      {/* Project Budget: right under the accomplishment, to compare progress with spending */}
       <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
@@ -199,6 +134,71 @@ function ProjectDetailBody({ project, tranches = [] }) {
           </p>
         )}
       </div>
+
+      {/* Approved progress updates over time */}
+      {project.status !== 'Proposed' && <ProjectProgressTimeline key={project.id} projectId={project.id} />}
+
+      {/* Why the deadline moved: DA and contractor reasons (only when extended). */}
+      {project.id != null && <ContractorHistory projectId={project.id} />}
+      {project.id != null && <ProjectExtensions projectId={project.id} />}
+
+      {/* Specifications Grid Card */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-6">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Specifications</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <DetailItem icon={<Icons.MapPin />} label="Location" value={project.location || 'N/A'} />
+          <DetailItem icon={<Icons.Building />} label="Municipality" value={project.municipality || 'N/A'} />
+          <DetailItem icon={<HardHatIcon className="size-4" aria-hidden="true" />} label="Contractor" value={contractorName || CONTRACTOR_NOT_INDICATED} />
+          <DetailItem icon={<Icons.MapPinLg />} label="Province" value={`${project.province}, ${project.region}`} />
+
+          {project.year_funded && (
+            <DetailItem icon={<Icons.Calendar />} label="Year Funded" value={project.year_funded} />
+          )}
+          {project.target_completion_date && (
+            <DetailItem icon={<Icons.Calendar />} label="Target Completion" value={project.target_completion_date} />
+          )}
+          {project.date_completed && (
+            <DetailItem icon={<Icons.Calendar />} label="Date Completed" value={project.date_completed} />
+          )}
+          <CompletionTiming project={project} className="self-center justify-self-start sm:col-span-2 lg:col-span-3" />
+          {project.project_length_km > 0 && (
+            <DetailItem icon={<Icons.Ruler />} label="Road Length" value={`${project.project_length_km} km`} />
+          )}
+          {project.remarks && (
+            <DetailItem icon={<Icons.Lightbulb />} label="Remarks" value={project.remarks} />
+          )}
+        </div>
+      </div>
+
+      {/* Route map: the road with its start (S) and end (E) */}
+      {hasCoords && (
+        <div className="bg-white rounded-2xl border border-slate-200/60 p-6 space-y-3">
+          <h2 className="font-semibold text-slate-900 flex items-center gap-2 text-sm sm:text-base">
+            <Icons.MapPinLg /> Project Route
+          </h2>
+          <ProjectRouteMiniMap project={project} />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="grid size-4 place-items-center rounded-full bg-green-600 text-[9px] font-bold text-white">S</span>
+              <span className="font-mono">{Number(project.start_latitude).toFixed(6)}, {Number(project.start_longitude).toFixed(6)}</span>
+            </span>
+            {project.end_latitude != null && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="grid size-4 place-items-center rounded-full bg-orange-500 text-[9px] font-bold text-white">E</span>
+                <span className="font-mono">{Number(project.end_latitude).toFixed(6)}, {Number(project.end_longitude).toFixed(6)}</span>
+              </span>
+            )}
+            <a
+              href={`https://www.google.com/maps/dir/${project.start_latitude},${project.start_longitude}/${project.end_latitude ?? project.start_latitude},${project.end_longitude ?? project.start_longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto inline-flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+            >
+              <Icons.ExternalLink /> Open in Google Maps
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Source Info */}
       <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100">
