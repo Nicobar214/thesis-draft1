@@ -2,7 +2,6 @@ import { Polyline, Tooltip } from 'react-leaflet';
 import { TriangleAlertIcon, CircleCheckIcon } from 'lucide-react';
 
 import RouteEndpointMarkers from './RouteEndpointMarkers';
-import useMapZoom from './useMapZoom';
 import { MapLegend, LegendGroup, LegendLine, LegendDot, MapControlPanel, ControlGroup, LayerToggle, BasemapSwitch } from './MapPanels';
 import { getRouteStatusTheme, normalizeRouteStatus } from '../../lib/mapRouteUtils';
 
@@ -12,10 +11,6 @@ function fmtMeters(m) {
 
 const STATUSES = ['Completed', 'On-Going', 'Proposed'];
 const statusOf = (p) => (STATUSES.includes(normalizeRouteStatus(p.status)) ? normalizeRouteStatus(p.status) : 'Other');
-/* Below this zoom a farm road (mostly under 1 km) is a few pixels long, and its
- * S/E markers would cover it, so it looked like a straight dash between two
- * dots. Markers appear once the roads are long enough on screen to see. */
-const ENDPOINTS_MIN_ZOOM = 13;
 
 /**
  * Map layer for the project route editors: every other FMR project's road in
@@ -24,8 +19,6 @@ const ENDPOINTS_MIN_ZOOM = 13;
  * projects: [{ id, name, status, project, route, line }]
  */
 export function ExistingRoutesLayer({ projects = [], overlap, layers }) {
-  const zoom = useMapZoom();
-  const showEndpoints = layers?.endpoints !== false && zoom >= ENDPOINTS_MIN_ZOOM;
   const overlapIds = new Set((overlap?.overlaps || []).map((o) => String(o.id)));
   const visible = layers?.existing === false
     ? []
@@ -41,7 +34,7 @@ export function ExistingRoutesLayer({ projects = [], overlap, layers }) {
             <Polyline positions={p.line} pathOptions={{ color: theme.line, weight: hit ? 5 : 3.4, opacity: hit ? 0.95 : 0.72 }}>
               <Tooltip sticky>{p.name}</Tooltip>
             </Polyline>
-            {showEndpoints && (
+            {layers?.endpoints !== false && (
               <RouteEndpointMarkers
                 project={p.project}
                 routeData={{ ...p.route, startPoint: p.line[0], endPoint: p.line[p.line.length - 1] }}
@@ -86,7 +79,7 @@ export function RouteEditorMapPanels({ projects = [], overlap, layers, setLayer,
       <MapControlPanel compact>
         <ControlGroup label="Layers">
           <LayerToggle checked={layers.existing} onChange={(on) => setLayer('existing', on)} label="Existing FMR roads" />
-          <LayerToggle checked={layers.endpoints} onChange={(on) => setLayer('endpoints', on)} label="Start / end markers (zoomed in)" />
+          <LayerToggle checked={layers.endpoints} onChange={(on) => setLayer('endpoints', on)} label="Start / end markers" />
           <LayerToggle checked={layers.overlap} onChange={(on) => setLayer('overlap', on)} label="Overlap highlight" accent="text-red-600 focus:ring-red-500" />
         </ControlGroup>
         {layers.existing && (
