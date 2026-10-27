@@ -546,7 +546,13 @@ The proposal, its documents, evidence and history are removed for good. This is 
     }
 
     // Small faults don't block, but the LGU sees them before sending.
-    const warnings = proposalWarnings({ form, hasPhoto: Boolean(photoFile || editingProposal?.photo_url), daEstimate });
+    // A road photo is any of: the road photo field, a camera photo or an attached
+    // image in Supporting evidence (new or already saved). A PDF is not a photo.
+    const isImage = (type) => String(type || '').startsWith('image/');
+    const hasPhoto = Boolean(photoFile || editingProposal?.photo_url)
+      || evidenceItems.some((it) => it.kind === 'photo' || isImage(it.file?.type))
+      || (editingProposal?.supporting_evidence || []).some((it) => it?.kind === 'photo' || isImage(it?.mime_type));
+    const warnings = proposalWarnings({ form, hasPhoto, daEstimate });
     const ok = await confirm({
       title: editingId ? 'Resubmit this proposal to DA?' : 'Submit this proposal to DA?',
       message: warnings.length
