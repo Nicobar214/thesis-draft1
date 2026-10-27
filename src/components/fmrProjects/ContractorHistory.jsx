@@ -41,6 +41,8 @@ export default function ContractorHistory({ projectId, client = defaultClient, c
         {terms.map((t) => {
           const st = STATUS[t.status] || STATUS.holding;
           const delays = t.delays || [];
+          // "On time" only for a finished period with no offenses (excused days can bring days late to 0).
+          const onTime = t.days_late === 0 && t.status === 'completed' && !delays.some((d) => d.kind === 'offense');
           return (
             <li key={t.term_no} className="rounded-xl border border-slate-200 p-3 text-sm">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -57,8 +59,8 @@ export default function ContractorHistory({ projectId, client = defaultClient, c
               <p className="mt-0.5 text-slate-600">
                 Own target: {fmtDay(t.target_date)}
                 {t.days_late != null && (
-                  <span className={`ml-1.5 font-semibold ${t.days_late > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                    · {t.days_late > 0 ? `${t.days_late} day${t.days_late === 1 ? '' : 's'} late` : 'On time'}
+                  <span className={`ml-1.5 font-semibold ${onTime ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    · {onTime ? 'On time' : `${t.days_late} day${t.days_late === 1 ? '' : 's'} late`}
                   </span>
                 )}
                 {Number(t.excused_days) > 0 && <span className="ml-1.5 text-slate-500">({t.excused_days} day{Number(t.excused_days) === 1 ? '' : 's'} excused: act of nature)</span>}

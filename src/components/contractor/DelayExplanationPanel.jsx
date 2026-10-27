@@ -30,10 +30,16 @@ const RECENT_CLOSED_DAYS = 30;
 const SEARCH_FROM = 7; // show a search box once a list is this long
 
 /** Loads this contractor's follow-ups (RLS: only their projects), the projects, and the DA's notes. */
-async function loadContractorCases(client) {
-  const { data: cases, error } = await client.from('project_delay_cases').select('*').order('opened_at', { ascending: false });
+async function loadContractorCases(client, userId) {
+  const [{ data: cases, error }, terms] = await Promise.all([
+    client.from('project_delay_cases').select('*').order('opened_at', { ascending: false }),
+    client.from('project_contractor_terms').select('id').eq('contractor_id', userId),
+  ]);
   if (error) throw error;
-  const list = cases || [];
+  // A reassigned project: only the follow-ups from THIS contractor's own period,
+  // not the previous contractor's (supabase_overdue_v2.sql). Skipped if terms are not set up.
+  const mine = new Set((terms?.data || []).map((t) => t.id));
+  const list = (cases || []).filter((c) => !mine.size || !c.term_id || mine.has(c.term_id));
   if (!list.length) return { cases: [], projects: new Map(), notes: new Map() };
   const projectIds = [...new Set(list.map((c) => c.project_id))];
   const caseIds = list.map((c) => c.id);
@@ -68,7 +74,7 @@ export default function DelayExplanationPanel({ client, userId, focusProjectId =
   const load = useCallback(async () => {
     if (!client || !userId) return;
     try {
-      setData(await loadContractorCases(client));
+      setData(await loadContractorCases(client, userId));
       setUnavailable(false);
     } catch {
       setUnavailable(true);   // not set up yet, or offline

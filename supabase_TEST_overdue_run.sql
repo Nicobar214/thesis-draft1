@@ -9,6 +9,8 @@
 -- ── A. MAKE IT LATE NOW ────────────────────────────────────────────────────────
 -- Moves the target date to yesterday, so the project is overdue, and opens the
 -- next round right away (instead of waiting for the date to really pass).
+-- The last line usually says "cases_opened": 0 — that is fine: saving the date
+-- already opened the case. Check it with block C, or on the Overdue page.
 -- First round only: the contractor's own target becomes yesterday too, so the
 -- history counts days late (in real use this is the original target date).
 update public.project_contractor_terms
