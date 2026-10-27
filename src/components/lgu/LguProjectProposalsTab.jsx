@@ -1,6 +1,6 @@
 import { BanknoteIcon, CircleCheckIcon, FilePenLineIcon, FileTextIcon, HourglassIcon, LockIcon, SearchIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -9,6 +9,10 @@ import { notify } from '../../lib/toast';
 import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
 import MapSearchBox from '../map/MapSearchBox';
+import BaseTiles from '../map/BaseTiles';
+import { BasemapSwitch, ControlGroup, LayerToggle, LegendDot, LegendGroup, LegendLine, MapControlPanel, MapLegend } from '../map/MapPanels';
+import { useBasemap } from '../../lib/basemaps';
+import { buildRoutePoints, getRouteStatusTheme, normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import { getBarangays } from '../../data/iloiloLocations';
 import { EvidenceActions, EvidenceGrid } from '../evidence/EvidencePicker';
 import EvidenceGallery from '../evidence/EvidenceGallery';
@@ -254,6 +258,20 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
 
   // Existing FMR projects in this municipality, for the duplicate rule below.
   const [existingProjects, setExistingProjects] = useState([]);
+  // Drawing map: what is already on the ground, so a proposal is drawn in context.
+  const [markets, setMarkets] = useState([]);
+  const [mapLayers, setMapLayers] = useState({ roads: true, markets: false });
+  const [basemap, setBasemap] = useBasemap();
+  useEffect(() => {
+    let alive = true;
+    let query = supabase.from('market_locations').select('id, market_name, municipality, latitude, longitude');
+    if (municipalityScope) query = query.eq('municipality', municipalityScope);
+    query.then(({ data, error }) => { if (alive && !error) setMarkets(data || []); });
+    return () => { alive = false; };
+  }, [municipalityScope]);
+  const existingRoadLines = useMemo(() => existingProjects
+    .map((p) => ({ project: p, points: buildRoutePoints(p, null).points, status: normalizeRouteStatus(p.status) }))
+    .filter((r) => r.points.length >= 2), [existingProjects]);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1002,9 +1020,20 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     />
                   </div>
 
-                  <div style={{ height: '420px', width: '100%' }}>
+                  <div className="relative" style={{ height: '420px', width: '100%' }}>
                     <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
-                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
+                      <BaseTiles basemap={basemap} />
+                      {/* Existing FMR roads (thin, under the drawing): clicks still reach the map to place points. */}
+                      {mapLayers.roads && existingRoadLines.map(({ project, points }) => (
+                        <Polyline key={`fmr-${project.id}`} positions={points} pathOptions={{ color: getRouteStatusTheme(project.status).line, weight: 3, opacity: 0.6 }}>
+                          <Tooltip sticky>{project.project_name} · {project.status}</Tooltip>
+                        </Polyline>
+                      ))}
+                      {mapLayers.markets && markets.filter((m) => Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))).map((m) => (
+                        <CircleMarker key={`mkt-${m.id}`} center={[Number(m.latitude), Number(m.longitude)]} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: '#4338ca', fillOpacity: 1 }}>
+                          <Tooltip>{m.market_name}</Tooltip>
+                        </CircleMarker>
+                      ))}
                       <MapClickPicker
                         onPick={(lat, lng) => {
                           if (pickMode === 'start') {
@@ -1061,6 +1090,31 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                         </Marker>
                       )}
                     </MapContainer>
+                    <MapLegend compact>
+                      <LegendGroup label="Your proposal">
+                        <LegendDot color="bg-emerald-600" label="Start" />
+                        <LegendDot color="bg-teal-600" label="Waypoint" />
+                        <LegendDot color="bg-orange-500" label="End" />
+                        <LegendLine color="bg-teal-700" label="Proposed route" />
+                      </LegendGroup>
+                      <LegendGroup label="On the map">
+                        {mapLayers.roads && ['Completed', 'On-Going', 'Proposed'].map((k) => {
+                          const n = existingRoadLines.filter((r) => r.status === k).length;
+                          return n ? <LegendLine key={k} color={k === 'Completed' ? 'bg-emerald-500' : k === 'On-Going' ? 'bg-amber-500' : 'bg-blue-500'} label={`${k} FMR road`} count={n} /> : null;
+                        })}
+                        {mapLayers.markets && markets.length > 0 && <LegendDot style={{ background: '#4338ca' }} label="Market" count={markets.length} />}
+                        {searchCenter && <LegendDot color="bg-sky-500" label="Searched place" />}
+                      </LegendGroup>
+                    </MapLegend>
+                    <MapControlPanel compact>
+                      <ControlGroup label="Layers">
+                        <LayerToggle checked={mapLayers.roads} onChange={(v) => setMapLayers((l) => ({ ...l, roads: v }))} label={`Existing FMR roads (${existingRoadLines.length})`} />
+                        <LayerToggle checked={mapLayers.markets} onChange={(v) => setMapLayers((l) => ({ ...l, markets: v }))} label={`Markets (${markets.length})`} />
+                      </ControlGroup>
+                      <ControlGroup label="Basemap">
+                        <BasemapSwitch value={basemap} onChange={setBasemap} />
+                      </ControlGroup>
+                    </MapControlPanel>
                   </div>
                   {routeWaypoints.length > 0 && (
                     <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center justify-between">
