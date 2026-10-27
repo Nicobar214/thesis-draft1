@@ -44,7 +44,8 @@ export default function ProjectReports({ projectId, client = defaultClient, clas
   useEffect(() => {
     if (projectId == null) return undefined;
     let alive = true;
-    client.from('public_reports_citizen_view').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
+    // Reports point at their road as "fmr-<id>" (lib/reportSubmission.js).
+    client.from('public_reports_citizen_view').select('*').eq('project_id', `fmr-${projectId}`).order('created_at', { ascending: false })
       .then(({ data, error }) => { if (alive) setReports(error ? [] : data || []); });
     return () => { alive = false; };
   }, [client, projectId]);
