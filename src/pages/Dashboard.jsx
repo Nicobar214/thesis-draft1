@@ -70,6 +70,7 @@ import WorkPlanModal from '../components/admin/WorkPlanModal';
 import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
 import TargetCompletionNote from '../components/fmrProjects/TargetCompletionNote';
 import AccountPasswordReset from '../components/admin/AccountPasswordReset';
+import { findDuplicateProject } from '../lib/projectHelpers';
 import CompletionTiming from '../components/fmrProjects/CompletionTiming';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
@@ -3468,6 +3469,12 @@ Reminder: the summary is shown to the citizen and on the resolution certificate.
       ].filter(Boolean).join(' | '),
     };
 
+    const duplicate = findDuplicateProject(fmrProjects, fmrPayload.project_name, fmrPayload.municipality);
+    if (duplicate) {
+      showNotification(`"${duplicate.project_name}" already exists in ${duplicate.municipality || 'this municipality'}. Open that project instead, or use a different name.`, 'error');
+      return false;
+    }
+
     if (!(await confirmDialog({
       title: 'Create this FMR project?',
       message: `${fmrPayload.project_name}${fmrPayload.municipality ? ` · ${fmrPayload.municipality}` : ''}
@@ -3844,6 +3851,13 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
     const edited = fmrPayloadFromForm(fmrFormData);
     const opened = fmrFormInitialRef.current ? fmrPayloadFromForm(fmrFormInitialRef.current) : {};
     const payload = Object.fromEntries(Object.entries(edited).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(opened[key])));
+    if ('project_name' in payload || 'municipality' in payload) {
+      const duplicate = findDuplicateProject(fmrProjects, edited.project_name ?? selectedFmrProject.project_name, edited.municipality ?? selectedFmrProject.municipality, selectedFmrProject.id);
+      if (duplicate) {
+        showNotification(`Another project in ${duplicate.municipality || 'this municipality'} is already named "${duplicate.project_name}". Use a different name.`, 'error');
+        return false;
+      }
+    }
     try {
       if (Object.keys(payload).length) {
         const { error } = await supabase.from('fmr_projects').update(payload).eq('id', selectedFmrProject.id);
