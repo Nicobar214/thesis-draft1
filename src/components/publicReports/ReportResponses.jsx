@@ -27,14 +27,16 @@ function Row({ label, children }) {
 
 function Response({ icon, tone, who, role, date, children }) {
   return (
-    <li className={`rounded-xl border p-3.5 ${tone}`}>
-      <p className="flex flex-wrap items-center gap-x-1.5 text-sm">
-        {icon}
-        <span className="font-semibold text-slate-900">{who}</span>
-        <span className="text-slate-500">· {role}</span>
-        {date && <span className="ml-auto text-xs text-slate-500">{date}</span>}
-      </p>
-      <dl className="mt-2 space-y-2">{children}</dl>
+    <li className={`flex flex-col rounded-xl border p-4 ${tone}`}>
+      <div className="flex items-start gap-2.5 border-b border-slate-200/70 pb-3">
+        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-white text-slate-600 ring-1 ring-slate-200">{icon}</span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-slate-900" title={who}>{who}</p>
+          <p className="text-xs text-slate-500">{role}</p>
+        </div>
+        {date && <span className="shrink-0 text-xs text-slate-500">{date}</span>}
+      </div>
+      <dl className="mt-3 space-y-2.5">{children}</dl>
     </li>
   );
 }
@@ -48,12 +50,12 @@ export default function ReportResponses({ client, report, finding, repair, resol
   const party = repair ? responsiblePartyLabel(repair.responsible_party) || 'Contractor' : null;
   const afterPhoto = repair ? repair.verification_photo_url || repair.work_photo_url : null;
   return (
-    <section aria-label="Responses to this report">
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Responses</p>
-      <ol className="space-y-3">
+    <section aria-label="Responses to this report" className="border-t border-slate-100 pt-5">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">Responses</p>
+      <ol className="grid items-start gap-3 md:grid-cols-2 lg:grid-cols-3">
         {finding && (
           <Response
-            icon={<HardHatIcon className="size-4 shrink-0" aria-hidden="true" />}
+            icon={<HardHatIcon className="size-3.5" aria-hidden="true" />}
             tone="border-emerald-200 bg-emerald-50/40"
             who={responders?.engineer_name || finding.inspected_by_name || 'Field engineer'}
             role="DA field engineer"
@@ -74,7 +76,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
 
         {repairInfo && (
           <Response
-            icon={<WrenchIcon className="size-4 shrink-0" aria-hidden="true" />}
+            icon={<WrenchIcon className="size-3.5" aria-hidden="true" />}
             tone="border-slate-200 bg-white"
             who={responders?.handler_name || repair.repaired_by_name || party}
             role={party}
@@ -94,7 +96,7 @@ export default function ReportResponses({ client, report, finding, repair, resol
 
         {(resolution || closedReason) && (
           <Response
-            icon={<ShieldCheckIcon className="size-4 shrink-0" aria-hidden="true" />}
+            icon={<ShieldCheckIcon className="size-3.5" aria-hidden="true" />}
             tone="border-sky-200 bg-sky-50/50"
             who="Department of Agriculture"
             role={resolution ? 'final decision' : 'closed'}
