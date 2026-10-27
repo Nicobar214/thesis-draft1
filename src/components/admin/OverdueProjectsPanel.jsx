@@ -336,7 +336,10 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     const a = adminActions(c, project);
     const contractor = nameOf(contractors, project?.contractor_id);
     const verifier = nameOf(fieldEngineers, c.verifier_id);
-    const daysLate = daysBetween(parseTargetDate(c.target_date_at_open), c.status === 'closed' ? parseTargetDate(c.closed_at?.slice(0, 10)) || today : today);
+    // Closed: the count saved at closing (counted on Manila dates, like the outcome line).
+    const daysLate = c.status === 'closed' && c.days_late != null
+      ? Number(c.days_late)
+      : daysBetween(parseTargetDate(c.target_date_at_open), c.status === 'closed' && c.closed_at ? manilaToday(new Date(c.closed_at)) : today);
     const events = history[c.id];
     const earlier = earlierCases(c);
     const anyAction = Object.entries(a).some(([k, v]) => k !== 'reasons' && v);
@@ -386,7 +389,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
               <Fact label={`Field check${verifier ? ` by ${verifier}` : ''}`}>
                 <p><span className={`font-semibold ${c.verdict === 'agree' ? 'text-emerald-700' : 'text-red-700'}`}>{c.verdict === 'agree' ? 'Agrees' : 'Disagrees'}</span>{c.verification_note ? `: ${c.verification_note}` : ''}</p>
                 {c.verification_photo_url && (
-                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-2 block w-full max-w-xs overflow-hidden rounded-xl border border-slate-200" aria-label="Open the engineer's site photo full size">
+                  <a href={c.verification_photo_url} target="_blank" rel="noreferrer" className="mt-2 block w-32 overflow-hidden rounded-lg border border-slate-200" aria-label="Open the engineer's site photo full size">
                     <img src={c.verification_photo_url} alt="Engineer's site photo" className="aspect-[4/3] w-full object-cover" loading="lazy" />
                   </a>
                 )}
