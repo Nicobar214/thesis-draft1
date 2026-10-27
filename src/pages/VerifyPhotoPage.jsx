@@ -3,17 +3,16 @@
  *
  * Shows the server's record for the code: what the photo is, where and when it
  * was taken, when the server received it, and (for public report photos) the
- * original stored photo. "Check a photo file" fingerprints a file locally and
- * compares it with the registered fingerprint. No names or account ids are shown.
+ * original stored photo. No names or account ids are shown.
  */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeftIcon, BadgeCheckIcon, CircleAlertIcon, FileSearchIcon, MapPinIcon, ClockIcon, ShieldAlertIcon, Loader2Icon,
+  ArrowLeftIcon, BadgeCheckIcon, CircleAlertIcon, MapPinIcon, ClockIcon, ShieldAlertIcon, Loader2Icon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Logo from '../components/Logo';
-import { ATTESTATION_KINDS, formatCaptureTime, sha256Hex } from '../lib/photoAttestation';
+import { ATTESTATION_KINDS, formatCaptureTime } from '../lib/photoAttestation';
 
 const CODE_RE = /^[0-9A-HJKMNP-TV-Z]{12}$/;
 
@@ -38,56 +37,6 @@ function timeCheck(capturedAt, registeredAt) {
     return { tone: 'warn', text: `Received by the server about ${days} day${days === 1 ? '' : 's'} after it was taken (for example, saved offline and uploaded later).` };
   }
   return { tone: 'ok', text: 'Capture time agrees with the server’s receipt time.' };
-}
-
-function FileCheck({ sha256 }) {
-  const [state, setState] = useState(null); // null | 'busy' | 'match' | 'mismatch'
-  const onFile = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setState('busy');
-    try {
-      setState((await sha256Hex(file)) === sha256 ? 'match' : 'mismatch');
-    } catch {
-      setState('mismatch');
-    }
-  };
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600">
-          <FileSearchIcon className="size-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-900">Check a photo file</h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Have a copy of this photo, for example one attached to a document or sent to you? Choose it here to
-            confirm it is the exact original. Even a small edit, crop or re-save makes it fail.
-          </p>
-          <p className="mt-1 text-xs text-slate-400">Checked on this device only. Your file is not uploaded.</p>
-        </div>
-      </div>
-      <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-        {state === 'busy' ? <Loader2Icon className="size-4 animate-spin" aria-hidden="true" /> : <FileSearchIcon className="size-4" aria-hidden="true" />}
-        Choose photo file
-        <input type="file" accept="image/*" className="hidden" onChange={onFile} />
-      </label>
-      {state === 'match' && (
-        <p className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800">
-          <BadgeCheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          Exact match. This file is the original photo, unaltered since KalsaTrack recorded it.
-        </p>
-      )}
-      {state === 'mismatch' && (
-        <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">
-          <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          This file is not identical to the original. It may have been edited, cropped or re-saved, or compressed
-          by a messaging app. Compare it with the original record above.
-        </p>
-      )}
-    </section>
-  );
 }
 
 export default function VerifyPhotoPage() {
@@ -177,7 +126,6 @@ export default function VerifyPhotoPage() {
         )}
 
         {record && (
-          <>
             <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-xs">
               <div className="flex items-start gap-3 border-b border-emerald-100 bg-emerald-50 p-5">
                 <BadgeCheckIcon className="mt-0.5 size-6 shrink-0 text-emerald-600" aria-hidden="true" />
@@ -240,9 +188,6 @@ export default function VerifyPhotoPage() {
                 </p>
               )}
             </section>
-
-            <FileCheck sha256={record.sha256} />
-          </>
         )}
 
         <p className="text-center text-xs text-slate-400">
