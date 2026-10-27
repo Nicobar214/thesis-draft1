@@ -3490,14 +3490,22 @@ Reminder: the project is saved as NOT PUBLIC. Citizens, farmers and LGUs will on
     try {
       const { data: inserted, error } = await supabase.from('fmr_projects').insert([fmrPayload]).select('*').single();
       if (error) throw error;
-      await upsertProjectRoute(
-        inserted?.id,
-        startLat,
-        startLng,
-        endLat,
-        endLng,
-        newProjectRouteWaypoints
-      );
+      // The project exists from here on: a failed route save must not leave this
+      // dialog open, or a second "Create" makes a duplicate. It is reported, and
+      // the route can be drawn again from Edit project.
+      try {
+        await upsertProjectRoute(
+          inserted?.id,
+          startLat,
+          startLng,
+          endLat,
+          endLng,
+          newProjectRouteWaypoints
+        );
+      } catch (routeErr) {
+        console.error('Project created, but its route was not saved:', routeErr.message);
+        showNotification(`Project created, but its route was not saved (${routeErr.message}). Open Edit project to draw it again.`, 'warning');
+      }
       await fetchFmrProjects();
       await fetchProjectRoutes();
 
