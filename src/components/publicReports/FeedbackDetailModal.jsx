@@ -8,6 +8,7 @@ import Modal from '../ui/Modal';
 import BaseTiles from '../map/BaseTiles';
 import CitizenReportTimeline from './CitizenReportTimeline';
 import BeforeAfterCard from './BeforeAfterCard';
+import ReportResponses from './ReportResponses';
 import { accountabilityDetails, useReportRepair } from './reportAccountability';
 import SupportReportControl from './SupportReportControl';
 import { supabase } from '../../lib/supabase';
@@ -284,6 +285,8 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
               )}
             </div>
           )}
+
+          {report && <ReportResponses client={client} report={report} finding={finding} repair={repair} resolution={resolution} />}
 
           {report && <BeforeAfterCard report={report} repair={repair} isMine={Boolean(item._isMine)} />}
 
