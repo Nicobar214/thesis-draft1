@@ -26,16 +26,24 @@ const roadPinIcon = new L.DivIcon({
   iconAnchor: [14, 14],
 });
 
+/* Fits once per road, without animation: the cards re-render on every realtime
+ * reload (new `points` arrays), and an animated zoom still running when a card
+ * re-sorts or unmounts crashes Leaflet (_leaflet_pos of undefined). */
 function FitBoundsComponent({ points }) {
   const map = useMap();
+  const key = Array.isArray(points) ? JSON.stringify(points) : '';
   useEffect(() => {
-    if (Array.isArray(points) && points.length > 0) {
-      const bounds = boundsFromPoints(points);
-      if (bounds) {
-        map.fitBounds(bounds, { padding: [20, 20] });
-      }
+    const pts = key ? JSON.parse(key) : [];
+    const bounds = pts.length > 0 ? boundsFromPoints(pts) : null;
+    if (!bounds || !bounds.flat().every(Number.isFinite)) return;
+    if (!map.getContainer()?.isConnected) return;
+    try {
+      map.invalidateSize({ animate: false });
+      map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17, animate: false });
+    } catch {
+      // The map was torn down between render and effect; nothing to fit.
     }
-  }, [map, points]);
+  }, [map, key]);
   return null;
 }
 
