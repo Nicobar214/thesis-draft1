@@ -308,6 +308,39 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     editingId,
   }), [form, municipalityScope, existingProjects, proposals, editingId]);
 
+  // TEMPORARY (testing): delete a proposal and its uploaded files. Its activity
+  // log goes with it (ON DELETE CASCADE); notifications keep their text. Remove
+  // this before the defense, together with the button in the proposal dialog.
+  const [deletingProposal, setDeletingProposal] = useState(false);
+  const deleteProposal = async (proposal) => {
+    if (!(await confirm({
+      title: 'Delete this proposal?',
+      message: `${proposal.project_name || 'This proposal'}
+Status: ${proposal.status || '—'}
+
+The proposal, its documents, evidence and history are removed for good. This is for clearing test data.`,
+      confirmLabel: 'Delete proposal',
+      tone: 'danger',
+    }))) return;
+    setDeletingProposal(true);
+    try {
+      const paths = [
+        ...(Array.isArray(proposal.supporting_documents) ? proposal.supporting_documents.map((d) => d?.path) : []),
+        ...(Array.isArray(proposal.supporting_evidence) ? proposal.supporting_evidence.map((e) => e?.storage_path) : []),
+      ].filter(Boolean);
+      const { error } = await supabase.from('lgu_project_proposals').delete().eq('id', proposal.id);
+      if (error) throw error;
+      if (paths.length) await supabase.storage.from(ATTACHMENTS_BUCKET).remove(paths).catch(() => {});
+      setSelectedProposalForModal(null);
+      setProposals((list) => list.filter((x) => x.id !== proposal.id));
+      notify('Proposal deleted.', 'success');
+    } catch (err) {
+      notify(err?.message || 'Could not delete the proposal.', 'error');
+    } finally {
+      setDeletingProposal(false);
+    }
+  };
+
   const fetchProposals = useCallback(async () => {
     if (!user) return;
     setLoading(true);
@@ -1737,7 +1770,16 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
             </div>
 
             {/* Footer */}
-            <div className="border-t border-slate-100 p-4 bg-slate-50/50 flex justify-end">
+            <div className="border-t border-slate-100 p-4 bg-slate-50/50 flex justify-end gap-2">
+              {/* TEMPORARY (testing): see deleteProposal. */}
+              <button
+                type="button"
+                onClick={() => deleteProposal(selectedProposalForModal)}
+                disabled={deletingProposal}
+                className="mr-auto rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+              >
+                {deletingProposal ? 'Deleting…' : 'Delete (temporary)'}
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedProposalForModal(null)}
