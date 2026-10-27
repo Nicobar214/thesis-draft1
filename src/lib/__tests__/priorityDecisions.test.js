@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   actionOwner, canCloseFinished, canEndorse, canMove, deadlineStatus, finishedFollowUps, isFinal, localDateISO, nextStatus, resumeStatus,
-  saveDecision, skippedAhead, commitmentProblem, priorityStage,
+  saveDecision, skippedAhead, commitmentProblem, priorityStage, canDrop, snapshotOf,
 } from '../priorityDecisions';
 
 describe('decision flow', () => {
@@ -14,11 +14,32 @@ describe('decision flow', () => {
     expect(isFinal('gap', 'converted')).toBe(true);
   });
 
-  it('walks an ongoing project from ranked to closed', () => {
+  it('walks an ongoing project from ranked to prioritized to ended', () => {
     expect(nextStatus('project', 'ranked')).toBe('flagged');
-    expect(nextStatus('project', 'flagged')).toBe('action_recorded');
-    expect(nextStatus('project', 'action_recorded')).toBe('closed');
+    expect(nextStatus('project', 'flagged')).toBe('closed');
     expect(isFinal('project', 'closed')).toBe(true);
+    expect(resumeStatus('project')).toBe('flagged');
+  });
+
+  it('drops a road only after the engineer found it not as described', () => {
+    const notConfirmed = { status: 'for_validation', validation_result: 'not_confirmed' };
+    expect(canMove('gap', 'for_validation', 'dropped', notConfirmed)).toBe(true);
+    expect(canMove('gap', 'for_validation', 'dropped', { ...notConfirmed, validation_result: 'confirmed' })).toBe(false);
+    expect(canMove('gap', 'for_validation', 'dropped', { status: 'for_validation' })).toBe(false);
+    expect(canMove('gap', 'shortlisted', 'dropped', notConfirmed)).toBe(false);
+    expect(canMove('project', 'for_validation', 'dropped', notConfirmed)).toBe(false);
+    expect(isFinal('gap', 'dropped')).toBe(true);
+    expect(canMove('gap', 'dropped', 'deferred')).toBe(false);
+    expect(canDrop(notConfirmed)).toBe(true);
+  });
+
+  it('asks for a reason code and a note to drop, and a reason to end a priority', async () => {
+    const client = { auth: { getUser: async () => ({ data: { user: { id: 'admin' } } }) } };
+    const decision = { status: 'for_validation', validation_result: 'not_confirmed' };
+    const drop = (dropReason, note) => saveDecision(client, { kind: 'gap', id: 1, from: 'for_validation', to: 'dropped', decision, dropReason, note });
+    await expect(drop(null, 'The road is already concreted')).rejects.toThrow(/Choose why/);
+    await expect(drop('already_paved', 'paved')).rejects.toThrow(/at least 10/);
+    await expect(saveDecision(client, { kind: 'project', id: 5, from: 'flagged', to: 'closed', note: '' })).rejects.toThrow(/why the priority ends/);
   });
 
   it('allows only the next step, never skipping or going back', () => {
@@ -107,10 +128,9 @@ describe('skipping ahead of higher-ranked roads', () => {
 describe('follow-ups that are followed up', () => {
   const client = { auth: { getUser: async () => ({ data: { user: { id: 'admin' } } }) } };
 
-  it('asks for a reply date that is not in the past when recording an action', async () => {
-    const record = (replyDueDate) => saveDecision(client, { kind: 'project', id: 5, from: 'flagged', to: 'action_recorded', action: 'Expedite contractor', replyDueDate });
-    await expect(record(null)).rejects.toThrow(/reply is due/);
-    await expect(record('2000-01-01')).rejects.toThrow(/past/);
+  it('no longer offers a recorded action for new priorities', async () => {
+    await expect(saveDecision(client, { kind: 'project', id: 5, from: 'flagged', to: 'action_recorded', action: 'Expedite contractor', replyDueDate: '2099-01-01' }))
+      .rejects.toThrow(/Cannot move/);
   });
 
   it('lists open follow-ups whose project is no longer on-going, and lets them close early', () => {
@@ -145,6 +165,19 @@ describe('priority commitment and result', () => {
     expect(priorityStage({ ...base, status: 'action_recorded', responded_at: '2026-10-20', committed_by: '2026-11-01' }, today).stage).toBe('committed');
     expect(priorityStage({ ...base, status: 'action_recorded', responded_at: '2026-10-20', committed_by: '2026-10-26' }, today).stage).toBe('decision_due');
     expect(priorityStage({ ...base, status: 'closed', outcome: 'not_done', outcome_at: '2026-10-20T03:00:00Z' }, today).stage).toBe('not_done');
+  });
+
+  it('shows a prioritized project with the rank and reason from when the DA prioritized it', () => {
+    const snap = snapshotOf({ rank: 2, score: 81, G: 1, M: 2, R: 3, C: 4, F: 5, reason: 'Rank #2 — 1.8 km still to build.' });
+    expect(priorityStage({ candidate_kind: 'project', status: 'flagged', score_snapshot: snap }, today))
+      .toEqual({ stage: 'priority', rank: 2, reason: 'Rank #2 — 1.8 km still to build.' });
+    expect(priorityStage({ candidate_kind: 'project', status: 'flagged' }, today)).toMatchObject({ stage: 'priority', rank: null });
+  });
+
+  it('shows how a priority ended for 30 days', () => {
+    const ended = { candidate_kind: 'project', status: 'closed', outcome_note: 'Project completed 10 days ahead of schedule.' };
+    expect(priorityStage({ ...ended, outcome_at: '2026-10-20T03:00:00Z' }, today)).toEqual({ stage: 'ended', note: ended.outcome_note });
+    expect(priorityStage({ ...ended, outcome_at: '2026-08-01T03:00:00Z' }, today)).toBeNull();
   });
 
   it('shows a result for 30 days, and ignores gaps and plain closes', () => {

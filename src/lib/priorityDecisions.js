@@ -1,45 +1,67 @@
 /* What the DA does after the prioritization ranks a road (priority_decisions,
- * supabase_priority_decisions.sql). Kept deliberately short, with one end point
- * per group:
+ * supabase_priority_decisions.sql, supabase_priority_flow_endings.sql). Kept
+ * deliberately short; every path ends in a recorded result:
  *
  *   New road suggestion (a surveyed gap):
- *     ranked -> shortlisted -> for_validation -> endorsed -> converted (END:
- *     an FMR project was created; Work Plan -> Finalize -> Published follows)
+ *     ranked -> shortlisted ("For evaluation") -> for_validation
+ *       -> confirmed:     endorsed ("LGU notified") -> converted (END: an FMR
+ *                         project was created; Work Plan -> Finalize -> Published follows)
+ *       -> not confirmed: dropped, with a reason (END)
  *   Ongoing project:
- *     ranked -> flagged -> action_recorded -> closed (END)
+ *     ranked -> flagged ("DA priority": the contractor sees a badge)
+ *       -> closed (END: the project was completed, or the DA removed the priority)
  *
- * Any open step can be deferred (with a reason) and resumed later.
- * "ranked" is the starting point and has no saved row. */
+ * Any open step can be put on hold (deferred, with a reason) and resumed later.
+ * "ranked" is the starting point and has no saved row. Stored values are never
+ * renamed; DECISION_LABELS is what the screen says.
+ *
+ * Rows saved before 2026-10-28 may be at action_recorded (a reply and a
+ * Done / Not done result); those still finish the old way. */
 
 import { uploadGeotagPhotos } from './geotagPhoto';
 
 export const DECISION_FLOW = {
   gap: ['ranked', 'shortlisted', 'for_validation', 'endorsed', 'converted'],
-  project: ['ranked', 'flagged', 'action_recorded', 'closed'],
+  project: ['ranked', 'flagged', 'closed'],
 };
 
 export const DECISION_LABELS = {
   ranked: 'Ranked',
-  shortlisted: 'Shortlisted',
+  shortlisted: 'For evaluation',
   for_validation: 'For site validation',
-  endorsed: 'Endorsed for funding',
-  converted: 'Converted to FMR project',
-  flagged: 'Flagged for action',
+  endorsed: 'LGU notified',
+  converted: 'Project created',
+  dropped: 'Dropped',
+  flagged: 'DA priority',
   action_recorded: 'Action recorded',
-  closed: 'Closed',
-  deferred: 'Deferred',
+  closed: 'Ended',
+  deferred: 'On hold',
 };
 
 /** Button text for moving INTO each status. */
 export const STEP_ACTIONS = {
-  shortlisted: 'Shortlist',
+  shortlisted: 'Move to evaluation',
   for_validation: 'Send for site validation',
-  endorsed: 'Endorse for funding',
+  endorsed: 'Notify LGU',
   converted: 'Create FMR project',
-  flagged: 'Flag for action',
+  dropped: 'Drop road',
+  flagged: 'Prioritize this project',
   action_recorded: 'Record action',
-  closed: 'Close',
+  closed: 'End priority',
 };
+
+/** Why a road was dropped (priority_decisions.drop_reason). */
+export const DROP_REASONS = {
+  already_paved: 'Already paved / already funded',
+  not_fmr: 'Not a farm-to-market road',
+  right_of_way: 'Right-of-way problem',
+  duplicate: 'Duplicate of another road',
+  other: 'Other',
+};
+export const MIN_REASON = 10;
+
+/** A road can be dropped only after the field engineer found it not as described. */
+export const canDrop = (decision) => decision?.status === 'for_validation' && decision?.validation_result === 'not_confirmed';
 
 /** What the DA can decide for an ongoing project at the "Record action" step. */
 export const ONGOING_ACTIONS = ['Expedite contractor', 'Schedule site inspection'];
@@ -52,7 +74,7 @@ export const canEndorse = (decision) => decision?.validation_result === 'confirm
 
 export const isFinal = (kind, status) => {
   const flow = DECISION_FLOW[kind] || [];
-  return status === flow[flow.length - 1];
+  return status === flow[flow.length - 1] || (kind === 'gap' && status === 'dropped');
 };
 
 /** The next status in the flow, or null at the end / when deferred. */
@@ -81,9 +103,10 @@ export function finishedFollowUps(decisions, projects = [], isOngoing = () => tr
 /** Where a deferred candidate resumes. */
 export const resumeStatus = (kind) => DECISION_FLOW[kind]?.[1] || null;
 
-/** Is moving from `from` to `to` allowed? */
-export function canMove(kind, from = 'ranked', to) {
+/** Is moving from `from` to `to` allowed? `decision` (the saved row) is needed only for a drop. */
+export function canMove(kind, from = 'ranked', to, decision = null) {
   if (!DECISION_FLOW[kind]) return false;
+  if (to === 'dropped') return kind === 'gap' && from === 'for_validation' && canDrop({ ...decision, status: from });
   if (to === 'deferred') return from !== 'deferred' && !isFinal(kind, from);
   if (from === 'deferred') return to === resumeStatus(kind);
   return nextStatus(kind, from) === to;
@@ -126,9 +149,16 @@ export function skippedAhead(entry, groupRows = [], decisions = null) {
  * Record one step. `snapshot` keeps the rank, score and the five criteria at
  * the time of the decision, so later re-scoring never rewrites history.
  */
-export async function saveDecision(client, { kind, id, from = 'ranked', to, note = null, action = null, snapshot = null, fmrProjectId = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, finishedClose = false }) {
-  const allowed = canMove(kind, from, to) || (finishedClose && to === 'closed' && canCloseFinished(kind, from));
+export async function saveDecision(client, { kind, id, from = 'ranked', to, note = null, action = null, snapshot = null, fmrProjectId = null, assignedEngineerId = null, dueDate = null, replyDueDate = null, finishedClose = false, decision = null, dropReason = null, outcomeNote = null }) {
+  const allowed = canMove(kind, from, to, decision) || (finishedClose && to === 'closed' && canCloseFinished(kind, from));
   if (!allowed) throw new Error(`Cannot move from ${DECISION_LABELS[from] || from} to ${DECISION_LABELS[to] || to}.`);
+  if (to === 'dropped') {
+    if (!DROP_REASONS[dropReason]) throw new Error('Choose why the road is dropped.');
+    if (String(note || '').trim().length < MIN_REASON) throw new Error(`Say why the road is dropped (at least ${MIN_REASON} characters).`);
+  }
+  if (kind === 'project' && to === 'closed' && from === 'flagged' && !String(note || '').trim()) {
+    throw new Error('Say why the priority ends.');
+  }
   if (to === 'action_recorded') {
     if (!replyDueDate) throw new Error('Set the date the reply is due.');
     if (replyDueDate < localDateISO()) throw new Error('The reply date cannot be in the past.');
@@ -151,6 +181,9 @@ export async function saveDecision(client, { kind, id, from = 'ranked', to, note
     ...(assignedEngineerId ? { assigned_engineer_id: assignedEngineerId } : {}),
     ...(dueDate ? { due_date: dueDate } : {}),
     ...(replyDueDate ? { reply_due_date: replyDueDate } : {}),
+    ...(to === 'dropped' ? { drop_reason: dropReason } : {}),
+    // How a prioritized project ended (shown on the contractor's side for a while).
+    ...(outcomeNote ? { outcome_note: outcomeNote, outcome_at: new Date().toISOString() } : {}),
   };
   const { data, error } = await client
     .from('priority_decisions')
@@ -198,6 +231,8 @@ export function snapshotOf(row) {
     rank: row.rank,
     score: row.score,
     G: row.G, M: row.M, R: row.R, C: row.C, F: row.F,
+    // Shown to the contractor as "why this project is a priority".
+    ...(row.reason ? { reason: row.reason } : {}),
     taken_at: new Date().toISOString(),
   };
 }
@@ -255,11 +290,22 @@ export function commitmentProblem(note, committedBy, today = localDateISO()) {
 export const RESULT_SHOWN_DAYS = 30;
 
 /**
- * Where a project's priority action stands, for badges and cards:
- * { stage: 'action' | 'committed' | 'decision_due' | 'done' | 'not_done', action, committedBy } or null.
+ * Where a project's DA priority stands, for badges and cards:
+ *   'priority'  the DA prioritized it ({ rank, reason } from the moment it did)
+ *   'ended'     the priority ended, shown for RESULT_SHOWN_DAYS ({ note })
+ *   older rows: 'action' | 'committed' | 'decision_due' | 'done' | 'not_done'
+ * or null.
  */
 export function priorityStage(decision, today = localDateISO()) {
   if (!decision || decision.candidate_kind !== 'project') return null;
+  if (decision.status === 'flagged') {
+    const snap = decision.score_snapshot || {};
+    return { stage: 'priority', rank: Number.isFinite(Number(snap.rank)) ? Number(snap.rank) : null, reason: snap.reason || null };
+  }
+  if (decision.status === 'closed' && !decision.outcome && decision.outcome_note && decision.outcome_at) {
+    const shownUntil = localDateISO(new Date(decision.outcome_at), RESULT_SHOWN_DAYS);
+    return today <= shownUntil ? { stage: 'ended', note: decision.outcome_note } : null;
+  }
   if (decision.status === 'action_recorded') {
     if (!decision.responded_at) return { stage: 'action', action: decision.action };
     if (decision.committed_by && decision.committed_by < today) return { stage: 'decision_due', action: decision.action, committedBy: decision.committed_by };

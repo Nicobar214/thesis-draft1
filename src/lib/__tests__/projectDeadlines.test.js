@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyDeadline, buildDeadlineRows, countDeadlineStates } from '../projectDeadlines';
+import { classifyDeadline, buildDeadlineRows, countDeadlineStates, completionTiming } from '../projectDeadlines';
 
 const today = new Date(2026, 9, 11); // Oct 11, 2026
 
@@ -36,5 +36,26 @@ describe('projectDeadlines', () => {
     expect(rows.map((r) => r.project.id)).toEqual([2, 4, 1, 5]);
     expect(countDeadlineStates(rows)).toEqual({ overdue: 1, at_risk: 1, on_track: 1, no_target: 1 });
     expect(rows[0].daysSinceUpdate).toBeGreaterThanOrEqual(29);
+  });
+});
+
+describe('completion against the target date', () => {
+  it('says how many days early, on time or late a project finished', () => {
+    expect(completionTiming({ date_completed: '2026-11-18', target_completion_date: '2026-11-28' })).toMatchObject({ tone: 'early', days: 10, text: 'Completed 10 days ahead of schedule' });
+    expect(completionTiming({ date_completed: '2026-11-27', target_completion_date: '2026-11-28' }).text).toBe('Completed 1 day ahead of schedule');
+    expect(completionTiming({ date_completed: '2026-11-28', target_completion_date: '2026-11-28' })).toMatchObject({ tone: 'on_time', text: 'Completed on schedule' });
+    expect(completionTiming({ date_completed: '2026-12-03', target_completion_date: '2026-11-28' })).toMatchObject({ tone: 'late', days: -5, text: 'Completed 5 days late' });
+  });
+
+  it('notes an extended target, and reads written-out dates', () => {
+    expect(completionTiming({ date_completed: '2026-11-18', target_completion_date: '2026-11-28' }, 30).text).toBe('Completed 10 days ahead of schedule (target extended by 30 days)');
+    expect(completionTiming({ date_completed: 'September 1, 2017', target_completion_date: 'September 9, 2017' }).days).toBe(8);
+  });
+
+  it('shows nothing when a date is missing, unreadable or a placeholder', () => {
+    expect(completionTiming({ date_completed: '', target_completion_date: '2026-11-28' })).toBeNull();
+    expect(completionTiming({ date_completed: '2026-11-18', target_completion_date: 'TBA' })).toBeNull();
+    expect(completionTiming({ date_completed: '1960-12-31', target_completion_date: '2026-11-28' })).toBeNull();
+    expect(completionTiming(null)).toBeNull();
   });
 });

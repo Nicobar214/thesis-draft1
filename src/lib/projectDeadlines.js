@@ -86,6 +86,34 @@ export function buildDeadlineRows(projects, updates = [], today = new Date()) {
     });
 }
 
+/* A completed project against its target date (target_completion_date already
+ * includes approved extensions; `extendedDays` only adds the note). Dates before
+ * 1990 are placeholders in the imported records and are ignored. */
+export const COMPLETION_TONES = {
+  early: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  on_time: 'bg-teal-50 text-teal-700 ring-teal-200',
+  late: 'bg-amber-50 text-amber-800 ring-amber-200',
+};
+
+const realDay = (value) => {
+  const d = parseDay(value);
+  return d && d.getFullYear() >= 1990 ? d : null;
+};
+
+/** { tone: 'early' | 'on_time' | 'late', days, text } or null when a date is missing. */
+export function completionTiming(p, extendedDays = 0) {
+  if (!p) return null;
+  const done = realDay(p.date_completed);
+  const target = realDay(p.target_completion_date);
+  if (!done || !target) return null;
+  const days = Math.round((target - done) / DAY);
+  const plural = (n) => `${n} day${n === 1 ? '' : 's'}`;
+  const ext = extendedDays > 0 ? ` (target extended by ${plural(extendedDays)})` : '';
+  if (days > 0) return { tone: 'early', days, text: `Completed ${plural(days)} ahead of schedule${ext}` };
+  if (days === 0) return { tone: 'on_time', days, text: `Completed on schedule${ext}` };
+  return { tone: 'late', days, text: `Completed ${plural(-days)} late${ext}` };
+}
+
 export function countDeadlineStates(rows) {
   const counts = { overdue: 0, at_risk: 0, on_track: 0, no_target: 0 };
   rows.forEach((r) => { counts[r.state] += 1; });
