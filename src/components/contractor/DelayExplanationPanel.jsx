@@ -386,7 +386,10 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
   const [sending, setSending] = useState(false);
   const nature = form.cause === 'act_of_nature';
   const win = form.cause ? commitWindow(c, form.cause, form.stoppedDays, today) : null;
-  const problems = commitmentProblems(c, { ...form, hasProof: form.evidence.length > 0 }, today);
+  // The latest allowed date is filled in; the contractor may pick an earlier one.
+  const pickedOk = win && form.newDate >= toISODate(win.min) && form.newDate <= toISODate(win.max);
+  const newDate = win && !pickedOk ? toISODate(win.max) : form.newDate;
+  const problems = commitmentProblems(c, { ...form, newDate, hasProof: form.evidence.length > 0 }, today);
   const set = (key) => (e) => onDraft({ ...form, [key]: e.target.value });
   const causes = DELAY_CAUSES.filter((x) => (lockedManpower ? x.value === 'manpower' : n > MAX_OFFENSES ? x.value === 'act_of_nature' : true));
 
@@ -415,7 +418,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
         p_case: c.id,
         p_cause: form.cause,
         p_explanation: form.explanation.trim(),
-        p_new_date: form.newDate,
+        p_new_date: newDate,
         p_event_name: nature ? form.eventName.trim() : null,
         p_stopped_days: nature ? Number(form.stoppedDays) : null,
       });
@@ -505,7 +508,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
           <span className="font-medium text-slate-700">New finish date</span>
           <input
             type="date"
-            value={form.newDate}
+            value={newDate}
             min={win ? toISODate(win.min) : undefined}
             max={win ? toISODate(win.max) : undefined}
             disabled={!win}
@@ -514,7 +517,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
           />
           <span className="mt-1 block text-xs text-slate-500">
             {win
-              ? <>Allowed: <span className="font-semibold text-slate-700">{fmtDay(win.min)} – {fmtDay(win.max)}</span> ({win.days} days max). Later dates cannot be chosen.</>
+              ? <>Filled in with the latest allowed date. You may pick an earlier one from <span className="font-semibold text-slate-700">{fmtDay(win.min)}</span>.</>
               : form.cause ? 'Enter the days work stopped first.' : 'Choose the cause first.'}
           </span>
         </label>
@@ -578,7 +581,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
             <dl className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 text-sm">
               {[
                 ['Cause', nature ? `Act of nature · ${form.eventName.trim()}, ${form.stoppedDays} day(s) stopped` : `Manpower · Offense ${n} of ${MAX_OFFENSES}`],
-                ['New finish date', fmtDay(form.newDate)],
+                ['New finish date', fmtDay(newDate)],
                 ['What happened', form.explanation.trim()],
                 [nature ? 'Proof' : 'Evidence', evidenceSummary(form.evidence)],
               ].map(([label, value]) => (
