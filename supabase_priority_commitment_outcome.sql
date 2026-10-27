@@ -264,6 +264,9 @@ begin
 end;
 $function$;
 
+-- Let the app see the new functions right away.
+notify pgrst, 'reload schema';
+
 -- Checks (read-only):
 -- select column_name from information_schema.columns where table_name = 'priority_decisions' and column_name in ('committed_by','outcome','outcome_note','outcome_at','outcome_by');
 -- select pg_get_function_identity_arguments('public.respond_priority_action'::regproc);   -- includes p_committed_by date
