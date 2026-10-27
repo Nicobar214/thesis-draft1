@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, CircleMarker, Tooltip, Popup, Polyline
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabaseFarmer as supabase } from "../lib/supabase";
-import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm } from "../lib/mapRouteUtils";
+import { fetchRoadAlignedPolyline, calculatePolylineDistanceKm, buildRoutePoints, nearestPointOnPolyline } from "../lib/mapRouteUtils";
 import { storeGlyph, routeGlyph, sproutGlyph } from "../lib/mapMarkerIcons";
 import { SproutIcon, RouteIcon, StoreIcon } from "lucide-react";
 import { useFarmerRecord } from "../lib/useFarmerRecord";
@@ -72,7 +72,9 @@ export default function FarmerDashboard() {
   const { farmerRecord } = useFarmerRecord();
   const [fmrProjects, setFmrProjects] = useState([]);
   const [markets, setMarkets] = useState([]);
-  const [snappedFmrPath, setSnappedFmrPath] = useState(null);
+  // Snapped lines with the key they were computed for, so a stale one is never drawn.
+  const [snappedFmr, setSnappedFmr] = useState({ key: '', line: null });
+  const [routesByProjectId, setRoutesByProjectId] = useState({});
   // Linked FMR road details (same dialog as the Road Projects page).
   const [roadDetailsOpen, setRoadDetailsOpen] = useState(false);
   const [roadTranches, setRoadTranches] = useState([]);
@@ -90,7 +92,7 @@ export default function FarmerDashboard() {
       /* details still open without the budget breakdown */
     }
   };
-  const [snappedSupplyPath, setSnappedSupplyPath] = useState(null);
+  const [snappedSupply, setSnappedSupply] = useState({ key: '', line: null });
 
   // Saved on the device (lib/offlineCache.js), so My Farm still works offline.
   useEffect(() => {
@@ -100,6 +102,10 @@ export default function FarmerDashboard() {
         .catch(() => {});
       cachedQuery("market_locations:all", () => supabase.from("market_locations").select("*"))
         .then(({ data }) => setMarkets(data || []))
+        .catch(() => {});
+      // Saved road lines (snapped or mapped), the same ones every other map draws.
+      cachedQuery("project_routes:all", () => supabase.from("project_routes").select("*"))
+        .then(({ data }) => setRoutesByProjectId(Object.fromEntries((data || []).map((r) => [r.project_id, r]))))
         .catch(() => {});
     };
     load();
@@ -160,53 +166,69 @@ export default function FarmerDashboard() {
     return { nearestMarket: nearest, distToMarket: dist };
   }, [farmLat, farmLng, markets]);
 
-  // Build Supply Chain line path for leaflet mapping
+  // The linked road as drawn on every other map: its saved route when there is
+  // one, otherwise the line between its pins (snapped below).
+  const fmrLine = useMemo(
+    () => (nearestFmr ? buildRoutePoints(nearestFmr, routesByProjectId[nearestFmr.id] || null) : null),
+    [nearestFmr, routesByProjectId],
+  );
+
+  // A saved route is drawn as is; a 2-pin road uses its snapped line once it arrives.
+  const fmrKey = fmrLine && fmrLine.points.length === 2 ? JSON.stringify(fmrLine.points) : '';
+  const snappedFmrPath = !fmrLine || fmrLine.points.length < 2
+    ? null
+    : fmrLine.points.length > 2 ? fmrLine.points : (snappedFmr.key === fmrKey ? snappedFmr.line : null);
+
+  // Where the farm meets the road: the nearest point ON the road, not its start pin.
+  const accessPoint = useMemo(() => {
+    if (!farmLat || !farmLng || !fmrLine?.points?.length) return null;
+    return nearestPointOnPolyline([Number(farmLat), Number(farmLng)], snappedFmrPath || fmrLine.points)?.point || null;
+  }, [farmLat, farmLng, fmrLine, snappedFmrPath]);
+
+  // Build Supply Chain line path for leaflet mapping: farm -> road -> market.
   const supplyChainPath = useMemo(() => {
     const path = [];
     if (farmLat && farmLng) {
-      path.push([farmLat, farmLng]);
-      if (nearestFmr) {
-        const startLat = Number(nearestFmr.start_latitude);
-        const startLng = Number(nearestFmr.start_longitude);
-        if (startLat && startLng) {
-          path.push([startLat, startLng]);
-        }
-      }
+      path.push([Number(farmLat), Number(farmLng)]);
+      if (accessPoint) path.push(accessPoint);
       if (nearestMarket) {
         path.push([Number(nearestMarket.latitude), Number(nearestMarket.longitude)]);
       }
     }
     return path;
-  }, [farmLat, farmLng, nearestFmr, nearestMarket]);
+  }, [farmLat, farmLng, accessPoint, nearestMarket]);
 
-  // Snap the FMR access line and the supply-chain path onto real road
-  // geometry (OSRM) instead of leaving them as straight Euclidean lines.
+  // The linked road: its saved route as is; only a road known by its two pins
+  // is snapped here (with its declared length, so a wrong pin is not routed).
   useEffect(() => {
+    if (!fmrKey) return undefined;
     let cancelled = false;
-
-    async function snapPaths() {
-      const fmrStartLat = Number(nearestFmr?.start_latitude);
-      const fmrStartLng = Number(nearestFmr?.start_longitude);
-      const fmrEndLat = Number(nearestFmr?.end_latitude);
-      const fmrEndLng = Number(nearestFmr?.end_longitude);
-
-      const fmrPromise = (nearestFmr && fmrStartLat && fmrStartLng && fmrEndLat && fmrEndLng)
-        ? fetchRoadAlignedPolyline([[fmrStartLat, fmrStartLng], [fmrEndLat, fmrEndLng]], { alongLine: true })
-        : Promise.resolve(null);
-
-      const supplyPromise = supplyChainPath.length > 1
-        ? fetchRoadAlignedPolyline(supplyChainPath)
-        : Promise.resolve(null);
-
-      const [fmrSnapped, supplySnapped] = await Promise.all([fmrPromise, supplyPromise]);
-      if (cancelled) return;
-      setSnappedFmrPath(fmrSnapped);
-      setSnappedSupplyPath(supplySnapped);
-    }
-
-    snapPaths();
+    fetchRoadAlignedPolyline(fmrLine.points, { alongLine: true, declaredKm: fmrLine.declaredLengthKm })
+      .then((line) => { if (!cancelled) setSnappedFmr({ key: fmrKey, line }); });
     return () => { cancelled = true; };
-  }, [nearestFmr, supplyChainPath]);
+    // fmrKey stands for fmrLine's points.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fmrKey]);
+
+  // The trip to market, routed by road as two drives: farm -> road access point,
+  // then access point -> market. Each is plain A-to-B routing (any road may be
+  // used), so the drive is not refused for leaving the straight line, which a
+  // single 3-point "follow this line" request was.
+  const supplyKey = supplyChainPath.length >= 2 ? JSON.stringify(supplyChainPath) : '';
+  useEffect(() => {
+    if (!supplyKey) return undefined;
+    let cancelled = false;
+    const legs = supplyChainPath.slice(1).map((to, i) => fetchRoadAlignedPolyline([supplyChainPath[i], to]));
+    Promise.all(legs).then((parts) => {
+      if (cancelled) return;
+      const joined = parts.reduce((all, part, i) => (i === 0 ? [...part] : [...all, ...part.slice(1)]), []);
+      setSnappedSupply({ key: supplyKey, line: joined.length > supplyChainPath.length ? joined : null });
+    });
+    return () => { cancelled = true; };
+    // supplyKey stands for supplyChainPath.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplyKey]);
+  const snappedSupplyPath = snappedSupply.key === supplyKey ? snappedSupply.line : null;
 
   const roadDistToFmr = snappedFmrPath ? calculatePolylineDistanceKm(snappedFmrPath) * 1000 : distToFmr;
   const roadDistToMarket = snappedSupplyPath ? calculatePolylineDistanceKm(snappedSupplyPath) * 1000 : distToMarket;
@@ -322,10 +344,10 @@ export default function FarmerDashboard() {
                   </Marker>
 
                   {/* Linked FMR Project Markers */}
-                  {nearestFmr && nearestFmr.start_latitude && nearestFmr.start_longitude && (
+                  {nearestFmr && (accessPoint || (nearestFmr.start_latitude && nearestFmr.start_longitude)) && (
                     <>
                       <Marker
-                        position={[Number(nearestFmr.start_latitude), Number(nearestFmr.start_longitude)]}
+                        position={accessPoint || [Number(nearestFmr.start_latitude), Number(nearestFmr.start_longitude)]}
                         icon={new L.DivIcon({
                           className: 'fmr-endpoint-pin',
                           html: `<div style="background:#f59e0b;color:#fff;width:24px;height:24px;border-radius:9999px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:10px;font-weight:bold">${routeGlyph(13)}</div>`,
