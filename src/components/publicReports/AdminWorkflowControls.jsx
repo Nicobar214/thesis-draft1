@@ -35,6 +35,8 @@ const OUTCOMES_AFTER_REPAIR = [
   { value: 'repaired', label: 'Repaired — the after-photo shows it fixed' },
   { value: 'monitoring_required', label: 'Temporary fix — keep monitoring the site' },
 ];
+// LGU jobs (clearing, signs) are either done or sent back: always "Repaired".
+const OUTCOMES_AFTER_LGU_WORK = OUTCOMES_AFTER_REPAIR.filter((o) => o.value === 'repaired');
 const OUTCOMES_WITHOUT_REPAIR = [
   { value: 'no_action_required', label: 'No repair needed' },
   { value: 'outside_project_scope', label: 'Outside this project’s scope' },
@@ -123,7 +125,9 @@ export default function AdminWorkflowControls({
   // Set by the issue type; shown, not chosen here, to keep it unambiguous.
   const handler = report ? handlerFor(report) : 'contractor';
   // With finished work the outcome is "Repaired"; without a job, "No action required".
-  const outcomeOptions = activeWork ? OUTCOMES_AFTER_REPAIR : OUTCOMES_WITHOUT_REPAIR;
+  const outcomeOptions = !activeWork
+    ? OUTCOMES_WITHOUT_REPAIR
+    : workOrder?.responsible_party === 'lgu' ? OUTCOMES_AFTER_LGU_WORK : OUTCOMES_AFTER_REPAIR;
   const resolutionType = outcomeOptions.some((o) => o.value === chosenResolutionType)
     ? chosenResolutionType
     : outcomeOptions[0].value;
@@ -346,16 +350,22 @@ export default function AdminWorkflowControls({
               <label htmlFor="resolution-type" className="text-[11px] font-semibold text-slate-600 block">
                 Outcome
               </label>
-              <select
-                id="resolution-type"
-                value={resolutionType}
-                onChange={(e) => setResolutionType(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white"
-              >
-                {outcomeOptions.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
+              {outcomeOptions.length === 1 ? (
+                <p id="resolution-type" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                  {outcomeOptions[0].label}
+                </p>
+              ) : (
+                <select
+                  id="resolution-type"
+                  value={resolutionType}
+                  onChange={(e) => setResolutionType(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs bg-white"
+                >
+                  {outcomeOptions.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              )}
               <p className="text-[11px] text-slate-500">
                 {activeWork
                   ? `Not fixed yet? Use "Send back to the ${workOrder.responsible_party === 'lgu' ? 'LGU' : 'contractor'}" above instead of resolving.`
