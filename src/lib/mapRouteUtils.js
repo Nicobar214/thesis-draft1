@@ -120,9 +120,16 @@ export function buildRoutePoints(project, routeRecord) {
     if (routeEnd) points.push(routeEnd);
   }
 
+  // No mapped route: a straight line between the two pins. A road is never
+  // shorter than the straight line between its ends, so pins much farther apart
+  // than the declared length mean one pin is wrong (e.g. 0.72 km road, pins
+  // 11 km apart). Then only the start is kept rather than a line across town.
+  let endpointsMismatch = false;
   if (points.length === 0) {
     if (start) points.push(start);
-    if (end) points.push(end);
+    const declaredKm = toNum(project?.project_length_km);
+    endpointsMismatch = Boolean(start && end && declaredKm > 0 && haversineKm(start, end) > declaredKm * 2 + 0.5);
+    if (end && !endpointsMismatch) points.push(end);
   }
 
   const deduped = dedupePoints(points);
@@ -134,6 +141,7 @@ export function buildRoutePoints(project, routeRecord) {
     startPoint: deduped[0] || start || null,
     endPoint: deduped[deduped.length - 1] || end || null,
     hasRouteRecord: Boolean(routeRecord),
+    endpointsMismatch,
 
     // Provenance and length, surfaced here rather than threaded through arguments
     // so every caller of buildRoutePoints gets them without changing its signature.
