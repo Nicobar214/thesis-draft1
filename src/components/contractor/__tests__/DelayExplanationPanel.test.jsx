@@ -85,8 +85,27 @@ describe('DelayExplanationPanel', () => {
     fireEvent.change(date, { target: { value: iso(5) } });
     fireEvent.change(screen.getByPlaceholderText(/typhoon flooded/), { target: { value: 'The site was flooded for 5 days.' } });
     fireEvent.click(screen.getByRole('button', { name: /Send commitment/ }));
-    expect(await screen.findByText(/Attach proof/)).toBeTruthy();
+    expect(await screen.findByText(/at least one official document/)).toBeTruthy();
     expect(rpc).not.toHaveBeenCalled();
+    // The evidence is in two parts: official documents (required) and photos of what happened.
+    expect(screen.getByText('Official documents')).toBeTruthy();
+    expect(screen.getByText('Photos of what happened')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Attach document/ })).toBeTruthy();
+  });
+
+  it('while an act-of-nature claim is reviewed, more evidence can be sent; a manpower round cannot', async () => {
+    const client = fakeClient({
+      project_delay_cases: [
+        { ...baseCase, kind: 'act_of_nature', cause: 'act_of_nature', event_name: 'Typhoon Kristine', stopped_days: 5, explanation: 'Flooded for five days.', proposed_date: iso(5), status: 'awaiting_verification', verification_due: iso(4) },
+        { ...baseCase, id: 'c2', project_id: 8, kind: 'offense', cause: 'manpower', explanation: 'Short of six workers.', proposed_date: iso(30), status: 'awaiting_decision', decision_due: iso(4) },
+      ],
+      fmr_projects: [project, { ...project, id: 8, project_name: 'Brgy. Agboy FMR' }],
+    });
+    render(<DelayExplanationPanel client={client} userId="u1" />);
+    expect(await screen.findByText('Send more evidence')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Send evidence$/ }).disabled).toBe(true);   // nothing picked yet
+    fireEvent.click(screen.getByRole('button', { name: /Brgy\. Agboy FMR/ }));
+    await waitFor(() => expect(screen.queryByText('Send more evidence')).toBeNull());
   });
 
   it('the final offense is marked strict, and after 3 offenses only an act of nature is offered', async () => {

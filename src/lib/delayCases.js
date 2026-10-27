@@ -116,7 +116,7 @@ export const OUTCOMES = {
 
 /* The two causes. Old values stay readable for history. */
 export const DELAY_CAUSES = [
-  { value: 'act_of_nature', label: 'Act of nature', offense: false, hint: 'Typhoon, flood, earthquake, landslide or volcanic activity that stopped the work. Needs proof and a field check. Not counted as an offense.' },
+  { value: 'act_of_nature', label: 'Act of nature', offense: false, hint: 'Typhoon, flood, earthquake, landslide or volcanic activity that stopped the work. Needs an official document, photos and a field check. Not counted as an offense.' },
   { value: 'manpower', label: 'Manpower', offense: true, hint: 'Lack of workers or slow work. Counts as an offense.' },
 ];
 const OLD_CAUSES = { weather: 'Weather', right_of_way: 'Right-of-way', materials: 'Materials', fund_release: 'Fund release', design_change: 'Design change', other: 'Other' };
@@ -245,9 +245,9 @@ export const REQUEST_EVENT = {
 
 /**
  * Same checks as delay_submit_commitment, before anything is sent. Returns plain sentences.
- * `hasProof` = at least one evidence file is attached (act of nature).
+ * `hasDocument` = at least one official document is attached (act of nature).
  */
-export function commitmentProblems(c, { cause, explanation, newDate, eventName, stoppedDays, hasProof }, today = manilaToday()) {
+export function commitmentProblems(c, { cause, explanation, newDate, eventName, stoppedDays, hasDocument }, today = manilaToday()) {
   const out = [];
   const n = Number(c?.offense_no) || 1;
   if (!DELAY_CAUSES.some((x) => x.value === cause)) out.push('Choose the cause: Act of nature or Manpower.');
@@ -258,7 +258,7 @@ export function commitmentProblems(c, { cause, explanation, newDate, eventName, 
     if (String(eventName || '').trim().length < 3) out.push('Name the event, for example "Typhoon Kristine".');
     const s = Number(stoppedDays);
     if (!Number.isInteger(s) || s < 1 || s > NATURE_CAP_DAYS) out.push(`Days work stopped must be from 1 to ${NATURE_CAP_DAYS}.`);
-    if (!hasProof) out.push('Attach proof: a PAGASA/NDRRMC advisory, an LGU notice or photos of the damage.');
+    if (!hasDocument) out.push('Attach at least one official document: a PAGASA/NDRRMC advisory, or an LGU or barangay notice or certification.');
   }
   const win = cause ? commitWindow(c, cause, stoppedDays, today) : null;
   const d = parseTargetDate(newDate);
@@ -275,6 +275,7 @@ export function friendlyDelayError(error) {
   if (/been through a delay follow-up/i.test(msg) && /target date/i.test(msg)) return 'This project has been through a delay follow-up, so its target date cannot be set to a past date here. Use a future date, or Project Management > Overdue.';
   if (/Change its contractor with Terminate/i.test(msg)) return 'This project has been through a delay follow-up. Its contractor can only be changed with Terminate & reassign (Project Management > Overdue).';
   if (/Could not find the function public\.(delay_submit_commitment|delay_approve|delay_send_back|delay_reject_nature_claim|delay_terminate_and_reassign|project_contractor_history)/i.test(msg)) return 'The new overdue process is not set up yet: run supabase_overdue_v2.sql.';
+  if (/column .*category.* does not exist|category.*schema cache/i.test(msg)) return 'Act-of-nature evidence is not set up yet: run supabase_overdue_v2_patch2.sql.';
   if (/permission denied|not allowed to|JWT/i.test(msg)) return 'You do not have permission to do this.';
   return msg || 'Something went wrong. Please try again.';
 }

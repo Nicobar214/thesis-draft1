@@ -17,6 +17,7 @@ import {
 import GeotagCamera from '../camera/GeotagCamera';
 import GeotagPhotoPreview from '../camera/GeotagPhotoPreview';
 import EvidenceGallery from '../evidence/EvidenceGallery';
+import { NatureEvidenceGallery } from './NatureEvidence';
 
 export default function DelayFieldChecks({ client, userId, onCountChange }) {
   const [items, setItems] = useState([]);
@@ -58,6 +59,7 @@ export default function DelayFieldChecks({ client, userId, onCountChange }) {
     if (!client?.channel || !userId) return undefined;
     const channel = client.channel(`delay-field-checks-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_delay_cases' }, () => load())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_delay_evidence' }, () => load())
       .subscribe();
     return () => { client.removeChannel(channel); };
   }, [client, userId, load]);
@@ -146,7 +148,13 @@ function CheckCard({ c, project, evidence, note, client, onDone }) {
         <dt className="text-slate-500">What they said</dt><dd className="whitespace-pre-line text-slate-800">{c.explanation}</dd>
         <dt className="text-slate-500">New finish date</dt><dd className="text-slate-800">{fmtDay(c.proposed_date)}</dd>
       </dl>
-      {evidence.length > 0 && <div className="mt-4"><EvidenceGallery client={client} bucket="delay-evidence" items={evidence} title="Contractor's proof" /></div>}
+      {evidence.length > 0 && (
+        <div className="mt-4">
+          {nature
+            ? <NatureEvidenceGallery client={client} rows={evidence} />
+            : <EvidenceGallery client={client} bucket="delay-evidence" items={evidence} title="Contractor's evidence" />}
+        </div>
+      )}
 
       <fieldset className="mt-5">
         <legend className="text-sm font-medium text-slate-700">Your finding</legend>

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeftIcon, BellRingIcon, CalendarCheckIcon, CalendarClockIcon, ChevronDownIcon, ChevronUpIcon, CircleAlertIcon, RotateCwIcon, ShieldCheckIcon, TriangleAlertIcon } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import EvidenceGallery from '../evidence/EvidenceGallery';
+import { NatureEvidenceGallery } from '../delay/NatureEvidence';
 import {
   addDays, adminActions, CASE_STATES, caseBucket, caseDue, causeLabel, commitWindow, daysBetween, fmtDay, friendlyDelayError,
   manilaToday, MAX_OFFENSES, MAX_REPLY_DAYS, MIN_REASON, needsFieldCheck, offenseLabel, OUTCOMES, parseTargetDate,
@@ -138,6 +139,8 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
     const channel = client
       .channel('admin-delay-cases')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_delay_cases' }, () => { load(); onDataChanged?.(); })
+      // More act-of-nature evidence sent while the claim is reviewed.
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_delay_evidence' }, () => load())
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_delay_case_events' }, (payload) => {
         const caseId = payload.new?.case_id;
         if (caseId) setHistory((h) => (h[caseId] ? { ...h, [caseId]: [...h[caseId], payload.new] } : h));
@@ -405,7 +408,9 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
 
         {!c.cause && evidenceByCase[c.id]?.length > 0 && (
           <div className="mt-3 rounded-xl border border-slate-200 p-3">
-            <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Contractor's supporting evidence" />
+            {c.kind === 'act_of_nature'
+              ? <NatureEvidenceGallery client={client} rows={evidenceByCase[c.id]} />
+              : <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Contractor's supporting evidence" />}
           </div>
         )}
 

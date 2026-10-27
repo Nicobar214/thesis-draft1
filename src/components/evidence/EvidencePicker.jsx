@@ -12,9 +12,12 @@ import GeotagCamera from '../camera/GeotagCamera';
 import { notify } from '../../lib/toast';
 import { EVIDENCE_ACCEPT, EVIDENCE_MAX_ITEMS, fileProblem, fileToEvidence, photoToEvidence } from '../../lib/evidence';
 
-export function EvidenceActions({ items, onChange, kind, label, place = 'the site', disabled = false }) {
+/* `camera={false}` shows only Attach file (e.g. official documents); `category`
+ * tags every item added here (lib/evidence.js). */
+export function EvidenceActions({ items, onChange, kind, label, place = 'the site', disabled = false, camera = true, attachLabel = 'Attach file', category = null }) {
   const inputRef = useRef(null);
   const full = items.length >= EVIDENCE_MAX_ITEMS;
+  const tag = (item) => (category ? { ...item, category } : item);
 
   const addFiles = (fileList) => {
     const picked = [...(fileList || [])];
@@ -23,7 +26,7 @@ export function EvidenceActions({ items, onChange, kind, label, place = 'the sit
     picked.forEach((f) => {
       const problem = fileProblem(f);
       if (problem) notify(problem, 'error');
-      else if (ok.length < room) ok.push(fileToEvidence(f));
+      else if (ok.length < room) ok.push(tag(fileToEvidence(f)));
     });
     if (picked.length > room) notify(`You can attach up to ${EVIDENCE_MAX_ITEMS} items.`, 'error');
     if (ok.length) onChange([...items, ...ok]);
@@ -31,25 +34,27 @@ export function EvidenceActions({ items, onChange, kind, label, place = 'the sit
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <GeotagCamera
-        compact
-        kind={kind}
-        label={label}
-        place={place}
-        disabled={disabled || full}
-        onCaptured={(photo) => {
-          if (!photo.check.ok) { notify(photo.check.problem, 'error'); return; }
-          onChange([...items, photoToEvidence(photo)]);
-          notify('Photo added. It is sent with your reply.', 'success');
-        }}
-      />
+      {camera && (
+        <GeotagCamera
+          compact
+          kind={kind}
+          label={label}
+          place={place}
+          disabled={disabled || full}
+          onCaptured={(photo) => {
+            if (!photo.check.ok) { notify(photo.check.problem, 'error'); return; }
+            onChange([...items, tag(photoToEvidence(photo))]);
+            notify('Photo added. It is sent with your reply.', 'success');
+          }}
+        />
+      )}
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={disabled || full}
         className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
       >
-        <PaperclipIcon className="size-4" aria-hidden="true" /> Attach file
+        <PaperclipIcon className="size-4" aria-hidden="true" /> {attachLabel}
       </button>
       <input
         ref={inputRef}

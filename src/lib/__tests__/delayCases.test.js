@@ -157,14 +157,14 @@ describe('commitmentProblems (same checks as delay_submit_commitment)', () => {
   });
   it('act of nature needs the event, the days stopped and proof', () => {
     const nature = { cause: 'act_of_nature', explanation: 'Typhoon flooded the site.', newDate: '2026-11-06', eventName: 'Typhoon Kristine', stoppedDays: '5' };
-    expect(commitmentProblems(c, { ...nature, hasProof: true }, today)).toEqual([]);
-    expect(commitmentProblems(c, { ...nature, hasProof: false }, today)[0]).toMatch(/proof/i);
-    expect(commitmentProblems(c, { ...nature, hasProof: true, newDate: '2026-11-07' }, today)[0]).toMatch(/5 days max/);
-    expect(commitmentProblems(c, { ...nature, hasProof: true, stoppedDays: '31' }, today).some((p) => /1 to 30/.test(p))).toBe(true);
+    expect(commitmentProblems(c, { ...nature, hasDocument: true }, today)).toEqual([]);
+    expect(commitmentProblems(c, { ...nature, hasDocument: false }, today)[0]).toMatch(/official document/i);
+    expect(commitmentProblems(c, { ...nature, hasDocument: true, newDate: '2026-11-07' }, today)[0]).toMatch(/5 days max/);
+    expect(commitmentProblems(c, { ...nature, hasDocument: true, stoppedDays: '31' }, today).some((p) => /1 to 30/.test(p))).toBe(true);
   });
   it('no manpower after 3 offenses, and no act of nature after a rejected claim', () => {
     expect(commitmentProblems({ offense_no: 4 }, ok, today).some((p) => /3 chances/.test(p))).toBe(true);
-    expect(commitmentProblems({ offense_no: 2, kind: 'offense' }, { ...ok, cause: 'act_of_nature', eventName: 'Flood', stoppedDays: '3', hasProof: true, newDate: '2026-11-03' }, today)
+    expect(commitmentProblems({ offense_no: 2, kind: 'offense' }, { ...ok, cause: 'act_of_nature', eventName: 'Flood', stoppedDays: '3', hasDocument: true, newDate: '2026-11-03' }, today)
       .some((p) => /not accepted/.test(p))).toBe(true);
   });
 });

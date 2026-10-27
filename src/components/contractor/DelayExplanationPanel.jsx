@@ -18,6 +18,8 @@ import { Modal } from '../ui/Modal';
 import { EvidenceActions, EvidenceGrid } from '../evidence/EvidencePicker';
 import EvidenceGallery from '../evidence/EvidenceGallery';
 import { evidenceSummary, uploadEvidence } from '../../lib/evidence';
+import { confirm as confirmDialog } from '../../lib/confirm';
+import { NatureEvidenceGallery, NatureEvidencePicker } from '../delay/NatureEvidence';
 
 const EVIDENCE_BUCKET = 'delay-evidence';
 import {
@@ -317,19 +319,77 @@ function Sent({ c }) {
 /** The evidence sent with a follow-up. */
 function useCaseEvidence(client, caseId) {
   const [rows, setRows] = useState([]);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
     if (!client || !caseId) return undefined;
     let alive = true;
     client.from('project_delay_evidence').select('*').eq('case_id', caseId).order('created_at', { ascending: true })
       .then(({ data, error }) => { if (alive && !error) setRows(data || []); });
     return () => { alive = false; };
-  }, [client, caseId]);
-  return rows;
+  }, [client, caseId, version]);
+  return [rows, () => setVersion((v) => v + 1)];
+}
+
+/** Upload evidence items and record them on the case (the database checks who and when). */
+async function sendEvidence(client, c, items) {
+  let rows;
+  try {
+    rows = await uploadEvidence(client, { bucket: EVIDENCE_BUCKET, prefix: c.id, items });
+  } catch (err) {
+    throw new Error(`The evidence could not be uploaded (${err?.message || 'network error'}). Nothing was sent; please try again.`);
+  }
+  const { error } = await client.from('project_delay_evidence').insert(rows.map((r) => ({ ...r, case_id: c.id, project_id: c.project_id })));
+  if (error) throw error;
+}
+
+/* While an act-of-nature claim is with the DA or the field engineer, the
+ * contractor can still send more documents and photos (patch 2). */
+function MoreNatureEvidence({ c, project, client, onSent }) {
+  const [documents, setDocuments] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [sending, setSending] = useState(false);
+  const total = documents.length + photos.length;
+  const send = async () => {
+    const ok = await confirmDialog({
+      title: 'Send this evidence to the DA?',
+      message: `${project?.project_name || 'Project'}\n${[documents.length && `${documents.length} document(s)`, photos.length && `${photos.length} photo(s)`].filter(Boolean).join(', ')}.\nThe DA${c.status === 'awaiting_verification' ? ' and the field engineer' : ''} will be told. You cannot remove it after sending.`,
+      confirmLabel: 'Send evidence',
+    });
+    if (!ok) return;
+    setSending(true);
+    try {
+      await sendEvidence(client, c, [...documents, ...photos]);
+      notify('Your evidence was sent to the DA.', 'success');
+      setDocuments([]);
+      setPhotos([]);
+      onSent?.();
+    } catch (err) {
+      notify(friendlyDelayError(err), 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/40 p-4">
+      <p className="text-sm font-semibold text-slate-900">Send more evidence</p>
+      <p className="mt-0.5 text-xs text-slate-600">Got a new advisory, a barangay certification or more photos? Add them while your claim is being reviewed.</p>
+      <div className="mt-3">
+        <NatureEvidencePicker documents={documents} photos={photos} onDocuments={setDocuments} onPhotos={setPhotos} disabled={sending} documentsRequired={false} label={`Act-of-nature evidence · ${project?.project_name || 'project'}`} />
+      </div>
+      <div className="mt-3 flex justify-end">
+        <button type="button" onClick={send} disabled={!total || sending} className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50">
+          <SendIcon className="size-4" aria-hidden="true" /> {sending ? 'Sending…' : `Send evidence${total ? ` (${total})` : ''}`}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function StatusCard({ c, project, today, client }) {
   const closed = c.status === 'closed';
-  const evidence = useCaseEvidence(client, c.id);
+  const [evidence, reloadEvidence] = useCaseEvidence(client, c.id);
+  const nature = c.kind === 'act_of_nature';
+  const canAddMore = nature && ['awaiting_decision', 'awaiting_verification'].includes(c.status);
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
       <DetailHead c={c} project={project} today={today} right={<OffenseChip c={c} />} />
@@ -350,7 +410,14 @@ function StatusCard({ c, project, today, client }) {
         </p>
       )}
       <Sent c={c} />
-      {evidence.length > 0 && <div className="mt-4"><EvidenceGallery client={client} bucket={EVIDENCE_BUCKET} items={evidence} title="Evidence you sent" /></div>}
+      {evidence.length > 0 && (
+        <div className="mt-4">
+          {nature
+            ? <NatureEvidenceGallery client={client} bucket={EVIDENCE_BUCKET} rows={evidence} who="Your" />
+            : <EvidenceGallery client={client} bucket={EVIDENCE_BUCKET} items={evidence} title="Evidence you sent" />}
+        </div>
+      )}
+      {canAddMore && <MoreNatureEvidence c={c} project={project} client={client} onSent={reloadEvidence} />}
     </article>
   );
 }
@@ -385,8 +452,10 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
     newDate: c.proposed_date || '',
     eventName: c.event_name || '',
     stoppedDays: c.stopped_days ? String(c.stopped_days) : '',
-    evidence: [],
+    evidence: [],    // photos and files (act of nature: photos of what happened)
+    documents: [],   // act of nature: official documents
   };
+  const documents = form.documents || [];
   const [touched, setTouched] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [sending, setSending] = useState(false);
@@ -395,7 +464,7 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
   // The latest allowed date is filled in; the contractor may pick an earlier one.
   const pickedOk = win && form.newDate >= toISODate(win.min) && form.newDate <= toISODate(win.max);
   const newDate = win && !pickedOk ? toISODate(win.max) : form.newDate;
-  const problems = commitmentProblems(c, { ...form, newDate, hasProof: form.evidence.length > 0 }, today);
+  const problems = commitmentProblems(c, { ...form, newDate, hasDocument: documents.length > 0 }, today);
   const set = (key) => (e) => onDraft({ ...form, [key]: e.target.value });
   const causes = DELAY_CAUSES.filter((x) => (lockedManpower ? x.value === 'manpower' : n > MAX_OFFENSES ? x.value === 'act_of_nature' : true));
 
@@ -408,18 +477,11 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
     setSending(true);
     try {
       // Evidence first (it can only be added while it is the contractor's turn),
-      // then the commitment the DA reviews with it.
-      if (form.evidence.length) {
-        let rows;
-        try {
-          rows = await uploadEvidence(client, { bucket: EVIDENCE_BUCKET, prefix: c.id, items: form.evidence });
-        } catch (err) {
-          throw new Error(`The evidence could not be uploaded (${err?.message || 'network error'}). Nothing was sent; please try again.`);
-        }
-        const { error: evErr } = await client.from('project_delay_evidence')
-          .insert(rows.map((r) => ({ ...r, case_id: c.id, project_id: c.project_id })));
-        if (evErr) throw evErr;
-      }
+      // then the commitment the DA reviews with it. An act of nature tags each file.
+      const items = nature
+        ? [...documents, ...form.evidence.map((it) => ({ ...it, category: 'photo' }))]
+        : form.evidence;
+      if (items.length) await sendEvidence(client, c, items);
       const { error } = await client.rpc('delay_submit_commitment', {
         p_case: c.id,
         p_cause: form.cause,
@@ -450,12 +512,14 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
         right={(
           <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
             <div className="flex flex-wrap gap-1.5"><OffenseChip c={c} /><DueChip c={c} today={today} /></div>
-            <EvidenceActions
-              items={form.evidence}
-              onChange={(evidence) => onDraft({ ...form, evidence })}
-              kind="delay_evidence"
-              label={`Delay evidence · ${project?.project_name || 'project'}`}
-            />
+            {!nature && (
+              <EvidenceActions
+                items={form.evidence}
+                onChange={(evidence) => onDraft({ ...form, evidence })}
+                kind="delay_evidence"
+                label={`Delay evidence · ${project?.project_name || 'project'}`}
+              />
+            )}
           </div>
         )}
       />
@@ -538,8 +602,19 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
         <p className="mb-2 text-sm font-medium text-slate-700">
           Supporting evidence
           {!nature && <span className="font-normal text-slate-400"> (optional · photos or PDFs, up to 8)</span>}
+          {nature && <span className="font-normal text-slate-400"> · what happened, for the DA and the field engineer</span>}
         </p>
-        <EvidenceGrid items={form.evidence} onChange={(evidence) => onDraft({ ...form, evidence })} />
+        {nature ? (
+          <NatureEvidencePicker
+            documents={documents}
+            photos={form.evidence}
+            onDocuments={(list) => onDraft({ ...form, documents: list })}
+            onPhotos={(list) => onDraft({ ...form, evidence: list })}
+            label={`Act-of-nature evidence · ${project?.project_name || 'project'}`}
+          />
+        ) : (
+          <EvidenceGrid items={form.evidence} onChange={(evidence) => onDraft({ ...form, evidence })} />
+        )}
       </div>
 
       {touched && problems.length > 0 && (
@@ -589,7 +664,9 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
                 ['Cause', nature ? `Act of nature · ${form.eventName.trim()}, ${form.stoppedDays} day(s) stopped` : `Manpower · Offense ${n} of ${MAX_OFFENSES}`],
                 ['New finish date', fmtDay(newDate)],
                 ['What happened', form.explanation.trim()],
-                [nature ? 'Proof' : 'Evidence', evidenceSummary(form.evidence)],
+                ...(nature
+                  ? [['Documents', documents.length ? `${documents.length} official document${documents.length === 1 ? '' : 's'}` : 'None'], ['Photos', evidenceSummary(form.evidence)]]
+                  : [['Evidence', evidenceSummary(form.evidence)]]),
               ].map(([label, value]) => (
                 <div key={label} className="grid grid-cols-[8rem_1fr] gap-3 px-4 py-2.5">
                   <dt className="text-slate-500">{label}</dt>
@@ -597,10 +674,10 @@ function ReplyCard({ c, project, note, today, client, draft, onDraft, onSent }) 
                 </div>
               ))}
             </dl>
-            {form.evidence.length > 0 && <EvidenceGrid items={form.evidence} />}
+            {(documents.length > 0 || form.evidence.length > 0) && <EvidenceGrid items={nature ? [...documents, ...form.evidence] : form.evidence} />}
             <p className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${strict ? 'bg-red-50 text-red-800' : 'bg-slate-50 text-slate-600'}`}>
               {nature
-                ? 'A field engineer checks the damage on site before the DA approves. If the claim is not accepted, it counts as an offense.'
+                ? 'A field engineer checks the damage on site before the DA approves. You can still send more evidence while it is reviewed. If the claim is not accepted, it counts as an offense.'
                 : n >= MAX_OFFENSES
                   ? 'This is your final chance. A field engineer checks first. Once approved, the date is locked; missing it ends your contract on this project.'
                   : 'Once the DA approves it, the date is locked. Missing it becomes the next offense, with less time.'}

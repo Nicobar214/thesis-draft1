@@ -3,7 +3,8 @@
  * proposal. Items are kept in the form until it is sent, then uploaded together
  * (uploadEvidence), so nothing half-finished is left in storage.
  *
- * An item: { id, kind: 'photo' | 'file', file, preview, name, attestation? }
+ * An item: { id, kind: 'photo' | 'file', file, preview, name, attestation?, category? }
+ *   category (act-of-nature claims): 'document' (advisory, LGU/barangay notice) | 'photo'
  * Stored:   { kind, storage_path, file_name, mime_type, size_bytes,
  *             latitude, longitude, accuracy_m, captured_at, attestation_code } */
 import { registerAttestation } from './photoAttestation';
@@ -61,6 +62,8 @@ export async function uploadEvidence(client, { bucket, prefix, items }) {
         accuracy_m: a?.accuracy ?? null,
         captured_at: a?.capturedAt ?? null,
         attestation_code: a?.code ?? null,
+        // Only when set, so other evidence still saves before supabase_overdue_v2_patch2.sql.
+        ...(it.category ? { category: it.category } : {}),
       });
       if (a) await registerAttestation(client, a, { bucket, path });
     }
@@ -69,6 +72,14 @@ export async function uploadEvidence(client, { bucket, prefix, items }) {
     if (done.length) await client.storage.from(bucket).remove(done.map((d) => d.storage_path)).catch(() => {});
     throw err;
   }
+}
+
+/** Stored evidence split for an act-of-nature claim: official documents, and the rest (photos of what happened). */
+export function splitEvidence(rows = []) {
+  return {
+    documents: rows.filter((r) => r.category === 'document'),
+    photos: rows.filter((r) => r.category !== 'document'),
+  };
 }
 
 /** "2 photos, 1 file" */

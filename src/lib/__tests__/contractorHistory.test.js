@@ -24,3 +24,13 @@ describe('contractor history', () => {
     expect(projectSummary([first, second], parseTargetDate('2027-01-01'))).toEqual({ overallDays: 284, gapDays: 5, finished: true });
   });
 });
+
+describe('act-of-nature evidence', () => {
+  it('splits official documents from photos of what happened', async () => {
+    const { splitEvidence } = await import('../evidence');
+    const rows = [{ id: 1, category: 'document' }, { id: 2, category: 'photo' }, { id: 3, category: null }];
+    const { documents, photos } = splitEvidence(rows);
+    expect(documents.map((r) => r.id)).toEqual([1]);
+    expect(photos.map((r) => r.id)).toEqual([2, 3]);
+  });
+});
