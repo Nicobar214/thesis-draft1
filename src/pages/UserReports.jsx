@@ -20,6 +20,8 @@ import PhotoLightbox from '../components/ui/PhotoLightbox';
 import PublicReportRouteMapPanel from '../components/publicReports/PublicReportRouteMapPanel';
 import DAResolutionCertificate from '../components/publicReports/DAResolutionCertificate';
 import FixConfirmationCard, { FIX_CONFIRMATION_ENABLED } from '../components/publicReports/FixConfirmationCard';
+import BeforeAfterCard from '../components/publicReports/BeforeAfterCard';
+import { accountabilityDetails } from '../components/publicReports/reportAccountability';
 import {
   CITIZEN_STATUS_FILTERS,
   SEVERITY_TAXONOMY,
@@ -734,7 +736,11 @@ function UserReports({ client = supabase, embedded = false, onNewReport = null }
                 finding={selectedFieldFinding}
                 resolution={selectedResolution}
                 resolutionSummary={selectedResolutionSummary}
+                details={accountabilityDetails({ report: selected, finding: selectedFieldFinding, repair: selectedRepair, isMine: true })}
               />
+
+              {/* The evidence: your photo next to the repair's. */}
+              <BeforeAfterCard report={selected} repair={selectedRepair} isMine />
 
               {/* 2. What the citizen actually reported — their own words first */}
               <section className="space-y-3">

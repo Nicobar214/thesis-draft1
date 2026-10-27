@@ -19,6 +19,7 @@ import {
   buildReportPayload,
   buildReportPhotoLabel,
   findNearbyRoads,
+  isSuspectLine,
   friendlySubmitError,
   isNetworkFailure,
   makePhotoPath,
@@ -74,7 +75,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const closeCamera = useCallback(() => setCameraOpen(false), []);
   const {
     videoRef, canvasRef,
-    photoBlob, photoPreview, photoTs,
+    photoBlob, photoPreview, photoTs, photoGps,
     camError, camReady,
     capturePhoto, retakePhoto, resetPhoto, stopCamera,
   } = useReportCamera({ gps, active: step === 'reporting' && cameraOpen });
@@ -186,7 +187,8 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   const rawLines = useMemo(() => allProjects
     .map((project) => {
       const { points } = buildRoutePoints(project, routeByProjectId.get(project.id) || null);
-      return points.length >= 2 ? { project, points } : null;
+      // Pins far further apart than the road is long: only the pins count as "near".
+      return points.length >= 2 ? { project, points, pinsOnly: isSuspectLine(project, points) } : null;
     })
     .filter(Boolean), [allProjects, routeByProjectId]);
   // Roads known only by their two pins follow the real road near the reporter.
@@ -239,14 +241,17 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
   // Submit
   const handleSubmit = async () => {
     setError(null);
-    const problem = validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps, roadPoints: selLine?.points });
+    // The report is where the photo was taken (photoGps), not where the phone is
+    // now: a report made at the road stays credible if it is sent later, elsewhere.
+    const reportGps = photoGps || gps;
+    const problem = validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps: reportGps, roadPoints: selLine?.points, pinsOnly: selLine?.pinsOnly });
     if (problem) { setError(problem); return; }
     setSubmitting(true);
 
     // Validated above, so the project and GPS fix exist. One payload serves both the
     // online insert and the offline queue.
     const payloadBase = buildReportPayload({
-      fullName, contact, selProject, gps, photoTs, description,
+      fullName, contact, selProject, gps: reportGps, photoTs, description,
       severityCategory, category, specificProblem, userId: currentUser?.id,
       routeRecord: reportRoute,
     });
@@ -259,9 +264,9 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
     try {
       const stamped = await attestPhoto(photoBlob, {
         kind: 'citizen_report',
-        latitude: gps?.lat,
-        longitude: gps?.lng,
-        accuracy: gps?.accuracy,
+        latitude: reportGps?.lat,
+        longitude: reportGps?.lng,
+        accuracy: reportGps?.accuracy,
         capturedAt: photoTs || undefined,
         label: buildReportPhotoLabel({ severityCategory, specificProblem, selProject }),
       });
@@ -392,6 +397,7 @@ export default function PublicReportForm({ prefillCategory = null, prefillProble
         gps={gps}
         project={selProject}
         points={selLine.points}
+        pinsOnly={Boolean(selLine.pinsOnly)}
         onReportNow={goClassify}
         onBack={() => { setSelProject(null); setStep('picking'); }}
       />

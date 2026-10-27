@@ -8,7 +8,7 @@
  * The full submission history lives on My Projects (no duplicate here).
  */
 import { useEffect, useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   BuildingIcon,
   CalendarClockIcon,
@@ -31,7 +31,7 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { useContractorSummaryContext } from '../lib/contractorSummaryContext';
 import { resolveCategory, resolveSpecificProblem, workOrderStage, WORK_STAGES } from '../lib/publicReportStatus';
 import Icons from '../components/Icons';
-import PriorityTasksPanel from '../components/priority/PriorityTasksPanel';
+import PriorityRepliesBanner from '../components/contractor/PriorityRepliesBanner';
 import DelayRepliesBanner from '../components/contractor/DelayRepliesBanner';
 import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
 
@@ -93,33 +93,16 @@ export default function ContractorDashboard() {
 }
 
 function DashboardBody() {
-  // Notification links: #priority-tasks scrolls to that section once it has
-  // rendered (its panel loads after the page, so try for a few seconds).
-  const location = useLocation();
-  useEffect(() => {
-    const id = location.hash.replace('#', '');
-    if (!id) return undefined;
-    let tries = 0;
-    const timer = setInterval(() => {
-      const el = document.getElementById(id);
-      tries += 1;
-      if (el && el.offsetHeight > 0) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); clearInterval(timer); }
-      else if (tries > 20) clearInterval(timer);
-    }, 200);
-    return () => clearInterval(timer);
-  }, [location.key, location.hash]);
   const navigate = useNavigate();
   const summary = useContractorSummaryContext();
   const [openReports, setOpenReports] = useState(null);
   const [repairJobs, setRepairJobs] = useState([]);
-  const [userId, setUserId] = useState(null);
 
   // The portal is contractor-only: anyone else is sent back to sign in.
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/contractor/login'); return; }
-      setUserId(user.id);
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
       if (prof?.role !== 'contractor') navigate('/contractor/login');
     })();
@@ -213,10 +196,8 @@ function DashboardBody() {
       {/* Overdue projects: a reminder only; the replies are on Delay Follow-ups. */}
       <DelayRepliesBanner />
 
-      {/* What the DA's prioritization asks of this contractor (only when there is something). */}
-      <div id="priority-tasks">
-        <PriorityTasksPanel client={supabase} userId={userId} role="contractor" compact />
-      </div>
+      {/* DA prioritization: a reminder only; the tasks are on Priority Tasks. */}
+      <PriorityRepliesBanner />
 
       {/* 1. Headline numbers */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

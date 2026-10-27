@@ -54,7 +54,8 @@ export default function RoadInventoryDetailDialog({ road, linkedProjects = [], o
                   <div key={s.type} style={{ width: `${s.pct || 0}%`, background: SURFACE_COLORS[s.type] || '#94a3b8' }} />
                 ))}
               </div>
-              <table className="mt-3 w-full text-sm">
+              <div className="mt-3 -mx-1 overflow-x-auto px-1">
+              <table className="w-full min-w-[22rem] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
                     <th scope="col" className="py-2 font-medium">Surface</th>
@@ -77,6 +78,7 @@ export default function RoadInventoryDetailDialog({ road, linkedProjects = [], o
                   ))}
                 </tbody>
               </table>
+              </div>
             </>
           )}
         </section>

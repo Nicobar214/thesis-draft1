@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { supabaseContractor as supabase } from '../../lib/supabase';
 import ProjectExtensions from '../fmrProjects/ProjectExtensions';
+import ProjectPriorityCard from '../priority/ProjectPriorityCard';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { getWorkflowMeta, officialAccomplishmentOf } from '../../lib/progressWorkflow';
 import { formatPercentage } from '../../lib/percentageFormat';
@@ -50,7 +51,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function ContractorProjectDetailModal({ project, tranches = [], onClose, onSubmitUpdate }) {
+export default function ContractorProjectDetailModal({ project, tranches = [], priority = null, onClose, onSubmitUpdate }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -134,6 +135,8 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
         </div>
 
         <div className="p-6 space-y-6">
+          <ProjectPriorityCard decision={priority} />
+
           {/* Physical vs financial */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-4">
@@ -216,7 +219,7 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
                       </div>
 
                       {/* Claim → verification → decision, never merged into one number */}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
                         <ValueBlock
                           label="You reported"
                           value={h.reported_accomplishment}

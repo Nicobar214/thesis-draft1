@@ -30,12 +30,18 @@ function fmtDateTime(value) {
  * `resolution` are optional — when the caller has already loaded them (from
  * public_report_field_findings_citizen_view / _resolutions_citizen_view) the
  * track gains real inspection and resolution dates instead of bare labels.
+ *
+ * `details` (optional) puts more under a step, keyed by step key ('submitted',
+ * 'inspection', 'findings', 'repair_contractor', 'repair_lgu_work',
+ * 'work_checked', 'resolved'): who did it, what they found
+ * (ReportAccountability.js accountabilityDetails).
  */
 export default function CitizenReportTimeline({
   report,
   finding = null,
   resolution = null,
   resolutionSummary,
+  details = null,
   client = supabase,
 }) {
   const track = useMemo(
@@ -94,40 +100,45 @@ export default function CitizenReportTimeline({
       </p>
 
       <ol className="space-y-0">
-        {steps.map((step) => (
-          <li key={step.key} className="flex gap-3">
-            <div className="flex flex-col items-center" aria-hidden="true">
-              <div
-                className={`w-3 h-3 rounded-full mt-1.5 shrink-0 ${
-                  step.done ? current.dotTone : 'bg-slate-300'
-                } ${step.active ? 'ring-4 ring-slate-200' : ''}`}
-              />
-              {!step.isLast && (
-                <div className={`w-0.5 flex-1 my-1 ${step.done ? 'bg-slate-300' : 'bg-slate-200'}`} />
-              )}
-            </div>
-
-            <div className="pb-4 min-w-0">
-              <p
-                className={`text-sm font-medium ${step.done ? 'text-slate-900' : 'text-slate-500'}`}
-              >
-                {step.label}
-                {step.active && !closed && (
-                  <span className="ml-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    Current
-                  </span>
+        {steps.map((step) => {
+          const extra = step.done ? details?.[step.key] : null;
+          return (
+            <li key={step.key} className="flex gap-3">
+              <div className="flex flex-col items-center" aria-hidden="true">
+                <div
+                  className={`mt-1 grid size-4 shrink-0 place-items-center rounded-full ${
+                    step.done ? current.dotTone : 'border-2 border-slate-300 bg-white'
+                  } ${step.active && !closed ? 'ring-4 ring-emerald-100' : ''}`}
+                >
+                  {step.done && !step.active && (
+                    <svg viewBox="0 0 12 12" className="size-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={2.2}><path d="M2.5 6.2 5 8.5 9.5 3.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  )}
+                </div>
+                {!step.isLast && (
+                  <div className={`w-0.5 flex-1 my-1 rounded-full ${step.done ? 'bg-emerald-200' : 'bg-slate-200'}`} />
                 )}
-              </p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {step.timestamp
-                  ? fmtDateTime(step.timestamp)
-                  : step.done
-                    ? 'Completed'
-                    : step.blurb}
-              </p>
-            </div>
-          </li>
-        ))}
+              </div>
+
+              <div className={`min-w-0 flex-1 ${step.isLast ? '' : 'pb-4'}`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <p className={`text-sm ${step.active && !closed ? 'font-semibold text-slate-900' : step.done ? 'font-medium text-slate-800' : 'text-slate-400'}`}>
+                    {step.label}
+                    {step.active && !closed && (
+                      <span className="ml-2 rounded-full bg-emerald-50 px-1.5 py-0.5 align-[1px] text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                        Now
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[11px] tabular-nums text-slate-400">
+                    {step.timestamp ? fmtDateTime(step.timestamp) : step.done ? 'Done' : ''}
+                  </p>
+                </div>
+                {!step.done && <p className="text-xs text-slate-400 mt-0.5">{step.blurb}</p>}
+                {extra && <div className="mt-1">{extra}</div>}
+              </div>
+            </li>
+          );
+        })}
       </ol>
 
       {current.key === 'resolved' && (

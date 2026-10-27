@@ -104,6 +104,12 @@ export default function DelayExplanationPanel({ client, userId, focusProjectId =
 
   // Which tab and project to show: the notification's project, else the first with something.
   const focusKey = focusProjectId != null ? String(focusProjectId) : '';
+  useEffect(() => {
+    if (!focusKey) return;
+    setSelectedId(null);
+    setTab(null);
+    setSearch('');
+  }, [focusKey]);
   const focusCase = focusKey ? data.cases.find((c) => String(c.project_id) === focusKey && c.status !== 'closed')
     || data.cases.find((c) => String(c.project_id) === focusKey) : null;
   const focusTab = focusCase ? TABS.find((t) => groups[t.key].includes(focusCase))?.key : null;

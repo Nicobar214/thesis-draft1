@@ -1,4 +1,4 @@
-import { CheckCircle2Icon, RotateCwIcon, TriangleAlertIcon, ZapIcon } from 'lucide-react';
+import { CheckCircle2Icon, RotateCwIcon, TriangleAlertIcon, XCircleIcon, ZapIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -10,6 +10,7 @@ import { normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import {
   actionOwner, canEndorse, canMove, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, decisionFor, DEFAULT_REPLY_DAYS, DEFAULT_VALIDATION_DAYS, finishedFollowUps,
   isFinal, loadDecisions, localDateISO, nextStatus, ONGOING_ACTIONS, resumeStatus, saveDecision, skippedAhead, snapshotOf, STEP_ACTIONS,
+  closeWithOutcome, OUTCOME_LABELS, priorityStage,
 } from '../../lib/priorityDecisions';
 import { confirm as confirmDialog } from '../../lib/confirm';
 import { SentPhotos } from '../priority/PriorityTasksPanel';
@@ -159,7 +160,7 @@ const listSkipped = (skipped, max = 3) => {
 const skippedRanks = (skipped, max = 4) =>
   `${skipped.slice(0, max).map((s) => `#${s.rank}`).join(', ')}${skipped.length > max ? ` +${skipped.length - max}` : ''}`;
 
-function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [], skipped = [] }) {
+function DecisionBlock({ entry, decision, busy, onStep, onOutcome, fieldEngineers = [], skipped = [] }) {
   const [note, setNote] = useState('');
   const [action, setAction] = useState(ONGOING_ACTIONS[0]);
   const [engineerId, setEngineerId] = useState('');
@@ -183,6 +184,11 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [], ski
       : next === 'for_validation' && (!dueDate || dueDate < today) ? 'Set a visit deadline from today on.'
       : next === 'action_recorded' && (!replyDue || replyDue < today) ? 'Set a reply date from today on.'
         : skipped.length > 0 && !note.trim() ? `Write why this one goes ahead of higher-ranked ${groupNoun(entry.kind)}.` : null;
+
+  // The END of a project's action: the DA marks the result (supabase_priority_commitment_outcome.sql).
+  const awaitingResult = entry.kind === 'project' && status === 'action_recorded';
+  const stage = priorityStage(decision)?.stage;
+  const fmtDay = (v) => (v ? new Date(`${v}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
   const stop = (event) => event.stopPropagation();
 
@@ -220,8 +226,12 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [], ski
       {status === 'action_recorded' && (
         decision?.responded_at ? (
           <div className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800">
-            <span className="font-semibold">Reply from the {actionOwner(decision.action) === 'site_engineer' ? 'site engineer' : 'contractor'}:</span> {decision.response_note}
+            <span className="font-semibold">{decision.committed_by ? 'Contractor committed' : `Reply from the ${actionOwner(decision.action) === 'site_engineer' ? 'site engineer' : 'contractor'}`}:</span> {decision.response_note}
+            {decision.committed_by && <span className="font-semibold"> · done by {fmtDay(decision.committed_by)}</span>}
             <SentPhotos photos={decision.response_photos} />
+            {stage === 'decision_due' && (
+              <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Decision due</p>
+            )}
           </div>
         ) : (
           <div className="space-y-1">
@@ -238,8 +248,44 @@ function DecisionBlock({ entry, decision, busy, onStep, fieldEngineers = [], ski
           <CheckCircle2Icon className="size-3.5" aria-hidden="true" />
           {entry.kind === 'gap'
             ? `FMR project${decision?.fmr_project_id ? ` #${decision.fmr_project_id}` : ''} created. Next: its Work Plan.`
-            : 'Follow-up closed.'}
+            : decision?.outcome
+              ? `Result: ${OUTCOME_LABELS[decision.outcome]}${decision.outcome_note ? ` · “${decision.outcome_note}”` : ''}`
+              : 'Follow-up closed.'}
         </p>
+      ) : awaitingResult ? (
+        <div className="space-y-2">
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            disabled={busy}
+            placeholder="Note to the contractor (required for Not done)"
+            aria-label="Result note"
+            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onOutcome({ entry, decision, outcome: 'done', note }).then((ok) => ok && setNote(''))}
+              className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <CheckCircle2Icon className="size-3.5" aria-hidden="true" /> Done
+            </button>
+            <button
+              type="button"
+              disabled={busy || note.trim().length < 10}
+              title={note.trim().length < 10 ? 'Write why it was not done (10+ characters)' : undefined}
+              onClick={() => onOutcome({ entry, decision, outcome: 'not_done', note }).then((ok) => ok && setNote(''))}
+              className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+            >
+              <XCircleIcon className="size-3.5" aria-hidden="true" /> Not done
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            {decision?.responded_at ? 'Mark the result to finish this follow-up. The contractor is told.' : 'No reply yet. You can still mark the result to finish it.'}
+          </p>
+        </div>
       ) : (
         <>
           {next === 'for_validation' && (
@@ -422,10 +468,14 @@ export default function PriorityTab({
     if (!ok) return;
     setBusyKey(`project:${project.id}`);
     try {
-      await saveDecision(client, {
-        kind: 'project', id: project.id, from: decision.status, to: 'closed', finishedClose: true,
-        note: `Closed: the project is now ${String(project.status || 'finished').toLowerCase()}.`,
-      });
+      const reason = `Closed: the project is now ${String(project.status || 'finished').toLowerCase()}.`;
+      if (decision.status === 'action_recorded') {
+        // A recorded action ends with a result: a completed project counts as done.
+        const completed = normalizeRouteStatus(project.status) === 'Completed';
+        await closeWithOutcome(client, decision.id, completed ? 'done' : 'not_done', reason);
+      } else {
+        await saveDecision(client, { kind: 'project', id: project.id, from: decision.status, to: 'closed', finishedClose: true, note: reason });
+      }
       await refreshDecisions();
       showNotification?.(`${project.project_name}: follow-up closed.`);
     } catch (err) {
@@ -521,6 +571,41 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
     }
   };
 
+  // Commitments whose done-by date has passed: the DA owes a result.
+  const decisionsDue = useMemo(() => [...decisions.values()]
+    .filter((d) => priorityStage(d)?.stage === 'decision_due')
+    .map((d) => ({ d, name: (projects || []).find((p) => String(p.id) === String(d.candidate_id))?.project_name || `Project #${d.candidate_id}` })),
+  [decisions, projects]);
+
+  // The END of a project's action: Done / Not done, with a confirmation.
+  const handleOutcome = async ({ entry, decision, outcome, note = '' }) => {
+    const done = outcome === 'done';
+    const ok = await confirmDialog({
+      title: done ? `Mark "${entry.title}" as done?` : `Mark "${entry.title}" as not done?`,
+      message: done
+        ? `The "${decision?.action}" follow-up is finished and the contractor is told it is done.`
+        : `The follow-up is finished as not done. The contractor is told why: “${note.trim()}”. You can record a new action on this project afterwards.`,
+      confirmLabel: done ? 'Mark as done' : 'Mark as not done',
+      tone: done ? 'primary' : 'danger',
+    });
+    if (!ok) return false;
+    const key = `${entry.kind}:${entry.id}`;
+    setBusyKey(key);
+    try {
+      await closeWithOutcome(client, decision.id, outcome, note);
+      await refreshDecisions();
+      showNotification?.(`${entry.title}: ${done ? 'done' : 'not done'}. The contractor was told.`);
+      return true;
+    } catch (err) {
+      showNotification?.(/close_priority_action/.test(err?.message || '')
+        ? 'Run supabase_priority_commitment_outcome.sql first to enable Done / Not done.'
+        : err?.message || 'Could not save the result.', 'error');
+      return false;
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   if (!projects || projects.length === 0) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
@@ -532,6 +617,21 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
 
   return (
     <div className="space-y-6">
+      {decisionsDue.length > 0 && (
+        <div role="status" className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <TriangleAlertIcon className="mt-0.5 size-5 shrink-0 text-red-600" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-semibold">Decision due on {decisionsDue.length} priority action{decisionsDue.length === 1 ? '' : 's'}</p>
+            <p className="mt-0.5 text-xs text-red-800">
+              The contractor&rsquo;s done-by date has passed. Mark each one Done or Not done on its card in Ongoing projects:{' '}
+              {decisionsDue.map(({ d, name }, i) => (
+                <span key={d.id}>{i > 0 && '; '}<span className="font-semibold">{name}</span> (by {new Date(`${d.committed_by}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})</span>
+              ))}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header: one module, two separate groups */}
       <div className="rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-900 to-slate-900 p-6 text-white shadow-md">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -750,6 +850,7 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                       fieldEngineers={fieldEngineers}
                       busy={busyKey === `${entry.kind}:${entry.id}`}
                       onStep={handleStep}
+                      onOutcome={handleOutcome}
                       skipped={skippedAhead(entry, rankings, decisions)}
                     />
                   )}

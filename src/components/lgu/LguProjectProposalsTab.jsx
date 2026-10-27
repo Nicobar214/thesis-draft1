@@ -21,6 +21,7 @@ import { PROPOSAL_SLA_DAYS } from '../../lib/mapRouteUtils';
 import { DEFAULT_PROPOSAL_FILTERS, filterProposals, proposalFilterOptions, summarizeProposals } from '../../lib/proposalStats';
 import HierarchyKpis from '../ui/HierarchyKpis';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
+import { useIsPhone } from '../../lib/useIsPhone';
 import Pagination, { usePagination } from '../ui/Pagination';
 import { findBlockingDuplicate } from '../../lib/proposalDuplicates';
 import { mergeRequirementDocs, requirementProgress } from '../../lib/proposalRequirements';
@@ -239,7 +240,10 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [activeSubTab, setActiveSubTab] = useState('list');
   const [selectedProposalForModal, setSelectedProposalForModal] = useState(null);
   const [listFilters, setListFilters] = useState(DEFAULT_PROPOSAL_FILTERS);
-  const [viewMode, setViewMode] = useViewMode('lgu-proposals-view');
+  const [savedViewMode, setViewMode] = useViewMode('lgu-proposals-view');
+  // A wide table cannot fit a phone: phones always get the cards.
+  const isPhone = useIsPhone();
+  const viewMode = isPhone ? 'cards' : savedViewMode;
 
   const proposalSummary = useMemo(() => summarizeProposals(proposals), [proposals]);
   const filterOptions = useMemo(() => proposalFilterOptions(proposals), [proposals]);
@@ -737,7 +741,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 {duplicate?.reason === 'name' && <div className="mt-2"><DuplicateProjectAlert duplicate={duplicate} /></div>}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Road Type</label>
                   <input
@@ -798,7 +802,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Estimated Length (km)</label>
                   <input
@@ -833,7 +837,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Beneficiary Farmers</label>
                   <input
@@ -854,7 +858,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Road Photo</label>
                   <input
@@ -1208,7 +1212,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
               <p className="text-[11px] text-slate-500">
                 Showing {visibleProposals.length} of {proposals.length} proposal{proposals.length === 1 ? '' : 's'}
               </p>
-              <ViewToggle mode={viewMode} onChange={setViewMode} />
+              {!isPhone && <ViewToggle mode={viewMode} onChange={setViewMode} />}
             </div>
           </div>
         )}

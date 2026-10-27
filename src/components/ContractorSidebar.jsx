@@ -13,6 +13,7 @@ const NAV_GROUPS = [
   { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', description: 'Your projects at a glance', icon: Icons.Dashboard, exact: true }] },
   { label: 'Work', items: [
     { to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road },
+    { to: '/contractor/priority', label: 'Priority Tasks', description: 'Requests from the DA prioritization', icon: Icons.ShieldCheck },
     { to: '/contractor/delays', label: 'Delay Follow-ups', description: 'Explain late projects to the DA', icon: Icons.Clock },
   ] },
   { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', description: 'Citizen reports and repairs', icon: Icons.Document }] },
@@ -39,6 +40,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
     if (to === '/contractor/projects') return summary.withoutEngineer.length + summary.needsFix.length;
     if (to === '/contractor/reports') return summary.repairsToDo || 0;
     if (to === '/contractor/delays') return summary.delayReplies || 0;
+    if (to === '/contractor/priority') return summary.priorityReplies || 0;
     return 0;
   };
 
@@ -94,7 +96,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
     <>
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 sm:top-5 left-4 z-[1200] p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
+        className="lg:hidden fixed top-3 sm:top-5 left-3 sm:left-4 z-[1200] p-2 bg-slate-900 text-white rounded-xl shadow-md border border-slate-800 flex items-center justify-center"
         aria-label="Open navigation menu"
       >
         <Icons.Menu />

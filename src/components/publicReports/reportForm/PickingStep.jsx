@@ -68,33 +68,36 @@ export default function PickingStep({
 
   const displayList = browseAll ? browseFiltered.slice(0, visibleCount) : nearby;
   // Distance to the road line when it is drawn, else to the project's midpoint.
-  const lineById = useMemo(() => new Map(lines.map((l) => [l.project.id, l.points])), [lines]);
+  const lineById = useMemo(() => new Map(lines.map((l) => [l.project.id, l])), [lines]);
   const distanceTo = (p) => {
-    const points = lineById.get(p.id);
-    return points ? distanceToLine(gps, points) : distToProject(gps.lat, gps.lng, p);
+    const line = lineById.get(p.id);
+    return line ? distanceToLine(gps, line.points, line.pinsOnly) : distToProject(gps.lat, gps.lng, p);
   };
   // Picking a road opens directions to it (NavigateStep); the report follows.
   const pick = (p) => { setSelProject(p); setStep('navigating'); };
   const lowAcc = gps && gps.accuracy > 100;
+  const noneNearby = !browseAll && nearby.length === 0;
 
   return (
       <div className="report-step-in space-y-4">
         {/* GPS / found banner */}
-        <div className={`px-4 py-3.5 rounded-2xl border ${lowAcc ? 'bg-amber-50 border-amber-200' : 'bg-teal-50 border-teal-200'}`}>
+        <div className={`px-4 py-3.5 rounded-2xl border ${lowAcc ? 'bg-amber-50 border-amber-200' : noneNearby ? 'bg-slate-50 border-slate-200' : 'bg-teal-50 border-teal-200'}`}>
           <div className="flex items-center gap-2 mb-0.5">
             <span className="relative flex h-2.5 w-2.5 shrink-0">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${lowAcc ? 'bg-amber-400' : 'bg-teal-400'}`} />
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${lowAcc ? 'bg-amber-500' : 'bg-teal-500'}`} />
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${lowAcc ? 'bg-amber-400' : noneNearby ? 'bg-slate-300' : 'bg-teal-400'}`} />
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${lowAcc ? 'bg-amber-500' : noneNearby ? 'bg-slate-400' : 'bg-teal-500'}`} />
             </span>
-            <span className={`text-sm font-semibold ${lowAcc ? 'text-amber-900' : 'text-teal-900'}`}>
+            <span className={`text-sm font-semibold ${lowAcc ? 'text-amber-900' : noneNearby ? 'text-slate-700' : 'text-teal-900'}`}>
               {browseAll
                 ? `Showing ${displayList.length} of ${browseFiltered.length} project${browseFiltered.length !== 1 ? 's' : ''}`
+                : noneNearby
+                ? `No projects ${widerSearch ? 'within 1km' : 'near you'}`
                 : widerSearch
                 ? `${nearby.length} project${nearby.length !== 1 ? 's' : ''} within 1km`
                 : <><MapPinIcon className="inline size-3.5 -mt-0.5 mr-1" aria-hidden="true" />Found {nearby.length} project{nearby.length !== 1 ? 's' : ''} near you</>}
             </span>
           </div>
-          <p className={`text-xs pl-4 ${lowAcc ? 'text-amber-700' : 'text-teal-700'}`}>
+          <p className={`text-xs pl-4 ${lowAcc ? 'text-amber-700' : noneNearby ? 'text-slate-500' : 'text-teal-700'}`}>
             GPS accuracy: ±{Math.round(gps?.accuracy || 0)}m
             {lowAcc && <span className="ml-1 font-medium">— move to open sky for better results</span>}
           </p>

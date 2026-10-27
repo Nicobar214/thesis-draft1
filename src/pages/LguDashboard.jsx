@@ -22,6 +22,7 @@ import { typicalYieldTPerHa } from '../lib/harvestPlausibility';
 import RequiredReminder from '../components/publicReports/reportForm/RequiredReminder';
 import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../components/ui/Modal';
 import NotificationBell from '../components/NotificationBell';
+import HeaderEvidenceCamera from '../components/evidence/HeaderEvidenceCamera';
 import LguRouteMap from '../components/lgu/LguRouteMap';
 import LguAnalyticsTab from '../components/lgu/LguAnalyticsTab';
 import RoadInventoryTab from '../components/lgu/RoadInventoryTab';
@@ -1677,6 +1678,7 @@ export default function LguDashboard() {
         sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-80'
       }`}>
         <PortalHeader
+          compactOnPhone
           className="z-30"
           leading={(
             <button onClick={() => setSidebarOpen((open) => !open)} className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 lg:hidden" aria-label="Toggle navigation">
@@ -1694,7 +1696,8 @@ export default function LguDashboard() {
                   type="button"
                   onClick={() => setActiveTab('proposals')}
                   data-tour="lgu-propose"
-                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
+                  aria-label="Propose Project"
+                  className="inline-flex size-9 items-center justify-center gap-2 rounded-xl bg-teal-600 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700 sm:h-10 sm:w-auto sm:px-4"
                 >
                   <PlusIcon className="size-4" aria-hidden="true" />
                   <span className="hidden sm:inline">Propose Project</span>
@@ -1707,7 +1710,7 @@ export default function LguDashboard() {
                   data-tour="help"
                   aria-label="Show a guide to this page"
                   title="Show a guide to this page"
-                  className="inline-flex size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                  className="hidden size-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700 sm:inline-flex"
                 >
                   <CircleHelpIcon className="size-5" aria-hidden="true" />
                 </button>
@@ -1715,8 +1718,11 @@ export default function LguDashboard() {
             </>
           )}
           bell={(
-            <span data-tour="notifications" className="inline-flex">
-              <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
+            <span className="inline-flex items-center gap-0.5">
+              <HeaderEvidenceCamera client={supabase} kind="lgu_proposal_evidence" />
+              <span data-tour="notifications" className="inline-flex">
+                <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
+              </span>
             </span>
           )}
           account={{

@@ -29,6 +29,9 @@ export function useReportCamera({ gps, active }) {
   const [photoBlob, setPhotoBlob] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoTs, setPhotoTs] = useState(null);
+  // Where the photo was taken: the report's location from then on, so walking away
+  // (or sending later, e.g. once back online) does not move the report.
+  const [photoGps, setPhotoGps] = useState(null);
   const [camError, setCamError] = useState(null);
   const [camReady, setCamReady] = useState(false);
 
@@ -92,6 +95,7 @@ export function useReportCamera({ gps, active }) {
     ctx.drawImage(video, 0, 0);
     const now = new Date();
     setPhotoTs(now.toISOString());
+    setPhotoGps(gps ? { ...gps } : null);
     paintCaptureOverlay(ctx, canvas, captureOverlayLines(now, gps));
     canvas.toBlob((blob) => {
       setPhotoBlob(blob);
@@ -106,6 +110,7 @@ export function useReportCamera({ gps, active }) {
     setPhotoBlob(null);
     setPhotoPreview(null);
     setPhotoTs(null);
+    setPhotoGps(null);
   }, []);
 
   // Clearing the photo is enough: the effect above restarts the camera by itself.
@@ -113,11 +118,12 @@ export function useReportCamera({ gps, active }) {
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     setPhotoBlob(null);
     setPhotoPreview(null);
+    setPhotoGps(null);
   }, []);
 
   return {
     videoRef, canvasRef,
-    photoBlob, photoPreview, photoTs,
+    photoBlob, photoPreview, photoTs, photoGps,
     camError, camReady,
     capturePhoto, retakePhoto, resetPhoto, stopCamera,
   };

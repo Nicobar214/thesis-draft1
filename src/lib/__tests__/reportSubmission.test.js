@@ -8,6 +8,8 @@ import {
   distToProject,
   findNearbyProjects,
   findNearbyRoads,
+  isSuspectLine,
+  distanceToLine,
   friendlySubmitError,
   fmtDist,
   hasArrived,
@@ -293,5 +295,26 @@ describe('map-first picking: distance to the road line', () => {
     expect(hasArrived(ARRIVAL_M + 80, 20)).toBe(false);
     expect(hasArrived(ARRIVAL_M + 500, 2000)).toBe(false); // a ±2 km Wi-Fi guess is not arrival
     expect(hasArrived(Infinity, 5)).toBe(false);
+  });
+});
+
+describe('roads whose pins are wrong (much further apart than the road is long)', () => {
+  // Like project 16: 0.72 km declared, pins ~11 km apart (north-south).
+  const project = { id: 16, project_name: 'Brgy. Jamog FMR', project_length_km: 0.72 };
+  const pins = [[10.755, 122.3555], [10.857, 122.352]];
+  const midway = { lat: 10.806, lng: 122.354, accuracy: 8 }; // on the line, ~5 km from either pin
+
+  it('is recognised, while a normal two-pin road is not', () => {
+    expect(isSuspectLine(project, pins)).toBe(true);
+    expect(isSuspectLine({ project_length_km: 0.9 }, [[10.75, 122.3], [10.757, 122.3]])).toBe(false);
+    expect(isSuspectLine({ project_length_km: null }, pins)).toBe(false); // no declared length: cannot tell
+  });
+
+  it('counts as near only at its pins, not along the line between them', () => {
+    const line = { project, points: pins, pinsOnly: true };
+    expect(findNearbyRoads([line], midway)).toHaveLength(0);
+    expect(findNearbyRoads([{ ...line, pinsOnly: false }], midway)).toHaveLength(1); // the old behaviour
+    expect(findNearbyRoads([line], { lat: 10.7555, lng: 122.3555, accuracy: 8 })).toHaveLength(1); // at a pin
+    expect(distanceToLine(midway, pins, true)).toBeGreaterThan(5000);
   });
 });

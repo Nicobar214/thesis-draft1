@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CONTRACTOR_TURN } from './delayCases';
+import { actionOwner } from './priorityDecisions';
 
 /*
  * Where a contractor's progress update stands. The database keeps two columns, `status`
@@ -76,11 +77,12 @@ export function useContractorSummary(client, userId) {
   const [updates, setUpdates] = useState([]);
   const [repairsToDo, setRepairsToDo] = useState(0);
   const [delayReplies, setDelayReplies] = useState(0); // overdue projects the DA asked about, waiting for this contractor
+  const [priorityActions, setPriorityActions] = useState([]); // DA priority actions not yet answered: { candidate_id, action }
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!userId) return;
-    const [p, u, r, d] = await Promise.allSettled([
+    const [p, u, r, d, pd] = await Promise.allSettled([
       client
         .from('fmr_projects')
         .select('id, project_name, municipality, status, accomplishment, site_engineer_id, target_completion_date, project_length_km')
@@ -102,6 +104,13 @@ export function useContractorSummary(client, userId) {
         .from('project_delay_cases')
         .select('id', { count: 'exact', head: true })
         .in('status', Object.keys(CONTRACTOR_TURN)),
+      // DA prioritization actions waiting for a reply (filtered to this contractor's projects below).
+      client
+        .from('priority_decisions')
+        .select('candidate_id, action')
+        .eq('candidate_kind', 'project')
+        .eq('status', 'action_recorded')
+        .is('responded_at', null),
     ]);
     const rows = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || [] : null);
     const pr = rows(p);
@@ -110,6 +119,7 @@ export function useContractorSummary(client, userId) {
     if (ur) setUpdates(ur);
     if (r.status === 'fulfilled' && !r.value.error) setRepairsToDo(r.value.count || 0);
     if (d.status === 'fulfilled' && !d.value.error) setDelayReplies(d.value.count || 0);
+    if (pd.status === 'fulfilled' && !pd.value.error) setPriorityActions(pd.value.data || []);
     setLoading(false);
   }, [client, userId]);
 
@@ -122,6 +132,7 @@ export function useContractorSummary(client, userId) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_repair_actions' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'project_delay_cases' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'priority_decisions' }, load)
       .subscribe();
     const onFocus = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', onFocus);
@@ -168,6 +179,9 @@ export function useContractorSummary(client, userId) {
       approvedThisMonth: approvedThisMonthCount,
       repairsToDo,
       delayReplies,
+      // The contractor's own projects only, and only actions that are theirs (not the site engineer's).
+      priorityReplies: priorityActions.filter((a) => actionOwner(a.action) === 'contractor'
+        && projects.some((p) => String(p.id) === String(a.candidate_id))).length,
     };
-  }, [projects, updates, repairsToDo, delayReplies, loading, load]);
+  }, [projects, updates, repairsToDo, delayReplies, priorityActions, loading, load]);
 }

@@ -222,11 +222,54 @@ export async function submitValidation(client, decisionId, result, note, photos 
   }));
 }
 
-/** Contractor or site engineer: reply to a recorded action (the site engineer's inspection needs photos). */
-export async function respondToAction(client, decisionId, note, photos = []) {
+/** Contractor or site engineer: reply to a recorded action (the site engineer's inspection needs photos;
+ * the contractor commits to a done-by date: supabase_priority_commitment_outcome.sql). */
+export async function respondToAction(client, decisionId, note, photos = [], committedBy = null) {
   await withPhotos(client, decisionId, photos, (p_photos) => client.rpc('respond_priority_action', {
     p_decision_id: decisionId, p_note: note, p_photos,
+    ...(committedBy ? { p_committed_by: committedBy } : {}),
   }));
+}
+
+/* The END of a project's priority action: the DA marks the result. */
+export const COMMIT_MAX_DAYS = 90;
+export const MIN_COMMIT_NOTE = 10;
+export const OUTCOME_LABELS = { done: 'Done', not_done: 'Not done' };
+
+/** Admin: Done / Not done ("Not done" needs a reason). Closes the item and tells the contractor. */
+export async function closeWithOutcome(client, decisionId, outcome, note = '') {
+  const { error } = await client.rpc('close_priority_action', { p_decision_id: decisionId, p_outcome: outcome, p_note: note?.trim() || null });
+  if (error) throw error;
+}
+
+/** Why a contractor's commitment cannot be sent yet, or null. */
+export function commitmentProblem(note, committedBy, today = localDateISO()) {
+  if (String(note || '').trim().length < MIN_COMMIT_NOTE) return `Say what you will do (at least ${MIN_COMMIT_NOTE} characters).`;
+  if (!committedBy) return 'Set the date you will have it done by.';
+  if (committedBy <= today) return 'The done-by date must be after today.';
+  if (committedBy > localDateISO(new Date(`${today}T00:00:00`), COMMIT_MAX_DAYS)) return `The done-by date can be at most ${COMMIT_MAX_DAYS} days away.`;
+  return null;
+}
+
+/* How long a finished priority still shows its result on the project. */
+export const RESULT_SHOWN_DAYS = 30;
+
+/**
+ * Where a project's priority action stands, for badges and cards:
+ * { stage: 'action' | 'committed' | 'decision_due' | 'done' | 'not_done', action, committedBy } or null.
+ */
+export function priorityStage(decision, today = localDateISO()) {
+  if (!decision || decision.candidate_kind !== 'project') return null;
+  if (decision.status === 'action_recorded') {
+    if (!decision.responded_at) return { stage: 'action', action: decision.action };
+    if (decision.committed_by && decision.committed_by < today) return { stage: 'decision_due', action: decision.action, committedBy: decision.committed_by };
+    return { stage: 'committed', action: decision.action, committedBy: decision.committed_by };
+  }
+  if (decision.status === 'closed' && decision.outcome && decision.outcome_at) {
+    const shownUntil = localDateISO(new Date(decision.outcome_at), RESULT_SHOWN_DAYS);
+    if (today <= shownUntil) return { stage: decision.outcome, action: decision.action };
+  }
+  return null;
 }
 
 /** Photos a role has to attach to its answer. */

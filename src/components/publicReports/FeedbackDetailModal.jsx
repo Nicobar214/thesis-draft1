@@ -7,6 +7,8 @@ import { ChevronLeftIcon, ChevronRightIcon, ExternalLinkIcon, MapPinIcon } from 
 import Modal from '../ui/Modal';
 import BaseTiles from '../map/BaseTiles';
 import CitizenReportTimeline from './CitizenReportTimeline';
+import BeforeAfterCard from './BeforeAfterCard';
+import { accountabilityDetails, useReportRepair } from './reportAccountability';
 import SupportReportControl from './SupportReportControl';
 import { supabase } from '../../lib/supabase';
 import { getCitizenStatus, resolveCategory, resolveSpecificProblem, SEVERITY_TAXONOMY } from '../../lib/publicReportStatus';
@@ -65,6 +67,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
   const [photoIndex, setPhotoIndex] = useState(0);
 
   const reportId = report?.id || null;
+  const repair = useReportRepair(client, reportId);
   useEffect(() => {
     if (!reportId) return undefined;
     let alive = true;
@@ -137,7 +140,7 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
       )}
     >
       <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        {/* Left: what was reported */}
+        {/* Left: what was reported, and where */}
         <div className="space-y-5 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">{typeLabel}</span>
@@ -215,10 +218,8 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
               <Fact label="GPS accuracy">About {Math.round(Number(report.geo_accuracy))} m</Fact>
             )}
           </dl>
-        </div>
 
-        {/* Right: where it is and how it is going */}
-        <div className="space-y-5 min-w-0">
+          {/* Where it is: part of what was reported. */}
           {hasPoint && (
             <div className="space-y-2">
               <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -250,6 +251,28 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
             </div>
           )}
 
+        </div>
+
+        {/* Right: what happened (one timeline with who did each step), what
+            comes next, and the evidence. */}
+        <div className="space-y-5 min-w-0">
+          {report ? (
+            <CitizenReportTimeline
+              report={report}
+              finding={finding}
+              resolution={resolution}
+              details={accountabilityDetails({ report, finding, repair, isMine: Boolean(item._isMine) })}
+            />
+          ) : (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <p className="font-semibold text-slate-800">Community feedback</p>
+              <p className="mt-1">
+                This entry is not linked to a road report, so there is no inspection progress to show. Its status is
+                {' '}<span className="font-semibold capitalize">{item.status || 'pending'}</span>.
+              </p>
+            </div>
+          )}
+
           {report && stage && NEXT_STEP[stage.key] && (
             <div className="rounded-xl border border-sky-200 bg-sky-50 p-3.5">
               <p className="text-[11px] font-bold uppercase tracking-wider text-sky-700">What happens next</p>
@@ -262,17 +285,8 @@ export default function FeedbackDetailModal({ item, report, support = null, onSu
             </div>
           )}
 
-          {report ? (
-            <CitizenReportTimeline report={report} finding={finding} resolution={resolution} />
-          ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-              <p className="font-semibold text-slate-800">Community feedback</p>
-              <p className="mt-1">
-                This entry is not linked to a road report, so there is no inspection progress to show. Its status is
-                {' '}<span className="font-semibold capitalize">{item.status || 'pending'}</span>.
-              </p>
-            </div>
-          )}
+          {report && <BeforeAfterCard report={report} repair={repair} isMine={Boolean(item._isMine)} />}
+
         </div>
       </div>
     </Modal>

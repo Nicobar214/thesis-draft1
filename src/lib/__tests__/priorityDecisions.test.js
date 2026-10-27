@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   actionOwner, canCloseFinished, canEndorse, canMove, deadlineStatus, finishedFollowUps, isFinal, localDateISO, nextStatus, resumeStatus,
-  saveDecision, skippedAhead,
+  saveDecision, skippedAhead, commitmentProblem, priorityStage,
 } from '../priorityDecisions';
 
 describe('decision flow', () => {
@@ -125,5 +125,32 @@ describe('follow-ups that are followed up', () => {
     expect(out.map((x) => x.project.id)).toEqual([1]);
     expect(canCloseFinished('project', 'flagged')).toBe(true);
     expect(canCloseFinished('gap', 'shortlisted')).toBe(false);
+  });
+});
+
+describe('priority commitment and result', () => {
+  const today = '2026-10-27';
+  const base = { candidate_kind: 'project', action: 'Add a second crew' };
+
+  it('asks for a real commitment: what, and a done-by date from tomorrow to 90 days', () => {
+    expect(commitmentProblem('short', '2026-11-10', today)).toMatch(/at least 10/);
+    expect(commitmentProblem('Add a second crew now', '', today)).toMatch(/date/);
+    expect(commitmentProblem('Add a second crew now', today, today)).toMatch(/after today/);
+    expect(commitmentProblem('Add a second crew now', '2027-01-26', today)).toMatch(/90 days/);
+    expect(commitmentProblem('Add a second crew now', '2027-01-25', today)).toBeNull();
+    expect(commitmentProblem('Add a second crew now', '2026-10-28', today)).toBeNull();
+  });
+
+  it('follows the action from reply needed to the result', () => {
+    expect(priorityStage({ ...base, status: 'action_recorded' }, today).stage).toBe('action');
+    expect(priorityStage({ ...base, status: 'action_recorded', responded_at: '2026-10-20', committed_by: '2026-11-01' }, today).stage).toBe('committed');
+    expect(priorityStage({ ...base, status: 'action_recorded', responded_at: '2026-10-20', committed_by: '2026-10-26' }, today).stage).toBe('decision_due');
+    expect(priorityStage({ ...base, status: 'closed', outcome: 'not_done', outcome_at: '2026-10-20T03:00:00Z' }, today).stage).toBe('not_done');
+  });
+
+  it('shows a result for 30 days, and ignores gaps and plain closes', () => {
+    expect(priorityStage({ ...base, status: 'closed', outcome: 'done', outcome_at: '2026-08-01T03:00:00Z' }, today)).toBeNull();
+    expect(priorityStage({ ...base, status: 'closed' }, today)).toBeNull();
+    expect(priorityStage({ ...base, candidate_kind: 'gap', status: 'action_recorded' }, today)).toBeNull();
   });
 });

@@ -101,6 +101,9 @@ describe('PickingStep', () => {
     const p = props({ nearby: [] });
     render(<PickingStep {...p} />);
     expect(screen.getByText(/no projects found within 250m/i)).toBeTruthy();
+    // The banner does not claim anything was found.
+    expect(screen.getByText('No projects near you')).toBeTruthy();
+    expect(screen.queryByText(/Found 0 project/)).toBeNull();
     fireEvent.click(screen.getByText(/search a wider area/i));
     expect(p.setWiderSearch).toHaveBeenCalledWith(true);
   });

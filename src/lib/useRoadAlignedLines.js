@@ -24,7 +24,9 @@ export const isStraightLine = (points) => Array.isArray(points) && points.length
 export function roadsToAlign(lines, me, { withinM = ALIGN_WITHIN_M, max = ALIGN_MAX } = {}) {
   if (!me) return [];
   return (lines || [])
-    .filter((l) => isStraightLine(l.points))
+    // pinsOnly: the pins are wrong (much further apart than the road), so the
+    // road between them is not worth asking a router for.
+    .filter((l) => isStraightLine(l.points) && !l.pinsOnly)
     .map((l) => ({ id: l.project.id, d: nearestPointOnPolyline(me, l.points)?.distanceMeters ?? Infinity }))
     .filter((x) => x.d <= withinM)
     .sort((a, b) => a.d - b.d)

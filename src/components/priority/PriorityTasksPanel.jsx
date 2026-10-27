@@ -9,8 +9,9 @@
  *
  * Answered items stay visible (with the answer) until the DA moves them on. */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClockIcon, CameraIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon } from 'lucide-react';
+import { CalendarClockIcon, CameraIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon, XCircleIcon } from 'lucide-react';
 import {
+  commitmentProblem, COMMIT_MAX_DAYS, localDateISO, priorityStage,
   actionOwner, DEADLINE_TONES, deadlineStatus, DECISION_LABELS, MAX_PRIORITY_PHOTOS, needsPhotos, respondToAction, submitValidation,
 } from '../../lib/priorityDecisions';
 import { confirm as confirmDialog } from '../../lib/confirm';
@@ -122,13 +123,17 @@ const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('en-PH', { month: 'sh
 function TaskCard({ task, role, busy, onValidate, onReply }) {
   const [note, setNote] = useState('');
   const [photos, setPhotos] = useState([]);
+  const [committedBy, setCommittedBy] = useState(() => localDateISO(new Date(), 14));
+  // A contractor's reply is a commitment: what, and done by when (supabase_priority_commitment_outcome.sql).
+  const commits = task.kind === 'reply' && role === 'contractor';
+  const commitIssue = commits ? commitmentProblem(note, committedBy) : null;
   const { decision, kind, title, place, detail, needsAnswer, answer } = task;
   const photosNeeded = needsPhotos(kind, role);
   const photosReady = !photosNeeded || (photos.length > 0 && photos.every((p) => p.check?.ok));
   const photoProblem = photosNeeded && !photosReady
     ? (photos.length === 0 ? 'Take at least one site photo first.' : 'Remove the photo that was not taken on site.')
     : null;
-  const ready = note.trim() && photosReady;
+  const ready = note.trim() && photosReady && !commitIssue;
 
   return (
     <li className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
@@ -169,12 +174,30 @@ function TaskCard({ task, role, busy, onValidate, onReply }) {
         </details>
       </div>
 
-      {answer ? (
+      {task.result ? (
+        <div className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${task.result.outcome === 'done' ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'}`}>
+          <p className="flex items-center gap-1.5 font-semibold">
+            {task.result.outcome === 'done'
+              ? <CheckCircle2Icon className="size-4 shrink-0" aria-hidden="true" />
+              : <XCircleIcon className="size-4 shrink-0" aria-hidden="true" />}
+            Result: {task.result.outcome === 'done' ? 'Done' : 'Not done'}
+            <span className="font-normal opacity-70">· {fmtDate(task.result.at)}</span>
+          </p>
+          {task.result.note && <p className="mt-1 text-xs">DA: “{task.result.note}”</p>}
+          {answer && <p className="mt-1 text-xs opacity-80">{answer}</p>}
+        </div>
+      ) : answer ? (
         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
           <p className="flex items-start gap-1.5">
             <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <span>{answer} The DA has been notified.</span>
           </p>
+          {task.stage === 'decision_due' && (
+            <p className="mt-1 text-[11px] text-emerald-900/80">Your done-by date has passed. The DA will mark the result.</p>
+          )}
+          {task.stage === 'committed' && (
+            <p className="mt-1 text-[11px] text-emerald-900/80">Next: the DA marks the result (Done or Not done) and you are told.</p>
+          )}
           <SentPhotos photos={kind === 'validation' ? decision.validation_photos : decision.response_photos} />
         </div>
       ) : needsAnswer && (
@@ -185,10 +208,26 @@ function TaskCard({ task, role, busy, onValidate, onReply }) {
             onChange={(e) => setNote(e.target.value)}
             rows={2}
             disabled={busy}
-            placeholder={kind === 'validation' ? 'What you found on site (length, surface, who uses it)…' : 'Your reply: what you will do and by when…'}
-            aria-label="Your answer"
+            placeholder={kind === 'validation' ? 'What you found on site (length, surface, who uses it)…' : commits ? 'What you will do, e.g. "Add a second crew and finish the concrete pour."' : 'Your reply: what you will do and by when…'}
+            aria-label={commits ? 'What you will do' : 'Your answer'}
             className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
           />
+          {commits && (
+            <label className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">Done by</span>
+              <input
+                type="date"
+                value={committedBy}
+                min={localDateISO(new Date(), 1)}
+                max={localDateISO(new Date(), COMMIT_MAX_DAYS)}
+                onChange={(e) => setCommittedBy(e.target.value)}
+                disabled={busy}
+                className="h-9 rounded-lg border border-slate-200 px-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20"
+              />
+              <span className="text-slate-400">The DA checks the result after this date.</span>
+            </label>
+          )}
+          {commits && note.trim() && commitIssue && <p className="text-[11px] text-amber-700">{commitIssue}</p>}
           {photoProblem && photos.length > 0 && <p className="text-[11px] text-rose-600">{photoProblem}</p>}
           {kind === 'validation' ? (
             <div className="flex flex-wrap gap-2">
@@ -216,10 +255,10 @@ function TaskCard({ task, role, busy, onValidate, onReply }) {
               type="button"
               disabled={busy || !ready}
               title={photoProblem || undefined}
-              onClick={() => onReply(task, note, photos)}
+              onClick={() => onReply(task, note, photos, commits ? committedBy : null)}
               className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
             >
-              Send reply
+              {commits ? 'Send commitment' : 'Send reply'}
             </button>
           )}
         </div>
@@ -247,7 +286,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       const { data, error } = await client
         .from('priority_decisions')
         .select('*')
-        .in('status', ['for_validation', 'flagged', 'action_recorded']);
+        .in('status', ['for_validation', 'flagged', 'action_recorded', 'closed']);
       if (error) throw error;
       const list = data || [];
       const gapIds = list.filter((d) => d.candidate_kind === 'gap').map((d) => d.candidate_id);
@@ -310,7 +349,13 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
     if (!project) return null;
     const mine = role === 'contractor' ? project.contractor_id === userId : project.site_engineer_id === userId;
     if (!mine) return null;
-    const ownsAction = d.status === 'action_recorded' && actionOwner(d.action) === (role === 'contractor' ? 'contractor' : 'site_engineer');
+    const mineToAnswer = actionOwner(d.action) === (role === 'contractor' ? 'contractor' : 'site_engineer');
+    // A finished action shows its result for a while (priorityStage), then leaves the list.
+    if (d.status === 'closed') {
+      const stage = priorityStage(d)?.stage;
+      if (!mineToAnswer || (stage !== 'done' && stage !== 'not_done')) return null;
+    }
+    const ownsAction = d.status === 'action_recorded' && mineToAnswer;
     if (d.status === 'action_recorded' && !ownsAction) {
       // The action is for the other party: still show it, read-only.
       return {
@@ -329,8 +374,16 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       { label: 'Barangays', value: [project.barangay, project.barangay_end].filter(Boolean).join(' → ') || null },
       { label: 'Funded', value: project.year_funded ? `FY ${project.year_funded}` : null },
     ];
+    const stage = priorityStage(d)?.stage || null;
+    const commitment = d.responded_at
+      ? (d.committed_by
+        ? `You committed: “${d.response_note}” · done by ${fmtDate(d.committed_by)}.`
+        : `You replied: “${d.response_note}”.`)
+      : null;
     return {
-      id: d.id, decision: d, kind: d.status === 'flagged' ? 'info' : 'reply',
+      id: d.id, decision: d, kind: d.status === 'flagged' ? 'info' : d.status === 'closed' ? 'result' : 'reply',
+      stage,
+      result: d.status === 'closed' ? { outcome: d.outcome, note: d.outcome_note, at: d.outcome_at } : null,
       roadPoints: project.line || [],
       mapKind: 'project',
       status: project.status,
@@ -340,11 +393,13 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
       place: project.municipality,
       detail: d.status === 'flagged'
         ? 'The DA put this project on its priority list. A specific action will follow.'
-        : role === 'contractor'
-          ? `The DA decided: ${d.action}. Reply with what you will do and by when.`
-          : 'The DA asks you to inspect this project. Reply with what you found and when you went.',
+        : d.status === 'closed'
+          ? `The DA decided: ${d.action}. This is finished.`
+          : role === 'contractor'
+            ? `The DA decided: ${d.action}. Say what you will do and by when.`
+            : 'The DA asks you to inspect this project. Reply with what you found and when you went.',
       needsAnswer: d.status === 'action_recorded' && !d.responded_at,
-      answer: d.responded_at ? `You replied: “${d.response_note}”.` : null,
+      answer: commitment,
     };
   }).filter(Boolean), [rows, gaps, projects, role, userId]);
 
@@ -374,13 +429,15 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
     if (ok) await run(task, () => submitValidation(client, task.id, result, note, photos), 'Your site validation was sent to the DA.');
   };
 
-  const onReply = async (task, note, photos = []) => {
+  const onReply = async (task, note, photos = [], committedBy = null) => {
     const ok = await confirmDialog({
-      title: 'Send your reply to the DA?',
-      message: `${task.title}\n“${note.trim()}”`,
-      confirmLabel: 'Send reply',
+      title: committedBy ? 'Send your commitment to the DA?' : 'Send your reply to the DA?',
+      message: committedBy
+        ? `${task.title}\n“${note.trim()}”\nDone by ${fmtDate(committedBy)}. After that date the DA marks the result: Done or Not done.`
+        : `${task.title}\n“${note.trim()}”`,
+      confirmLabel: committedBy ? 'Send commitment' : 'Send reply',
     });
-    if (ok) await run(task, () => respondToAction(client, task.id, note, photos), 'Your reply was sent to the DA.');
+    if (ok) await run(task, () => respondToAction(client, task.id, note, photos, committedBy), committedBy ? 'Your commitment was sent to the DA.' : 'Your reply was sent to the DA.');
   };
 
   if (loading) return <div className="h-24 animate-pulse rounded-xl bg-slate-100" aria-hidden="true" />;

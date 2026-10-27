@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react';
 import roadInventory from '../../data/leonRoadInventory.json';
 import { getPaginationRange } from '../../lib/paginationUtils';
 import ViewToggle, { useViewMode } from '../ui/ViewToggle';
+import { useIsPhone } from '../../lib/useIsPhone';
 import FmrProjectDetailDialog from '../FmrProjectDetailDialog';
 import RoadInventoryDetailDialog from './RoadInventoryDetailDialog';
 
@@ -52,7 +53,10 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
   const [surfaceFilter, setSurfaceFilter] = useState('all');
   const [conditionFilter, setConditionFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [viewMode, setViewMode] = useViewMode('lgu-road-inventory-view');
+  const [savedViewMode, setViewMode] = useViewMode('lgu-road-inventory-view');
+  // A 7-column table cannot fit a phone: phones always get the cards.
+  const isPhone = useIsPhone();
+  const viewMode = isPhone ? 'cards' : savedViewMode;
   const itemsPerPage = viewMode === 'table' ? 10 : 6;
 
   const inventory = useMemo(() => (Array.isArray(roadInventory) ? roadInventory : []), []);
@@ -210,7 +214,7 @@ export default function RoadInventoryTab({ projects = [], tranchesByProjectId = 
                 Clear Filters
               </button>
             )}
-            <ViewToggle mode={viewMode} onChange={setViewMode} />
+            {!isPhone && <ViewToggle mode={viewMode} onChange={setViewMode} />}
           </div>
         </div>
 

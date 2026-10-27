@@ -19,8 +19,12 @@ import { getPaginationRange } from '../lib/paginationUtils';
 import { getWorkflowMeta } from '../lib/progressWorkflow';
 import { formatPercentage } from '../lib/percentageFormat';
 import { HALTED_STATUS_STYLES, haltedStatusLabel, isHaltedStatus } from '../lib/delayCases';
+import { priorityStage } from '../lib/priorityDecisions';
+import PriorityBadge from '../components/priority/PriorityBadge';
 
 const ROWS_PER_PAGE = 10;
+// Order of DA priority stages in the list: the contractor's turn first.
+const PRIORITY_RANK = { action: 0, decision_due: 1, committed: 2, not_done: 3, done: 4 };
 
 const thClass = 'px-5 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500';
 
@@ -88,6 +92,8 @@ export default function ContractorProjects() {
   const [projects, setProjects] = useState([]);
   const [latestUpdates, setLatestUpdates] = useState({}); // { [fmr_project_id]: update }
   const [tranchesByProjectId, setTranchesByProjectId] = useState({});
+  const [priorityByProjectId, setPriorityByProjectId] = useState({}); // latest DA priority follow-up per project
+  const [priorityFilter, setPriorityFilter] = useState('All');
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState(null); // project for the progress form
   const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
@@ -180,9 +186,24 @@ export default function ContractorProjects() {
           tMap[t.project_id].push(t);
         });
         setTranchesByProjectId(tMap);
+
+        // DA priority follow-ups: open ones, and finished ones while their result is shown.
+        const { data: decisions } = await supabase
+          .from('priority_decisions')
+          .select('*')
+          .eq('candidate_kind', 'project')
+          .in('candidate_id', ids.map(String))
+          .in('status', ['action_recorded', 'closed'])
+          .order('updated_at', { ascending: false });
+        const pMap = {};
+        (decisions || []).forEach((d) => {
+          if (!pMap[d.candidate_id]) pMap[d.candidate_id] = d;
+        });
+        setPriorityByProjectId(pMap);
       } else {
         setLatestUpdates({});
         setTranchesByProjectId({});
+        setPriorityByProjectId({});
       }
     } catch (err) {
       console.error('ContractorProjects fetch error:', err);
@@ -198,6 +219,7 @@ export default function ContractorProjects() {
         .channel('contractor-projects-realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, () => fetchData(false))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, () => fetchData(false))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'priority_decisions' }, () => fetchData(false))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'project_tranches' }, () => fetchData(false))
         .subscribe();
 
@@ -222,9 +244,13 @@ export default function ContractorProjects() {
     [projects]
   );
 
+  const stageOf = useCallback((p) => priorityStage(priorityByProjectId[String(p.id)]), [priorityByProjectId]);
+
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = projects.filter((p) => {
+      if (priorityFilter === 'open' && !['action', 'committed', 'decision_due'].includes(stageOf(p)?.stage)) return false;
+      if (priorityFilter === 'finished' && !['done', 'not_done'].includes(stageOf(p)?.stage)) return false;
       if (statusFilter === 'Overdue') {
         if (!isOverdueProject(p)) return false;
       } else if (statusFilter !== 'All' && normalizeFmrStatus(p.status) !== statusFilter) return false;
@@ -245,11 +271,14 @@ export default function ContractorProjects() {
       'progress-desc': (a, b) => Number(b.accomplishment || 0) - Number(a.accomplishment || 0),
       deadline: (a, b) => targetTime(a) - targetTime(b),
     };
-    return [...list].sort(sorters[sortBy] || sorters.name);
-  }, [projects, statusFilter, municipalityFilter, workPlanFilter, engineerFilter, search, sortBy]);
+    // Open DA priority follow-ups go first, then the chosen order.
+    const rank = (p) => PRIORITY_RANK[stageOf(p)?.stage] ?? 9;
+    const sorter = sorters[sortBy] || sorters.name;
+    return [...list].sort((a, b) => rank(a) - rank(b) || sorter(a, b));
+  }, [projects, statusFilter, municipalityFilter, workPlanFilter, engineerFilter, priorityFilter, search, sortBy, stageOf]);
 
   // Any filter change starts the table again from page 1.
-  useEffect(() => { setPage(1); }, [search, municipalityFilter, workPlanFilter, engineerFilter, sortBy]);
+  useEffect(() => { setPage(1); }, [search, municipalityFilter, workPlanFilter, engineerFilter, priorityFilter, sortBy]);
 
   const clearProjectFilters = () => {
     setStatusFilter('All');
@@ -257,6 +286,7 @@ export default function ContractorProjects() {
     setMunicipalityFilter('All');
     setWorkPlanFilter('All');
     setEngineerFilter('All');
+    setPriorityFilter('All');
     setPage(1);
   };
 
@@ -396,6 +426,10 @@ export default function ContractorProjects() {
                 options: [{ value: 'assigned', label: 'Engineer assigned' }, { value: 'none', label: 'No engineer yet' }],
               },
               {
+                key: 'priority', label: 'DA priority', value: priorityFilter, onChange: setPriorityFilter, allLabel: 'Any priority',
+                options: [{ value: 'open', label: 'Priority · in progress' }, { value: 'finished', label: 'Priority · result in' }],
+              },
+              {
                 key: 'sort', label: 'Sort', value: sortBy, onChange: setSortBy, allValue: 'name', allLabel: 'Name A–Z', chip: false,
                 options: [{ value: 'deadline', label: 'Nearest deadline' }, { value: 'progress-asc', label: 'Lowest progress' }, { value: 'progress-desc', label: 'Highest progress' }],
               },
@@ -472,6 +506,7 @@ export default function ContractorProjects() {
                           <p className="font-semibold text-slate-900 leading-snug line-clamp-1">
                             {project.project_name || 'Unnamed Project'}
                           </p>
+                          <PriorityBadge stage={stageOf(project)} className="mt-1" />
                           <p className="text-xs text-slate-400 mt-0.5">
                             {project.municipality}{project.province ? `, ${project.province}` : ', Iloilo'}
                             {project.project_length_km ? ` · ${project.project_length_km} km` : ''}
@@ -645,6 +680,7 @@ export default function ContractorProjects() {
         <ContractorProjectDetailModal
           project={shownProject}
           tranches={tranchesByProjectId[shownProject.id] || []}
+          priority={priorityByProjectId[String(shownProject.id)]}
           onClose={closeDetail}
           onSubmitUpdate={handleSubmitFromDetail}
         />

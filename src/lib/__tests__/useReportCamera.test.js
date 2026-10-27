@@ -141,6 +141,22 @@ describe('useReportCamera: taking and retaking the photo', () => {
     expect(stream.track.stop).toHaveBeenCalled();
   });
 
+  it('keeps where the photo was taken, even after the phone moves (report sent later, elsewhere)', async () => {
+    stubCamera(vi.fn(async () => fakeStream()));
+    const atRoad = { lat: 10.7, lng: 122.3, accuracy: 6 };
+    const { result, rerender } = renderHook(({ gps }) => useReportCamera({ gps, active: true }), { initialProps: { gps: atRoad } });
+    await flush();
+    setupCapture(result, fakeCtx());
+    act(() => result.current.capturePhoto());
+    expect(result.current.photoGps).toEqual(atRoad);
+
+    rerender({ gps: { lat: 10.9, lng: 122.6, accuracy: 8 } }); // walked away, back online
+    expect(result.current.photoGps).toEqual(atRoad);
+
+    act(() => result.current.retakePhoto());
+    expect(result.current.photoGps).toBeNull(); // a new photo sets a new place
+  });
+
   it('retake opens exactly one new camera and frees the old preview', async () => {
     const getUserMedia = stubCamera(vi.fn(async () => fakeStream()));
     const { result } = renderHook(() => useReportCamera({ gps: null, active: true }));

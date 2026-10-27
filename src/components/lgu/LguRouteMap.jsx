@@ -339,7 +339,8 @@ export default function LguRouteMap({
       fitPoints.push(layer.coordinates);
     }
   });
-  reportPoints.forEach((row) => fitPoints.push([row.lat, row.lng]));
+  // Reports count for the initial zoom only when their layer is shown.
+  if (showReportPins || showHeat) reportPoints.forEach((row) => fitPoints.push([row.lat, row.lng]));
 
   // Reports the LGU is being asked to act on get a red ring so they stand out.
   const actionReportIds = useMemo(
@@ -441,26 +442,6 @@ export default function LguRouteMap({
           onFocusGap={setFocusedGapId}
         />
 
-        {reportPoints.map((row) => (
-          <CircleMarker
-            key={row.id}
-            center={[row.lat, row.lng]}
-            radius={6}
-            pathOptions={{
-              color: row.status === 'resolved' ? '#10b981' : row.status === 'reviewed' ? '#3b82f6' : '#f59e0b',
-              fillOpacity: 0.85,
-              weight: 1.5,
-            }}
-          >
-            <Popup>
-              <div className="text-xs">
-                <p className="font-semibold">{row.project_name || 'Unlinked project'}</p>
-                <p>{row.barangay || 'N/A'}, {row.municipality || 'N/A'}</p>
-                <p>Status: {row.status || 'pending'}</p>
-              </div>
-            </Popup>
-          </CircleMarker>
-        ))}
 
         {/* Farmer Heatmap Layer */}
         <FarmerHeatmapLayer visible={showFarmerHeatmap} points={farmerHeatPoints} />

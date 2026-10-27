@@ -436,16 +436,20 @@ export default function AdminWorkflowControls({
             ? <WorkOrderPanel action={activeWork} report={report} readOnly />
             : <RepairActionPanel report={report} resolution={resolution} onNotify={onNotify} onChanged={onRepairChanged} handler={handler} />}
           {FIX_CONFIRMATION_ENABLED && <CitizenConfirmationNote key={report?.id} reportId={report?.id} />}
-          <ReopenReportPanel
-            key={`reopen-${report?.id}`}
-            report={report}
-            onNotify={onNotify}
-            onChanged={() => {
-              // Back to "reviewed": the job is with the LGU/contractor again.
-              if (onReportChanged) onReportChanged({ status: 'reviewed', resolved_at: null });
-              workChanged();
-            }}
-          />
+          {/* Reopening answers the reporter's "Is it actually fixed?" check, so it is
+              hidden with it (FIX_CONFIRMATION_ENABLED) and returns with it. */}
+          {FIX_CONFIRMATION_ENABLED && (
+            <ReopenReportPanel
+              key={`reopen-${report?.id}`}
+              report={report}
+              onNotify={onNotify}
+              onChanged={() => {
+                // Back to "reviewed": the job is with the LGU/contractor again.
+                if (onReportChanged) onReportChanged({ status: 'reviewed', resolved_at: null });
+                workChanged();
+              }}
+            />
+          )}
         </SectionShell>
       );
     }

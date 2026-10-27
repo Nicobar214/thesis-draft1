@@ -10,6 +10,7 @@ import { useContractorSummary } from '../lib/contractorPipeline';
 import { ContractorSummaryContext } from '../lib/contractorSummaryContext';
 import ContractorSidebar from './ContractorSidebar';
 import NotificationBell from './NotificationBell';
+import HeaderEvidenceCamera from './evidence/HeaderEvidenceCamera';
 import Icons from './Icons';
 import ProfileAvatar from './ui/ProfileAvatar';
 import PortalHeader from './ui/PortalHeader';
@@ -21,6 +22,7 @@ const PAGE_DESCRIPTIONS = {
   '/contractor/projects': 'Roads assigned to you, their progress and your submission history',
   '/contractor/reports': 'Citizen reports on your roads and the repairs assigned to you',
   '/contractor/delays': 'Explain late projects to the DA and see its decisions',
+  '/contractor/priority': 'What the DA prioritization asks of you, and your replies',
   '/contractor/profile': 'Your photo, contact number and account details',
 };
 
@@ -29,6 +31,7 @@ const PAGE_TITLES = {
   '/contractor/projects': 'My Projects',
   '/contractor/reports': 'Reports',
   '/contractor/delays': 'Delay Follow-ups',
+  '/contractor/priority': 'Priority Tasks',
   '/contractor/profile': 'My Profile',
 };
 
@@ -82,7 +85,7 @@ export default function ContractorLayout({ children }) {
   const resolveNotificationTarget = (n) => {
     if (needsDelayReply(n)) return { actionLabel: n.type === 'delay_final_notice' ? 'Reply to the final notice' : 'Send my explanation' };
     if (String(n.type || '').startsWith('delay_')) return { actionLabel: 'Open Delay Follow-ups' };
-    if (isPriority(n)) return { actionLabel: 'Open on my dashboard' };
+    if (isPriority(n)) return { actionLabel: 'Open Priority Tasks' };
     if (n.progress_update_id) return { actionLabel: 'View this update' };
     if (n.project_id) return { actionLabel: 'Open this project' };
     if (n.report_id) return { actionLabel: 'Open this report' };
@@ -91,7 +94,7 @@ export default function ContractorLayout({ children }) {
 
   const openNotification = (n) => {
     if (String(n.type || '').startsWith('delay_') && n.project_id) navigate(`/contractor/delays?project=${n.project_id}`);
-    else if (isPriority(n)) navigate('/contractor#priority-tasks');
+    else if (isPriority(n)) navigate('/contractor/priority');
     else if (n.progress_update_id) navigate(`/contractor/projects?update=${n.progress_update_id}`);
     else if (n.project_id) navigate(`/contractor/projects?project=${n.project_id}`);
     else if (n.report_id) navigate(`/contractor/reports?report=${n.report_id}`);
@@ -104,6 +107,7 @@ export default function ContractorLayout({ children }) {
 
         <main className={`transition-all duration-300 min-h-dvh ${collapsed ? 'lg:ml-20' : 'lg:ml-80'}`}>
           <PortalHeader
+            compactOnPhone
             title={pageTitle}
             description={pageDescription}
             actions={(
@@ -112,7 +116,12 @@ export default function ContractorLayout({ children }) {
                 <span className="hidden sm:inline">Submit Progress</span>
               </Link>
             )}
-            bell={<NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />}
+            bell={(
+              <span className="inline-flex items-center gap-0.5">
+                <HeaderEvidenceCamera client={supabase} kind="delay_evidence" />
+                <NotificationBell client={supabase} resolveTarget={resolveNotificationTarget} onSelect={openNotification} />
+              </span>
+            )}
             account={{
               to: '/contractor/profile',
               avatar: <ProfileAvatar client={supabase} name={displayName} fallback="C" className="size-9 rounded-xl text-sm shadow-sm sm:size-10" />,

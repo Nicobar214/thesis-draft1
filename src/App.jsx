@@ -26,6 +26,7 @@ const ContractorDashboard = lazyPage(() => import("./pages/ContractorDashboard")
 const ContractorProjects = lazyPage(() => import("./pages/ContractorProjects"));
 const ContractorReports = lazyPage(() => import("./pages/ContractorReports"));
 const ContractorDelays = lazyPage(() => import("./pages/ContractorDelays"));
+const ContractorPriority = lazyPage(() => import("./pages/ContractorPriority"));
 const ContractorProfile = lazyPage(() => import("./pages/ContractorProfile"));
 const LguAuth = lazyPage(() => import("./pages/LguAuth"));
 const LguDashboard = lazyPage(() => import("./pages/LguDashboard"));
@@ -149,6 +150,11 @@ function App() {
         <Route path="/contractor/projects" element={
           <ProtectedRoute requiredRole="contractor">
             <ContractorProjects />
+          </ProtectedRoute>
+        } />
+        <Route path="/contractor/priority" element={
+          <ProtectedRoute requiredRole="contractor">
+            <ContractorPriority />
           </ProtectedRoute>
         } />
         <Route path="/contractor/delays" element={

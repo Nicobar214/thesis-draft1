@@ -19,7 +19,8 @@ import { describeCameraError } from '../../lib/useReportCamera';
 
 /* `compact`: just a small "Take photo" button (for a card's corner), no help text.
  * With no `roadPoints` only the GPS precision is checked, not the distance. */
-export default function GeotagCamera({ roadPoints = [], kind, label, place = 'the site', onCaptured, disabled = false, captureText = 'Capture photo', compact = false }) {
+/* `iconOnly`: a round camera icon like the header's bell (HeaderEvidenceCamera). */
+export default function GeotagCamera({ roadPoints = [], kind, label, place = 'the site', onCaptured, disabled = false, captureText = 'Capture photo', compact = false, iconOnly = false, buttonLabel = 'Take a geotagged evidence photo' }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -95,7 +96,19 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
   };
 
   return (
-    <div className={compact ? 'inline-flex' : 'max-w-md'}>
+    <div className={compact || iconOnly ? 'inline-flex' : 'max-w-md'}>
+      {iconOnly ? (
+        <button
+          type="button"
+          onClick={() => { setError(''); setOpen(true); }}
+          disabled={disabled}
+          aria-label={buttonLabel}
+          title={buttonLabel}
+          className="inline-flex items-center justify-center rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+        >
+          <CameraIcon className="size-5" aria-hidden="true" strokeWidth={1.8} />
+        </button>
+      ) : (
       <button
         type="button"
         onClick={() => { setError(''); setOpen(true); }}
@@ -107,7 +120,8 @@ export default function GeotagCamera({ roadPoints = [], kind, label, place = 'th
       >
         <CameraIcon className="size-4" aria-hidden="true" /> {captureText === 'Capture photo' ? (compact ? 'Take photo' : 'Open camera') : captureText}
       </button>
-      {!compact && <p className="mt-1 text-[11px] text-slate-400">Opens full screen. Your GPS position and the time are stamped on the photo, with a verification QR.</p>}
+      )}
+      {!compact && !iconOnly && <p className="mt-1 text-[11px] text-slate-400">Opens full screen. Your GPS position and the time are stamped on the photo, with a verification QR.</p>}
       <canvas ref={canvasRef} className="hidden" />
       <CameraSheet
         open={open}

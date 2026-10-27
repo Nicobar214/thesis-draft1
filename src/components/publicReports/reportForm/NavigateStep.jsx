@@ -34,7 +34,7 @@ function FitFirst({ points }) {
   return null;
 }
 
-export default function NavigateStep({ gps, project, points, onReportNow, onBack }) {
+export default function NavigateStep({ gps, project, points, pinsOnly = false, onReportNow, onBack }) {
   const [basemap, setBasemap] = useBasemap();
   const me = useMemo(() => (gps ? [gps.lat, gps.lng] : null), [gps]);
 
@@ -51,7 +51,7 @@ export default function NavigateStep({ gps, project, points, onReportNow, onBack
   const [road] = useNearestRoads(origin, lines, 1);
   const guide = useRoadGuide(origin, road || null);
 
-  const distance = distanceToLine(gps, points);
+  const distance = distanceToLine(gps, points, pinsOnly); // pinsOnly: measured to the pins (reportSubmission isSuspectLine)
   const arrived = hasArrived(distance, gps?.accuracy);
   // Same as `arrived`, except while the testing limit is on (reportSubmission.js).
   const canReport = canReportFrom(distance, gps?.accuracy);

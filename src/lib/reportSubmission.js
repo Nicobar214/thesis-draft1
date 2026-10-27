@@ -5,7 +5,7 @@
  */
 import { SEVERITY_TAXONOMY } from './publicReportStatus';
 import { distanceToProjectRoute, locationVerdict, VERIFICATION } from './publicReportTriage';
-import { nearestPointOnPolyline } from './mapRouteUtils';
+import { calculatePolylineDistanceKm, nearestPointOnPolyline } from './mapRouteUtils';
 
 export const REGION = 'Region VI – Western Visayas';
 export const PROVINCE = 'Iloilo';
@@ -67,10 +67,37 @@ export function findNearbyProjects(projects, gps, wider = false) {
 export const ARRIVAL_M = 150;          // metres - "you've arrived" at the picked road
 export const ARRIVAL_ACCURACY_CAP_M = 100; // a rough fix gets at most this much benefit of the doubt
 
-/** Metres from the GPS fix to the nearest point of a road line ([[lat, lng]]). */
-export function distanceToLine(gps, points) {
+/* A road known only by two pins whose pins are far further apart than the road
+ * is long has a wrong pin (project 16: 0.72 km declared, pins 11.4 km apart).
+ * The line between such pins is not the road, so only the pins themselves count
+ * as "near" (pinsOnly); otherwise anyone along an 11 km line was told the road
+ * was near them. */
+export const SUSPECT_LINE_FACTOR = 3;
+export const SUSPECT_LINE_EXTRA_KM = 1.5;
+
+/** Is this two-pin line much longer than the road it stands for? */
+export function isSuspectLine(project, points) {
+  const declared = Number(project?.project_length_km);
+  if (!Array.isArray(points) || points.length !== 2 || !(declared > 0)) return false;
+  const km = calculatePolylineDistanceKm(points);
+  return km > Math.max(declared * SUSPECT_LINE_FACTOR, declared + SUSPECT_LINE_EXTRA_KM);
+}
+
+/** The nearest spot of a road to [lat, lng]: on the line, or (pinsOnly) one of its pins. */
+function nearestOnRoad(at, points, pinsOnly = false) {
+  if (!pinsOnly) return nearestPointOnPolyline(at, points);
+  let best = null;
+  points.forEach((pin) => {
+    const d = haversineMeters(at[0], at[1], pin[0], pin[1]);
+    if (!best || d < best.distanceMeters) best = { point: pin, distanceMeters: d };
+  });
+  return best;
+}
+
+/** Metres from the GPS fix to the nearest point of a road line ([[lat, lng]]), or to its pins only. */
+export function distanceToLine(gps, points, pinsOnly = false) {
   if (!gps || !Array.isArray(points) || points.length === 0) return Infinity;
-  const hit = nearestPointOnPolyline([gps.lat, gps.lng], points);
+  const hit = nearestOnRoad([gps.lat, gps.lng], points, pinsOnly);
   return hit ? hit.distanceMeters : Infinity;
 }
 
@@ -84,7 +111,7 @@ export function findNearbyRoads(lines, gps, wider = false) {
   const radius = wider ? RADIUS_WIDER : RADIUS_MIDPOINT;
   return (lines || [])
     .map((line) => {
-      const hit = nearestPointOnPolyline([gps.lat, gps.lng], line.points);
+      const hit = nearestOnRoad([gps.lat, gps.lng], line.points, line.pinsOnly);
       return hit ? { ...line, distance: hit.distanceMeters, point: hit.point } : null;
     })
     // A rough fix gets the same capped benefit of the doubt as arrival.
@@ -138,23 +165,23 @@ export function canReportFrom(distanceM, accuracy) {
  * (hasArrived), measured to the same line the directions use. The database
  * refuses anything over 1 km from the road as well (supabase_report_location_required.sql).
  */
-export function reportLocationProblem(gps, roadPoints) {
+export function reportLocationProblem(gps, roadPoints, pinsOnly = false) {
   if (!gps) return 'Your location is needed to send a report. Turn on location and try again.';
   if (!Array.isArray(roadPoints) || roadPoints.length < 2) return 'This road has no location on the map yet, so a report on it cannot be checked. Please pick another road.';
-  const distance = distanceToLine(gps, roadPoints);
+  const distance = distanceToLine(gps, roadPoints, pinsOnly);
   if (canReportFrom(distance, gps.accuracy)) return null;
   const away = distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.round(distance)} m`;
   return `You are about ${away} from this road. Reports can only be sent from the road itself (within ${ARRIVAL_M} m), so go to the road first.`;
 }
 
 /** The first problem that blocks submission, or null when the report is complete. */
-export function validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps, roadPoints }) {
+export function validateReportInput({ severityCategory, specificProblem, description, photoBlob, selProject, gps, roadPoints, pinsOnly = false }) {
   if (!severityCategory || !specificProblem) return 'Please classify the report before submitting.';
   if (!String(description || '').trim()) return 'Please enter a description.';
   if (!photoBlob) return 'A site photo is required.';
   if (!selProject) return 'No project selected.';
   if (!gps) return 'GPS coordinates are required.';
-  return reportLocationProblem(gps, roadPoints);
+  return reportLocationProblem(gps, roadPoints, pinsOnly);
 }
 
 /**
