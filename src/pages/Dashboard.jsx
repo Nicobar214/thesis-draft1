@@ -67,6 +67,7 @@ import FarmerBeneficiariesTab from '../components/admin/FarmerBeneficiariesTab';
 import LguProposalsTab from '../components/admin/LguProposalsTab';
 import ProjectDeadlinesView from '../components/admin/ProjectDeadlinesView';
 import WorkPlanModal from '../components/admin/WorkPlanModal';
+import ProjectExtensions from '../components/fmrProjects/ProjectExtensions';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../lib/useRoadSnapPrefetch';
 import { computePriority } from '../lib/priorityScoring';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
@@ -10192,6 +10193,8 @@ A new LGU account will be created with this email and password.`,
                       </div>
                     </div>
                   </div>
+
+                  {isFmrProject && rawProject.id != null && <ProjectExtensions projectId={rawProject.id} client={supabase} className="lg:col-span-2" />}
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                     <h4 className="text-lg font-bold text-slate-900">Location data</h4>

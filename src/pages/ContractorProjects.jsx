@@ -5,6 +5,7 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import DelayRepliesBanner from '../components/contractor/DelayRepliesBanner';
 import { CheckCircle2Icon, ClipboardListIcon, ClockIcon, GaugeIcon, HardHatIcon } from 'lucide-react';
 import HierarchyKpis from '../components/ui/HierarchyKpis';
 import FilterToolbar from '../components/ui/FilterToolbar';
@@ -92,7 +93,17 @@ export default function ContractorProjects() {
   const [detailProject, setDetailProject] = useState(null);     // project for the detail modal
   // ?project=<id> (e.g. from a citizen report) opens that project's details.
   const [searchParams, setSearchParams] = useSearchParams();
-  const linkedProjectId = searchParams.get('project');
+  // ?update=<progress update id> (a progress notification) opens the project it belongs to.
+  const linkedUpdateId = searchParams.get('update');
+  const [updateProjectId, setUpdateProjectId] = useState(null);
+  useEffect(() => {
+    if (!linkedUpdateId) return undefined;
+    let alive = true;
+    supabase.from('progress_updates').select('fmr_project_id').eq('id', linkedUpdateId).maybeSingle()
+      .then(({ data }) => { if (alive && data?.fmr_project_id != null) setUpdateProjectId(String(data.fmr_project_id)); });
+    return () => { alive = false; };
+  }, [linkedUpdateId]);
+  const linkedProjectId = searchParams.get('project') || updateProjectId;
   const shownProject = detailProject
     || (linkedProjectId ? projects.find((p) => String(p.id) === String(linkedProjectId)) || null : null);
   const closeDetail = () => {
@@ -100,6 +111,8 @@ export default function ContractorProjects() {
     if (linkedProjectId) {
       const next = new URLSearchParams(searchParams);
       next.delete('project');
+      next.delete('update');
+      setUpdateProjectId(null);
       setSearchParams(next, { replace: true });
     }
   };
@@ -291,6 +304,9 @@ export default function ContractorProjects() {
   return (
     <ContractorLayout>
       <div className="space-y-6">
+        {/* Overdue projects: a reminder only; the replies are on Delay Follow-ups. */}
+        <DelayRepliesBanner />
+
         {successMessage && (
           <div className="flex items-start justify-between gap-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
             <span>{successMessage}</span>

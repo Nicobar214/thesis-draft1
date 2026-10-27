@@ -3,7 +3,7 @@
  * (Progress submission history lives on My Projects.)
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabaseContractor as supabase } from '../lib/supabase';
 import ContractorLayout from '../components/ContractorLayout';
 import { toast } from '../lib/toast';
@@ -24,7 +24,9 @@ export default function ContractorReports() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  const [selectedReportId, setSelectedReportId] = useState(null); // report open in the detail window
+  // ?report=<id> (from a notification) opens that report's detail window.
+  const [searchParams] = useSearchParams();
+  const [selectedReportId, setSelectedReportId] = useState(() => searchParams.get('report')); // report open in the detail window
   const [projectsByRef, setProjectsByRef] = useState({}); // 'fmr-<id>' -> the contractor's project
 
   // ── Public reports filters ──────────────────────────────────

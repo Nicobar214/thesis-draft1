@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeftIcon, BellRingIcon, CalendarCheckIcon, CalendarClockIcon, ChevronDownIcon, ChevronUpIcon, CircleAlertIcon, RotateCwIcon, ShieldCheckIcon, TriangleAlertIcon } from 'lucide-react';
 import { Modal } from '../ui/Modal';
+import EvidenceGallery from '../evidence/EvidenceGallery';
 import {
   addDays, adminActions, CASE_STATES, caseBucket, caseDue, causeLabel, daysBetween, fmtDay, friendlyDelayError,
   HALTED_STATUS_STYLES, manilaToday, MAX_EXTENSIONS, MAX_REPLY_DAYS, MAX_SUSPENSION_EXTENSIONS,
@@ -94,6 +95,7 @@ function Fact({ label, children }) {
 export default function OverdueProjectsPanel({ client, projects = [], contractors = [], fieldEngineers = [], showNotification, onOpenProject, onDataChanged, scopeIds = null, scopeLabel = '', onShowAll }) {
   const [cases, setCases] = useState([]);
   const [suspensions, setSuspensions] = useState([]);
+  const [evidenceByCase, setEvidenceByCase] = useState({}); // case id -> evidence the contractor sent
   const [suspensionExtensions, setSuspensionExtensions] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -120,6 +122,11 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
       ]);
       if (casesRes.error) throw casesRes.error;
       setCases(casesRes.data || []);
+      // Evidence is optional (supabase_delay_evidence_and_extensions.sql): skip quietly if not set up.
+      const ev = await client.from('project_delay_evidence').select('*').order('created_at', { ascending: true });
+      const byCase = {};
+      (ev.error ? [] : ev.data || []).forEach((r) => { (byCase[r.case_id] = byCase[r.case_id] || []).push(r); });
+      setEvidenceByCase(byCase);
       setSuspensions(suspRes.error ? [] : suspRes.data || []);
       // Suspension extensions per PROJECT, across all its suspensions (the limit
       // is per project: supabase_suspension_extension_limit.sql).
@@ -402,7 +409,7 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
               <Fact label="Contractor's explanation">
                 <p><span className="font-semibold">{causeLabel(c.cause)}</span>{c.explanation ? `: ${c.explanation}` : ''}</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Proposed new date {fmtDay(c.proposed_date)}{c.claimed_percent != null ? ` · claims ${Number(c.claimed_percent)}% done` : ''}
+                  Proposed new date {fmtDay(c.proposed_date)}
                   {project?.accomplishment != null ? ` (on record: ${Number(project.accomplishment)}%)` : ''}
                 </p>
               </Fact>
@@ -420,6 +427,12 @@ export default function OverdueProjectsPanel({ client, projects = [], contractor
                 {c.outcome_reason && <p className="mt-1 text-xs text-slate-500">{c.outcome_reason}</p>}
               </Fact>
             )}
+          </div>
+        )}
+
+        {evidenceByCase[c.id]?.length > 0 && (
+          <div className="mt-3 rounded-xl border border-slate-200 p-3">
+            <EvidenceGallery client={client} bucket="delay-evidence" items={evidenceByCase[c.id]} title="Contractor's supporting evidence" />
           </div>
         )}
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CONTRACTOR_TURN } from './delayCases';
 
 /*
  * Where a contractor's progress update stands. The database keeps two columns, `status`
@@ -74,11 +75,12 @@ export function useContractorSummary(client, userId) {
   const [projects, setProjects] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [repairsToDo, setRepairsToDo] = useState(0);
+  const [delayReplies, setDelayReplies] = useState(0); // overdue projects the DA asked about, waiting for this contractor
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!userId) return;
-    const [p, u, r] = await Promise.allSettled([
+    const [p, u, r, d] = await Promise.allSettled([
       client
         .from('fmr_projects')
         .select('id, project_name, municipality, status, accomplishment, site_engineer_id, target_completion_date, project_length_km')
@@ -95,6 +97,11 @@ export function useContractorSummary(client, userId) {
         .select('id', { count: 'exact', head: true })
         .eq('responsible_party', 'contractor')
         .eq('status', 'planned'),
+      // Delay follow-ups where it is the contractor's turn to reply (RLS: only their projects).
+      client
+        .from('project_delay_cases')
+        .select('id', { count: 'exact', head: true })
+        .in('status', Object.keys(CONTRACTOR_TURN)),
     ]);
     const rows = (res) => (res.status === 'fulfilled' && !res.value.error ? res.value.data || [] : null);
     const pr = rows(p);
@@ -102,6 +109,7 @@ export function useContractorSummary(client, userId) {
     if (pr) setProjects(pr);
     if (ur) setUpdates(ur);
     if (r.status === 'fulfilled' && !r.value.error) setRepairsToDo(r.value.count || 0);
+    if (d.status === 'fulfilled' && !d.value.error) setDelayReplies(d.value.count || 0);
     setLoading(false);
   }, [client, userId]);
 
@@ -113,6 +121,7 @@ export function useContractorSummary(client, userId) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'progress_updates' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fmr_projects' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'public_report_repair_actions' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_delay_cases' }, load)
       .subscribe();
     const onFocus = () => { if (document.visibilityState === 'visible') load(); };
     window.addEventListener('focus', onFocus);
@@ -158,6 +167,7 @@ export function useContractorSummary(client, userId) {
       busyProjectIds: busy,
       approvedThisMonth: approvedThisMonthCount,
       repairsToDo,
+      delayReplies,
     };
-  }, [projects, updates, repairsToDo, loading, load]);
+  }, [projects, updates, repairsToDo, delayReplies, loading, load]);
 }

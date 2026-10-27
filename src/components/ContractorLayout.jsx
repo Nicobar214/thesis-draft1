@@ -20,6 +20,7 @@ const PAGE_DESCRIPTIONS = {
   '/contractor': 'Your assigned projects and what needs attention',
   '/contractor/projects': 'Roads assigned to you, their progress and your submission history',
   '/contractor/reports': 'Citizen reports on your roads and the repairs assigned to you',
+  '/contractor/delays': 'Explain late projects to the DA and see its decisions',
   '/contractor/profile': 'Your photo, contact number and account details',
 };
 
@@ -27,6 +28,7 @@ const PAGE_TITLES = {
   '/contractor': 'Dashboard',
   '/contractor/projects': 'My Projects',
   '/contractor/reports': 'Reports',
+  '/contractor/delays': 'Delay Follow-ups',
   '/contractor/profile': 'My Profile',
 };
 
@@ -72,19 +74,27 @@ export default function ContractorLayout({ children }) {
 
   // A notification opens the thing it is about.
   const isPriority = (n) => String(n.type || '').startsWith('priority_');
+  // Delay follow-up notices that ask the contractor to reply (the rest are news).
+  const DELAY_NEEDS_REPLY = ['delay_explanation_requested', 'delay_final_notice', 'delay_reply_due'];
+  const needsDelayReply = (n) => DELAY_NEEDS_REPLY.includes(n.type);
+
+  // Each notification opens the exact thing it is about, not just a page.
   const resolveNotificationTarget = (n) => {
+    if (needsDelayReply(n)) return { actionLabel: n.type === 'delay_final_notice' ? 'Reply to the final notice' : 'Send my explanation' };
+    if (String(n.type || '').startsWith('delay_')) return { actionLabel: 'Open Delay Follow-ups' };
     if (isPriority(n)) return { actionLabel: 'Open on my dashboard' };
     if (n.progress_update_id) return { actionLabel: 'View this update' };
-    if (n.project_id) return { actionLabel: 'Open my projects' };
-    if (n.report_id) return { actionLabel: 'Open citizen report repairs' };
+    if (n.project_id) return { actionLabel: 'Open this project' };
+    if (n.report_id) return { actionLabel: 'Open this report' };
     return null;
   };
 
   const openNotification = (n) => {
-    if (isPriority(n)) navigate('/contractor#priority-tasks');
+    if (String(n.type || '').startsWith('delay_') && n.project_id) navigate(`/contractor/delays?project=${n.project_id}`);
+    else if (isPriority(n)) navigate('/contractor#priority-tasks');
     else if (n.progress_update_id) navigate(`/contractor/projects?update=${n.progress_update_id}`);
-    else if (n.project_id) navigate('/contractor/projects');
-    else if (n.report_id) navigate('/contractor/reports');
+    else if (n.project_id) navigate(`/contractor/projects?project=${n.project_id}`);
+    else if (n.report_id) navigate(`/contractor/reports?report=${n.report_id}`);
   };
 
   return (

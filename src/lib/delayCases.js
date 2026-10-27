@@ -181,6 +181,48 @@ export function caseBucket(c, today = manilaToday()) {
   return 'waiting';
 }
 
+/* ── Contractor side (Phase 3) ───────────────────────────────────────────── */
+
+/* States where the contractor must reply, and the round the reply answers. */
+export const CONTRACTOR_TURN = {
+  awaiting_explanation: { round: 'first', title: 'Explain the delay', button: 'Send explanation' },
+  revision_requested: { round: 'revision', title: 'Revise your explanation', button: 'Send revised explanation' },
+  final_notice: { round: 'final_notice', title: 'Final notice: reply now', button: 'Send reply to final notice' },
+};
+
+/* What the contractor sees while someone else has the case. */
+export const CONTRACTOR_WAITING = {
+  awaiting_request: 'Your project passed its target date. The DA will send you a request to explain.',
+  awaiting_decision: 'Your explanation is with the DA for a decision.',
+  awaiting_verification: 'A DA field engineer is checking your explanation on site.',
+  no_response: 'The reply deadline passed without a reply. The DA is deciding what happens next.',
+};
+
+/* The event whose note belongs to each contractor round (shown as the DA's message). */
+export const REQUEST_EVENT = {
+  awaiting_explanation: 'explanation_requested',
+  revision_requested: 'revision_requested',
+  final_notice: 'final_notice_issued',
+};
+
+/**
+ * Same checks as delay_submit_explanation, before anything is sent:
+ * a cause, 10+ characters of explanation (every cause), a proposed date after today,
+ * claimed accomplishment 0–100 if given. Returns a list of plain sentences.
+ */
+export function explanationProblems({ cause, explanation, proposedDate, claimedPercent }, today = manilaToday()) {
+  const out = [];
+  if (!DELAY_CAUSES.some((c) => c.value === cause)) out.push('Choose the cause of the delay.');
+  if (!reasonOk(explanation)) out.push(`Explain what happened in at least ${MIN_REASON} characters.`);
+  const d = parseTargetDate(proposedDate);
+  if (!d || d <= today) out.push('The proposed completion date must be after today.');
+  if (claimedPercent !== '' && claimedPercent != null) {
+    const n = Number(claimedPercent);
+    if (!Number.isFinite(n) || n < 0 || n > 100) out.push('Accomplishment must be between 0 and 100%.');
+  }
+  return out;
+}
+
 /* Database messages -> plain sentences for toasts. */
 export function friendlyDelayError(error) {
   const msg = String(error?.message || error || '').trim();

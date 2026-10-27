@@ -52,6 +52,13 @@ const TYPE_META = {
   project_assigned:                   { label: 'Assigned',    accent: 'bg-blue-500' },
   site_engineer_assigned:             { label: 'Assigned',    accent: 'bg-blue-500' },
   project_site_engineer_set:          { label: 'Engineer set', accent: 'bg-indigo-500' },
+  // Overdue-project follow-up (supabase_project_delay_cases.sql)
+  delay_explanation_requested:        { label: 'Explain delay', accent: 'bg-red-500' },
+  delay_final_notice:                 { label: 'Final notice',  accent: 'bg-red-600' },
+  delay_reply_due:                    { label: 'Reply due',     accent: 'bg-amber-500' },
+  delay_case_closed:                  { label: 'Decision',      accent: 'bg-slate-500' },
+  delay_resumed:                      { label: 'Resumed',       accent: 'bg-emerald-500' },
+  delay_suspension_extended:          { label: 'Suspended',     accent: 'bg-violet-500' },
 };
 
 // Columns a notification can use to point at what it is about. Each came from a

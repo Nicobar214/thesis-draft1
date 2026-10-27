@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseTargetDate, isHaltedStatus, haltedStatusLabel, manilaToday, toISODate,
-  caseDue, adminActions, caseBucket, friendlyDelayError, reasonOk,
+  caseDue, adminActions, caseBucket, friendlyDelayError, reasonOk, explanationProblems,
 } from '../delayCases';
 
 const day = (s) => parseTargetDate(s);
@@ -103,5 +103,27 @@ describe('caseBucket / reasons / errors', () => {
     expect(friendlyDelayError({ message: 'This project has an open delay case. Its target date can only be changed with Grant extension (Project Management > Overdue).' }))
       .toMatch(/Grant extension/);
     expect(friendlyDelayError({ message: 'Only one revision is allowed per case' })).toBe('Only one revision is allowed per case');
+  });
+});
+
+describe('explanationProblems (same checks as delay_submit_explanation)', () => {
+  const today = day('2026-10-26');
+  const ok = { cause: 'weather', explanation: 'Rain for two weeks.', proposedDate: '2026-11-20', claimedPercent: '60' };
+  it('accepts a complete reply', () => {
+    expect(explanationProblems(ok, today)).toEqual([]);
+  });
+  it('needs a cause and 10+ characters for every cause', () => {
+    expect(explanationProblems({ ...ok, cause: '' }, today)).toHaveLength(1);
+    expect(explanationProblems({ ...ok, explanation: '  short  ' }, today)[0]).toMatch(/10 characters/);
+    expect(explanationProblems({ ...ok, cause: 'materials', explanation: '' }, today)).toHaveLength(1);
+  });
+  it('proposed date must be after today (Manila)', () => {
+    expect(explanationProblems({ ...ok, proposedDate: '2026-10-26' }, today)).toHaveLength(1);
+    expect(explanationProblems({ ...ok, proposedDate: '2026-10-27' }, today)).toEqual([]);
+  });
+  it('accomplishment is optional, 0-100', () => {
+    expect(explanationProblems({ ...ok, claimedPercent: '' }, today)).toEqual([]);
+    expect(explanationProblems({ ...ok, claimedPercent: '101' }, today)).toHaveLength(1);
+    expect(explanationProblems({ ...ok, claimedPercent: '-1' }, today)).toHaveLength(1);
   });
 });

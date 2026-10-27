@@ -1,4 +1,5 @@
 import ProposalDocumentsChecklist from '../proposals/ProposalDocumentsChecklist';
+import EvidenceGallery from '../evidence/EvidenceGallery';
 import { CameraIcon, CheckCircle2Icon, ChevronRightIcon, FileTextIcon, RotateCcwIcon, SearchCheckIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
@@ -412,6 +413,11 @@ function LguProposalReviewModal({ proposal, fmrProjects, priorityEntry, onClose,
             )}
             {/* DA checklist: which required documents the LGU attached. */}
             <ProposalDocumentsChecklist proposal={proposal} onOpen={openAttachment} />
+            {proposal.supporting_evidence?.length > 0 && (
+              <div className="mt-3">
+                <EvidenceGallery client={supabase} bucket="lgu-proposal-documents" items={proposal.supporting_evidence} title="LGU supporting evidence" />
+              </div>
+            )}
           </div>
 
 

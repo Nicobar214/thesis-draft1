@@ -11,7 +11,10 @@ import { SidebarAccount, SidebarBrand, SidebarFooter, SidebarGroupLabel, Sidebar
 
 const NAV_GROUPS = [
   { label: 'Workspace', items: [{ to: '/contractor', label: 'Dashboard', description: 'Your projects at a glance', icon: Icons.Dashboard, exact: true }] },
-  { label: 'Work', items: [{ to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road }] },
+  { label: 'Work', items: [
+    { to: '/contractor/projects', label: 'My Projects', description: 'Roads assigned to you', icon: Icons.Road },
+    { to: '/contractor/delays', label: 'Delay Follow-ups', description: 'Explain late projects to the DA', icon: Icons.Clock },
+  ] },
   { label: 'Records', items: [{ to: '/contractor/reports', label: 'Reports', description: 'Citizen reports and repairs', icon: Icons.Document }] },
   { label: 'Account', items: [{ to: '/contractor/profile', label: 'My Profile', description: 'Your account details', icon: Icons.UserCircle }] },
 ];
@@ -35,6 +38,7 @@ export default function ContractorSidebar({ collapsed, setCollapsed, user, displ
     // Returned updates are fixed from the history on My Projects.
     if (to === '/contractor/projects') return summary.withoutEngineer.length + summary.needsFix.length;
     if (to === '/contractor/reports') return summary.repairsToDo || 0;
+    if (to === '/contractor/delays') return summary.delayReplies || 0;
     return 0;
   };
 

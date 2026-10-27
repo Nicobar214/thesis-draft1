@@ -13,6 +13,7 @@ import { getProjectBudgetSummary, formatPeso } from '../lib/budgetEstimate';
 import { formatPercentage } from '../lib/percentageFormat';
 import { normalizeUserProjectStatus, getStatusStyle } from '../lib/projectStatus';
 import ProjectProgressTimeline from './ProjectProgressTimeline';
+import ProjectExtensions from './fmrProjects/ProjectExtensions';
 import ProjectRouteMiniMap from './map/ProjectRouteMiniMap';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from './ui/Modal';
 import { buttonClass } from './ui/Button';
@@ -59,6 +60,9 @@ function ProjectDetailBody({ project, tranches = [] }) {
 
       {/* Approved progress updates over time */}
       {project.status !== 'Proposed' && <ProjectProgressTimeline key={project.id} projectId={project.id} />}
+
+      {/* Why the deadline moved: DA and contractor reasons (only when extended). */}
+      {project.id != null && <ProjectExtensions projectId={project.id} />}
 
       {/* Specifications Grid Card */}
       <div className="bg-white rounded-2xl border border-slate-200/60 p-6">

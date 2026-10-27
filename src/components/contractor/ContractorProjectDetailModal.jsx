@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { supabaseContractor as supabase } from '../../lib/supabase';
+import ProjectExtensions from '../fmrProjects/ProjectExtensions';
 import { getProjectBudgetSummary, formatPeso } from '../../lib/budgetEstimate';
 import { getWorkflowMeta, officialAccomplishmentOf } from '../../lib/progressWorkflow';
 import { formatPercentage } from '../../lib/percentageFormat';
@@ -176,6 +177,8 @@ export default function ContractorProjectDetailModal({ project, tranches = [], o
             <Row label="Funding source" value={project.funding_source} />
             <Row label="Contract amount" value={project.contract_amount ? formatPeso(project.contract_amount) : '—'} />
           </div>
+
+          <ProjectExtensions projectId={project.id} client={supabase} />
 
           {/* Submission history */}
           <div>

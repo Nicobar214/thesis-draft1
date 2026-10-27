@@ -31,6 +31,9 @@ const norm = (s) => String(s || '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
+/** Same barangay, ignoring case, accents, punctuation and "(Poblacion)"-style notes. */
+export const sameBarangay = (a, b) => Boolean(a) && Boolean(b) && norm(a) === norm(b);
+
 /* ------------------------------------------------------------------ */
 /* Official boundaries                                                 */
 /* ------------------------------------------------------------------ */
@@ -143,6 +146,31 @@ export function barangayAt(lat, lng, municipality) {
   if (!town || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   for (const shape of town.byKey.values()) if (inShape(shape, lat, lng)) return shape.name;
   return null;
+}
+
+/** The municipality's official barangay names (A-Z) once its boundaries are loaded, else []. */
+export function barangayNames(municipality) {
+  const town = boundaries.get(norm(municipality));
+  return town ? [...town.byKey.values()].map((s) => s.name).sort((a, b) => a.localeCompare(b)) : [];
+}
+
+/**
+ * Which barangay a pin is in, for filling in a form:
+ * { name, exact: true } from the official boundary, { name, exact: false } from
+ * the nearest barangay center (approximate, Leon only), { outside: true } when
+ * the boundaries are loaded and the pin is in none of the municipality's
+ * barangays, or null when it cannot be told.
+ */
+export function locateBarangay(lat, lng, municipality) {
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln) || !la || !ln) return null;
+  if (hasBoundaries(municipality)) {
+    const name = barangayAt(la, ln, municipality);
+    return name ? { name, exact: true } : { outside: true };
+  }
+  const near = nearestBarangay(la, ln, municipality);
+  return near ? { name: near.name, exact: false } : null;
 }
 
 /** The selected barangay's official outline (GeoJSON geometry) once loaded, else null. */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import LEON_BARANGAYS from '../../data/leonBarangays';
-import { checkPinInBarangay, lineCrossesBarangay, nearestBarangay, hasBarangayCenters } from '../barangayLocator';
+import { barangayNames, checkPinInBarangay, hasBarangayCenters, lineCrossesBarangay, locateBarangay, nearestBarangay, sameBarangay, setBarangayBoundaries } from '../barangayLocator';
 
 const center = (name) => LEON_BARANGAYS.find((b) => b.name === name);
 const agta = center('Agta');
@@ -69,5 +69,35 @@ describe('boundary tolerance', () => {
     // 0.001 deg of latitude south of the bottom edge is about 110 m.
     expect(distanceToGeometryMeters(9.999, 122.005, sq)).toBeGreaterThan(100);
     expect(distanceToGeometryMeters(9.999, 122.005, sq)).toBeLessThan(120);
+  });
+});
+
+describe('locateBarangay (filling in a form from a pin)', () => {
+  // Two square barangays side by side, east-west, in a made-up town.
+  const square = (lng0) => ({ type: 'Polygon', coordinates: [[[lng0, 10.70], [lng0 + 0.01, 10.70], [lng0 + 0.01, 10.71], [lng0, 10.71], [lng0, 10.70]]] });
+  setBarangayBoundaries('Testtown', { barangays: [{ name: 'Zeta', geometry: square(122.31) }, { name: 'Alpha', geometry: square(122.30) }] });
+
+  it('reads the barangay from the official boundary', () => {
+    expect(locateBarangay(10.705, 122.305, 'Testtown')).toEqual({ name: 'Alpha', exact: true });
+    expect(locateBarangay(10.705, 122.315, 'Testtown')).toEqual({ name: 'Zeta', exact: true });
+  });
+
+  it('says when the pin is outside every barangay of the town', () => {
+    expect(locateBarangay(10.80, 122.40, 'Testtown')).toEqual({ outside: true });
+  });
+
+  it('falls back to the nearest barangay center (approximate) without boundaries', () => {
+    expect(locateBarangay(agta.lat, agta.lng, 'Leon-no-file')).toBeNull();
+    expect(locateBarangay(agta.lat, agta.lng, 'Leon')).toMatchObject({ name: 'Agta' });
+  });
+
+  it('ignores an empty pin', () => {
+    expect(locateBarangay('', '', 'Testtown')).toBeNull();
+  });
+
+  it('lists the official names A-Z and matches names loosely', () => {
+    expect(barangayNames('Testtown')).toEqual(['Alpha', 'Zeta']);
+    expect(sameBarangay('Barangay Zone I (Poblacion)', 'barangay zone i')).toBe(true);
+    expect(sameBarangay('Alpha', '')).toBe(false);
   });
 });

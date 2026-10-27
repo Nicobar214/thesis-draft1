@@ -29,6 +29,8 @@ export const ATTESTATION_KINDS = {
   progress_certification: 'Engineer progress certification',
   priority_validation: 'Engineer concreting need validation',
   priority_inspection: 'Engineer priority site inspection',
+  delay_evidence: 'Contractor delay evidence',
+  lgu_proposal_evidence: 'LGU proposal supporting evidence',
 };
 
 /** 12 random characters (60 bits): unguessable, and generated offline too. */

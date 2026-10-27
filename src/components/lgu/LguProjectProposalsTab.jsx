@@ -10,6 +10,9 @@ import { MODAL_OVERLAY, MODAL_PANEL, ModalEffects } from '../ui/Modal';
 import { buttonClass } from '../ui/Button';
 import MapSearchBox from '../map/MapSearchBox';
 import { getBarangays } from '../../data/iloiloLocations';
+import { EvidenceActions, EvidenceGrid } from '../evidence/EvidencePicker';
+import EvidenceGallery from '../evidence/EvidenceGallery';
+import { uploadEvidence } from '../../lib/evidence';
 import { boundsFromPoints, getMunicipalityCentroid, getPendingDaysChip, snapToRoad } from '../../lib/mapRouteUtils';
 import { SNAP_BUTTON_OPTIONS, useRoadSnapPrefetch } from '../../lib/useRoadSnapPrefetch';
 import { DA_FMR_RATE_PER_KM, formatPeso } from '../../lib/budgetEstimate';
@@ -225,6 +228,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
   const [searchCenter, setSearchCenter] = useState(null);
   const [searchZoom, setSearchZoom] = useState(15);
   const [photoFile, setPhotoFile] = useState(null);
+  const [evidenceItems, setEvidenceItems] = useState([]); // new photos/files, uploaded when the proposal is saved
   // One file per DA requirement (lib/proposalRequirements.js): { [key]: File }.
   const [requirementFiles, setRequirementFiles] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -374,6 +378,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     setForm(emptyForm);
     setEditingId(null);
     setPhotoFile(null);
+    setEvidenceItems([]);
     setRequirementFiles({});
     setPickMode('start');
     setRouteWaypoints([]);
@@ -495,6 +500,10 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
         if (file) uploads[key] = { path: await uploadAttachment(file, key), name: file.name };
       }
       const supportingDocuments = mergeRequirementDocs(editingProposal?.supporting_documents, uploads);
+      // Supporting evidence: keep what was saved before, add the new items.
+      const newEvidence = evidenceItems.length
+        ? await uploadEvidence(supabase, { bucket: ATTACHMENTS_BUCKET, prefix: `${municipalityScope || 'unassigned'}/evidence`, items: evidenceItems })
+        : [];
 
       const basePayload = {
         project_name: form.project_name.trim(),
@@ -520,6 +529,7 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       };
       if (photoPath) basePayload.photo_url = photoPath;
       basePayload.supporting_documents = supportingDocuments;
+      if (newEvidence.length) basePayload.supporting_evidence = [...(editingProposal?.supporting_evidence || []), ...newEvidence];
 
       if (editingId) {
         const current = proposals.find((p) => p.id === editingId);
@@ -585,6 +595,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
       const msg = err?.message || '';
       notify(/already exists/i.test(msg)
         ? 'This project already exists in your municipality. Duplicate proposals are not allowed.'
+        : /supporting_evidence/i.test(msg)
+          ? 'Supporting evidence is not set up in the database yet. Ask the administrator to run supabase_delay_evidence_and_extensions.sql, or save without it.'
         : /supporting_documents/i.test(msg)
           ? 'The document checklist is not set up in the database yet. Ask the administrator to run supabase_lgu_proposal_requirements.sql.'
           : `Error saving proposal: ${msg}`, 'error');
@@ -593,6 +605,8 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
     }
   };
 
+  // The proposal open in the form (for what it already has attached).
+  const editingRecord = editingId ? proposals.find((p) => p.id === editingId) : null;
   const missingDocCount = missingRequiredDocs(editingId ? proposals.find((p) => p.id === editingId) : null, requirementFiles).length;
 
   const daEstimate = useMemo(() => {
@@ -849,6 +863,30 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                     className="w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-teal-50 file:text-teal-700 file:text-xs file:font-semibold"
                   />
                 </div>
+              </div>
+
+              {/* Supporting evidence: geotagged photos (KalsaTrack camera) and extra files.
+                  The buttons sit in the card's top corner. */}
+              <div className="rounded-xl border border-slate-200 p-3">
+                <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">Supporting evidence <span className="font-normal text-slate-400">(optional)</span></p>
+                    <p className="text-[11px] text-slate-500">Site photos taken with the camera are stamped with GPS, time and a verification QR. You can also attach photos or PDFs.</p>
+                  </div>
+                  <EvidenceActions
+                    items={evidenceItems}
+                    onChange={setEvidenceItems}
+                    kind="lgu_proposal_evidence"
+                    label={`Proposal evidence · ${form.project_name || 'road'}`}
+                    place="the proposed road"
+                  />
+                </div>
+                {editingRecord?.supporting_evidence?.length > 0 && (
+                  <div className="mb-2">
+                    <EvidenceGallery client={supabase} bucket={ATTACHMENTS_BUCKET} items={editingRecord.supporting_evidence} title="Already attached" />
+                  </div>
+                )}
+                <EvidenceGrid items={evidenceItems} onChange={setEvidenceItems} emptyText="No evidence added yet. Use Take photo or Attach file." />
               </div>
 
               {/* DA checklist: one upload per required supporting document. */}
@@ -1594,6 +1632,11 @@ export default function LguProjectProposalsTab({ user, profile, municipalityScop
                       </PhotoViewButton>
                     )}
                   </div>
+                </div>
+              )}
+              {selectedProposalForModal.supporting_evidence?.length > 0 && (
+                <div className="border-b border-slate-100 pb-5">
+                  <EvidenceGallery client={supabase} bucket={ATTACHMENTS_BUCKET} items={selectedProposalForModal.supporting_evidence} />
                 </div>
               )}
               <div className="border-b border-slate-100 pb-5">
