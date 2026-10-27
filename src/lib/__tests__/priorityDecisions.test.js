@@ -170,7 +170,7 @@ describe('priority commitment and result', () => {
   it('shows a prioritized project with the rank and reason from when the DA prioritized it', () => {
     const snap = snapshotOf({ rank: 2, score: 81, G: 1, M: 2, R: 3, C: 4, F: 5, reason: 'Rank #2 — 1.8 km still to build.' });
     expect(priorityStage({ candidate_kind: 'project', status: 'flagged', score_snapshot: snap }, today))
-      .toEqual({ stage: 'priority', rank: 2, reason: 'Rank #2 — 1.8 km still to build.' });
+      .toEqual({ stage: 'priority', rank: 2, reason: 'Rank #2 — 1.8 km still to build.', asOf: snap.taken_at });
     expect(priorityStage({ candidate_kind: 'project', status: 'flagged' }, today)).toMatchObject({ stage: 'priority', rank: null });
   });
 

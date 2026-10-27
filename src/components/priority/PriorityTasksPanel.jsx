@@ -446,7 +446,7 @@ export default function PriorityTasksPanel({ client, userId, role, showNotificat
         id: d.id, decision: d, kind: 'info', daRank: live ? (daPriority.rank ?? 999) : 1000,
         project: live ? project : null,
         roadPoints: project.line || [], mapKind: 'project', status: project.status,
-        label: live ? `★ ${DECISION_LABELS.flagged}${daPriority.rank ? ` #${daPriority.rank}` : ''}` : 'DA priority ended',
+        label: live ? `★ ${DECISION_LABELS.flagged}${daPriority.rank ? ` #${daPriority.rank}` : ''}${daPriority.asOf ? ` · as of ${fmtDate(daPriority.asOf)}` : ''}` : 'DA priority ended',
         title: project.project_name, place: project.municipality,
         facts: live ? [
           { label: 'Accomplishment', value: project.accomplishment != null ? `${Math.round(Number(project.accomplishment))}%` : null },

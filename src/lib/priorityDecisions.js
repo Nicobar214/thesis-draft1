@@ -300,7 +300,8 @@ export function priorityStage(decision, today = localDateISO()) {
   if (!decision || decision.candidate_kind !== 'project') return null;
   if (decision.status === 'flagged') {
     const snap = decision.score_snapshot || {};
-    return { stage: 'priority', rank: Number.isFinite(Number(snap.rank)) ? Number(snap.rank) : null, reason: snap.reason || null };
+    // rank is frozen at the decision (asOf); the live ranking may have moved since.
+    return { stage: 'priority', rank: Number.isFinite(Number(snap.rank)) ? Number(snap.rank) : null, reason: snap.reason || null, asOf: snap.taken_at || decision.updated_at || null };
   }
   if (decision.status === 'closed' && !decision.outcome && decision.outcome_note && decision.outcome_at) {
     const shownUntil = localDateISO(new Date(decision.outcome_at), RESULT_SHOWN_DAYS);

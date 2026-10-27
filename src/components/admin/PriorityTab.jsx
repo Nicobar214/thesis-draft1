@@ -937,6 +937,17 @@ ${whoIsTold(entry, to, action, engineerLabel, dueDate)}` : ''}`,
                     <div className="min-w-0">
                       <h3 className="truncate text-base font-semibold text-slate-900 group-hover:text-teal-800">{entry.title}</h3>
                       <p className="text-sm text-slate-500">{place}</p>
+                      {(() => {
+                        // A live priority keeps the rank it had when prioritized; show the drift for the monthly review.
+                        const stage = priorityStage(decision);
+                        if (stage?.stage !== 'priority' || !stage.rank || stage.rank === rank) return null;
+                        const when = stage.asOf ? ` on ${new Date(stage.asOf).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : '';
+                        return (
+                          <p className={`mt-0.5 text-xs font-medium ${rank > stage.rank ? 'text-amber-700' : 'text-emerald-700'}`}>
+                            Now #{rank} (was #{stage.rank} when prioritized{when})
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
 
