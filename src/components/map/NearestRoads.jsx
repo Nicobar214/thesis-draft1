@@ -8,6 +8,25 @@ import { ChevronRightIcon, RouteIcon } from 'lucide-react';
 import { boundsFromPoints, getRouteStatusTheme, normalizeRouteStatus } from '../../lib/mapRouteUtils';
 import { formatEta } from '../../lib/inMapNavigation';
 import { formatDistance } from '../publicReports/routeGeometry';
+import { LegendDot, LegendGroup, LegendLine } from './MapPanels';
+
+const ROAD_LEGEND_COLOR = { Completed: 'bg-emerald-500', 'On-Going': 'bg-amber-500', Proposed: 'bg-blue-500' };
+
+/** Legend for RoadGuideLayer: what the highlighted road, the blue route and its dots mean. */
+export function RoadGuideLegend({ road, guide }) {
+  if (!road) return null;
+  const ready = guide?.status === 'ready' ? guide : null;
+  return (
+    <LegendGroup label="Directions">
+      <LegendLine color={ROAD_LEGEND_COLOR[normalizeRouteStatus(road.project.status)] || 'bg-slate-500'} label="Road you are going to" />
+      {ready
+        ? <LegendLine color="bg-blue-600" label="Route by road from you" />
+        : <LegendLine color="border-blue-600" dashed label="Straight line (route loading)" />}
+      {ready && (ready.startGap || ready.endGap) && <LegendLine color="border-blue-600" dashed label="Short walk off the street" />}
+      {ready && <LegendDot color="bg-blue-600" label="Where you reach the road" />}
+    </LegendGroup>
+  );
+}
 
 /** Map layers for the picked road: the road itself highlighted, and the guide to it. */
 export function RoadGuideLayer({ road, guide, onRoadClick }) {

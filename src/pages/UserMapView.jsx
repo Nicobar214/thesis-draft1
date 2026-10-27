@@ -15,7 +15,7 @@ import { CITIZEN_STATUS_HEX, useMyReports } from '../lib/useMyReports';
 import { getCitizenStatus } from '../lib/publicReportStatus';
 import ReportStatusLegend from '../components/map/ReportStatusLegend';
 import RouteEndpointMarkers from '../components/map/RouteEndpointMarkers';
-import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from '../components/map/NearestRoads';
+import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer, RoadGuideLegend } from '../components/map/NearestRoads';
 import { useNearestRoads, useRoadGuide } from '../lib/useNearestRoads';
 import { useRoadAlignedLines } from '../lib/useRoadAlignedLines';
 import { nearestPointOnRoute } from '../components/publicReports/routeGeometry';
@@ -1029,7 +1029,10 @@ export default function UserMapView({ embedded = false } = {}) {
                 {stats.proposed > 0 && <LegendLine color="bg-blue-500" label="Proposed" count={stats.proposed} />}
                 {showRoadGaps && <LegendLine color="border-red-500" dashed label="Road to concrete" count={roadGaps.length} />}
               </LegendGroup>
+              <RoadGuideLegend road={focusedRoad} guide={guide} />
               <LegendGroup label="Markers">
+                {userLocation && <LegendDot style={{ background: '#0d9488' }} label="You are here" />}
+                {userLocation && <LegendDot style={{ background: 'rgba(13,148,136,.15)', border: '1px solid #0d9488' }} label="Your approximate area" />}
                 {mappable.length > 0 && <LegendDot color="bg-emerald-600" text="S" label="Route start" />}
                 {mappable.length > 0 && <LegendDot color="bg-orange-500" text="E" label="Route end" />}
                 {showMarketsMap && <LegendDot color="bg-indigo-700" label="Market" />}

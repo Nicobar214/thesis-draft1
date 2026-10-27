@@ -17,12 +17,13 @@ import { getCitizenStatus } from '../../lib/publicReportStatus';
 import { CITIZEN_STATUS_HEX, useMyReports } from '../../lib/useMyReports';
 import ReportStatusLegend from './ReportStatusLegend';
 import { formatDistance, toPoint } from '../publicReports/routeGeometry';
-import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer } from './NearestRoads';
+import { NearestRoadsHeading, NearestRoadsList, RoadGuideLayer, RoadGuideLegend } from './NearestRoads';
 import { useNearestRoads, useRoadGuide } from '../../lib/useNearestRoads';
 import { useRoadAlignedLines } from '../../lib/useRoadAlignedLines';
 
 const DEFAULT_CENTER = [10.89, 122.45];
 const ROAD_STATUSES = ['Completed', 'On-Going', 'Proposed'];
+const ROAD_LEGEND_COLOR = { Completed: 'bg-emerald-500', 'On-Going': 'bg-amber-500', Proposed: 'bg-blue-500' };
 
 function marketIcon() {
   return L.divIcon({
@@ -77,7 +78,7 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
   const [markets, setMarkets] = useState([]);
   const [gaps, setGaps] = useState([]);
   const [basemap, setBasemap] = useBasemap();
-  const [layers, setLayers] = useState({ roads: true, endpoints: false, reports: false, markets: false, gaps: false });
+  const [layers, setLayers] = useState({ roads: true, endpoints: true, reports: false, markets: false, gaps: false });
   const [roadStatusOn, setRoadStatusOn] = useState({ Completed: false, 'On-Going': true, Proposed: false });
   const [me, setMe] = useState(null);
   const [geoError, setGeoError] = useState('');
@@ -190,6 +191,16 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
             </Fragment>
           ))}
           <RoadGuideLayer road={focusedRoad} guide={guide} onRoadClick={onProjectSelect} />
+          {/* The road you are guided to always shows where it starts and ends. */}
+          {focusedRoad && (
+            <RouteEndpointMarkers
+              project={focusedRoad.project}
+              routeData={focusedRoad.data}
+              displayPoints={focusedRoad.points}
+              isFocused
+              lineColor={getRouteStatusTheme(focusedRoad.project.status).line}
+            />
+          )}
           <GapSegmentLayer gaps={gaps} visible={layers.gaps} projects={projects} routesByProjectId={routesByProjectId} />
           {layers.markets && markets.filter((m) => Number.isFinite(Number(m.latitude)) && Number.isFinite(Number(m.longitude))).map((m) => (
             <Marker key={`market-${m.id}`} position={[Number(m.latitude), Number(m.longitude)]} icon={marketIcon()}>
@@ -225,15 +236,18 @@ export default function CitizenOverviewMap({ onProjectSelect }) {
         <MapLegend compact>
           <LegendGroup label="Roads">
             {ROAD_STATUSES.filter((k) => layers.roads && roadStatusOn[k] && roadCounts[k] > 0).map((k) => (
-              <LegendLine key={k} color={k === 'Completed' ? 'bg-emerald-500' : k === 'On-Going' ? 'bg-amber-500' : 'bg-blue-500'} label={k} count={roadCounts[k]} />
+              <LegendLine key={k} color={ROAD_LEGEND_COLOR[k]} label={`${k} road`} count={roadCounts[k]} />
             ))}
             {layers.gaps && <LegendLine color="border-red-500" dashed label="Road to concrete" count={gaps.length} />}
           </LegendGroup>
+          {/* Directions to the road picked in "Nearest FMR roads". */}
+          <RoadGuideLegend road={focusedRoad} guide={guide} />
           <LegendGroup label="Markers">
-            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#16a34a' }} text="S" label="Route start" />}
-            {layers.roads && layers.endpoints && <LegendDot style={{ background: '#f97316' }} text="E" label="Route end" />}
-            {layers.markets && markets.length > 0 && <LegendDot style={{ background: '#4338ca' }} label="Market" count={markets.length} />}
             {me && <LegendDot style={{ background: '#0d9488' }} label="You are here" />}
+            {me && <LegendDot style={{ background: 'rgba(13,148,136,.15)', border: '1px solid #0d9488' }} label="Your approximate area" />}
+            {(focusedRoad || (layers.roads && layers.endpoints)) && <LegendDot style={{ background: '#16a34a' }} text="S" label="Road start" />}
+            {(focusedRoad || (layers.roads && layers.endpoints)) && <LegendDot style={{ background: '#f97316' }} text="E" label="Road end" />}
+            {layers.markets && markets.length > 0 && <LegendDot style={{ background: '#4338ca' }} label="Market" count={markets.length} />}
           </LegendGroup>
           {layers.reports && <ReportStatusLegend reports={reports} />}
         </MapLegend>
