@@ -163,6 +163,41 @@ export default function FieldEngineerDashboard() {
     role: 'button',
     'aria-label': `Open report ${rpt.id.slice(0, 8).toUpperCase()}`,
   });
+  // Phones: the assigned reports as cards, every detail readable without
+  // scrolling sideways (the table shows from tablet width up).
+  const renderReportCards = (list) => (
+    <ul className="space-y-3 md:hidden">
+      {list.map((rpt) => (
+        <li key={rpt.id}>
+          <div {...rowOpenProps(rpt)} className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-bold leading-snug text-slate-900">{rpt.barangay}, {rpt.municipality}</p>
+                {rpt.street && <p className="mt-0.5 text-xs text-slate-500">{rpt.street}</p>}
+              </div>
+              <span className="shrink-0 font-mono text-[11px] font-bold text-slate-400">#{rpt.id.slice(0, 8).toUpperCase()}</span>
+            </div>
+            <p className="mt-2 line-clamp-3 text-sm text-slate-600">{rpt.description}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <EngineerStatusBadge status={rpt.engineer_status} />
+              <VerifyBadge verification={rpt.verification} />
+              {rpt.photo_url && <span className="rounded-md border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">Photo</span>}
+              <span className="ml-auto text-xs text-slate-500">Assigned {rpt.assigned_at ? new Date(rpt.assigned_at).toLocaleDateString() : 'recently'}</span>
+            </div>
+            {needsInspection(rpt) && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); openReport(rpt); }}
+                className="mt-3 w-full rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
+              >
+                Inspect
+              </button>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showingSaved, setShowingSaved] = useState(false); // reports list is the copy saved on this device
@@ -989,8 +1024,9 @@ export default function FieldEngineerDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {renderReportCards(paginatedReports)}
                     {/* Tabular Data Table */}
-                    <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                    <div className="hidden overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm md:block">
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -1313,9 +1349,10 @@ export default function FieldEngineerDashboard() {
                   </p>
                 </div>
               ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4 sm:p-5">
+                  {renderReportCards(paginatedReports)}
                   {/* Tabular Data Table */}
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm">
+                  <div className="hidden overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm md:block">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
