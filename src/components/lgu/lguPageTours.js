@@ -51,7 +51,7 @@ export const LGU_PAGE_TOURS = {
     {
       target: t('lgu-inventory'),
       title: 'Road inventory',
-      body: 'The list of roads with their surface, condition and length.',
+      body: 'Every FMR road with its project status (On-Going, Pending or Completed), length and year built. Filter by status or barangay, and tap a column header to sort.',
     },
     ...HEADER_STEPS,
   ],
@@ -94,7 +94,7 @@ export const LGU_PAGE_TOURS = {
     {
       target: t('lgu-proposal-new'),
       title: 'Submit a new proposal',
-      body: 'Draw the road on the map, attach the 5 required documents, then submit it to the DA.',
+      body: 'Draw the road on the map (open Layers to see existing FMR roads with their start and end, markets, or satellite view), attach the 5 required documents and a road photo (taken with the camera or attached), then submit it to the DA. A road that already exists under the same name cannot be proposed again.',
     },
     ...HEADER_STEPS,
   ],

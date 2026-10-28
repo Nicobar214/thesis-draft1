@@ -33,7 +33,7 @@ export const USER_PAGE_TOURS = {
     {
       target: t('dash-map'),
       title: 'Roads near you',
-      body: 'A quick map of FMR roads and your report pins. Use "Open the full map" for more detail.',
+      body: 'A quick map of FMR roads with their start (S) and end (E). Tap "Find the nearest FMR road to me" for directions: the blue line is the way by road, and the legend explains each line and dot.',
     },
     {
       target: t('dash-stats'),
@@ -75,7 +75,7 @@ export const USER_PAGE_TOURS = {
     {
       target: t('fmr-view'),
       title: 'Table or cards',
-      body: 'Switch the layout. Click any project to open its details, progress and budget.',
+      body: 'Switch the layout. Open any project to see its progress with the budget right below it, its route, and the citizen reports on that road with how they were answered.',
     },
   ],
 
@@ -107,7 +107,7 @@ export const USER_PAGE_TOURS = {
     {
       target: t('map-legend'),
       title: 'Legend',
-      body: 'What each color and marker on the map means.',
+      body: 'What each color and marker means, including your location, each road\u2019s start and end, and the directions to the road you pick.',
     },
     {
       target: t('map-list'),
@@ -146,7 +146,7 @@ export const USER_PAGE_TOURS = {
   '/user/feedback': [
     {
       title: 'Community Feedback',
-      body: 'Road reports and feedback from across the community, so you can see what others have raised.',
+      body: 'Road reports and feedback from across the community. Open one to see who answered it (the field engineer, the contractor or LGU, and the DA) and its before, site check and after photos.',
     },
     {
       target: t('feedback-scope'),
