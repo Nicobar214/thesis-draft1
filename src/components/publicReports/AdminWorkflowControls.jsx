@@ -31,9 +31,10 @@ import SupportCountNote from './SupportCountNote';
  * before resolving (LGU/contractor job), so "scheduled for repair" and
  * "referred to contractor" no longer apply to new reports; they stay valid in
  * the database for older ones. Work that is not done is sent back, not resolved. */
+// "Temporary fix" (monitoring_required) is no longer offered; it stays valid in
+// the database so older reports closed that way still read correctly.
 const OUTCOMES_AFTER_REPAIR = [
   { value: 'repaired', label: 'Repaired — the after-photo shows it fixed' },
-  { value: 'monitoring_required', label: 'Temporary fix — keep monitoring the site' },
 ];
 // LGU jobs (clearing, signs) are either done or sent back: always "Repaired".
 const OUTCOMES_AFTER_LGU_WORK = OUTCOMES_AFTER_REPAIR.filter((o) => o.value === 'repaired');
