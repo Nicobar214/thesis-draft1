@@ -8,6 +8,8 @@ import { formatPercentage } from '../lib/percentageFormat';
 import { MODAL_OVERLAY, MODAL_PANEL_SCROLL, ModalEffects } from '../components/ui/Modal';
 import { buttonClass } from '../components/ui/Button';
 import { attestPhoto, registerAttestation } from '../lib/photoAttestation';
+import { buildRoutePoints } from '../lib/mapRouteUtils';
+import GeotagCamera from '../components/camera/GeotagCamera';
 import { formatQuantity, hasUnsupportedPrecision, limitDecimals, QUANTITY_STEP } from '../lib/quantityInput';
 import { confirm as confirmDialog } from '../lib/confirm';
 
@@ -220,6 +222,22 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
     }
   };
 
+  // The KalsaTrack camera (same as the engineer's and LGU's): live GPS, stamped
+  // photo, and a check that it was taken at this project's road.
+  const roadPoints = useMemo(() => buildRoutePoints(project, null).points, [project]);
+  const handleCameraPhoto = (photo) => {
+    if (!photo.check?.ok) {
+      setPhotoError(photo.check?.problem || 'This photo was not taken at the project site. Take it again on site.');
+      if (photo.preview) URL.revokeObjectURL(photo.preview);
+      return;
+    }
+    setPhotoError('');
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoFile(photo.file);
+    setPhotoAttestation(photo.attestation);
+    setPhotoPreview(photo.preview);
+  };
+
   const clearPhoto = () => {
     setPhotoFile(null);
     setPhotoAttestation(null);
@@ -304,7 +322,10 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
       let photoUrl = null;
       if (photoFile) {
         const ext = 'jpg'; // stamped photos are always JPEG
-        uploadedPath = `updates/${user.id}/${project.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        // updates/<user>/<project>/<upload>/<file>: the storage rule for contractor
+        // progress photos needs four folder levels (progress_photos_insert_own).
+        const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        uploadedPath = `updates/${user.id}/${project.id}/${uploadId}/site-photo.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from('progress-photos')
           .upload(uploadedPath, photoFile, { contentType: photoFile.type || 'image/jpeg' });
@@ -505,11 +526,22 @@ export default function ContractorProgressForm({ project, user, onClose, onSubmi
                     </button>
                   </div>
                 ) : (
-                  <label className={`flex flex-col items-center justify-center gap-1 w-full max-w-md h-28 border-2 border-dashed border-slate-200 rounded-lg ${photoBusy ? 'cursor-wait opacity-70' : 'cursor-pointer hover:border-teal-400 hover:bg-teal-50/30'}`}>
-                    <span className="text-sm font-medium text-slate-600">{photoBusy ? 'Getting your location and stamping the photo…' : 'Take a photo at the site'}</span>
-                    {!photoBusy && <span className="text-xs text-slate-400">Your location and time are stamped on the photo, with a verification QR.</span>}
-                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} disabled={photoBusy} className="hidden" />
-                  </label>
+                  <div className="w-full max-w-md space-y-2 rounded-lg border-2 border-dashed border-slate-200 p-4">
+                    <GeotagCamera
+                      roadPoints={roadPoints}
+                      kind="contractor_progress"
+                      label={`Progress · ${projectName}`}
+                      place="the project road"
+                      disabled={photoBusy || submitting}
+                      captureText="Open the KalsaTrack camera"
+                      onCaptured={handleCameraPhoto}
+                    />
+                    {/* Fallback: the phone's own camera app (also stamped and geotagged). */}
+                    <label className={`block text-xs ${photoBusy ? 'cursor-wait text-slate-400' : 'cursor-pointer text-teal-700 hover:underline'}`}>
+                      {photoBusy ? 'Getting your location and stamping the photo…' : 'or use the phone’s camera app'}
+                      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} disabled={photoBusy} className="hidden" />
+                    </label>
+                  </div>
                 )}
                 {photoError && <p className="mt-2 max-w-md text-sm text-red-600">{photoError}</p>}
               </div>
